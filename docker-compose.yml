@@ -1,0 +1,16 @@
+# Run from the condenser/ directory: `docker compose up --build`
+# The build context is the parent dir so telememo/ is available to the path dependency.
+services:
+  condenser:
+    build:
+      context: ..
+      dockerfile: condenser/Dockerfile
+    env_file: .env
+    ports:
+      - "8000:8000"
+    volumes:
+      - condenser-data:/data
+    restart: unless-stopped
+
+volumes:
+  condenser-data:

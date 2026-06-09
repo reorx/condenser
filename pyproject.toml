@@ -1,0 +1,38 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "condenser"
+version = "0.1.0"
+description = "Self-hosted single-user Telegram channel aggregating reader"
+requires-python = ">=3.10"
+dependencies = [
+    "telememo",
+    "fastapi>=0.110.0",
+    "uvicorn[standard]>=0.29.0",
+    "pydantic>=2.5.0",
+    "pydantic-settings>=2.2.0",
+    "cryptography>=42.0.0",
+    "itsdangerous>=2.1.0",
+    "python-multipart>=0.0.9",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-asyncio>=0.23.0",
+    "httpx>=0.27.0",
+]
+
+[project.scripts]
+condenser = "condenser.__main__:main"
+
+[tool.uv.sources]
+telememo = { path = "../telememo", editable = true }
+
+[tool.hatch.build.targets.wheel]
+packages = ["condenser"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
