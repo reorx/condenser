@@ -60,6 +60,14 @@ uv run pytest          # 13 backend tests, Telegram mocked
 uv run python -m condenser
 ```
 
+## Status / known gaps
+
+Backend endpoints (spec C2) all exist and §7 scenarios are tested, but some v1 work
+remains: subscription "delete-with-messages" option (Q4), global keyword-rule API,
+full channel info (`member_count`/`description`) on resolve, wiring `app_meta`, plus
+SQLite WAL and realtime edit handling. Full checklist:
+`kb/sessions/2026-06-09-backend-remaining-work.md` — read before picking up backend work.
+
 ## Documentation
 
 - `kb/sessions/` — dated session summaries (history). Read the latest to catch up on recent work.
