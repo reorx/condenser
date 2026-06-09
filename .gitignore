@@ -5,6 +5,8 @@ __pycache__/
 *.db-journal
 .env
 tmp/
+node_modules/
 frontend/dist/
+frontend/node_modules/.tmp/
 .pytest_cache/
 .ruff_cache/

@@ -2,7 +2,9 @@
 
 Self-hosted, single-user **Telegram channel aggregating reader** (Google Reader–style
 timeline; source = Telegram channels). See `spec.md` for the full design and `draft.md`
-for the original brief. **Backend (spec Parts A/B/C) is implemented; frontend (Part D) is not.**
+for the original brief. **Backend (spec Parts A/B/C) is implemented. Frontend (Part D) is
+in progress — milestone 1 done (scaffold + auth/TG-login + timeline); milestone 2 pending
+(full subscription mgmt, calendar, new-content poll, media lightbox).**
 
 ## Architecture
 
@@ -51,6 +53,25 @@ columns + migration), `telegram.py` (module-level converters), `utils.py`
 (`group_messages_to_display(raw_messages_map=None)`), `types.py` (`SignInResult` + `fwd_*`),
 `tests/test_part_a.py`.
 
+## Frontend (`frontend/`, spec Part D)
+
+React 19 + Vite 6 + TS(strict) + Tailwind v4 + shadcn/ui (new-york) + TanStack Query v5 +
+React Router v7, **pnpm**. Backend `app.py` auto-serves `frontend/dist` at `/` if present.
+
+- `lib/api.ts` typed fetch client + `ApiError`; `lib/types.ts` mirrors the backend JSON.
+- **Auth gate** = the `tg-status` query: 401 → AppLogin, else `status` drives TgLogin/main
+  (`App.tsx`, `useTgStatus`). Global 401 handler re-runs tg-status but **must skip tg-status
+  itself** or the gate refetch-loops (`lib/queryClient.ts`).
+- **Scroll-past-to-read** via IntersectionObserver + debounced batch `POST /api/read` +
+  optimistic cache (`useScrollToRead`); window is the scroll container (IO root = viewport).
+- Timeline items carry only `channel_id` → joined to titles client-side (`useChannelLabels`).
+- Dates are naive-UTC ISO → `lib/format.ts:parseDate` appends `Z`. Media: try thumbnail,
+  `<img onError>` → file chip (video/file both report `media_type='document'`). entities not
+  rendered (backend doesn't persist them) — plain text + autolinked URLs only.
+
+Milestone 2 TODO: subscription mgmt actions, calendar (`/api/timeline/days`), new-content
+poll (`/api/timeline/new`), media lightbox, Docker multi-stage frontend build.
+
 ## Dev
 
 ```bash
@@ -58,6 +79,9 @@ uv sync --extra dev
 cp .env.example .env   # fill TELEGRAM_API_ID/HASH, CONDENSER_APP_PASSWORD, CONDENSER_SECRET_KEY
 uv run pytest          # 13 backend tests, Telegram mocked
 uv run python -m condenser
+
+cd frontend && pnpm install && pnpm dev   # proxies /api -> :8000 (CONDENSER_BACKEND overrides)
+pnpm build                                # -> frontend/dist (served by backend in prod)
 ```
 
 ## Status / known gaps

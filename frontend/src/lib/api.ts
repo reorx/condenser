@@ -1,0 +1,127 @@
+// Typed fetch client for the condenser JSON API. Auth is a signed HttpOnly cookie
+// issued by /api/auth/login; the dev Vite proxy keeps it same-origin.
+
+import type {
+  DayCount,
+  DisplayMessage,
+  KeywordFilter,
+  MsgRef,
+  Subscription,
+  TgStatus,
+  TimelineNew,
+  TimelinePage,
+  TimelineParams,
+} from './types';
+
+export class ApiError extends Error {
+  status: number;
+  constructor(status: number, message: string) {
+    super(message);
+    this.status = status;
+    this.name = 'ApiError';
+  }
+}
+
+type Json = unknown;
+
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(path, {
+    credentials: 'same-origin',
+    headers: init?.body ? { 'Content-Type': 'application/json' } : undefined,
+    ...init,
+  });
+  if (!res.ok) {
+    let detail = res.statusText;
+    try {
+      const body = await res.json();
+      if (body && typeof body.detail === 'string') detail = body.detail;
+    } catch {
+      // non-JSON error body; keep statusText
+    }
+    throw new ApiError(res.status, detail);
+  }
+  if (res.status === 204) return undefined as T;
+  const ct = res.headers.get('content-type') ?? '';
+  if (!ct.includes('application/json')) return undefined as T;
+  return (await res.json()) as T;
+}
+
+function post<T>(path: string, body?: Json): Promise<T> {
+  return request<T>(path, { method: 'POST', body: body ? JSON.stringify(body) : undefined });
+}
+
+function del<T>(path: string): Promise<T> {
+  return request<T>(path, { method: 'DELETE' });
+}
+
+function qs(params: Record<string, string | number | boolean | null | undefined>): string {
+  const sp = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) {
+    if (v !== null && v !== undefined && v !== '') sp.set(k, String(v));
+  }
+  const s = sp.toString();
+  return s ? `?${s}` : '';
+}
+
+export const api = {
+  // ---- app auth ----
+  login: (password: string) => post<{ ok: true }>('/api/auth/login', { password }),
+  logout: () => post<{ ok: true }>('/api/auth/logout'),
+
+  // ---- telegram step-login ----
+  tgStatus: () => request<{ status: TgStatus }>('/api/tg/status'),
+  tgSendCode: (phone: string) => post<{ status: TgStatus }>('/api/tg/send-code', { phone }),
+  tgSignIn: (code: string) => post<{ status: TgStatus; result: string }>('/api/tg/sign-in', { code }),
+  tgSignIn2fa: (password: string) => post<{ status: TgStatus; result: string }>('/api/tg/sign-in-2fa', { password }),
+  tgLogout: () => post<{ status: TgStatus }>('/api/tg/logout'),
+
+  // ---- subscriptions ----
+  listSubscriptions: () => request<Subscription[]>('/api/subscriptions'),
+  addSubscription: (handle: string) =>
+    post<{ channel_id: number; title: string | null; username: string | null }>('/api/subscriptions', {
+      handle,
+    }),
+  setSubscriptionEnabled: (channelId: number, enabled: boolean) =>
+    request<{ ok: true }>(`/api/subscriptions/${channelId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ enabled }),
+    }),
+  deleteSubscription: (channelId: number) => del<{ ok: true }>(`/api/subscriptions/${channelId}`),
+
+  // ---- keyword filters ----
+  listFilters: (channelId: number) => request<KeywordFilter[]>(`/api/subscriptions/${channelId}/filters`),
+  addFilter: (channelId: number, pattern: string) =>
+    post<KeywordFilter>(`/api/subscriptions/${channelId}/filters`, { pattern }),
+  deleteFilter: (filterId: number) => del<{ ok: true }>(`/api/filters/${filterId}`),
+
+  // ---- timeline / reading ----
+  timeline: (params: TimelineParams) =>
+    request<TimelinePage>(
+      '/api/timeline' +
+        qs({
+          cursor: params.cursor,
+          limit: params.limit,
+          channel_id: params.channel_id,
+          date: params.date,
+          unread_only: params.unread_only,
+        }),
+    ),
+  timelineDays: (channelId?: number | null) =>
+    request<DayCount[]>('/api/timeline/days' + qs({ channel_id: channelId })),
+  timelineNew: (after: string, channelId?: number | null, limit = 100) =>
+    request<TimelineNew>('/api/timeline/new' + qs({ after, channel_id: channelId, limit })),
+
+  markRead: (items: MsgRef[]) => post<{ ok: true }>('/api/read', { items }),
+  markReadBulk: (body: { channel_id?: number | null; before_date?: string | null }) =>
+    post<{ ok: true }>('/api/read/bulk', body),
+
+  // ---- records (saved) ----
+  listRecords: () => request<DisplayMessage[]>('/api/records'),
+  saveRecord: (ref: MsgRef) => post<{ ok: true }>('/api/records', ref),
+  deleteRecord: (ref: MsgRef) => del<{ ok: true }>(`/api/records/${ref.channel_id}/${ref.message_id}`),
+};
+
+/** URL for the media proxy; `thumb` requests the small preview. */
+export function mediaUrl(channelId: number, messageId: number, thumb = false): string {
+  return `/api/media/${channelId}/${messageId}${thumb ? '?thumb=1' : ''}`;
+}

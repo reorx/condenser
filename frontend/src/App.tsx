@@ -1,0 +1,46 @@
+import { Route, Routes } from 'react-router-dom';
+
+import { FullScreenSpinner } from '@/components/Spinner';
+import { Button } from '@/components/ui/button';
+import { useTgStatus } from '@/hooks/useTgStatus';
+import { ApiError } from '@/lib/api';
+import { AppShell } from '@/pages/AppShell';
+import { AppLogin } from '@/pages/AppLogin';
+import { RecordsView } from '@/pages/RecordsView';
+import { SubscriptionsView } from '@/pages/SubscriptionsView';
+import { TgLogin } from '@/pages/TgLogin';
+import { TimelineView } from '@/pages/TimelineView';
+
+function ErrorScreen({ message, onRetry }: { message: string; onRetry: () => void }) {
+  return (
+    <div className="flex min-h-dvh flex-col items-center justify-center gap-4 px-4 text-center">
+      <p className="text-sm text-muted-foreground">{message}</p>
+      <Button variant="outline" onClick={onRetry}>
+        Retry
+      </Button>
+    </div>
+  );
+}
+
+export default function App() {
+  const { data, error, isError, isPending, refetch } = useTgStatus();
+
+  if (isError) {
+    if (error instanceof ApiError && error.status === 401) return <AppLogin />;
+    return <ErrorScreen message="Cannot reach the server." onRetry={() => refetch()} />;
+  }
+  if (isPending || !data) return <FullScreenSpinner />;
+  if (data.status !== 'authorized') return <TgLogin status={data.status} />;
+
+  return (
+    <Routes>
+      <Route element={<AppShell />}>
+        <Route path="/" element={<TimelineView />} />
+        <Route path="/c/:channelId" element={<TimelineView />} />
+        <Route path="/saved" element={<RecordsView />} />
+        <Route path="/subscriptions" element={<SubscriptionsView />} />
+        <Route path="*" element={<TimelineView />} />
+      </Route>
+    </Routes>
+  );
+}
