@@ -10,3 +10,6 @@ frontend/dist/
 frontend/node_modules/.tmp/
 .pytest_cache/
 .ruff_cache/
+
+# firecrawl search cache (local tooling artifact)
+.firecrawl/

@@ -1,6 +1,5 @@
 """FastAPI application factory + lifecycle wiring (spec C1)."""
 
-import logging
 import os
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -10,10 +9,11 @@ from fastapi.staticfiles import StaticFiles
 
 from . import db
 from .config import get_settings
+from .logconf import configure_logging
 from .routers import auth, channels, media, reading, subscriptions, tg
 from .tg import TgManager
 
-logging.basicConfig(level=logging.INFO)
+configure_logging()
 
 
 def create_app() -> FastAPI:
