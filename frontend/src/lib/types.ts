@@ -68,6 +68,8 @@ export interface KeywordFilter {
 export interface TimelinePage {
   items: DisplayMessage[];
   next_cursor: string | null;
+  /** Anchor of the newest unit on this page; used to poll /timeline/new. */
+  head_cursor: string | null;
 }
 
 export interface TimelineNew {

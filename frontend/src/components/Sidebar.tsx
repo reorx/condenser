@@ -1,15 +1,16 @@
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Bookmark, Hash, Inbox, LogOut, Plus, Settings, Sparkles } from 'lucide-react';
-import { NavLink } from 'react-router-dom';
+import { Bookmark, Inbox, Plus, Radio, Settings, Sparkles } from 'lucide-react';
+import { NavLink, useLocation } from 'react-router-dom';
 
+import { ChannelAvatar } from '@/components/ChannelAvatar';
+import { SettingsDialog } from '@/components/SettingsDialog';
 import { Spinner } from '@/components/Spinner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useSubscriptions } from '@/hooks/useSubscriptions';
 import { api, ApiError } from '@/lib/api';
 import { channelName } from '@/lib/format';
-import { queryClient, TG_STATUS_KEY } from '@/lib/queryClient';
 import { cn } from '@/lib/utils';
 
 function navClass({ isActive }: { isActive: boolean }) {
@@ -43,10 +44,10 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
     },
   });
 
-  const logout = useMutation({
-    mutationFn: () => api.logout(),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: TG_STATUS_KEY }),
-  });
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const location = useLocation();
+  const unreadActive = location.pathname === '/' && new URLSearchParams(location.search).get('unread') === '1';
+  const allActive = location.pathname === '/' && !unreadActive;
 
   const enabledSubs = (subs ?? []).filter((s) => s.enabled);
 
@@ -58,11 +59,11 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
       </div>
 
       <nav className="flex flex-col gap-0.5">
-        <NavLink to="/" end className={navClass} onClick={onNavigate}>
+        <NavLink to="/" end className={navClass({ isActive: allActive })} onClick={onNavigate}>
           <Inbox className="size-4" />
           All
         </NavLink>
-        <NavLink to="/?unread=1" className={navClass} onClick={onNavigate}>
+        <NavLink to="/?unread=1" className={navClass({ isActive: unreadActive })} onClick={onNavigate}>
           <Sparkles className="size-4" />
           Unread
           <UnreadBadge count={totalUnread} />
@@ -72,7 +73,7 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
           Saved
         </NavLink>
         <NavLink to="/subscriptions" className={navClass} onClick={onNavigate}>
-          <Settings className="size-4" />
+          <Radio className="size-4" />
           Manage channels
         </NavLink>
       </nav>
@@ -84,7 +85,7 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
         <div className="flex flex-col gap-0.5">
           {enabledSubs.map((s) => (
             <NavLink key={s.channel_id} to={`/c/${s.channel_id}`} className={navClass} onClick={onNavigate}>
-              <Hash className="size-4 shrink-0" />
+              <ChannelAvatar channelId={s.channel_id} name={channelName(s)} className="size-5 text-[10px]" />
               <span className="truncate">{channelName(s)}</span>
               <UnreadBadge count={s.unread} />
             </NavLink>
@@ -120,10 +121,17 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
         {add.isSuccess && <p className="text-xs text-muted-foreground">Subscribed — backfilling…</p>}
       </form>
 
-      <Button variant="ghost" size="sm" className="justify-start text-muted-foreground" onClick={() => logout.mutate()}>
-        <LogOut className="size-4" />
-        Lock app
+      <Button
+        variant="ghost"
+        size="sm"
+        className="justify-start text-muted-foreground"
+        onClick={() => setSettingsOpen(true)}
+      >
+        <Settings className="size-4" />
+        Settings
       </Button>
+
+      <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
     </div>
   );
 }

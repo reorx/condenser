@@ -124,6 +124,16 @@ def _unit_boundary(unit: list[dict]) -> tuple[str, int]:
     return boundary['date'], boundary['id']
 
 
+def _unit_head(unit: list[dict]) -> tuple[str, int]:
+    """Cursor anchor for the *newest* edge of a unit: its largest message id at the unit's date.
+
+    Used for ``head_cursor`` so a ``/timeline/new?after=`` poll excludes the whole unit
+    (its album rows included) rather than re-surfacing it.
+    """
+    boundary = max(unit, key=lambda r: r['id'])
+    return boundary['date'], boundary['id']
+
+
 def query_timeline(
     channel_id: Optional[int] = None,
     date: Optional[str] = None,
@@ -151,7 +161,14 @@ def query_timeline(
         date_raw, mid = _unit_boundary(page_units[-1])
         next_cursor = encode_cursor(date_raw, mid)
 
-    return {'items': items, 'next_cursor': next_cursor}
+    # head_cursor anchors the newest unit on the page, so the frontend can poll
+    # /timeline/new?after=head_cursor for content arriving after this page's top.
+    head_cursor = None
+    if page_units:
+        hdate, hid = _unit_head(page_units[0])
+        head_cursor = encode_cursor(hdate, hid)
+
+    return {'items': items, 'next_cursor': next_cursor, 'head_cursor': head_cursor}
 
 
 def query_new(channel_id: Optional[int], after_cursor: str, limit: int = 100) -> dict:

@@ -14,6 +14,8 @@ interface Props {
   channelLabel: string;
   /** Attach for scroll-past-to-read; omit in the saved view. */
   observe?: (el: Element | null, ref: MsgRef) => void;
+  /** Hide the per-row channel name (shown once in the header) in single-channel views. */
+  showChannel?: boolean;
 }
 
 function forwardSource(msg: DisplayMessage): string | null {
@@ -23,7 +25,7 @@ function forwardSource(msg: DisplayMessage): string | null {
   return name ? `Forwarded from ${name}` : 'Forwarded';
 }
 
-function MessageCardImpl({ msg, channelLabel, observe }: Props) {
+function MessageCardImpl({ msg, channelLabel, observe, showChannel = true }: Props) {
   const save = useSaveToggle();
   const ref: MsgRef = { channel_id: msg.channel_id, message_id: msg.id };
   const fwd = forwardSource(msg);
@@ -46,8 +48,12 @@ function MessageCardImpl({ msg, channelLabel, observe }: Props) {
       )}
     >
       <header className="flex items-center gap-2 text-xs text-muted-foreground">
-        <span className="font-medium text-foreground/80">{channelLabel}</span>
-        <span aria-hidden>·</span>
+        {showChannel && (
+          <>
+            <span className="font-medium text-foreground/80">{channelLabel}</span>
+            <span aria-hidden>·</span>
+          </>
+        )}
         <time>{timeLabel(msg.date)}</time>
         {msg.is_edited && (
           <span className="inline-flex items-center gap-0.5" title="Edited">

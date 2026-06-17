@@ -2,6 +2,7 @@
 
 from fastapi import APIRouter, Depends
 
+from .. import db
 from ..auth import get_tg, require_auth
 from ..tg import TgManager
 from ..types import CodeBody, PasswordBody, PhoneBody
@@ -11,7 +12,12 @@ router = APIRouter(prefix='/api/tg', tags=['tg'], dependencies=[Depends(require_
 
 @router.get('/status')
 def status(tg: TgManager = Depends(get_tg)):
-    return {'status': tg.status()}
+    # phone is surfaced additively (only when stored) for the Settings dialog.
+    out: dict = {'status': tg.status()}
+    row = db.get_tg_session()
+    if row is not None and row.phone:
+        out['phone'] = row.phone
+    return out
 
 
 @router.post('/send-code')

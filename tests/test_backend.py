@@ -153,6 +153,28 @@ def test_timeline_days(env):
         assert by_day['2026-06-04'] == 1
 
 
+def test_timeline_head_cursor_polls_only_newer(env):
+    with _client() as client:
+        _login(client)
+        seed_channel(1, 'C')
+        seed_messages([md(1, 10, 1), md(1, 11, 2)])
+        db.add_subscription(1)
+
+        page = client.get('/api/timeline').json()
+        head = page['head_cursor']
+        assert head  # anchors the newest unit on the page
+
+        # nothing is newer than the page head yet
+        assert client.get(f'/api/timeline/new?after={head}').json()['count'] == 0
+
+        # a newer message arrives -> the poll finds exactly it, not the older ones
+        seed_messages([md(1, 12, 3)])
+        filters.recompute_messages(1, [12])
+        new = client.get(f'/api/timeline/new?after={head}').json()
+        assert new['count'] == 1
+        assert [it['id'] for it in new['items']] == [12]
+
+
 # --- records: source-decoupled snapshot (§7) --------------------------------
 
 
@@ -294,6 +316,38 @@ def test_media_proxy_streams(env):
         assert r.headers['content-type'] == 'image/png'
         assert r.content == b'\x89PNGdata'
         fake.get_media.assert_awaited_once_with(1, 50, thumb=True)
+
+
+def test_channel_avatar_proxy(env):
+    with _client() as client:
+        _login(client)
+
+        fake = MagicMock()
+        type(fake).is_authorized = property(lambda self: True)
+        fake.get_channel_photo = AsyncMock(return_value=(b'\x89PNGavatar', 'image/jpeg'))
+        fake.disconnect = AsyncMock()
+        client.app.state.tg.service = fake
+
+        r = client.get('/api/channels/5/avatar')
+        assert r.status_code == 200
+        assert r.headers['content-type'] == 'image/jpeg'
+        assert r.content == b'\x89PNGavatar'
+        fake.get_channel_photo.assert_awaited_once_with(5)
+
+        # a channel with no photo -> 404 (frontend falls back to a letter avatar)
+        fake.get_channel_photo = AsyncMock(return_value=None)
+        assert client.get('/api/channels/5/avatar').status_code == 404
+
+
+def test_tg_status_includes_phone(env):
+    with _client() as client:
+        _login(client)
+        # no session stored yet -> no phone field
+        assert 'phone' not in client.get('/api/tg/status').json()
+
+        db.save_tg_session('+15551234', b'enc', authorized=True)
+        body = client.get('/api/tg/status').json()
+        assert body['phone'] == '+15551234'
 
 
 def test_tg_step_login_with_2fa(env):

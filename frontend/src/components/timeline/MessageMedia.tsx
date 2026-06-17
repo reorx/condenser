@@ -5,6 +5,8 @@ import { mediaUrl } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import type { MediaItem } from '@/lib/types';
 
+import { Lightbox } from './Lightbox';
+
 // Telegram represents video/gif/audio/files all as "document"; "webpage" is a link
 // preview, not real media, so we never render it. Everything else with media gets a
 // thumbnail attempt that falls back to a file chip if no preview image exists.
@@ -12,14 +14,24 @@ function isRenderable(item: MediaItem): boolean {
   return item.has_media && item.media_type !== 'webpage' && item.media_type != null;
 }
 
-function Thumb({ channelId, item, className }: { channelId: number; item: MediaItem; className?: string }) {
+function Thumb({
+  channelId,
+  item,
+  className,
+  onOpen,
+}: {
+  channelId: number;
+  item: MediaItem;
+  className?: string;
+  onOpen: () => void;
+}) {
   const [failed, setFailed] = useState(false);
-  const full = mediaUrl(channelId, item.message_id);
 
+  // No preview image (audio/doc) -> a chip linking to the proxied file, not the lightbox.
   if (failed) {
     return (
       <a
-        href={full}
+        href={mediaUrl(channelId, item.message_id)}
         target="_blank"
         rel="noopener noreferrer"
         className={cn(
@@ -34,7 +46,7 @@ function Thumb({ channelId, item, className }: { channelId: number; item: MediaI
   }
 
   return (
-    <a href={full} target="_blank" rel="noopener noreferrer" className={cn('block overflow-hidden', className)}>
+    <button type="button" onClick={onOpen} className={cn('block cursor-zoom-in overflow-hidden', className)}>
       <img
         src={mediaUrl(channelId, item.message_id, true)}
         alt=""
@@ -43,32 +55,56 @@ function Thumb({ channelId, item, className }: { channelId: number; item: MediaI
         onError={() => setFailed(true)}
         className="h-full w-full bg-muted object-cover"
       />
-    </a>
+    </button>
   );
 }
 
 export function MessageMedia({ channelId, items }: { channelId: number; items: MediaItem[] }) {
   const media = items.filter(isRenderable);
+  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   if (media.length === 0) return null;
 
-  if (media.length === 1) {
-    return (
+  const grid =
+    media.length === 1 ? (
       <div className="mt-2 overflow-hidden rounded-lg border">
-        <Thumb channelId={channelId} item={media[0]} className="max-h-[28rem] w-auto" />
+        <Thumb
+          channelId={channelId}
+          item={media[0]}
+          className="max-h-[28rem] w-auto"
+          onOpen={() => setLightboxIndex(0)}
+        />
+      </div>
+    ) : (
+      <div
+        className={cn(
+          'mt-2 grid gap-1 overflow-hidden rounded-lg border',
+          media.length === 2 ? 'grid-cols-2' : 'grid-cols-3',
+        )}
+      >
+        {media.map((item, i) => (
+          <Thumb
+            key={item.message_id}
+            channelId={channelId}
+            item={item}
+            className="aspect-square"
+            onOpen={() => setLightboxIndex(i)}
+          />
+        ))}
       </div>
     );
-  }
 
   return (
-    <div
-      className={cn(
-        'mt-2 grid gap-1 overflow-hidden rounded-lg border',
-        media.length === 2 ? 'grid-cols-2' : 'grid-cols-3',
+    <>
+      {grid}
+      {lightboxIndex !== null && (
+        <Lightbox
+          channelId={channelId}
+          items={media}
+          index={lightboxIndex}
+          onIndexChange={setLightboxIndex}
+          onClose={() => setLightboxIndex(null)}
+        />
       )}
-    >
-      {media.map((item) => (
-        <Thumb key={item.message_id} channelId={channelId} item={item} className="aspect-square" />
-      ))}
-    </div>
+    </>
   );
 }

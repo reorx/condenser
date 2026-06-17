@@ -2,9 +2,10 @@
 
 Self-hosted, single-user **Telegram channel aggregating reader** (Google Reader–style
 timeline; source = Telegram channels). See `spec.md` for the full design and `draft.md`
-for the original brief. **Backend (spec Parts A/B/C) is implemented. Frontend (Part D) is
-in progress — milestone 1 done (scaffold + auth/TG-login + timeline); milestone 2 pending
-(full subscription mgmt, calendar, new-content poll, media lightbox).**
+for the original brief. **Backend (spec Parts A/B/C) is implemented. Frontend (Part D)
+milestones 1 & 2 are done** — scaffold + auth/TG-login + timeline, plus full subscription
+management, calendar date-filter, new-content polling, media lightbox, settings + theme,
+and channel avatars. Remaining v1 work: Docker multi-stage frontend build + README.
 
 ## Architecture
 
@@ -26,10 +27,10 @@ condenser's peewee models bind to telememo's `db` instance, so everything is one
 | `config.py` / `crypto.py` | env settings; Fernet session encryption + signed cookie from `CONDENSER_SECRET_KEY` |
 | `db.py` | condenser tables (peewee, bound to telememo's db) + CRUD + shared `init_db` |
 | `filters.py` | keyword-filter **materialization** into `messages.is_filtered` (on ingest + rule change) |
-| `timeline.py` | timeline query: cursor pagination, album merge, date/channel/unread filters, read/saved markers, `days`/`new`/`unread_counts` |
+| `timeline.py` | timeline query: cursor pagination (+ `head_cursor` for new-content poll), album merge, date/channel/unread filters, read/saved markers, `days`/`new`/`unread_counts` |
 | `records.py` | source-decoupled snapshots into `raw_data`, rendered without telememo tables |
 | `tg.py` | `TgManager`: lifecycle (C1), step-login→encrypted storage, realtime ingest, backfill scheduling, subscription orchestration |
-| `auth.py` + `routers/*` | C2 endpoints behind the app-password cookie gate |
+| `auth.py` + `routers/*` | C2 endpoints behind the app-password cookie gate; `routers/channels.py` = avatar proxy; `/api/tg/status` carries `phone` |
 | `app.py` / `__main__.py` | FastAPI factory + lifespan; uvicorn entry; serves a static frontend dir if present |
 
 ## Conventions & gotchas
@@ -65,19 +66,29 @@ React Router v7, **pnpm**. Backend `app.py` auto-serves `frontend/dist` at `/` i
 - **Scroll-past-to-read** via IntersectionObserver + debounced batch `POST /api/read` +
   optimistic cache (`useScrollToRead`); window is the scroll container (IO root = viewport).
 - Timeline items carry only `channel_id` → joined to titles client-side (`useChannelLabels`).
-- Dates are naive-UTC ISO → `lib/format.ts:parseDate` appends `Z`. Media: try thumbnail,
-  `<img onError>` → file chip (video/file both report `media_type='document'`). entities not
-  rendered (backend doesn't persist them) — plain text + autolinked URLs only.
+- Dates are UTC (Telegram native); `lib/format.ts:parseDate` handles both tz-aware (`+00:00`)
+  and naive forms (appends `Z`). Day grouping/calendar use the UTC day key. Media: try
+  thumbnail, `<img onError>` → file chip (video/file both report `media_type='document'`);
+  thumbnails open `Lightbox`. entities not rendered (backend doesn't persist them).
+- **Optimistic mutation pattern** (M1+M2): timeline-wide via `setQueriesData({queryKey:['timeline']})`,
+  subscriptions via `setQueryData(['subscriptions'])`. Keyword CRUD invalidates `['timeline']`
+  + `['subscriptions']` (backend recomputes `is_filtered`). Errors surface via `sonner` toasts
+  (`api.errorMessage`). shadcn primitives in `components/ui/` use individual `@radix-ui/react-*`
+  packages (not the unified `radix-ui`), button from `@/components/ui/button`.
+- **Theme**: `lib/theme.tsx` ThemeProvider (light/dark/system, default system, localStorage
+  `condenser-theme`); no-FOUC inline script in `index.html` sets the class pre-mount.
+- **New-content poll**: `useNewContent` polls `/api/timeline/new?after=head_cursor` (from page-1
+  `head_cursor`) every 30s, paused when hidden → floating banner → refetch + scroll-to-top.
+- **Avatars**: `ChannelAvatar` hits `/api/channels/{id}/avatar`, falls back to a colored initial.
 
-Milestone 2 TODO: subscription mgmt actions, calendar (`/api/timeline/days`), new-content
-poll (`/api/timeline/new`), media lightbox, Docker multi-stage frontend build.
+Remaining: Docker multi-stage frontend build + README (spec step 9).
 
 ## Dev
 
 ```bash
 uv sync --extra dev
 cp .env.example .env   # fill TELEGRAM_API_ID/HASH, CONDENSER_APP_PASSWORD, CONDENSER_SECRET_KEY
-uv run pytest          # 13 backend tests, Telegram mocked
+uv run pytest          # 16 backend tests, Telegram mocked
 uv run python -m condenser
 
 cd frontend && pnpm install && pnpm dev   # proxies /api -> :8000 (CONDENSER_BACKEND overrides)
@@ -87,10 +98,15 @@ pnpm build                                # -> frontend/dist (served by backend 
 ## Status / known gaps
 
 Backend endpoints (spec C2) all exist and §7 scenarios are tested, but some v1 work
-remains: subscription "delete-with-messages" option (Q4), global keyword-rule API,
-full channel info (`member_count`/`description`) on resolve, wiring `app_meta`, plus
-SQLite WAL and realtime edit handling. Full checklist:
+remains: subscription "delete-with-messages" option (Q4), global keyword-rule API (M2
+deliberately ships channel-level only), full channel info (`member_count`/`description`)
+on resolve, wiring `app_meta`, plus SQLite WAL and realtime edit handling. Full checklist:
 `kb/sessions/2026-06-09-backend-remaining-work.md` — read before picking up backend work.
+
+**Known bug (album unread count):** marking an album read only inserts its primary
+message id, but `timeline.unread_counts` counts by `COALESCE(grouped_id, id)` so an album's
+other rows keep it counted as unread — albums never clear from the unread badge. Fix by
+marking all `raw_message_ids` read or counting by display unit (see the M2 session).
 
 ## Documentation
 

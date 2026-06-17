@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef } from 'react';
 import { useInfiniteQuery } from '@tanstack/react-query';
-import { Inbox } from 'lucide-react';
+import { ArrowUp, Inbox } from 'lucide-react';
 
 import { Spinner } from '@/components/Spinner';
 import { Button } from '@/components/ui/button';
+import { useNewContent } from '@/hooks/useNewContent';
 import { useScrollToRead } from '@/hooks/useScrollToRead';
 import { useChannelLabels, useSubscriptions } from '@/hooks/useSubscriptions';
 import { api } from '@/lib/api';
@@ -11,6 +12,7 @@ import { dayKey, dayLabel } from '@/lib/format';
 import type { DisplayMessage, TimelinePage } from '@/lib/types';
 
 import { MessageCard } from './MessageCard';
+import { TimelineSkeleton } from './TimelineSkeleton';
 
 interface DayGroup {
   day: string;
@@ -53,6 +55,16 @@ export function Timeline({ channelId, unreadOnly, date }: { channelId?: number; 
   const items = useMemo(() => query.data?.pages.flatMap((p) => p.items) ?? [], [query.data]);
   const groups = useMemo(() => groupByDay(items), [items]);
 
+  // New-content poll: anchored to the newest loaded item; disabled in date-filtered views.
+  const headCursor = query.data?.pages[0]?.head_cursor ?? null;
+  const newContent = useNewContent({ channelId, headCursor, active: !date });
+  const newCount = newContent.data?.count ?? 0;
+
+  function jumpToNewest() {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    void query.refetch();
+  }
+
   // Infinite scroll: load more when the sentinel nears the viewport.
   const sentinel = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
@@ -71,11 +83,7 @@ export function Timeline({ channelId, unreadOnly, date }: { channelId?: number; 
   }, [query.hasNextPage, query.isFetchingNextPage, query.fetchNextPage, query]);
 
   if (query.isPending) {
-    return (
-      <div className="flex justify-center py-16">
-        <Spinner className="size-5 text-muted-foreground" />
-      </div>
-    );
+    return <TimelineSkeleton />;
   }
 
   if (query.isError) {
@@ -100,6 +108,16 @@ export function Timeline({ channelId, unreadOnly, date }: { channelId?: number; 
 
   return (
     <div>
+      {newCount > 0 && !query.isRefetching && (
+        <button
+          type="button"
+          onClick={jumpToNewest}
+          className="fixed top-14 left-1/2 z-30 -translate-x-1/2 inline-flex items-center gap-1.5 rounded-full bg-primary px-4 py-1.5 text-sm font-medium text-primary-foreground shadow-lg transition hover:bg-primary/90 md:top-3 md:left-[calc(50%+8rem)]"
+        >
+          <ArrowUp className="size-4" />
+          {newCount} new message{newCount > 1 ? 's' : ''}
+        </button>
+      )}
       {groups.map((g) => (
         <section key={g.day}>
           <div className="sticky top-12 z-10 border-b bg-background/80 px-4 py-1.5 text-xs font-medium text-muted-foreground backdrop-blur sm:px-5 md:top-0">
@@ -112,6 +130,7 @@ export function Timeline({ channelId, unreadOnly, date }: { channelId?: number; 
                 msg={m}
                 channelLabel={labels.get(m.channel_id) ?? `Channel ${m.channel_id}`}
                 observe={observe}
+                showChannel={channelId == null}
               />
             ))}
           </div>

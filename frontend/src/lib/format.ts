@@ -35,6 +35,25 @@ export function dayKey(s: string): string {
   return s.slice(0, 10);
 }
 
+/** YYYY-MM-DD from a Date's calendar fields (used to align day-picker cells to backend day keys). */
+export function toDayKey(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+/** Parse a YYYY-MM-DD day key into a local Date at midnight (inverse of toDayKey). */
+export function fromDayKey(key: string): Date {
+  const [y, m, d] = key.split('-').map(Number);
+  return new Date(y, m - 1, d);
+}
+
+/** Compact label for a day key, e.g. "Jun 1". */
+export function dayKeyLabel(key: string): string {
+  return format(fromDayKey(key), 'MMM d');
+}
+
 export function compactNumber(n: number | null | undefined): string {
   if (n == null) return '';
   if (n < 1000) return String(n);

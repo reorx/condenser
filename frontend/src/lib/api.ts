@@ -22,6 +22,11 @@ export class ApiError extends Error {
   }
 }
 
+/** Human-readable message for a caught error, falling back when it isn't an ApiError. */
+export function errorMessage(e: unknown, fallback: string): string {
+  return e instanceof ApiError ? e.message : fallback;
+}
+
 type Json = unknown;
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -69,7 +74,7 @@ export const api = {
   logout: () => post<{ ok: true }>('/api/auth/logout'),
 
   // ---- telegram step-login ----
-  tgStatus: () => request<{ status: TgStatus }>('/api/tg/status'),
+  tgStatus: () => request<{ status: TgStatus; phone?: string | null }>('/api/tg/status'),
   tgSendCode: (phone: string) => post<{ status: TgStatus }>('/api/tg/send-code', { phone }),
   tgSignIn: (code: string) => post<{ status: TgStatus; result: string }>('/api/tg/sign-in', { code }),
   tgSignIn2fa: (password: string) => post<{ status: TgStatus; result: string }>('/api/tg/sign-in-2fa', { password }),
@@ -124,4 +129,9 @@ export const api = {
 /** URL for the media proxy; `thumb` requests the small preview. */
 export function mediaUrl(channelId: number, messageId: number, thumb = false): string {
   return `/api/media/${channelId}/${messageId}${thumb ? '?thumb=1' : ''}`;
+}
+
+/** URL for a channel's avatar proxy; 404/503 lets the UI fall back to a letter. */
+export function channelAvatarUrl(channelId: number): string {
+  return `/api/channels/${channelId}/avatar`;
 }
