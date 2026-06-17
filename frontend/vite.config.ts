@@ -16,6 +16,9 @@ export default defineConfig({
   server: {
     port: 5792,
     strictPort: true,
+    // portless proxies external hostnames (e.g. condenser.reorx.com) to this dev
+    // server; Vite blocks unknown Host headers unless they're allow-listed.
+    allowedHosts: ['condenser.reorx.com'],
     proxy: {
       '/api': {
         target: process.env.CONDENSER_BACKEND ?? 'http://localhost:8792',
