@@ -51,8 +51,36 @@ tags:
 - **主题无 FOUC**：`index.html` 内联脚本在 React 挂载前依据 localStorage/系统偏好打 `dark` class；ThemeProvider 在 system 模式下用 matchMedia 监听 OS 变化实时切换；sonner `<Toaster theme={resolvedTheme}>` 跟随。
 - **日历日键对齐**：后端 `days`/`?date=` 用 UTC `substr(date,1,10)`；前端用本地日历单元，故 `toDayKey`/`fromDayKey` 都按**本地** Y-M-D 构造，使高亮单元与日键一致（避免时区错位）。
 - **乐观更新沿用 M1 pattern**：timeline 用 `setQueriesData({queryKey:['timeline']})` 广播扫描，subscriptions 用 `setQueryData(['subscriptions'])`；关键词改动后端会重算 `is_filtered`，须 invalidate `['timeline']` + `['subscriptions']`。
-- **smoke 局限**：无真实 TG session 时媒体/头像 503 → 走兜底（chip/字母），故灯箱、真实头像、新内容悬浮条、TG 注销无法可视化验证（逻辑靠 types/build + pytest + curl 覆盖）。
-- **发现一个非 M2 的既有 bug（相册已读计数）**：标记相册已读只写主 id（如 5004），但 `timeline.unread_counts` 按 `COALESCE(grouped_id,id)` 计数、相册另一行（5005）仍 unread → 相册永远清不掉未读角标。属后端/读取逻辑，M1/后端遗留，M2 仅使其更显眼。建议后续按 TDD 修（标记时写全 `raw_message_ids`，或计数按 display unit）。
+
+## 遗留问题 / 待办
+
+按优先级排列，供后续 session 接手。
+
+### 🐞 Bug（建议尽快修）
+- **相册已读计数清不掉**（后端，M1/既有，M2 使其更显眼）：标记相册已读只写**主 id**（如 5004），但 `timeline.unread_counts` 按 `COALESCE(grouped_id, id)` 计数，相册其余行（如 5005）仍 `is_read=NULL` → 该相册永远计为 1 条未读、角标清不掉。`/api/read` 与 `/api/read/bulk` 都有此问题。建议按 TDD 修：标记某 display unit 已读时写全其 `raw_message_ids`，或 `unread_counts`/`mark_read` 统一按 display unit 口径。
+
+### ✅ 未经真实环境验证（smoke 用 dummy session，媒体/头像 503）
+以下逻辑有 types/build + pytest + curl 覆盖，但**未在真实 TG 登录下可视化验证**，下次拿到真实 session 应端到端跑一遍：
+- 媒体灯箱：图片 `<img>` / 视频 `<video>` 实际加载与相册 ←/→ 切换、img→video 兜底是否如预期。
+- 真实频道头像（`/api/channels/{id}/avatar` 取到真图，而非字母兜底）。
+- 新内容悬浮条：真有新消息进来时 `/timeline/new` 轮询 → 「N new」→ 点击 refetch + 滚顶的完整链路（smoke 中无新消息，count 恒 0）。
+- TG 注销（Settings「Disconnect Telegram」→ `/api/tg/logout` → 回登录向导）与批量已读 toast。
+
+### 🔜 本期有意延后的决策（需要时再做）
+- **D8 视频 Range**：媒体代理无 HTTP Range，大视频拖动/seek 会重新下载。要顺滑 seek 需 telememo `get_media` 支持 offset + condenser 路由返回 206/`Accept-Ranges`（跨仓库）。
+- **D6 全局关键词规则**：只做了频道级。要全局规则需后端加 `POST /api/filters {pattern, channel_id?=null}`（`filters.recompute_for_rule_change(None)` 已支持），前端再加全局规则 UI。
+- **D2 entities 富文本**：仍延后，需 telememo 加 `entities` 列 + converter 落库 + `DisplayMessage` 暴露，前端再渲染粗体/斜体/code/spoiler。
+- **D9 键盘快捷键**：本期砍掉（j/k/m/s），可作为 Power-User 增强回补。
+
+### 🧩 已知小瑕疵 / 设计取舍（暂可接受）
+- **新内容点击 refetch 的边界**：`query.refetch()` 会重拉所有已加载页；自上次加载后新增消息数 > `limit`(30) 时，超出部分可能不在首屏（单用户低频，可接受）。
+- **灯箱媒体类型歧义**：Telegram 把 video/gif/file 都记为 `document`，灯箱用「先 `<img>`、onError 转 `<video>`」启发式；相册中混入非图片文档时该格切换可能不优雅（相册多为纯图，边界场景）。
+- **日历 UTC 日 vs 本地时间**：分组/日历按 **UTC** 日键（与后端 `substr(date,1,10)` 一致），消息显示用本地时间；跨午夜消息可能落在与本地不同的日分组。属有意取舍（与后端日历 API 对齐），非 bug。
+- **头像无服务端缓存**：每次按需从 Telegram 取，仅靠浏览器 `Cache-Control`；单用户量级可接受。
+- **前端 bundle 568KB / 177KB gzip**：calendar(`react-day-picker`)+`date-fns` 占大头，未做代码分割（M2.md D3/D5 同样把虚拟化延后，非必做）。
+
+### 📦 v1 收尾（spec 步骤 9，未做）
+- Docker 多阶段前端构建（`Dockerfile` 构建 `frontend/dist` 拷进镜像）+ `docker-compose.yml` + README（含 D2 风险标注）。后端 `app.py` 已会挂载存在的 `frontend/dist`，本地可端到端跑。
 
 ## 相关文档
 
