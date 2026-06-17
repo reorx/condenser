@@ -37,6 +37,21 @@ export function useFetchOlder() {
   });
 }
 
+/** Destructive: wipe one channel's cached messages + read state, then re-sync from scratch. */
+export function useResetChannel() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (channelId: number) => api.tgResetChannel(channelId),
+    onSuccess: (res) => {
+      toast.success(`Reset done — re-synced ${res.fetched} ${res.fetched === 1 ? 'post' : 'posts'}`);
+      qc.invalidateQueries({ queryKey: ['timeline'] });
+      qc.invalidateQueries({ queryKey: ['timeline-days'] });
+      qc.invalidateQueries({ queryKey: ['subscriptions'] });
+    },
+    onError: (e) => toast.error(errorMessage(e, 'Could not reset channel')),
+  });
+}
+
 /** Kick off a background re-pull across all enabled channels; results surface via the new-content poll. */
 export function useRefreshAll() {
   return useMutation({

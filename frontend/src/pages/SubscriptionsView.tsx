@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { CheckCheck, Filter, History, MoreVertical, RefreshCw, Search, Trash2 } from 'lucide-react';
+import { CheckCheck, Filter, History, MoreVertical, RefreshCw, RotateCcw, Search, Trash2 } from 'lucide-react';
 
 import { ChannelAvatar } from '@/components/ChannelAvatar';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
@@ -16,7 +16,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Switch } from '@/components/ui/switch';
 import { useBulkRead } from '@/hooks/useBulkRead';
-import { useFetchOlder, useRefreshChannel } from '@/hooks/useRefresh';
+import { useFetchOlder, useRefreshChannel, useResetChannel } from '@/hooks/useRefresh';
 import { useDeleteSubscription, useSetSubscriptionEnabled } from '@/hooks/useSubscriptionMutations';
 import { useSubscriptions } from '@/hooks/useSubscriptions';
 import { channelName } from '@/lib/format';
@@ -31,11 +31,13 @@ function SubscriptionRow({ sub }: { sub: Subscription }) {
   const bulkRead = useBulkRead();
   const refresh = useRefreshChannel();
   const fetchOlder = useFetchOlder();
+  const reset = useResetChannel();
   const [keywordsOpen, setKeywordsOpen] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
   const label = channelName(sub);
-  // Both pull synchronously and can take a few seconds, so reflect progress on the row.
-  const fetching = refresh.isPending || fetchOlder.isPending;
+  // These all pull synchronously and can take a few seconds, so reflect progress on the row.
+  const fetching = refresh.isPending || fetchOlder.isPending || reset.isPending;
 
   return (
     <li className="flex items-center gap-3 px-4 py-3 sm:px-5">
@@ -62,7 +64,7 @@ function SubscriptionRow({ sub }: { sub: Subscription }) {
           <DropdownMenuContent align="end">
             <DropdownMenuItem disabled={fetching} onClick={() => refresh.mutate(sub.channel_id)}>
               <RefreshCw className={cn(refresh.isPending && 'animate-spin')} />
-              重新获取数据
+              更新数据
             </DropdownMenuItem>
             <DropdownMenuItem
               disabled={fetching}
@@ -81,6 +83,10 @@ function SubscriptionRow({ sub }: { sub: Subscription }) {
               Mark all read
             </DropdownMenuItem>
             <DropdownMenuSeparator />
+            <DropdownMenuItem variant="destructive" disabled={fetching} onClick={() => setResetConfirmOpen(true)}>
+              <RotateCcw />
+              重置数据
+            </DropdownMenuItem>
             <DropdownMenuItem variant="destructive" onClick={() => setConfirmOpen(true)}>
               <Trash2 />
               Unsubscribe
@@ -104,6 +110,16 @@ function SubscriptionRow({ sub }: { sub: Subscription }) {
         confirmLabel="Unsubscribe"
         pending={del.isPending}
         onConfirm={() => del.mutate(sub.channel_id, { onSuccess: () => setConfirmOpen(false) })}
+      />
+      <ConfirmDialog
+        open={resetConfirmOpen}
+        onOpenChange={setResetConfirmOpen}
+        title={`重置 ${label} 的数据？`}
+        description="将删除该频道已缓存的全部消息和已读状态，然后重新同步。已保存的内容和关键词过滤规则不受影响。此操作不可撤销。"
+        destructive
+        confirmLabel="重置数据"
+        pending={reset.isPending}
+        onConfirm={() => reset.mutate(sub.channel_id, { onSuccess: () => setResetConfirmOpen(false) })}
       />
     </li>
   );

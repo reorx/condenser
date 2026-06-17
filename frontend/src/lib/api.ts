@@ -94,6 +94,9 @@ export const api = {
   // Page further back into one channel's history (older than the oldest stored message).
   tgFetchOlder: (channelId: number, count = 200) =>
     post<{ status: string; fetched: number }>(`/api/tg/fetch-older/${channelId}` + qs({ count })),
+  // Destructive: wipe one channel's cached messages + read state, then re-sync from scratch.
+  tgResetChannel: (channelId: number) =>
+    post<{ status: string; deleted: number; fetched: number }>(`/api/tg/reset/${channelId}`),
 
   // ---- subscriptions ----
   listSubscriptions: () => request<Subscription[]>('/api/subscriptions'),

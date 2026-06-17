@@ -191,6 +191,20 @@ def channel_min_message_id(channel_id: int) -> int:
     return cur.fetchone()[0] or 0
 
 
+def delete_channel_messages(channel_id: int) -> int:
+    """Wipe a channel's cached messages, comments, and read markers; returns messages deleted.
+
+    Saved records (``telegram_records``) and keyword filters are intentionally preserved —
+    they are user assets / config, not re-syncable source cache.
+    """
+    deleted = tdb.get_message_count(channel_id)
+    with tdb.db.atomic():
+        ReadMessage.delete().where(ReadMessage.channel_id == channel_id).execute()
+        tdb.db.execute_sql('DELETE FROM comments WHERE parent_channel_id = ?', (channel_id,))
+        tdb.db.execute_sql('DELETE FROM messages WHERE channel_id = ?', (channel_id,))
+    return deleted
+
+
 def count_messages_after(channel_id: int, after_id: int) -> int:
     """Count stored messages with id above ``after_id`` (Telegram ids are monotonic per channel)."""
     cur = tdb.db.execute_sql('SELECT COUNT(*) FROM messages WHERE channel_id = ? AND id > ?', (channel_id, after_id))

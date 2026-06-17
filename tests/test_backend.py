@@ -453,6 +453,46 @@ def test_fetch_older_pages_back_into_history(env):
         assert ids == [58, 59, 60, 61]
 
 
+def test_reset_channel_wipes_messages_and_read_then_resyncs(env):
+    """POST /api/tg/reset/{id} deletes cached messages + read markers, keeps saved records, re-syncs."""
+    from telememo.types import DisplayMessage
+
+    from tests.conftest import BASE
+
+    with _client() as client:
+        _login(client)
+        seed_channel(5, 'TechNews', 'technews')
+        db.add_subscription(5)
+        db.set_backfill_done(5, True)
+        seed_messages([md(5, 60, 1, text='old one'), md(5, 61, 2, text='old two')])
+        # save message 60 (a user asset) and mark 61 read
+        assert client.post('/api/records', json={'channel_id': 5, 'message_id': 60}).status_code == 200
+        assert client.post('/api/read', json={'items': [{'channel_id': 5, 'message_id': 61}]}).status_code == 200
+
+        async def fake_backfill(
+            channel, since_days=None, since_date=None, persist=True, offset_id=0, max_messages=None
+        ):
+            seed_messages([md(5, 70, 5, text='fresh after reset')])
+            yield DisplayMessage(id=70, channel_id=5, date=BASE, raw_message_ids=[70])
+
+        fake = _fake_authorized_service()
+        fake.backfill = fake_backfill
+        client.app.state.tg.service = fake
+
+        r = client.post('/api/tg/reset/5')
+        assert r.status_code == 200
+        assert r.json() == {'status': 'ok', 'deleted': 2, 'fetched': 1}
+
+        # the old cache is gone; only the freshly re-synced message remains, and it reads as unread
+        items = client.get('/api/timeline').json()['items']
+        assert [it['id'] for it in items] == [70]
+        assert items[0]['is_read'] is False
+
+        # the saved record survived the wipe (source-decoupled) and subscription stays backfilled
+        assert [rec['id'] for rec in client.get('/api/records').json()] == [60]
+        assert db.get_subscription(5).backfill_done is True
+
+
 def test_refresh_requires_telegram_authorized(env):
     """Refresh endpoints 503 when telegram is not connected."""
     with _client() as client:
@@ -460,6 +500,7 @@ def test_refresh_requires_telegram_authorized(env):
         assert client.post('/api/tg/refresh').status_code == 503
         assert client.post('/api/tg/refresh/5').status_code == 503
         assert client.post('/api/tg/fetch-older/5').status_code == 503
+        assert client.post('/api/tg/reset/5').status_code == 503
 
 
 def test_realtime_ingest_filtered_and_new_poll(env):

@@ -228,6 +228,20 @@ class TgManager:
             filters.recompute_messages(channel_id, ids)
         return len(set(ids))
 
+    async def reset_channel(self, channel_id: int) -> dict:
+        """Destructive: wipe a channel's cached messages + read state, then re-sync from scratch.
+
+        Clears messages, comments, and read markers (saved records + keyword filters survive),
+        resets the sync watermark, then re-runs the recent-window backfill. Returns
+        ``{'deleted': N, 'fetched': M}``.
+        """
+        self._require_service()
+        deleted = db.delete_channel_messages(channel_id)
+        tdb.update_channel_sync_status(channel_id, 0)
+        db.set_backfill_done(channel_id, False)
+        fetched = await self._backfill_channel(channel_id)
+        return {'deleted': deleted, 'fetched': fetched}
+
     # ---- subscription orchestration (used by routers) ----
     def _register_subscription(self, info: ChannelInfo) -> ChannelInfo:
         """Persist channel + subscription row + spawn backfill for an already-resolved channel.

@@ -66,6 +66,15 @@ async def fetch_older(channel_id: int, count: int = 200, tg: TgManager = Depends
     return {'status': 'ok', 'fetched': fetched}
 
 
+@router.post('/reset/{channel_id}')
+async def reset_channel(channel_id: int, tg: TgManager = Depends(get_tg)):
+    """Destructive: wipe a channel's cached messages + read state, then re-sync from scratch."""
+    if tg.service is None or not tg.service.is_authorized:
+        raise HTTPException(status_code=503, detail='telegram not authorized')
+    result = await tg.reset_channel(channel_id)
+    return {'status': 'ok', **result}
+
+
 @router.post('/send-code')
 async def send_code(body: PhoneBody, tg: TgManager = Depends(get_tg)):
     await tg.send_code(body.phone)
