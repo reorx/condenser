@@ -16,6 +16,7 @@ from . import db
 _MSG_COLS = """
     id, channel_id AS channel, text, date, sender_id, sender_name,
     views, forwards, replies, is_edited, edit_date, media_type, has_media, grouped_id,
+    webpage,
     is_forwarded, fwd_from_channel_id, fwd_from_channel_name, fwd_from_user_id,
     fwd_from_user_name, fwd_from_message_id, fwd_original_date, fwd_post_author
 """
@@ -71,6 +72,8 @@ def render_record(raw_data: str) -> Optional[dict]:
         d['date'] = tdb._parse_datetime(r.get('date'))
         d['edit_date'] = tdb._parse_datetime(r.get('edit_date'))
         d['fwd_original_date'] = tdb._parse_datetime(r.get('fwd_original_date'))
+        wp = r.get('webpage')
+        d['webpage'] = json.loads(wp) if isinstance(wp, str) else wp
         rows_for_display.append(d)
     displays = group_messages_to_display(rows_for_display)
     if not displays:

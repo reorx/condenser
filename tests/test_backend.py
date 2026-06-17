@@ -69,6 +69,44 @@ def test_timeline_excludes_filtered_and_groups_album(env):
         assert 11 in ids2
 
 
+def test_timeline_includes_webpage_preview(env):
+    from telememo.types import WebPagePreview
+
+    with _client() as client:
+        _login(client)
+        seed_channel(1, 'Tech', 'tech')
+        seed_messages(
+            [
+                md(1, 10, 1, text='plain message'),
+                md(
+                    1,
+                    11,
+                    2,
+                    text='see https://example.com',
+                    media_type='webpage',
+                    has_media=True,
+                    webpage=WebPagePreview(
+                        url='https://example.com',
+                        title='Example',
+                        description='A description',
+                        site_name='Example Site',
+                        has_photo=True,
+                    ),
+                ),
+            ]
+        )
+        db.add_subscription(1)
+
+        items = client.get('/api/timeline').json()['items']
+        wp = next(it for it in items if it['id'] == 11)['webpage']
+        assert wp['url'] == 'https://example.com'
+        assert wp['title'] == 'Example'
+        assert wp['site_name'] == 'Example Site'
+        assert wp['has_photo'] is True
+        # Messages without a link preview carry an explicit null.
+        assert next(it for it in items if it['id'] == 10)['webpage'] is None
+
+
 def test_filter_is_case_insensitive_substring(env):
     with _client() as client:
         _login(client)

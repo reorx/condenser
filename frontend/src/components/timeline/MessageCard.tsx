@@ -8,6 +8,7 @@ import { cn } from '@/lib/utils';
 import type { DisplayMessage, MsgRef } from '@/lib/types';
 
 import { MessageMedia } from './MessageMedia';
+import { WebPagePreview } from './WebPagePreview';
 
 interface Props {
   msg: DisplayMessage;
@@ -43,8 +44,13 @@ function MessageCardImpl({ msg, channelLabel, observe, showChannel = true }: Pro
       ref={attach}
       data-read={msg.is_read ? '' : undefined}
       className={cn(
-        'group relative px-4 py-3 transition-opacity sm:px-5',
-        msg.is_read && 'opacity-55 hover:opacity-100',
+        'group relative px-4 py-3 sm:px-5',
+        // Unread marker: a 2px sky rail on the very left edge, transparent once read.
+        // A pseudo-element (not border-l) keeps the row layout-neutral so content and the
+        // sticky day-header stay aligned; the color transition lets it fade out on read.
+        'before:absolute before:inset-y-0 before:left-0 before:w-0.5 before:content-[""]',
+        'before:transition-colors before:duration-500',
+        !msg.is_read && 'before:bg-sky-500 dark:before:bg-sky-400',
       )}
     >
       <header className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -96,6 +102,8 @@ function MessageCardImpl({ msg, channelLabel, observe, showChannel = true }: Pro
       )}
 
       <MessageMedia channelId={msg.channel_id} items={msg.media_items} />
+
+      {msg.webpage && <WebPagePreview channelId={msg.channel_id} messageId={msg.id} webpage={msg.webpage} />}
     </article>
   );
 }

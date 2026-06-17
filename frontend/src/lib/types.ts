@@ -24,6 +24,19 @@ export interface ChannelRef {
   username: string | null;
 }
 
+/** URL link preview (Telegram web page preview) attached to a message. */
+export interface WebPagePreview {
+  url: string | null;
+  display_url: string | null;
+  type: string | null;
+  site_name: string | null;
+  title: string | null;
+  description: string | null;
+  author: string | null;
+  /** When true, the preview image is fetchable via the media proxy for this message id. */
+  has_photo: boolean;
+}
+
 /** One display unit (album-collapsed). Matches telememo's DisplayMessage + condenser flags. */
 export interface DisplayMessage {
   id: number;
@@ -37,6 +50,7 @@ export interface DisplayMessage {
   is_album: boolean;
   grouped_id: number | null;
   media_items: MediaItem[];
+  webpage: WebPagePreview | null;
   is_forwarded: boolean;
   forward_info: ForwardInfo | null;
   views: number | null;

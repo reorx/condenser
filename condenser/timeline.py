@@ -8,6 +8,7 @@ Albums (same ``grouped_id``) collapse into one DisplayMessage via telememo's
 """
 
 import base64
+import json
 from typing import Optional
 
 from telememo import db as tdb
@@ -20,6 +21,7 @@ _SELECT_COLS = """
     m.views AS views, m.forwards AS forwards, m.replies AS replies,
     m.is_edited AS is_edited, m.edit_date AS edit_date,
     m.media_type AS media_type, m.has_media AS has_media, m.grouped_id AS grouped_id,
+    m.webpage AS webpage,
     m.is_forwarded AS is_forwarded, m.fwd_from_channel_id AS fwd_from_channel_id,
     m.fwd_from_channel_name AS fwd_from_channel_name, m.fwd_from_user_id AS fwd_from_user_id,
     m.fwd_from_user_name AS fwd_from_user_name, m.fwd_from_message_id AS fwd_from_message_id,
@@ -104,6 +106,7 @@ def _serialize_units(units: list[list[dict]]) -> list[dict]:
         d['date'] = tdb._parse_datetime(r['date'])
         d['edit_date'] = tdb._parse_datetime(r['edit_date'])
         d['fwd_original_date'] = tdb._parse_datetime(r['fwd_original_date'])
+        d['webpage'] = json.loads(r['webpage']) if r.get('webpage') else None
         rows_for_display.append(d)
         flags[(r['channel'], r['id'])] = (bool(r['is_read']), bool(r['is_saved']))
 
