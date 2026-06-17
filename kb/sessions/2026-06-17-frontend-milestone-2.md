@@ -56,8 +56,8 @@ tags:
 
 按优先级排列，供后续 session 接手。
 
-### 🐞 Bug（建议尽快修）
-- **相册已读计数清不掉**（后端，M1/既有，M2 使其更显眼）：标记相册已读只写**主 id**（如 5004），但 `timeline.unread_counts` 按 `COALESCE(grouped_id, id)` 计数，相册其余行（如 5005）仍 `is_read=NULL` → 该相册永远计为 1 条未读、角标清不掉。`/api/read` 与 `/api/read/bulk` 都有此问题。建议按 TDD 修：标记某 display unit 已读时写全其 `raw_message_ids`，或 `unread_counts`/`mark_read` 统一按 display unit 口径。
+### 🐞 Bug
+- **~~相册已读计数清不掉~~（已修，2026-06-17，TDD）**：标记相册已读只写**主 id**（如 5004），但 `timeline.unread_counts` 按 `COALESCE(grouped_id, id)` 计数，相册其余行（如 5005）仍 `is_read=NULL` → 该相册永远计为 1 条未读、角标清不掉。**修法**：`db.mark_read` 新增 `_expand_album_siblings()`，把每个 `(channel_id, message_id)` 经 `grouped_id` 自连接 `messages` 展开成同相册所有 raw id，再 `insert_many` 全部写入 `read_messages`（无缓存行时回落到原 id）。`/api/read/bulk` 本就按 raw 行 `SELECT m.id` 写入、不受影响——补了回归测试锁住。新增 `test_read_album_clears_unread_count`（先复现「相册已读后 unread 仍=2」红、修后绿）+ `test_read_bulk_clears_album_unread_count`。后端 `pytest` **18 passed**（+2）。
 
 ### ✅ 未经真实环境验证（smoke 用 dummy session，媒体/头像 503）
 以下逻辑有 types/build + pytest + curl 覆盖，但**未在真实 TG 登录下可视化验证**，下次拿到真实 session 应端到端跑一遍：

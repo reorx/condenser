@@ -141,6 +141,60 @@ def test_read_marks_and_unread_count(env):
         assert client.get('/api/subscriptions').json()[0]['unread'] == 1
 
 
+def test_read_album_clears_unread_count(env):
+    """Marking an album read via its primary id must clear the whole unit's unread count.
+
+    Albums collapse to one display unit keyed by their primary (min) id, but unread
+    counts / the unread filter operate per raw row. Marking only the primary leaves the
+    sibling rows unread, so the album's grouped_id keeps getting counted (badge stuck).
+    """
+    with _client() as client:
+        _login(client)
+        seed_channel(1, 'C')
+        seed_messages(
+            [
+                md(1, 10, 1, text='standalone'),
+                md(1, 12, 3, text=None, grouped_id=99, has_media=True, media_type='photo'),
+                md(1, 13, 3, text='album caption', grouped_id=99, has_media=True, media_type='photo'),
+            ]
+        )
+        db.add_subscription(1)
+
+        # album (1 unit) + standalone (1 unit) = 2 unread
+        assert client.get('/api/subscriptions').json()[0]['unread'] == 2
+
+        # mark the album read via its primary (display) id only
+        r = client.post('/api/read', json={'items': [{'channel_id': 1, 'message_id': 12}]})
+        assert r.status_code == 200
+
+        # the whole album is gone from the count; only the standalone remains
+        assert client.get('/api/subscriptions').json()[0]['unread'] == 1
+
+        # and it reports read in both the full and unread-only timelines
+        items = client.get('/api/timeline').json()['items']
+        assert {it['id']: it['is_read'] for it in items} == {12: True, 10: False}
+        unread_ids = [it['id'] for it in client.get('/api/timeline?unread_only=true').json()['items']]
+        assert unread_ids == [10]
+
+
+def test_read_bulk_clears_album_unread_count(env):
+    """Bulk mark-read selects every raw row, so an album clears too (regression lock)."""
+    with _client() as client:
+        _login(client)
+        seed_channel(1, 'C')
+        seed_messages(
+            [
+                md(1, 12, 3, text=None, grouped_id=99, has_media=True, media_type='photo'),
+                md(1, 13, 3, text='album caption', grouped_id=99, has_media=True, media_type='photo'),
+            ]
+        )
+        db.add_subscription(1)
+        assert client.get('/api/subscriptions').json()[0]['unread'] == 1
+
+        assert client.post('/api/read/bulk', json={'channel_id': 1}).status_code == 200
+        assert client.get('/api/subscriptions').json()[0]['unread'] == 0
+
+
 def test_timeline_days(env):
     with _client() as client:
         _login(client)

@@ -202,11 +202,34 @@ def delete_filter(filter_id: int) -> None:
 # --- read markers -----------------------------------------------------------
 
 
+def _expand_album_siblings(channel_id: int, message_id: int) -> list[int]:
+    """All raw message ids belonging to the same display unit as (channel_id, message_id).
+
+    A display unit collapses an album (rows sharing ``grouped_id``) under its primary id,
+    but unread counts and the unread filter operate per raw row — so marking a unit read
+    must touch every sibling, not just the primary. Falls back to the id itself when the
+    message is not (or no longer) in telememo's cache.
+    """
+    cur = tdb.db.execute_sql(
+        'SELECT sib.id FROM messages tgt '
+        'JOIN messages sib ON sib.channel_id = tgt.channel_id '
+        '  AND (sib.id = tgt.id OR (tgt.grouped_id IS NOT NULL AND sib.grouped_id = tgt.grouped_id)) '
+        'WHERE tgt.channel_id = ? AND tgt.id = ?',
+        (channel_id, message_id),
+    )
+    sibs = [row[0] for row in cur.fetchall()]
+    return sibs or [message_id]
+
+
 def mark_read(items: list[tuple[int, int]]) -> int:
-    """Mark (channel_id, message_id) pairs as read; idempotent. Returns count touched."""
+    """Mark (channel_id, message_id) pairs as read; idempotent. Returns count touched.
+
+    Each pair is expanded to its album siblings so an album clears its unread count fully.
+    """
     if not items:
         return 0
-    rows = [{'channel_id': c, 'message_id': m, 'read_at': _now()} for c, m in items]
+    pairs = {(c, sib) for c, m in items for sib in _expand_album_siblings(c, m)}
+    rows = [{'channel_id': c, 'message_id': m, 'read_at': _now()} for c, m in pairs]
     with tdb.db.atomic():
         ReadMessage.insert_many(rows).on_conflict_ignore().execute()
     return len(rows)
