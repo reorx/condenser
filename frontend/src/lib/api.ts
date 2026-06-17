@@ -88,6 +88,12 @@ export const api = {
   tgLogout: () => post<{ status: TgStatus }>('/api/tg/logout'),
   // The account's joined broadcast channels; `refresh` bypasses the backend TTL cache.
   tgDialogs: (refresh = false) => request<JoinedChannel[]>('/api/tg/dialogs' + qs({ refresh: refresh || undefined })),
+  // Manual content refresh: all enabled channels (background) or one channel (sync, returns new count).
+  tgRefreshAll: () => post<{ status: string; channels: number }>('/api/tg/refresh'),
+  tgRefreshChannel: (channelId: number) => post<{ status: string; new: number }>(`/api/tg/refresh/${channelId}`),
+  // Page further back into one channel's history (older than the oldest stored message).
+  tgFetchOlder: (channelId: number, count = 200) =>
+    post<{ status: string; fetched: number }>(`/api/tg/fetch-older/${channelId}` + qs({ count })),
 
   // ---- subscriptions ----
   listSubscriptions: () => request<Subscription[]>('/api/subscriptions'),

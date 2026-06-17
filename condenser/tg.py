@@ -70,8 +70,10 @@ class TgManager:
             return
         if self.service.is_authorized:
             self._pending_phone = row.phone
+            log.info('telegram session restored (authorized) for %s', row.phone)
             await self.start_listening()
         else:
+            log.warning('stored telegram session is no longer authorized; re-login required')
             self.service = None
 
     async def shutdown(self) -> None:
@@ -95,6 +97,7 @@ class TgManager:
 
     # ---- step login ----
     async def send_code(self, phone: str) -> None:
+        log.info('requesting telegram login code for %s (this sends a code to the account)', phone)
         self.service = self._new_service()
         await self.service.connect()
         self._pending_code_hash = await self.service.send_code(phone)
@@ -171,7 +174,8 @@ class TgManager:
         ids = dm.raw_message_ids or [dm.id]
         filters.recompute_messages(dm.channel_id, ids)
 
-    async def _backfill_channel(self, channel_id: int) -> None:
+    async def _backfill_channel(self, channel_id: int) -> int:
+        """Pull the recent-days window for one channel; returns the number of rows ingested."""
         service = self._require_service()
         ids: list[int] = []
         try:
@@ -179,10 +183,50 @@ class TgManager:
                 ids.extend(dm.raw_message_ids or [dm.id])
         except Exception:
             log.exception('backfill failed for channel %s', channel_id)
-            return
+            return 0
         if ids:
             filters.recompute_messages(channel_id, ids)
         db.set_backfill_done(channel_id, True)
+        return len(ids)
+
+    # ---- manual refresh (used by routers) ----
+    async def refresh_channel(self, channel_id: int) -> int:
+        """Synchronously re-pull one channel's recent window; returns the count of *new* messages.
+
+        Re-running backfill is idempotent (smart-save dedupes), so the useful number to
+        report is how many ids landed above the prior watermark — not the whole rescan.
+        """
+        self._require_service()
+        before = db.channel_max_message_id(channel_id)
+        await self._backfill_channel(channel_id)
+        return db.count_messages_after(channel_id, before)
+
+    def refresh_all(self) -> int:
+        """Fan out background backfill for every enabled channel; returns how many were queued."""
+        self._require_service()
+        channel_ids = db.enabled_channel_ids()
+        for cid in channel_ids:
+            self._spawn(self._backfill_channel(cid))
+        return len(channel_ids)
+
+    async def fetch_older(self, channel_id: int, count: int = 200) -> int:
+        """Page further back into a channel's history (synchronous); returns rows fetched.
+
+        Anchors on the oldest stored id and pulls up to ``count`` strictly-older messages,
+        ignoring the recent-days cutoff. With nothing stored yet, anchors at the top.
+        """
+        service = self._require_service()
+        oldest = db.channel_min_message_id(channel_id)
+        ids: list[int] = []
+        try:
+            async for dm in service.backfill(channel_id, offset_id=oldest, max_messages=count, persist=True):
+                ids.extend(dm.raw_message_ids or [dm.id])
+        except Exception:
+            log.exception('fetch-older failed for channel %s', channel_id)
+            return 0
+        if ids:
+            filters.recompute_messages(channel_id, ids)
+        return len(set(ids))
 
     # ---- subscription orchestration (used by routers) ----
     def _register_subscription(self, info: ChannelInfo) -> ChannelInfo:

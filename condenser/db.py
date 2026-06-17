@@ -179,6 +179,24 @@ def pending_backfill_channel_ids() -> list[int]:
     ]
 
 
+def channel_max_message_id(channel_id: int) -> int:
+    """Highest stored message id for a channel (0 if none) — a watermark for new-message diffs."""
+    cur = tdb.db.execute_sql('SELECT MAX(id) FROM messages WHERE channel_id = ?', (channel_id,))
+    return cur.fetchone()[0] or 0
+
+
+def channel_min_message_id(channel_id: int) -> int:
+    """Lowest stored message id for a channel (0 if none) — the page-back anchor for older fetches."""
+    cur = tdb.db.execute_sql('SELECT MIN(id) FROM messages WHERE channel_id = ?', (channel_id,))
+    return cur.fetchone()[0] or 0
+
+
+def count_messages_after(channel_id: int, after_id: int) -> int:
+    """Count stored messages with id above ``after_id`` (Telegram ids are monotonic per channel)."""
+    cur = tdb.db.execute_sql('SELECT COUNT(*) FROM messages WHERE channel_id = ? AND id > ?', (channel_id, after_id))
+    return cur.fetchone()[0]
+
+
 # --- keyword filters --------------------------------------------------------
 
 

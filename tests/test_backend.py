@@ -365,6 +365,103 @@ def test_backfill_persists_filters_and_marks_done(env):
         assert 60 in ids and 61 not in ids  # backfilled + filtered materialized
 
 
+def test_refresh_channel_pulls_recent_window_and_reports_new(env):
+    """POST /api/tg/refresh/{id} re-pulls the recent window (sync) and reports new-message count."""
+    from telememo.types import DisplayMessage
+
+    from tests.conftest import BASE
+
+    with _client() as client:
+        _login(client)
+        seed_channel(5, 'TechNews', 'technews')
+        db.add_subscription(5)
+        seed_messages([md(5, 60, 1, text='old post')])  # already have this one
+
+        async def fake_backfill(channel, since_days=None, since_date=None, persist=True):
+            # the real service persists during iteration; emulate two fresh posts arriving
+            seed_messages([md(5, 61, 2, text='fresh one'), md(5, 62, 3, text='fresh two')])
+            yield DisplayMessage(id=61, channel_id=5, date=BASE, raw_message_ids=[61])
+            yield DisplayMessage(id=62, channel_id=5, date=BASE, raw_message_ids=[62])
+
+        fake = _fake_authorized_service()
+        fake.backfill = fake_backfill
+        client.app.state.tg.service = fake
+
+        r = client.post('/api/tg/refresh/5')
+        assert r.status_code == 200
+        assert r.json()['new'] == 2  # ids 61, 62 are above the prior max id (60)
+
+        ids = [it['id'] for it in client.get('/api/timeline').json()['items']]
+        assert 60 in ids and 61 in ids and 62 in ids
+
+
+def test_refresh_all_queues_only_enabled_channels(env):
+    """POST /api/tg/refresh fans out background backfill for every enabled channel."""
+    with _client() as client:
+        _login(client)
+        seed_channel(5, 'A')
+        seed_channel(6, 'B')
+        seed_channel(7, 'C')
+        db.add_subscription(5)
+        db.add_subscription(6)
+        db.add_subscription(7)
+        db.set_subscription_enabled(7, False)  # disabled -> excluded from the fan-out
+
+        async def empty_backfill(channel, **kw):
+            return
+            yield  # make it an async generator
+
+        fake = _fake_authorized_service()
+        fake.backfill = empty_backfill
+        client.app.state.tg.service = fake
+
+        r = client.post('/api/tg/refresh')
+        assert r.status_code == 200
+        assert r.json() == {'status': 'started', 'channels': 2}
+
+
+def test_fetch_older_pages_back_into_history(env):
+    """POST /api/tg/fetch-older/{id} anchors on the oldest stored id and pulls older messages."""
+    from telememo.types import DisplayMessage
+
+    from tests.conftest import BASE
+
+    with _client() as client:
+        _login(client)
+        seed_channel(5, 'TechNews', 'technews')
+        db.add_subscription(5)
+        seed_messages([md(5, 60, 1, text='current oldest'), md(5, 61, 2, text='newer')])
+
+        async def fake_backfill(
+            channel, since_days=None, since_date=None, persist=True, offset_id=0, max_messages=None
+        ):
+            assert offset_id == 60  # anchors on the current oldest stored id
+            assert max_messages == 200
+            seed_messages([md(5, 59, -1, text='older two'), md(5, 58, -2, text='older one')])
+            yield DisplayMessage(id=59, channel_id=5, date=BASE, raw_message_ids=[59])
+            yield DisplayMessage(id=58, channel_id=5, date=BASE, raw_message_ids=[58])
+
+        fake = _fake_authorized_service()
+        fake.backfill = fake_backfill
+        client.app.state.tg.service = fake
+
+        r = client.post('/api/tg/fetch-older/5')
+        assert r.status_code == 200
+        assert r.json()['fetched'] == 2
+
+        ids = sorted(it['id'] for it in client.get('/api/timeline').json()['items'])
+        assert ids == [58, 59, 60, 61]
+
+
+def test_refresh_requires_telegram_authorized(env):
+    """Refresh endpoints 503 when telegram is not connected."""
+    with _client() as client:
+        _login(client)
+        assert client.post('/api/tg/refresh').status_code == 503
+        assert client.post('/api/tg/refresh/5').status_code == 503
+        assert client.post('/api/tg/fetch-older/5').status_code == 503
+
+
 def test_realtime_ingest_filtered_and_new_poll(env):
     with _client() as client:
         _login(client)

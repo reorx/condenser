@@ -39,6 +39,33 @@ async def list_dialogs(refresh: bool = False, tg: TgManager = Depends(get_tg)):
     ]
 
 
+@router.post('/refresh')
+async def refresh_all(tg: TgManager = Depends(get_tg)):
+    """Fan out a background recent-window re-pull for every enabled channel."""
+    if tg.service is None or not tg.service.is_authorized:
+        raise HTTPException(status_code=503, detail='telegram not authorized')
+    queued = tg.refresh_all()
+    return {'status': 'started', 'channels': queued}
+
+
+@router.post('/refresh/{channel_id}')
+async def refresh_channel(channel_id: int, tg: TgManager = Depends(get_tg)):
+    """Synchronously re-pull one channel's recent window; returns the new-message count."""
+    if tg.service is None or not tg.service.is_authorized:
+        raise HTTPException(status_code=503, detail='telegram not authorized')
+    new_count = await tg.refresh_channel(channel_id)
+    return {'status': 'ok', 'new': new_count}
+
+
+@router.post('/fetch-older/{channel_id}')
+async def fetch_older(channel_id: int, count: int = 200, tg: TgManager = Depends(get_tg)):
+    """Synchronously page further back into a channel's history; returns rows fetched."""
+    if tg.service is None or not tg.service.is_authorized:
+        raise HTTPException(status_code=503, detail='telegram not authorized')
+    fetched = await tg.fetch_older(channel_id, count=count)
+    return {'status': 'ok', 'fetched': fetched}
+
+
 @router.post('/send-code')
 async def send_code(body: PhoneBody, tg: TgManager = Depends(get_tg)):
     await tg.send_code(body.phone)

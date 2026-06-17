@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { CheckCheck, Filter, MoreVertical, Search, Trash2 } from 'lucide-react';
+import { CheckCheck, Filter, History, MoreVertical, RefreshCw, Search, Trash2 } from 'lucide-react';
 
 import { ChannelAvatar } from '@/components/ChannelAvatar';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
@@ -16,18 +16,26 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Switch } from '@/components/ui/switch';
 import { useBulkRead } from '@/hooks/useBulkRead';
+import { useFetchOlder, useRefreshChannel } from '@/hooks/useRefresh';
 import { useDeleteSubscription, useSetSubscriptionEnabled } from '@/hooks/useSubscriptionMutations';
 import { useSubscriptions } from '@/hooks/useSubscriptions';
 import { channelName } from '@/lib/format';
+import { cn } from '@/lib/utils';
 import type { Subscription } from '@/lib/types';
+
+const OLDER_FETCH_COUNT = 200;
 
 function SubscriptionRow({ sub }: { sub: Subscription }) {
   const setEnabled = useSetSubscriptionEnabled();
   const del = useDeleteSubscription();
   const bulkRead = useBulkRead();
+  const refresh = useRefreshChannel();
+  const fetchOlder = useFetchOlder();
   const [keywordsOpen, setKeywordsOpen] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const label = channelName(sub);
+  // Both pull synchronously and can take a few seconds, so reflect progress on the row.
+  const fetching = refresh.isPending || fetchOlder.isPending;
 
   return (
     <li className="flex items-center gap-3 px-4 py-3 sm:px-5">
@@ -38,6 +46,7 @@ function SubscriptionRow({ sub }: { sub: Subscription }) {
       </div>
 
       <div className="ml-auto flex items-center gap-2">
+        {fetching && <Spinner className="size-3.5 text-muted-foreground" />}
         {!sub.backfill_done && <span className="text-xs text-amber-500">backfilling…</span>}
         <Switch
           checked={sub.enabled}
@@ -51,6 +60,18 @@ function SubscriptionRow({ sub }: { sub: Subscription }) {
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
+            <DropdownMenuItem disabled={fetching} onClick={() => refresh.mutate(sub.channel_id)}>
+              <RefreshCw className={cn(refresh.isPending && 'animate-spin')} />
+              重新获取数据
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              disabled={fetching}
+              onClick={() => fetchOlder.mutate({ channelId: sub.channel_id, count: OLDER_FETCH_COUNT })}
+            >
+              <History />
+              继续向更早获取（{OLDER_FETCH_COUNT} 条）
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
             <DropdownMenuItem onClick={() => setKeywordsOpen(true)}>
               <Filter />
               Keywords
