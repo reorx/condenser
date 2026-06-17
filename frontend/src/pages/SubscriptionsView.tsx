@@ -53,16 +53,30 @@ function SubscriptionRow({ sub }: { sub: Subscription }) {
         {!sub.backfill_done && <span className="text-xs text-amber-500">backfilling…</span>}
         <Tooltip>
           <TooltipTrigger asChild>
-            <Switch
-              checked={sub.enabled}
-              onCheckedChange={(enabled) => setEnabled.mutate({ channelId: sub.channel_id, enabled })}
-              aria-label={sub.enabled ? 'Disable channel' : 'Enable channel'}
-            />
+            {/* Wrap in a span so the Trigger's data-state lands here, not on the Switch
+                (the Switch's bg color is driven by its own data-[state=checked/unchecked]). */}
+            <span className="inline-flex">
+              <Switch
+                checked={sub.enabled}
+                onCheckedChange={(enabled) => setEnabled.mutate({ channelId: sub.channel_id, enabled })}
+                aria-label={sub.enabled ? 'Disable channel' : 'Enable channel'}
+              />
+            </span>
           </TooltipTrigger>
           <TooltipContent>
-            {sub.enabled
-              ? '已启用：实时同步、显示在时间线。点击暂停（历史保留，可随时恢复）'
-              : '已暂停：停止同步、从时间线隐藏。点击恢复同步'}
+            {sub.enabled ? (
+              <>
+                已启用：实时同步、显示在时间线。
+                <br />
+                点击暂停（历史保留，可随时恢复）
+              </>
+            ) : (
+              <>
+                已暂停：停止同步、从时间线隐藏。
+                <br />
+                点击恢复同步
+              </>
+            )}
           </TooltipContent>
         </Tooltip>
         <DropdownMenu>
