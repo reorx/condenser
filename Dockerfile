@@ -14,7 +14,7 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 ENV UV_LINK_MODE=copy \
     CONDENSER_DB_PATH=/data/condenser.db \
     CONDENSER_HOST=0.0.0.0 \
-    CONDENSER_PORT=8000
+    CONDENSER_PORT=8792
 
 WORKDIR /app
 COPY telememo /app/telememo
@@ -24,5 +24,5 @@ WORKDIR /app/condenser
 RUN uv sync --frozen
 
 VOLUME /data
-EXPOSE 8000
+EXPOSE 8792
 CMD ["/app/condenser/.venv/bin/python", "-m", "condenser"]

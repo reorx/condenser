@@ -6,14 +6,14 @@ windows:
   - window_name: dev
     layout: even-horizontal
     panes:
-      # FastAPI backend on :8000 with auto-reload. Loads .env from the project root
+      # FastAPI backend on :8792 with auto-reload. Loads .env from the project root
       # (TELEGRAM_API_* / CONDENSER_APP_PASSWORD / CONDENSER_SECRET_KEY).
       #
       # --reload-dir scopes the file watcher to the Python sources only. Without it,
       # --reload walks the whole repo (.venv ~78M, frontend/node_modules ~204M, tmp/),
       # which is slow and wasteful. We also watch the editable telememo dependency so
       # edits there (shared DB/models) reload the backend too.
-      - shell_command: uv run uvicorn condenser.app:create_app --factory --reload --reload-dir condenser --reload-dir ../telememo/telememo --port 8000
-      # Vite dev server on :5173, proxies /api -> http://localhost:8000.
+      - shell_command: uv run uvicorn condenser.app:create_app --factory --reload --reload-dir condenser --reload-dir ../telememo/telememo --port 8792
+      # Vite dev server on :5792, proxies /api -> http://localhost:8792.
       - shell_command: pnpm dev
         start_directory: frontend

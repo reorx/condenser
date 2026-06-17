@@ -7,7 +7,7 @@ services:
       dockerfile: condenser/Dockerfile
     env_file: .env
     ports:
-      - "8000:8000"
+      - "8792:8792"
     volumes:
       - condenser-data:/data
     restart: unless-stopped

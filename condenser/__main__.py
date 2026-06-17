@@ -10,7 +10,7 @@ def main() -> None:
         'condenser.app:create_app',
         factory=True,
         host=os.getenv('CONDENSER_HOST', '0.0.0.0'),
-        port=int(os.getenv('CONDENSER_PORT', '8000')),
+        port=int(os.getenv('CONDENSER_PORT', '8792')),
     )
 
 

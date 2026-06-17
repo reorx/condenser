@@ -28,7 +28,7 @@ Requires [uv](https://docs.astral.dev/uv/) and a local `../telememo` checkout.
 ```bash
 uv sync --extra dev          # installs condenser + editable telememo
 cp .env.example .env         # fill in the values below
-uv run python -m condenser   # serves http://localhost:8000
+uv run python -m condenser   # serves http://localhost:8792
 uv run pytest                # backend test suite (Telegram fully mocked)
 ```
 

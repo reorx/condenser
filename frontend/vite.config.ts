@@ -14,10 +14,11 @@ export default defineConfig({
     },
   },
   server: {
-    port: 5173,
+    port: 5792,
+    strictPort: true,
     proxy: {
       '/api': {
-        target: process.env.CONDENSER_BACKEND ?? 'http://localhost:8000',
+        target: process.env.CONDENSER_BACKEND ?? 'http://localhost:8792',
         changeOrigin: true,
       },
     },

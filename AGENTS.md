@@ -92,10 +92,10 @@ uv run pytest          # 18 backend tests, Telegram mocked
 
 # Local dev backend (auto-reload; watcher scoped to the Python sources + editable telememo):
 uv run uvicorn condenser.app:create_app --factory --reload \
-  --reload-dir condenser --reload-dir ../telememo/telememo --port 8000
+  --reload-dir condenser --reload-dir ../telememo/telememo --port 8792
 # No-reload / prod-style run (binds 0.0.0.0): uv run python -m condenser
 
-cd frontend && pnpm install && pnpm dev   # proxies /api -> :8000 (CONDENSER_BACKEND overrides)
+cd frontend && pnpm install && pnpm dev   # proxies /api -> :8792 (CONDENSER_BACKEND overrides)
 pnpm build                                # -> frontend/dist (served by backend in prod)
 
 # Or launch both backend + frontend panes at once: tmuxp load .tmuxp.yaml
