@@ -12,8 +12,8 @@ import { MessageMedia } from './MessageMedia';
 interface Props {
   msg: DisplayMessage;
   channelLabel: string;
-  /** Attach for scroll-past-to-read; omit in the saved view. */
-  observe?: (el: Element | null, ref: MsgRef) => void;
+  /** Attach for scroll-past-to-read; omit in the saved view. Returns a ref cleanup. */
+  observe?: (el: Element | null, ref: MsgRef) => (() => void) | void;
   /** Hide the per-row channel name (shown once in the header) in single-channel views. */
   showChannel?: boolean;
 }
@@ -32,7 +32,7 @@ function MessageCardImpl({ msg, channelLabel, observe, showChannel = true }: Pro
 
   const attach = useCallback(
     (el: HTMLElement | null) => {
-      if (observe && el && !msg.is_read) observe(el, ref);
+      if (observe && el && !msg.is_read) return observe(el, ref);
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [observe, msg.is_read, msg.channel_id, msg.id],

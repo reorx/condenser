@@ -34,7 +34,9 @@ function groupByDay(items: DisplayMessage[]): DayGroup[] {
 }
 
 export function Timeline({ channelId, unreadOnly, date }: { channelId?: number; unreadOnly?: boolean; date?: string }) {
-  const observe = useScrollToRead();
+  // Identifies the current view; changing it resets scroll + re-gates mark-as-read.
+  const viewKey = `${channelId ?? 'all'}:${unreadOnly ? 'unread' : 'all'}:${date ?? ''}`;
+  const observe = useScrollToRead(viewKey);
   const { data: subs } = useSubscriptions();
   const labels = useChannelLabels(subs);
 
