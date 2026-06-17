@@ -4,6 +4,7 @@
 import type {
   DayCount,
   DisplayMessage,
+  JoinedChannel,
   KeywordFilter,
   MsgRef,
   Subscription,
@@ -12,6 +13,12 @@ import type {
   TimelinePage,
   TimelineParams,
 } from './types';
+
+/** Result of a batch subscribe (POST /api/subscriptions/batch). */
+export interface BatchSubscribeResult {
+  added: { channel_id: number; title: string | null; username: string | null }[];
+  failed: { channel_id: number; error: string }[];
+}
 
 export class ApiError extends Error {
   status: number;
@@ -79,6 +86,8 @@ export const api = {
   tgSignIn: (code: string) => post<{ status: TgStatus; result: string }>('/api/tg/sign-in', { code }),
   tgSignIn2fa: (password: string) => post<{ status: TgStatus; result: string }>('/api/tg/sign-in-2fa', { password }),
   tgLogout: () => post<{ status: TgStatus }>('/api/tg/logout'),
+  // The account's joined broadcast channels; `refresh` bypasses the backend TTL cache.
+  tgDialogs: (refresh = false) => request<JoinedChannel[]>('/api/tg/dialogs' + qs({ refresh: refresh || undefined })),
 
   // ---- subscriptions ----
   listSubscriptions: () => request<Subscription[]>('/api/subscriptions'),
@@ -86,6 +95,8 @@ export const api = {
     post<{ channel_id: number; title: string | null; username: string | null }>('/api/subscriptions', {
       handle,
     }),
+  addSubscriptionsBatch: (channelIds: number[]) =>
+    post<BatchSubscribeResult>('/api/subscriptions/batch', { channel_ids: channelIds }),
   setSubscriptionEnabled: (channelId: number, enabled: boolean) =>
     request<{ ok: true }>(`/api/subscriptions/${channelId}`, {
       method: 'PATCH',

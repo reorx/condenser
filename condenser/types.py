@@ -25,6 +25,10 @@ class SubscribeBody(BaseModel):
     handle: str
 
 
+class BatchSubscribeBody(BaseModel):
+    channel_ids: list[int]
+
+
 class SubscriptionPatch(BaseModel):
     enabled: bool
 

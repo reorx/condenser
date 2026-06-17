@@ -393,6 +393,149 @@ def test_channel_avatar_proxy(env):
         assert client.get('/api/channels/5/avatar').status_code == 404
 
 
+def _fake_dialog(cid, title, username=None, *, is_channel=True, is_group=False, unread=0, date=None):
+    """Build a Telethon-like Dialog stub (entity has no ``full`` -> ChannelInfo stays null).
+
+    ``date`` is the dialog's last-message date (used for recency sort); ``unread`` is the
+    Telegram-side unread count.
+    """
+    from types import SimpleNamespace
+
+    entity = SimpleNamespace(id=cid, title=title, username=username, date=None)
+    return SimpleNamespace(is_channel=is_channel, is_group=is_group, entity=entity, date=date, unread_count=unread)
+
+
+def _service_with_dialogs(get_dialogs, counter=None):
+    """Authorized fake service whose client.iter_dialogs yields ``get_dialogs()`` each call."""
+    fake = _fake_authorized_service()
+    fake.client = MagicMock()
+
+    async def iter_dialogs(**kw):
+        if counter is not None:
+            counter['n'] += 1
+        for d in get_dialogs():
+            yield d
+
+    fake.client.iter_dialogs = iter_dialogs
+    return fake
+
+
+def test_list_joined_channels_filters_to_broadcast_and_marks_subscribed(env):
+    with _client() as client:
+        _login(client)
+        dialogs = [
+            _fake_dialog(5, 'TechNews', 'technews'),  # broadcast channel
+            _fake_dialog(6, 'ChatGroup', 'grp', is_group=True),  # supergroup -> excluded
+            _fake_dialog(7, 'Papers', 'papers'),  # broadcast channel, already subscribed
+        ]
+        client.app.state.tg.service = _service_with_dialogs(lambda: dialogs)
+        db.add_subscription(7)
+
+        out = client.get('/api/tg/dialogs').json()
+        assert [c['channel_id'] for c in out] == [5, 7]  # group 6 excluded, order preserved
+        by_id = {c['channel_id']: c for c in out}
+        assert by_id[5]['title'] == 'TechNews' and by_id[5]['subscribed'] is False
+        assert by_id[7]['subscribed'] is True
+
+
+def test_list_joined_channels_sorted_by_recent_with_unread(env):
+    from datetime import datetime, timezone
+
+    with _client() as client:
+        _login(client)
+        dialogs = [
+            _fake_dialog(1, 'Old', unread=0, date=datetime(2026, 6, 1, tzinfo=timezone.utc)),
+            _fake_dialog(2, 'Newest', unread=5, date=datetime(2026, 6, 10, tzinfo=timezone.utc)),
+            _fake_dialog(3, 'Mid', unread=2, date=datetime(2026, 6, 5, tzinfo=timezone.utc)),
+        ]
+        client.app.state.tg.service = _service_with_dialogs(lambda: dialogs)
+
+        out = client.get('/api/tg/dialogs').json()
+        assert [c['channel_id'] for c in out] == [2, 3, 1]  # newest-activity first
+        assert {c['channel_id']: c['unread'] for c in out} == {2: 5, 3: 2, 1: 0}
+
+
+def test_list_joined_channels_caches_by_time_and_refresh_bypasses(env):
+    with _client() as client:
+        _login(client)
+        calls = {'n': 0}
+        state = {'dialogs': [_fake_dialog(5, 'A')]}
+        client.app.state.tg.service = _service_with_dialogs(lambda: state['dialogs'], counter=calls)
+
+        assert [c['channel_id'] for c in client.get('/api/tg/dialogs').json()] == [5]
+        assert calls['n'] == 1
+
+        # the account's channel list changes, but the TTL cache hides it
+        state['dialogs'] = [_fake_dialog(5, 'A'), _fake_dialog(9, 'B')]
+        assert [c['channel_id'] for c in client.get('/api/tg/dialogs').json()] == [5]
+        assert calls['n'] == 1  # served from cache
+
+        # ?refresh=1 bypasses the cache and re-fetches
+        assert [c['channel_id'] for c in client.get('/api/tg/dialogs?refresh=1').json()] == [5, 9]
+        assert calls['n'] == 2
+
+
+def test_batch_subscribe_refreshes_once_and_reports_failures(env):
+    from telememo.types import ChannelInfo
+
+    with _client() as client:
+        _login(client)
+        fake = _fake_authorized_service()
+
+        def resolve(handle):
+            if handle == '404':
+                raise ValueError('no such channel')
+            cid = int(handle)
+            return ChannelInfo(id=cid, title=f'C{cid}', username=f'c{cid}')
+
+        fake.resolve_channel = AsyncMock(side_effect=resolve)
+
+        async def empty_backfill(channel, **kw):
+            return
+            yield  # make it an async generator
+
+        fake.backfill = empty_backfill
+        client.app.state.tg.service = fake
+
+        r = client.post('/api/subscriptions/batch', json={'channel_ids': [5, 404, 7]})
+        assert r.status_code == 200
+        body = r.json()
+        assert [c['channel_id'] for c in body['added']] == [5, 7]
+        assert [f['channel_id'] for f in body['failed']] == [404]
+
+        # both good channels persisted; the bad one did not
+        assert db.get_subscription(5) is not None and db.get_subscription(7) is not None
+        assert db.get_subscription(404) is None
+        # realtime listener re-synced exactly once for the whole batch
+        fake.subscribe.assert_awaited_once()
+
+
+def test_batch_subscribe_reuses_dialog_cache_without_resolving(env):
+    """Channels picked from the browse list reuse the already-fetched info (no re-resolve)."""
+    with _client() as client:
+        _login(client)
+        dialogs = [_fake_dialog(5, 'TechNews', 'technews'), _fake_dialog(8, 'Papers', 'papers')]
+        fake = _service_with_dialogs(lambda: dialogs)
+        fake.resolve_channel = AsyncMock(side_effect=AssertionError('cached channels must not be re-resolved'))
+
+        async def empty_backfill(channel, **kw):
+            return
+            yield  # make it an async generator
+
+        fake.backfill = empty_backfill
+        client.app.state.tg.service = fake
+
+        # browsing populates the dialogs cache
+        assert client.get('/api/tg/dialogs').status_code == 200
+
+        r = client.post('/api/subscriptions/batch', json={'channel_ids': [5, 8]})
+        assert r.status_code == 200
+        assert [c['channel_id'] for c in r.json()['added']] == [5, 8]
+        assert db.get_subscription(5) is not None and db.get_subscription(8) is not None
+        fake.resolve_channel.assert_not_awaited()  # served from cache
+        fake.subscribe.assert_awaited_once()  # realtime listener re-synced once
+
+
 def test_tg_status_includes_phone(env):
     with _client() as client:
         _login(client)

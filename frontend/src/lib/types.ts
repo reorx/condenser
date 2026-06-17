@@ -59,6 +59,16 @@ export interface Subscription {
   unread: number;
 }
 
+/** A broadcast channel the logged-in account follows, from GET /api/tg/dialogs. */
+export interface JoinedChannel {
+  channel_id: number;
+  title: string | null;
+  username: string | null;
+  subscribed: boolean;
+  /** Telegram-side unread count for the account (not condenser's read state). */
+  unread: number;
+}
+
 export interface KeywordFilter {
   id: number;
   channel_id: number | null;

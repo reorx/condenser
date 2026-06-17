@@ -16,13 +16,28 @@ const COLORS = [
   'bg-fuchsia-500',
 ];
 
-/** Telegram channel avatar via the proxy, falling back to a colored initial. */
-export function ChannelAvatar({ channelId, name, className }: { channelId: number; name: string; className?: string }) {
+/**
+ * Telegram channel avatar via the proxy, falling back to a colored initial.
+ *
+ * `letterOnly` renders just the initial without hitting the proxy — use it in long
+ * lists (e.g. the channel browser) so we don't fire one avatar download per row.
+ */
+export function ChannelAvatar({
+  channelId,
+  name,
+  className,
+  letterOnly = false,
+}: {
+  channelId: number;
+  name: string;
+  className?: string;
+  letterOnly?: boolean;
+}) {
   const [failed, setFailed] = useState(false);
   const letter = (name.replace(/^@/, '').trim()[0] ?? '#').toUpperCase();
   const color = COLORS[Math.abs(channelId) % COLORS.length];
 
-  if (failed) {
+  if (failed || letterOnly) {
     return (
       <div
         className={cn(

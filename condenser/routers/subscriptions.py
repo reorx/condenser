@@ -7,7 +7,7 @@ from telememo import db as tdb
 from .. import db, filters, timeline
 from ..auth import get_tg, require_auth
 from ..tg import TgManager
-from ..types import FilterBody, SubscribeBody, SubscriptionPatch
+from ..types import BatchSubscribeBody, FilterBody, SubscribeBody, SubscriptionPatch
 
 router = APIRouter(prefix='/api', tags=['subscriptions'], dependencies=[Depends(require_auth)])
 
@@ -35,6 +35,15 @@ def list_subscriptions():
 async def add_subscription(body: SubscribeBody, tg: TgManager = Depends(get_tg)):
     info = await tg.subscribe_channel(body.handle)
     return {'channel_id': info.id, 'title': info.title, 'username': info.username}
+
+
+@router.post('/subscriptions/batch')
+async def add_subscriptions_batch(body: BatchSubscribeBody, tg: TgManager = Depends(get_tg)):
+    added, failed = await tg.subscribe_channels(body.channel_ids)
+    return {
+        'added': [{'channel_id': i.id, 'title': i.title, 'username': i.username} for i in added],
+        'failed': failed,
+    }
 
 
 @router.patch('/subscriptions/{channel_id}')

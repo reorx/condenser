@@ -1,6 +1,6 @@
 """Telegram step-login endpoints (spec C2 — TG login)."""
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 
 from .. import db
 from ..auth import get_tg, require_auth
@@ -18,6 +18,25 @@ def status(tg: TgManager = Depends(get_tg)):
     if row is not None and row.phone:
         out['phone'] = row.phone
     return out
+
+
+@router.get('/dialogs')
+async def list_dialogs(refresh: bool = False, tg: TgManager = Depends(get_tg)):
+    """The account's joined broadcast channels (newest-activity first), with subscribed + unread flags."""
+    if tg.service is None or not tg.service.is_authorized:
+        raise HTTPException(status_code=503, detail='telegram not authorized')
+    channels = await tg.list_joined_channels(force=refresh)
+    subscribed = {s.channel_id for s in db.list_subscriptions()}
+    return [
+        {
+            'channel_id': c.info.id,
+            'title': c.info.title,
+            'username': c.info.username,
+            'subscribed': c.info.id in subscribed,
+            'unread': c.unread_count,
+        }
+        for c in channels
+    ]
 
 
 @router.post('/send-code')

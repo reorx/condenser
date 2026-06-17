@@ -7,10 +7,16 @@ schedules per-channel backfill. One instance lives on ``app.state.tg``.
 
 import asyncio
 import logging
+import time
+from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Optional
+
+from telethon.errors import FloodWaitError
 
 from telememo import db as tdb
 from telememo.service import TelegramService
+from telememo.telegram import convert_channel_to_info
 from telememo.types import ChannelInfo, DisplayMessage, SignInResult
 
 from . import db, filters
@@ -18,6 +24,18 @@ from .config import Settings
 from .crypto import decrypt_session, encrypt_session
 
 log = logging.getLogger('condenser.tg')
+
+# Oldest-possible sort key for channels whose dialog carries no last-message date.
+_EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
+
+
+@dataclass
+class JoinedChannel:
+    """A followed channel plus its Telegram-side activity signals (for the browse list)."""
+
+    info: ChannelInfo
+    last_message_date: Optional[datetime]
+    unread_count: int
 
 
 class TgManager:
@@ -28,6 +46,10 @@ class TgManager:
         self._pending_code_hash: Optional[str] = None
         self._awaiting_2fa = False
         self._tasks: set[asyncio.Task] = set()
+        # time-based cache of the account's joined broadcast channels (see list_joined_channels)
+        self._dialogs_cache: Optional[list[JoinedChannel]] = None
+        self._dialogs_cache_at: float = 0.0
+        self._dialogs_lock = asyncio.Lock()  # collapse concurrent cold-cache fetches into one
 
     # ---- service construction / lifecycle ----
     def _new_service(self, session: Optional[str] = None) -> TelegramService:
@@ -114,6 +136,8 @@ class TgManager:
         self._pending_phone = None
         self._pending_code_hash = None
         self._awaiting_2fa = False
+        self._dialogs_cache = None
+        self._dialogs_cache_at = 0.0
         db.clear_tg_session()
 
     def _require_service(self) -> TelegramService:
@@ -161,12 +185,90 @@ class TgManager:
         db.set_backfill_done(channel_id, True)
 
     # ---- subscription orchestration (used by routers) ----
-    async def subscribe_channel(self, handle: str) -> ChannelInfo:
-        """Resolve a handle, persist channel + subscription, and start backfill + realtime."""
-        service = self._require_service()
-        info = await service.resolve_channel(handle)
+    def _register_subscription(self, info: ChannelInfo) -> ChannelInfo:
+        """Persist channel + subscription row + spawn backfill for an already-resolved channel.
+
+        Does NOT refresh the realtime listener — callers refresh once after a batch.
+        """
         tdb.get_or_create_channel(info)
         db.add_subscription(info.id)
-        await self.refresh_subscription()
         self._spawn(self._backfill_channel(info.id))
         return info
+
+    async def _add_subscription(self, handle: str) -> ChannelInfo:
+        """Resolve a handle then register the subscription (see _register_subscription)."""
+        service = self._require_service()
+        return self._register_subscription(await service.resolve_channel(handle))
+
+    async def subscribe_channel(self, handle: str) -> ChannelInfo:
+        """Subscribe to a single channel by handle (@username / t.me link / id)."""
+        info = await self._add_subscription(handle)
+        await self.refresh_subscription()
+        return info
+
+    async def subscribe_channels(self, channel_ids: list[int]) -> tuple[list[ChannelInfo], list[dict]]:
+        """Subscribe to several channels by id, refreshing the realtime listener once.
+
+        Channels picked from the browse list are already in ``_dialogs_cache``, so we
+        reuse that ChannelInfo instead of re-resolving each id. One bad id (e.g. left the
+        channel since listing) must not sink the rest, so failures are absorbed + reported.
+        """
+        self._require_service()
+        cached = {c.info.id: c.info for c in (self._dialogs_cache or [])}
+        added: list[ChannelInfo] = []
+        failed: list[dict] = []
+        for cid in channel_ids:
+            try:
+                added.append(
+                    self._register_subscription(cached[cid])
+                    if cid in cached
+                    else await self._add_subscription(str(cid))
+                )
+            except Exception as e:  # noqa: BLE001 — batch resilience (top-level orchestrator)
+                log.exception('batch subscribe failed for channel %s', cid)
+                failed.append({'channel_id': cid, 'error': str(e)})
+        if added:
+            await self.refresh_subscription()
+        return added, failed
+
+    async def list_joined_channels(self, force: bool = False) -> list[JoinedChannel]:
+        """List the account's joined broadcast channels, newest-activity first.
+
+        Excludes groups/supergroups/DMs; carries each channel's Telegram-side unread count
+        and last-message date. Served from a TTL cache (``condenser_dialogs_cache_ttl``)
+        since ``iter_dialogs`` is slow and FloodWait-prone; ``force=True`` bypasses it.
+        """
+        ttl = self.settings.condenser_dialogs_cache_ttl
+
+        def fresh() -> bool:
+            return not force and self._dialogs_cache is not None and (time.monotonic() - self._dialogs_cache_at) < ttl
+
+        if fresh():
+            return self._dialogs_cache  # type: ignore[return-value]
+
+        async with self._dialogs_lock:
+            if fresh():  # another request refreshed it while we waited for the lock
+                return self._dialogs_cache  # type: ignore[return-value]
+
+            service = self._require_service()
+            found: dict[int, JoinedChannel] = {}
+            waited = 0
+            while True:
+                try:
+                    async for dialog in service.client.iter_dialogs():
+                        if dialog.is_channel and not dialog.is_group:
+                            found[dialog.entity.id] = JoinedChannel(
+                                info=convert_channel_to_info(dialog.entity),
+                                last_message_date=dialog.date,
+                                unread_count=dialog.unread_count or 0,
+                            )
+                    break
+                except FloodWaitError as e:  # bounded back-off — an HTTP request can't hang forever
+                    if waited + e.seconds > 60:
+                        raise
+                    waited += e.seconds + 1
+                    await asyncio.sleep(e.seconds + 1)
+
+            self._dialogs_cache = sorted(found.values(), key=lambda c: c.last_message_date or _EPOCH, reverse=True)
+            self._dialogs_cache_at = time.monotonic()  # stamp after the fetch, not before the back-off
+            return self._dialogs_cache

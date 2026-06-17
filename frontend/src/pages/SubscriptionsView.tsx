@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import { CheckCheck, Filter, MoreVertical, Trash2 } from 'lucide-react';
+import { CheckCheck, Filter, MoreVertical, Search, Trash2 } from 'lucide-react';
 
 import { ChannelAvatar } from '@/components/ChannelAvatar';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { Spinner } from '@/components/Spinner';
+import { BrowseChannelsDialog } from '@/components/subscriptions/BrowseChannelsDialog';
 import { KeywordFilterDialog } from '@/components/subscriptions/KeywordFilterDialog';
 import { Button } from '@/components/ui/button';
 import {
@@ -89,15 +90,24 @@ function SubscriptionRow({ sub }: { sub: Subscription }) {
 
 export function SubscriptionsView() {
   const { data: subs, isPending } = useSubscriptions();
+  const [browseOpen, setBrowseOpen] = useState(false);
 
   return (
     <>
-      <div className="border-b px-4 py-3 sm:px-5">
-        <h1 className="text-base font-semibold tracking-tight">Manage channels</h1>
-        <p className="mt-0.5 text-xs text-muted-foreground">
-          Add channels from the sidebar. Toggle to pause syncing, set exclude keywords, or unsubscribe.
-        </p>
+      <div className="flex items-start justify-between gap-3 border-b px-4 py-3 sm:px-5">
+        <div>
+          <h1 className="text-base font-semibold tracking-tight">Manage channels</h1>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            Toggle to pause syncing, set exclude keywords, or unsubscribe.
+          </p>
+        </div>
+        <Button variant="outline" size="sm" className="shrink-0" onClick={() => setBrowseOpen(true)}>
+          <Search className="size-4" />
+          Browse channels
+        </Button>
       </div>
+
+      <BrowseChannelsDialog open={browseOpen} onOpenChange={setBrowseOpen} />
 
       {isPending ? (
         <div className="flex justify-center py-16">

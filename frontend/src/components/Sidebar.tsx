@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Bookmark, Inbox, Plus, Radio, Settings, Sparkles } from 'lucide-react';
+import { Bookmark, Inbox, Plus, Radio, Search, Settings, Sparkles } from 'lucide-react';
 import { NavLink, useLocation } from 'react-router-dom';
 
 import { ChannelAvatar } from '@/components/ChannelAvatar';
 import { SettingsDialog } from '@/components/SettingsDialog';
+import { BrowseChannelsDialog } from '@/components/subscriptions/BrowseChannelsDialog';
 import { Spinner } from '@/components/Spinner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -45,6 +46,7 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   });
 
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [browseOpen, setBrowseOpen] = useState(false);
   const location = useLocation();
   const unreadActive = location.pathname === '/' && new URLSearchParams(location.search).get('unread') === '1';
   const allActive = location.pathname === '/' && !unreadActive;
@@ -94,6 +96,14 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
         </div>
       </div>
 
+      <div className="space-y-1.5">
+        <Button variant="outline" size="sm" className="w-full justify-start" onClick={() => setBrowseOpen(true)}>
+          <Search className="size-4" />
+          Browse my channels
+        </Button>
+        <p className="px-0.5 text-[11px] text-muted-foreground/70">or add by handle</p>
+      </div>
+
       <form
         className="space-y-1.5"
         onSubmit={(e) => {
@@ -132,6 +142,7 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
       </Button>
 
       <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
+      <BrowseChannelsDialog open={browseOpen} onOpenChange={setBrowseOpen} />
     </div>
   );
 }
