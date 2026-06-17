@@ -116,4 +116,7 @@ marking all `raw_message_ids` read or counting by display unit (see the M2 sessi
 
 ## Documentation
 
+- `kb/docs/content-update-mechanism.md` — Read before touching ingest/sync: realtime push,
+  backfill, the manual refresh / fetch-older / reset triggers, the enable toggle, and how
+  fetch-older's id-anchored cursor paging works.
 - `kb/sessions/` — dated session summaries (history). Read the latest to catch up on recent work.
