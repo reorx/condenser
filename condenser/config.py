@@ -19,6 +19,9 @@ class Settings(BaseSettings):
     condenser_app_password: str
     condenser_secret_key: str
     condenser_db_path: str = 'condenser.db'
+    # Persistent JSON cache: maps forward-source channel/user ids to names so
+    # ingest can resolve them without hitting Telegram on every restart.
+    condenser_entity_cache_path: str = 'condenser_entity_cache.json'
     condenser_backfill_days: int = 7
     # TTL for the in-memory "my joined channels" (dialogs) cache; iter_dialogs is slow
     # and FloodWait-prone, so we serve repeated browse-dialog opens from cache.

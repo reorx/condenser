@@ -18,17 +18,16 @@ interface Props {
   observe?: (el: Element | null, ref: MsgRef) => (() => void) | void;
 }
 
-function forwardSource(msg: DisplayMessage): string | null {
+function forwardSourceName(msg: DisplayMessage): string | null {
   if (!msg.is_forwarded) return null;
   const f = msg.forward_info;
-  const name = f?.from_channel_name || f?.from_user_name || f?.post_author;
-  return name ? `Forwarded from ${name}` : 'Forwarded';
+  return f?.from_channel_name || f?.from_user_name || f?.post_author || null;
 }
 
 function MessageCardImpl({ msg, channelLabel, observe }: Props) {
   const save = useSaveToggle();
   const ref: MsgRef = { channel_id: msg.channel_id, message_id: msg.id };
-  const fwd = forwardSource(msg);
+  const fwdName = forwardSourceName(msg);
 
   const attach = useCallback(
     (el: HTMLElement | null) => {
@@ -87,13 +86,16 @@ function MessageCardImpl({ msg, channelLabel, observe }: Props) {
         </button>
       </header>
 
-      {fwd ? (
+      {msg.is_forwarded ? (
         <>
           <div className="mt-1 inline-flex items-center gap-1 text-xs text-muted-foreground/80">
             <Forward className="size-3" />
-            {fwd}
+            Forwarded
           </div>
-          <div className="mt-1 border p-3">{body}</div>
+          <div className="mt-1 border p-3">
+            {fwdName && <div className="text-xs font-medium text-foreground/80">{fwdName}</div>}
+            {body}
+          </div>
         </>
       ) : (
         body

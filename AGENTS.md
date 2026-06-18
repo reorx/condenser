@@ -46,13 +46,28 @@ condenser's peewee models bind to telememo's `db` instance, so everything is one
 - A **PostToolUse formatter hook** rewrites files to single-quote style on save.
 - **Telegram is a user account (MTProto)** — ToS gray area; StringSession is encrypted at rest;
   fetch layer backs off on `FloodWaitError` (spec D2).
+- **Telethon `StringSession` does NOT persist its entity cache** (only auth_key + DC). After a
+  restart, `client.get_entity(int)` for a peer Telethon hasn't met yet in the current process
+  fails with `Could not find input entity for PeerUser`. Always prefer `@username` over a bare
+  id when one is available — see `tg.py:_channel_handle`. Private channels (no username) still
+  fall through to the int and can hit this; persisting access_hash is the real fix.
+- **Forward source names** (`fwd_from_channel_name` / `fwd_from_user_name`) are filled on
+  ingest by a three-tier cascade: (1) `message.forward.chat.title` / `forward.sender` —
+  Telethon-resolved entities, no API call; (2) persistent `EntityNameCache` JSON file at
+  `CONDENSER_ENTITY_CACHE_PATH`; (3) `await client.get_entity(id)` — backfill path only.
+  Realtime ingest passes `allow_network=False` so the event handler never blocks on Telegram
+  or risks FloodWait crashes. Backfill (`_iter_backfill`) passes True; outer FloodWait retry
+  covers it. Wired in `telememo/telegram.py:resolve_forward_entity_names`.
 
 ## Part A in telememo (`../telememo`, separate git repo)
 
-`service.py` (`TelegramService` facade), `db.py` (`init_db(optional_fields=...)` + forward
-columns + migration), `telegram.py` (module-level converters), `utils.py`
-(`group_messages_to_display(raw_messages_map=None)`), `types.py` (`SignInResult` + `fwd_*`),
-`tests/test_part_a.py`.
+`service.py` (`TelegramService` facade; accepts `entity_cache=`), `db.py`
+(`init_db(optional_fields=...)` + forward columns + migration), `telegram.py` (module-level
+converters + `async resolve_forward_entity_names(md, client, cache, allow_network)`),
+`utils.py` (`group_messages_to_display(raw_messages_map=None)`, `extract_forward_info` reads
+`message.forward.chat`/`sender`), `entity_cache.py` (`EntityNameCache` JSON-backed
+id→name map), `types.py` (`SignInResult` + `fwd_*`), `tests/test_part_a.py`,
+`tests/test_forward_resolver.py`.
 
 ## Frontend (`frontend/`, spec Part D)
 
@@ -70,6 +85,10 @@ React Router v7, **pnpm**. Backend `app.py` auto-serves `frontend/dist` at `/` i
   and naive forms (appends `Z`). Day grouping/calendar use the UTC day key. Media: try
   thumbnail, `<img onError>` → file chip (video/file both report `media_type='document'`);
   thumbnails open `Lightbox`. entities not rendered (backend doesn't persist them).
+- **Forwarded messages**: `MessageCard` renders `↪ Forwarded` above the box, source name
+  (`from_channel_name` → `from_user_name` → `post_author`) as the first line inside the
+  box. `forwardSourceName(msg)` returns the name or null; null means just show "Forwarded"
+  with no name line (private source / cache miss / unresolvable peer).
 - **Optimistic mutation pattern** (M1+M2): timeline-wide via `setQueriesData({queryKey:['timeline']})`,
   subscriptions via `setQueryData(['subscriptions'])`. Keyword CRUD invalidates `['timeline']`
   + `['subscriptions']` (backend recomputes `is_filtered`). Errors surface via `sonner` toasts
@@ -113,6 +132,16 @@ on resolve, wiring `app_meta`, plus SQLite WAL and realtime edit handling. Full 
 message id, but `timeline.unread_counts` counts by `COALESCE(grouped_id, id)` so an album's
 other rows keep it counted as unread — albums never clear from the unread badge. Fix by
 marking all `raw_message_ids` read or counting by display unit (see the M2 session).
+
+**`backfill_done` semantics:** since 2026-06-18, this flag means "a backfill attempt
+finished", success or failure. `_backfill_channel` marks it `True` in a `finally`, so the
+"backfilling…" badge clears either way. Don't repurpose the boolean to mean "succeeded" —
+add a new column if errors need to be surfaced.
+
+**Private channels + entity cache (open):** `_channel_handle` routes around the StringSession
+entity-cache limitation by preferring `@username`, but channels with no username still
+depend on Telethon having seen the peer in the current process. Real fix is persisting
+access_hash / `InputPeerChannel` ourselves.
 
 ## Documentation
 

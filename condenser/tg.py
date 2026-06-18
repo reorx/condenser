@@ -15,6 +15,7 @@ from typing import Optional
 from telethon.errors import FloodWaitError
 
 from telememo import db as tdb
+from telememo.entity_cache import EntityNameCache
 from telememo.service import TelegramService
 from telememo.telegram import convert_channel_to_info
 from telememo.types import ChannelInfo, DisplayMessage, SignInResult
@@ -50,10 +51,17 @@ class TgManager:
         self._dialogs_cache: Optional[list[JoinedChannel]] = None
         self._dialogs_cache_at: float = 0.0
         self._dialogs_lock = asyncio.Lock()  # collapse concurrent cold-cache fetches into one
+        # Persistent forward-source name cache, shared across service rebuilds.
+        self._entity_cache = EntityNameCache(settings.condenser_entity_cache_path)
 
     # ---- service construction / lifecycle ----
     def _new_service(self, session: Optional[str] = None) -> TelegramService:
-        return TelegramService(self.settings.telegram_api_id, self.settings.telegram_api_hash, session)
+        return TelegramService(
+            self.settings.telegram_api_id,
+            self.settings.telegram_api_hash,
+            session,
+            entity_cache=self._entity_cache,
+        )
 
     async def startup(self) -> None:
         """Reconnect with the stored session (if any) and resume listening/backfill."""
@@ -148,6 +156,20 @@ class TgManager:
             raise RuntimeError('telegram not authorized')
         return self.service
 
+    def _channel_handle(self, channel_id: int) -> str | int:
+        """Prefer ``@username`` over a raw id for Telethon's ``get_entity``.
+
+        Telethon needs an access_hash to resolve a bare int, which it only has
+        if it has interacted with that peer in the current session — flaky after
+        a fresh login (e.g., after wiping ``condenser.db``). A public username
+        resolves reliably via the resolveUsername API. Falls back to the int for
+        private channels (no username) — same behaviour as before.
+        """
+        channel = tdb.get_channel(channel_id)
+        if channel is not None and channel.username:
+            return f'@{channel.username}'
+        return channel_id
+
     # ---- realtime + backfill ----
     async def start_listening(self) -> None:
         service = self._require_service()
@@ -175,18 +197,25 @@ class TgManager:
         filters.recompute_messages(dm.channel_id, ids)
 
     async def _backfill_channel(self, channel_id: int) -> int:
-        """Pull the recent-days window for one channel; returns the number of rows ingested."""
+        """Pull the recent-days window for one channel; returns the number of rows ingested.
+
+        Marks the subscription as backfilled even on failure so the UI doesn't
+        get stuck on "backfilling…" — the run is over either way. Users can hit
+        "更新数据" / "重置数据" to retry.
+        """
         service = self._require_service()
         ids: list[int] = []
+        handle = self._channel_handle(channel_id)
         try:
-            async for dm in service.backfill(channel_id, since_days=self.settings.condenser_backfill_days):
+            async for dm in service.backfill(handle, since_days=self.settings.condenser_backfill_days):
                 ids.extend(dm.raw_message_ids or [dm.id])
         except Exception:
             log.exception('backfill failed for channel %s', channel_id)
             return 0
-        if ids:
-            filters.recompute_messages(channel_id, ids)
-        db.set_backfill_done(channel_id, True)
+        finally:
+            if ids:
+                filters.recompute_messages(channel_id, ids)
+            db.set_backfill_done(channel_id, True)
         return len(ids)
 
     # ---- manual refresh (used by routers) ----
@@ -217,9 +246,10 @@ class TgManager:
         """
         service = self._require_service()
         oldest = db.channel_min_message_id(channel_id)
+        handle = self._channel_handle(channel_id)
         ids: list[int] = []
         try:
-            async for dm in service.backfill(channel_id, offset_id=oldest, max_messages=count, persist=True):
+            async for dm in service.backfill(handle, offset_id=oldest, max_messages=count, persist=True):
                 ids.extend(dm.raw_message_ids or [dm.id])
         except Exception:
             log.exception('fetch-older failed for channel %s', channel_id)
