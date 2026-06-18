@@ -5,8 +5,10 @@ timeline; source = Telegram channels). See `spec.md` for the full design and `dr
 for the original brief. **Backend (spec Parts A/B/C) is implemented. Frontend (Part D)
 milestones 1 & 2 are done** — scaffold + auth/TG-login + timeline, plus full subscription
 management, calendar date-filter, new-content polling, media lightbox, settings + theme,
-channel avatars, and a dedicated `/filters` page (global + per-channel keyword rules
-with Gmail-style preview). Remaining v1 work: Docker multi-stage frontend build + README.
+channel avatars, a dedicated `/filters` page (global + per-channel keyword rules
+with Gmail-style preview), and a redesigned reading view (unified `PageHeader`, static
+date dividers, bordered content column). Remaining v1 work: Docker multi-stage frontend
+build + README.
 
 ## Architecture
 
@@ -84,6 +86,20 @@ React Router v7, **pnpm**. Backend `app.py` auto-serves `frontend/dist` at `/` i
 - **Scroll-past-to-read** via IntersectionObserver + debounced batch `POST /api/read` +
   optimistic cache (`useScrollToRead`); window is the scroll container (IO root = viewport).
 - Timeline items carry only `channel_id` → joined to titles client-side (`useChannelLabels`).
+- **Reading-view shell**: `PageHeader` (`components/PageHeader.tsx`) is the unified top bar for
+  TimelineView + RecordsView — leading icon (`ChannelAvatar` for a channel, `IconBadge`-wrapped
+  lucide for All/Unread/Saved) + title + unread-count line on the left, icon-only actions
+  (native `title` tooltips, not shadcn Tooltip — avoids Radix `asChild` nesting on Popover
+  triggers) pinned right. The timeline `useInfiniteQuery` lives in `useTimeline` (lifted to
+  TimelineView) so the header can build the channel-filter control from loaded items;
+  `useChannelFilter` is owned by TimelineView and `Timeline` is presentational (props:
+  `query`/`items`/`visible`/`onClearFilter`/`emptyLabel`). Unread count = `sub.unread` (channel)
+  or sum over enabled subs (All/Unread); **total message count is not exposed by the backend**.
+- **Date dividers, not a sticky bar**: `Timeline` renders a static left-aligned day label
+  between day groups (no floating `sticky` header). The channel filter moved into `PageHeader`
+  (multi-channel views only). Content column has desktop-only `md:border-x` (`AppShell`).
+  Caveat: do NOT add the whole `query` object to the infinite-scroll `useEffect` deps — it's a
+  new ref every render and rebuilds the IntersectionObserver each time; list only the fields used.
 - Dates are UTC (Telegram native); `lib/format.ts:parseDate` handles both tz-aware (`+00:00`)
   and naive forms (appends `Z`). Day grouping/calendar use the UTC day key. Media: try
   thumbnail, `<img onError>` → file chip (video/file both report `media_type='document'`);
@@ -96,8 +112,11 @@ React Router v7, **pnpm**. Backend `app.py` auto-serves `frontend/dist` at `/` i
   WebPagePreview thumbs use the same skeleton+fade pattern (fixed-size, no aspect change).
 - **Forwarded messages**: `MessageCard` renders `↪ Forwarded` above the box, source name
   (`from_channel_name` → `from_user_name` → `post_author`) as the first line inside the
-  box. `forwardSourceName(msg)` returns the name or null; null means just show "Forwarded"
-  with no name line (private source / cache miss / unresolvable peer).
+  box. The box is a rounded, soft-bg card (`rounded-lg border bg-muted/30 p-3`) indented
+  `ml-8` (2rem); the "Forwarded" label stays outside the indent. `forwardSourceName(msg)`
+  returns the name or null; null means just show "Forwarded" with no name line (private
+  source / cache miss / unresolvable peer). The save/bookmark icon is **always visible**
+  (no longer hover-only); amber when saved. Cards have `px-4 sm:px-5` inset.
 - **Optimistic mutation pattern** (M1+M2): timeline-wide via `setQueriesData({queryKey:['timeline']})`,
   subscriptions via `setQueryData(['subscriptions'])`. Keyword CRUD invalidates `['filters-all']`
   + `['timeline']` + `['subscriptions']` (backend recomputes `is_filtered`). Errors surface via `sonner` toasts
