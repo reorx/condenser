@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Bookmark } from 'lucide-react';
 
 import { AllChannelsHidden, ChannelFilter } from '@/components/ChannelFilter';
+import { IconBadge, PageHeader } from '@/components/PageHeader';
 import { Spinner } from '@/components/Spinner';
 import { MessageCard } from '@/components/timeline/MessageCard';
 import { useChannelFilter } from '@/hooks/useChannelFilter';
@@ -23,19 +24,21 @@ export function RecordsView() {
 
   return (
     <>
-      <div className="flex items-center gap-2 border-b px-4 py-3 sm:px-5">
-        <Bookmark className="size-4 text-amber-500" />
-        <h1 className="text-base font-semibold tracking-tight">Saved</h1>
-        {showFilter && (
-          <ChannelFilter
-            className="ml-auto"
-            channels={filter.channels}
-            hidden={filter.hidden}
-            onToggle={filter.toggle}
-            onClear={filter.clear}
-          />
-        )}
-      </div>
+      <PageHeader
+        icon={<IconBadge icon={<Bookmark className="size-5 text-amber-500" />} />}
+        title="Saved"
+        actions={
+          showFilter && (
+            <ChannelFilter
+              className="h-8 px-2"
+              channels={filter.channels}
+              hidden={filter.hidden}
+              onToggle={filter.toggle}
+              onClear={filter.clear}
+            />
+          )
+        }
+      />
 
       {isPending && (
         <div className="flex justify-center py-16">

@@ -6,6 +6,7 @@ import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { useTimelineDays } from '@/hooks/useTimelineDays';
 import { dayKeyLabel, fromDayKey, toDayKey } from '@/lib/format';
+import { cn } from '@/lib/utils';
 
 interface CalendarPopoverProps {
   channelId: number | null;
@@ -23,9 +24,13 @@ export function CalendarPopover({ channelId, date, onSelect }: CalendarPopoverPr
   return (
     <Popover>
       <PopoverTrigger asChild>
-        <Button variant={date ? 'default' : 'outline'} size="sm" className="h-7">
+        <Button
+          variant={date ? 'default' : 'ghost'}
+          size="icon"
+          className={cn('size-8', !date && 'text-muted-foreground')}
+          title={date ? `Filtered to ${dayKeyLabel(date)}` : 'Filter by date'}
+        >
           <CalendarIcon className="size-4" />
-          {date ? dayKeyLabel(date) : 'Calendar'}
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-auto p-0" align="end">

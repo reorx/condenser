@@ -48,7 +48,7 @@ export function AppShell() {
       )}
 
       <main className="md:pl-64">
-        <div className="mx-auto max-w-2xl">
+        <div className="mx-auto min-h-dvh max-w-2xl md:border-x md:border-border">
           <Outlet />
         </div>
       </main>

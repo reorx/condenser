@@ -55,7 +55,7 @@ function MessageCardImpl({ msg, channelLabel, observe }: Props) {
       ref={attach}
       data-read={msg.is_read ? '' : undefined}
       className={cn(
-        'group relative border-b py-3 transition-colors duration-500',
+        'group relative border-b px-4 py-3 transition-colors duration-500 sm:px-5',
         mode === 'divider' && !msg.is_read ? 'border-sky-500 dark:border-sky-400' : 'border-border/50',
       )}
     >
@@ -89,9 +89,7 @@ function MessageCardImpl({ msg, channelLabel, observe }: Props) {
           aria-pressed={msg.is_saved}
           className={cn(
             'ml-auto rounded p-1 transition-colors hover:bg-accent hover:text-accent-foreground',
-            msg.is_saved
-              ? 'text-amber-500'
-              : 'text-muted-foreground opacity-0 focus-visible:opacity-100 group-hover:opacity-100',
+            msg.is_saved ? 'text-amber-500' : 'text-muted-foreground',
           )}
         >
           <Bookmark className={cn('size-4', msg.is_saved && 'fill-current')} />
@@ -104,7 +102,7 @@ function MessageCardImpl({ msg, channelLabel, observe }: Props) {
             <Forward className="size-3" />
             Forwarded
           </div>
-          <div className="mt-1 border p-3">
+          <div className="mt-1 ml-8 rounded-lg border bg-muted/30 p-3">
             {fwdName && <div className="text-xs font-medium text-foreground/80">{fwdName}</div>}
             {body}
           </div>

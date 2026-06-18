@@ -1,17 +1,15 @@
-import { useCallback, useEffect, useMemo, useRef } from 'react';
-import { useInfiniteQuery } from '@tanstack/react-query';
+import { useEffect, useMemo, useRef } from 'react';
 import { ArrowUp, Inbox } from 'lucide-react';
 
-import { AllChannelsHidden, ChannelFilter } from '@/components/ChannelFilter';
+import { AllChannelsHidden } from '@/components/ChannelFilter';
 import { Spinner } from '@/components/Spinner';
 import { Button } from '@/components/ui/button';
-import { useChannelFilter } from '@/hooks/useChannelFilter';
 import { useNewContent } from '@/hooks/useNewContent';
 import { useScrollToRead } from '@/hooks/useScrollToRead';
 import { useChannelLabels, useSubscriptions } from '@/hooks/useSubscriptions';
-import { api } from '@/lib/api';
 import { dayKey, dayLabel } from '@/lib/format';
-import type { DisplayMessage, TimelinePage } from '@/lib/types';
+import type { DisplayMessage } from '@/lib/types';
+import type { TimelineQuery } from '@/hooks/useTimeline';
 
 import { MessageCard } from './MessageCard';
 import { TimelineSkeleton } from './TimelineSkeleton';
@@ -35,40 +33,37 @@ function groupByDay(items: DisplayMessage[]): DayGroup[] {
   return groups;
 }
 
-export function Timeline({ channelId, unreadOnly, date }: { channelId?: number; unreadOnly?: boolean; date?: string }) {
-  // Identifies the current view; changing it resets scroll + re-gates mark-as-read.
-  const viewKey = `${channelId ?? 'all'}:${unreadOnly ? 'unread' : 'all'}:${date ?? ''}`;
+interface TimelineProps {
+  query: TimelineQuery;
+  /** Identifies the current view; changing it resets scroll + re-gates mark-as-read. */
+  viewKey: string;
+  channelId?: number;
+  date?: string;
+  /** Every loaded unit (pre-filter); drives the empty-vs-all-hidden distinction. */
+  items: DisplayMessage[];
+  /** Items after the header's channel filter; equals `items` when unfiltered. */
+  visible: DisplayMessage[];
+  /** Clears the header's channel filter from the all-hidden recovery state. */
+  onClearFilter: () => void;
+  /** Shown when there are no messages at all in this view. */
+  emptyLabel?: string;
+}
+
+export function Timeline({
+  query,
+  viewKey,
+  channelId,
+  date,
+  items,
+  visible,
+  onClearFilter,
+  emptyLabel,
+}: TimelineProps) {
   const observe = useScrollToRead(viewKey);
   const { data: subs } = useSubscriptions();
   const labels = useChannelLabels(subs);
 
-  const query = useInfiniteQuery({
-    queryKey: ['timeline', { channel_id: channelId ?? null, unread_only: !!unreadOnly, date: date ?? null }],
-    queryFn: ({ pageParam }) =>
-      api.timeline({
-        cursor: pageParam,
-        channel_id: channelId ?? null,
-        unread_only: unreadOnly,
-        date: date ?? null,
-        limit: 30,
-      }),
-    initialPageParam: null as string | null,
-    getNextPageParam: (last: TimelinePage) => last.next_cursor ?? undefined,
-  });
-
-  const items = useMemo(() => query.data?.pages.flatMap((p) => p.items) ?? [], [query.data]);
-
-  // Client-side channel filter over the loaded messages; hidden channels drop out of view.
-  const nameOf = useCallback((m: DisplayMessage) => labels.get(m.channel_id) ?? `Channel ${m.channel_id}`, [labels]);
-  const filter = useChannelFilter(items, nameOf);
-  const showFilter = filter.channels.length > 1;
-  // With only one channel present (e.g. a single-channel view) there's nothing to
-  // filter — bypass the hidden set so it can't leak in from another mounted view.
-  const visible = showFilter ? filter.visible : items;
   const groups = useMemo(() => groupByDay(visible), [visible]);
-  const filterControl = showFilter ? (
-    <ChannelFilter channels={filter.channels} hidden={filter.hidden} onToggle={filter.toggle} onClear={filter.clear} />
-  ) : null;
 
   // New-content poll: anchored to the newest loaded item; disabled in date-filtered views.
   const headCursor = query.data?.pages[0]?.head_cursor ?? null;
@@ -95,7 +90,7 @@ export function Timeline({ channelId, unreadOnly, date }: { channelId?: number; 
     );
     io.observe(el);
     return () => io.disconnect();
-  }, [query.hasNextPage, query.isFetchingNextPage, query.fetchNextPage, query]);
+  }, [query.hasNextPage, query.isFetchingNextPage, query.fetchNextPage]);
 
   if (query.isPending) {
     return <TimelineSkeleton />;
@@ -116,22 +111,14 @@ export function Timeline({ channelId, unreadOnly, date }: { channelId?: number; 
     return (
       <div className="flex flex-col items-center gap-2 py-24 text-center text-muted-foreground">
         <Inbox className="size-8" />
-        <p className="text-sm">{unreadOnly ? 'Nothing unread. You are all caught up.' : 'No messages here yet.'}</p>
+        <p className="text-sm">{emptyLabel ?? 'No messages here yet.'}</p>
       </div>
     );
   }
 
-  // Everything was filtered out — keep the control reachable so the user can recover.
-  if (showFilter && filter.visible.length === 0) {
-    return (
-      <div>
-        <div className="sticky top-12 z-10 flex items-center justify-between gap-2 border-b bg-background/80 px-4 py-1.5 text-xs font-medium text-muted-foreground backdrop-blur sm:px-5 md:top-0">
-          <span>All channels hidden</span>
-          {filterControl}
-        </div>
-        <AllChannelsHidden icon={Inbox} onClear={filter.clear} />
-      </div>
-    );
+  // Everything was filtered out — keep a way back.
+  if (visible.length === 0) {
+    return <AllChannelsHidden icon={Inbox} onClear={onClearFilter} />;
   }
 
   return (
@@ -140,7 +127,7 @@ export function Timeline({ channelId, unreadOnly, date }: { channelId?: number; 
         <button
           type="button"
           onClick={jumpToNewest}
-          className="fixed top-14 left-1/2 z-30 -translate-x-1/2 inline-flex items-center gap-1.5 rounded-full bg-primary px-4 py-1.5 text-sm font-medium text-primary-foreground shadow-lg transition hover:bg-primary/90 md:top-3 md:left-[calc(50%+8rem)]"
+          className="fixed top-14 left-1/2 z-30 inline-flex -translate-x-1/2 items-center gap-1.5 rounded-full bg-primary px-4 py-1.5 text-sm font-medium text-primary-foreground shadow-lg transition hover:bg-primary/90 md:top-3 md:left-[calc(50%+8rem)]"
         >
           <ArrowUp className="size-4" />
           {newCount} new message{newCount > 1 ? 's' : ''}
@@ -148,9 +135,9 @@ export function Timeline({ channelId, unreadOnly, date }: { channelId?: number; 
       )}
       {groups.map((g) => (
         <section key={g.day}>
-          <div className="sticky top-12 z-10 flex items-center justify-between gap-2 border-b bg-background/80 px-4 py-1.5 text-xs font-medium text-muted-foreground backdrop-blur sm:px-5 md:top-0">
-            <span>{dayLabel(g.items[0].date)}</span>
-            {filterControl}
+          {/* Date divider: a static marker between days, not a floating sticky bar. */}
+          <div className="px-4 pt-6 pb-2 text-xs font-medium text-muted-foreground sm:px-5">
+            {dayLabel(g.items[0].date)}
           </div>
           <div>
             {g.items.map((m) => (
