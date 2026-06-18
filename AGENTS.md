@@ -5,7 +5,8 @@ timeline; source = Telegram channels). See `spec.md` for the full design and `dr
 for the original brief. **Backend (spec Parts A/B/C) is implemented. Frontend (Part D)
 milestones 1 & 2 are done** — scaffold + auth/TG-login + timeline, plus full subscription
 management, calendar date-filter, new-content polling, media lightbox, settings + theme,
-and channel avatars. Remaining v1 work: Docker multi-stage frontend build + README.
+channel avatars, and a dedicated `/filters` page (global + per-channel keyword rules
+with Gmail-style preview). Remaining v1 work: Docker multi-stage frontend build + README.
 
 ## Architecture
 
@@ -98,8 +99,8 @@ React Router v7, **pnpm**. Backend `app.py` auto-serves `frontend/dist` at `/` i
   box. `forwardSourceName(msg)` returns the name or null; null means just show "Forwarded"
   with no name line (private source / cache miss / unresolvable peer).
 - **Optimistic mutation pattern** (M1+M2): timeline-wide via `setQueriesData({queryKey:['timeline']})`,
-  subscriptions via `setQueryData(['subscriptions'])`. Keyword CRUD invalidates `['timeline']`
-  + `['subscriptions']` (backend recomputes `is_filtered`). Errors surface via `sonner` toasts
+  subscriptions via `setQueryData(['subscriptions'])`. Keyword CRUD invalidates `['filters-all']`
+  + `['timeline']` + `['subscriptions']` (backend recomputes `is_filtered`). Errors surface via `sonner` toasts
   (`api.errorMessage`). shadcn primitives in `components/ui/` use individual `@radix-ui/react-*`
   packages (not the unified `radix-ui`), button from `@/components/ui/button`.
 - **Theme**: `lib/theme.tsx` ThemeProvider (light/dark/system, default system, localStorage
@@ -131,9 +132,9 @@ pnpm build                                # -> frontend/dist (served by backend 
 ## Status / known gaps
 
 Backend endpoints (spec C2) all exist and §7 scenarios are tested, but some v1 work
-remains: subscription "delete-with-messages" option (Q4), global keyword-rule API (M2
-deliberately ships channel-level only), full channel info (`member_count`/`description`)
-on resolve, wiring `app_meta`, plus SQLite WAL and realtime edit handling. Full checklist:
+remains: subscription "delete-with-messages" option (Q4), full channel info
+(`member_count`/`description`) on resolve, wiring `app_meta`, plus SQLite WAL and
+realtime edit handling. Full checklist:
 `kb/sessions/2026-06-09-backend-remaining-work.md` — read before picking up backend work.
 
 **Known bug (album unread count):** marking an album read only inserts its primary

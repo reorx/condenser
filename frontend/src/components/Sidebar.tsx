@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Bookmark, Inbox, Plus, Radio, Search, Settings, Sparkles } from 'lucide-react';
+import { Bookmark, Filter, Inbox, Plus, Radio, Search, Settings, Sparkles } from 'lucide-react';
 import { NavLink, useLocation } from 'react-router-dom';
 
 import { ChannelAvatar } from '@/components/ChannelAvatar';
@@ -73,6 +73,10 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
         <NavLink to="/saved" className={navClass} onClick={onNavigate}>
           <Bookmark className="size-4" />
           Saved
+        </NavLink>
+        <NavLink to="/filters" className={navClass} onClick={onNavigate}>
+          <Filter className="size-4" />
+          Filters
         </NavLink>
         <NavLink to="/subscriptions" className={navClass} onClick={onNavigate}>
           <Radio className="size-4" />

@@ -20,7 +20,7 @@ tags:
 ### 一、v1 spec 有、但未实现（优先补齐）
 
 - [ ] **取消订阅的「连同消息删除」选项**（Q4 / C2 DELETE）：当前 `DELETE /api/subscriptions/{id}` 只做默认「保留消息」。需额外提供删除该频道消息的选项（如 `?purge=1`），删除 `messages`（收藏 `telegram_records` 自包含，不受影响）。
-- [ ] **全局关键词规则的 API**（D9 / C5）：数据层与 `filters.py` 已支持 `channel_id IS NULL` 全局规则，但缺增/删/列全局规则的 HTTP 端点（现仅 per-channel）。
+- [x] ~~**全局关键词规则的 API**（D9 / C5）~~：2026-06-18 完成。新增 `GET /api/filters` / `POST /api/filters` / `POST /api/filters/preview`（preview 复用 `filters.text_is_filtered`，对最近 1000 条消息做 dry-run）；旧的 `GET/POST /api/subscriptions/{cid}/filters` 同步删除，所有调用迁到新端点。前端新增 `/filters` 独立页 + `CreateFilterDialog`。
 - [ ] **频道完整信息落库**（B1）：`resolve_channel` 用 `get_entity`，拿不到 `member_count` / `description`。需要 `GetFullChannelRequest` 才能填 `channels.member_count`（订阅列表目前无成员数）。
 - [ ] **接上 `app_meta`**（B2）：表与 get/set helper 已就绪，但未用于「schema 版本」与「`backfill_days` 运行时覆盖」。当前 backfill 天数只读环境变量。
 

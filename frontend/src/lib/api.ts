@@ -4,6 +4,7 @@
 import type {
   DayCount,
   DisplayMessage,
+  FilterPreviewResult,
   JoinedChannel,
   KeywordFilter,
   MsgRef,
@@ -114,10 +115,14 @@ export const api = {
   deleteSubscription: (channelId: number) => del<{ ok: true }>(`/api/subscriptions/${channelId}`),
 
   // ---- keyword filters ----
-  listFilters: (channelId: number) => request<KeywordFilter[]>(`/api/subscriptions/${channelId}/filters`),
-  addFilter: (channelId: number, pattern: string) =>
-    post<KeywordFilter>(`/api/subscriptions/${channelId}/filters`, { pattern }),
+  // Global + per-channel listing (channel_id=null = global).
+  listAllFilters: () => request<KeywordFilter[]>('/api/filters'),
+  createFilter: (pattern: string, channelId: number | null) =>
+    post<KeywordFilter>('/api/filters', { pattern, channel_id: channelId }),
   deleteFilter: (filterId: number) => del<{ ok: true }>(`/api/filters/${filterId}`),
+  // Dry-run the same matcher against the last N messages so the user sees what a new rule would hide.
+  previewFilter: (pattern: string, channelId: number | null) =>
+    post<FilterPreviewResult>('/api/filters/preview', { pattern, channel_id: channelId }),
 
   // ---- timeline / reading ----
   timeline: (params: TimelineParams) =>

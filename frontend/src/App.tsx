@@ -6,6 +6,7 @@ import { useTgStatus } from '@/hooks/useTgStatus';
 import { ApiError } from '@/lib/api';
 import { AppShell } from '@/pages/AppShell';
 import { AppLogin } from '@/pages/AppLogin';
+import { FiltersView } from '@/pages/FiltersView';
 import { RecordsView } from '@/pages/RecordsView';
 import { SubscriptionsView } from '@/pages/SubscriptionsView';
 import { TgLogin } from '@/pages/TgLogin';
@@ -38,6 +39,7 @@ export default function App() {
         <Route path="/" element={<TimelineView />} />
         <Route path="/c/:channelId" element={<TimelineView />} />
         <Route path="/saved" element={<RecordsView />} />
+        <Route path="/filters" element={<FiltersView />} />
         <Route path="/subscriptions" element={<SubscriptionsView />} />
         <Route path="*" element={<TimelineView />} />
       </Route>

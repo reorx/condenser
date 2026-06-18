@@ -214,9 +214,9 @@ def count_messages_after(channel_id: int, after_id: int) -> int:
 # --- keyword filters --------------------------------------------------------
 
 
-def list_filters(channel_id: int) -> list[KeywordFilter]:
-    """Channel-specific filters (does not include global rules)."""
-    return list(KeywordFilter.select().where(KeywordFilter.channel_id == channel_id).order_by(KeywordFilter.created_at))
+def list_all_filters() -> list[KeywordFilter]:
+    """All filters across every channel, plus global rules (channel_id IS NULL)."""
+    return list(KeywordFilter.select().order_by(KeywordFilter.channel_id.asc(nulls='FIRST'), KeywordFilter.created_at))
 
 
 def add_filter(channel_id: Optional[int], pattern: str) -> KeywordFilter:

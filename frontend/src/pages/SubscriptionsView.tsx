@@ -1,11 +1,10 @@
 import { useState } from 'react';
-import { CheckCheck, Filter, History, MoreVertical, RefreshCw, RotateCcw, Search, Trash2 } from 'lucide-react';
+import { CheckCheck, History, MoreVertical, RefreshCw, RotateCcw, Search, Trash2 } from 'lucide-react';
 
 import { ChannelAvatar } from '@/components/ChannelAvatar';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { Spinner } from '@/components/Spinner';
 import { BrowseChannelsDialog } from '@/components/subscriptions/BrowseChannelsDialog';
-import { KeywordFilterDialog } from '@/components/subscriptions/KeywordFilterDialog';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -33,7 +32,6 @@ function SubscriptionRow({ sub }: { sub: Subscription }) {
   const refresh = useRefreshChannel();
   const fetchOlder = useFetchOlder();
   const reset = useResetChannel();
-  const [keywordsOpen, setKeywordsOpen] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
   const label = channelName(sub);
@@ -98,10 +96,6 @@ function SubscriptionRow({ sub }: { sub: Subscription }) {
               继续向更早获取（{OLDER_FETCH_COUNT} 条）
             </DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => setKeywordsOpen(true)}>
-              <Filter />
-              Keywords
-            </DropdownMenuItem>
             <DropdownMenuItem onClick={() => bulkRead.mutate({ channel_id: sub.channel_id })}>
               <CheckCheck />
               Mark all read
@@ -119,12 +113,6 @@ function SubscriptionRow({ sub }: { sub: Subscription }) {
         </DropdownMenu>
       </div>
 
-      <KeywordFilterDialog
-        channelId={sub.channel_id}
-        channelLabel={label}
-        open={keywordsOpen}
-        onOpenChange={setKeywordsOpen}
-      />
       <ConfirmDialog
         open={confirmOpen}
         onOpenChange={setConfirmOpen}
@@ -159,7 +147,8 @@ export function SubscriptionsView() {
         <div>
           <h1 className="text-base font-semibold tracking-tight">Manage channels</h1>
           <p className="mt-0.5 text-xs text-muted-foreground">
-            Toggle to pause syncing, set exclude keywords, or unsubscribe.
+            Toggle to pause syncing, fetch older messages, or unsubscribe. Manage exclude keywords from{' '}
+            <span className="font-medium">Filters</span>.
           </p>
         </div>
         <Button variant="outline" size="sm" className="shrink-0" onClick={() => setBrowseOpen(true)}>

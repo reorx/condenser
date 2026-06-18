@@ -33,8 +33,14 @@ class SubscriptionPatch(BaseModel):
     enabled: bool
 
 
-class FilterBody(BaseModel):
+class FilterScopeBody(BaseModel):
+    """Pattern + optional scope; `channel_id=None` means a global rule.
+
+    Shared by POST /api/filters (create) and POST /api/filters/preview (dry-run).
+    """
+
     pattern: str
+    channel_id: Optional[int] = None
 
 
 class ReadItem(BaseModel):

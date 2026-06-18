@@ -50,7 +50,7 @@ def test_timeline_excludes_filtered_and_groups_album(env):
         db.add_subscription(1)
 
         # exclude keyword "AD" (case-insensitive) -> message 11 filtered out
-        r = client.post('/api/subscriptions/1/filters', json={'pattern': 'AD'})
+        r = client.post('/api/filters', json={'pattern': 'AD', 'channel_id': 1})
         assert r.status_code == 200
 
         items = client.get('/api/timeline').json()['items']
@@ -63,7 +63,7 @@ def test_timeline_excludes_filtered_and_groups_album(env):
         assert album['text'] == 'album caption'
 
         # delete the rule -> message 11 reappears (is_filtered recomputed to 0)
-        fid = client.get('/api/subscriptions/1/filters').json()[0]['id']
+        fid = client.get('/api/filters').json()[0]['id']
         assert client.delete(f'/api/filters/{fid}').status_code == 200
         ids2 = [it['id'] for it in client.get('/api/timeline').json()['items']]
         assert 11 in ids2
@@ -113,8 +113,78 @@ def test_filter_is_case_insensitive_substring(env):
         seed_channel(1, 'C')
         seed_messages([md(1, 10, 1, text='广告ad促销')])
         db.add_subscription(1)
-        client.post('/api/subscriptions/1/filters', json={'pattern': 'AD'})
+        client.post('/api/filters', json={'pattern': 'AD', 'channel_id': 1})
         assert client.get('/api/timeline').json()['items'] == []
+
+
+def test_global_filter_create_list_and_preview(env):
+    with _client() as client:
+        _login(client)
+        seed_channel(1, 'Tech', 'tech')
+        seed_channel(2, 'News', 'news')
+        seed_messages(
+            [
+                md(1, 10, 1, text='free pizza'),
+                md(1, 11, 2, text='clean code'),
+                md(2, 20, 3, text='PIZZA recipe'),
+                md(2, 21, 4, text='politics'),
+            ]
+        )
+        db.add_subscription(1)
+        db.add_subscription(2)
+
+        # Preview a global rule before creating — pattern hits across enabled channels.
+        r = client.post('/api/filters/preview', json={'pattern': 'pizza'})
+        body = r.json()
+        assert body['matched'] == 2
+        assert body['scanned'] == 4  # both channels combined
+        assert {s['channel_id'] for s in body['samples']} == {1, 2}
+
+        # Empty pattern short-circuits to a zero result without scanning.
+        empty = client.post('/api/filters/preview', json={'pattern': '   '}).json()
+        assert empty == {'scanned': 0, 'matched': 0, 'samples': []}
+
+        # Create a global rule (channel_id omitted) and confirm both channels recompute.
+        created = client.post('/api/filters', json={'pattern': 'pizza'}).json()
+        assert created['channel_id'] is None
+        ids = [it['id'] for it in client.get('/api/timeline').json()['items']]
+        assert 10 not in ids and 20 not in ids  # both filtered by the global rule
+        assert 11 in ids and 21 in ids
+
+        # /api/filters returns the global rule plus channel rules with their titles.
+        client.post('/api/filters', json={'pattern': 'politics', 'channel_id': 2})
+        rows = client.get('/api/filters').json()
+        assert len(rows) == 2
+        global_row = next(r for r in rows if r['channel_id'] is None)
+        ch_row = next(r for r in rows if r['channel_id'] == 2)
+        assert global_row['channel_title'] is None
+        assert ch_row['channel_title'] == 'News'
+
+        # Deleting the global rule recomputes every enabled channel back to unfiltered.
+        client.delete(f'/api/filters/{created["id"]}')
+        ids2 = [it['id'] for it in client.get('/api/timeline').json()['items']]
+        assert 10 in ids2 and 20 in ids2  # pizza messages reappear
+
+
+def test_preview_scoped_to_channel(env):
+    with _client() as client:
+        _login(client)
+        seed_channel(1, 'C1')
+        seed_channel(2, 'C2')
+        seed_messages(
+            [
+                md(1, 10, 1, text='AD here'),
+                md(1, 11, 2, text='no match'),
+                md(2, 20, 3, text='also AD'),
+            ]
+        )
+        db.add_subscription(1)
+        db.add_subscription(2)
+
+        # Channel-scoped preview only scans that channel.
+        scoped = client.post('/api/filters/preview', json={'pattern': 'ad', 'channel_id': 1}).json()
+        assert scoped['scanned'] == 2 and scoped['matched'] == 1
+        assert scoped['samples'][0]['channel_id'] == 1
 
 
 def test_timeline_date_and_channel_filter(env):
@@ -345,7 +415,7 @@ def test_backfill_persists_filters_and_marks_done(env):
         _login(client)
         seed_channel(5, 'TechNews', 'technews')
         db.add_subscription(5)
-        client.post('/api/subscriptions/5/filters', json={'pattern': 'AD'})
+        client.post('/api/filters', json={'pattern': 'AD', 'channel_id': 5})
 
         async def fake_backfill(channel, since_days=None, since_date=None, persist=True):
             # the real service persists during iteration; emulate that here
@@ -508,7 +578,7 @@ def test_realtime_ingest_filtered_and_new_poll(env):
         _login(client)
         seed_channel(1, 'C')
         db.add_subscription(1)
-        client.post('/api/subscriptions/1/filters', json={'pattern': 'AD'})
+        client.post('/api/filters', json={'pattern': 'AD', 'channel_id': 1})
 
         # simulate two realtime messages already persisted by the service layer
         seed_messages([md(1, 50, 10, text='clean news'), md(1, 51, 11, text='promo AD')])

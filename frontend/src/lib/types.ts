@@ -89,7 +89,23 @@ export interface JoinedChannel {
 export interface KeywordFilter {
   id: number;
   channel_id: number | null;
+  /** Resolved on /api/filters; absent on per-channel endpoints that already know the channel. */
+  channel_title?: string | null;
   pattern: string;
+}
+
+export interface FilterPreviewSample {
+  channel_id: number;
+  message_id: number;
+  channel_title: string | null;
+  date: string;
+  text: string;
+}
+
+export interface FilterPreviewResult {
+  scanned: number;
+  matched: number;
+  samples: FilterPreviewSample[];
 }
 
 export interface TimelinePage {
