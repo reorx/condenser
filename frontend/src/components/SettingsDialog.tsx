@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
-import { Lock, LogOut, Monitor, Moon, Phone, Sun } from 'lucide-react';
+import { Circle, Lock, LogOut, Minus, Monitor, Moon, Phone, Sun } from 'lucide-react';
 
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { Button } from '@/components/ui/button';
@@ -9,12 +9,18 @@ import { useTgStatus } from '@/hooks/useTgStatus';
 import { api } from '@/lib/api';
 import { queryClient, TG_STATUS_KEY } from '@/lib/queryClient';
 import { type Theme, useTheme } from '@/lib/theme';
+import { type UnreadIndicatorMode, useUnreadIndicator } from '@/lib/unreadIndicator';
 import { cn } from '@/lib/utils';
 
 const THEME_OPTIONS: { value: Theme; label: string; icon: typeof Sun }[] = [
   { value: 'light', label: 'Light', icon: Sun },
   { value: 'dark', label: 'Dark', icon: Moon },
   { value: 'system', label: 'System', icon: Monitor },
+];
+
+const UNREAD_OPTIONS: { value: UnreadIndicatorMode; label: string; icon: typeof Circle }[] = [
+  { value: 'divider', label: 'Divider', icon: Minus },
+  { value: 'dot', label: 'Dot', icon: Circle },
 ];
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
@@ -24,6 +30,7 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
 export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
   const { data: status } = useTgStatus();
   const { theme, setTheme } = useTheme();
+  const { mode: unreadMode, setMode: setUnreadMode } = useUnreadIndicator();
   const [confirmTgLogout, setConfirmTgLogout] = useState(false);
 
   const tgLogout = useMutation({
@@ -79,6 +86,33 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
                   key={opt.value}
                   type="button"
                   onClick={() => setTheme(opt.value)}
+                  className={cn(
+                    'flex flex-col items-center gap-1.5 rounded-md border py-2.5 text-xs transition-colors',
+                    active
+                      ? 'border-primary bg-accent text-accent-foreground'
+                      : 'text-muted-foreground hover:bg-accent/50',
+                  )}
+                  aria-pressed={active}
+                >
+                  <Icon className="size-4" />
+                  {opt.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="space-y-2">
+          <SectionLabel>Unread</SectionLabel>
+          <div className="grid grid-cols-2 gap-1.5">
+            {UNREAD_OPTIONS.map((opt) => {
+              const Icon = opt.icon;
+              const active = unreadMode === opt.value;
+              return (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => setUnreadMode(opt.value)}
                   className={cn(
                     'flex flex-col items-center gap-1.5 rounded-md border py-2.5 text-xs transition-colors',
                     active

@@ -8,16 +8,19 @@ import './index.css';
 import { Toaster } from './components/ui/sonner';
 import { queryClient } from './lib/queryClient';
 import { ThemeProvider } from './lib/theme';
+import { UnreadIndicatorProvider } from './lib/unreadIndicator';
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <ThemeProvider>
-      <QueryClientProvider client={queryClient}>
-        <BrowserRouter>
-          <App />
-          <Toaster />
-        </BrowserRouter>
-      </QueryClientProvider>
+      <UnreadIndicatorProvider>
+        <QueryClientProvider client={queryClient}>
+          <BrowserRouter>
+            <App />
+            <Toaster />
+          </BrowserRouter>
+        </QueryClientProvider>
+      </UnreadIndicatorProvider>
     </ThemeProvider>
   </StrictMode>,
 );

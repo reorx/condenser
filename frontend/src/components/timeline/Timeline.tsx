@@ -152,7 +152,7 @@ export function Timeline({ channelId, unreadOnly, date }: { channelId?: number; 
             <span>{dayLabel(g.items[0].date)}</span>
             {filterControl}
           </div>
-          <div className="divide-y divide-border/50">
+          <div>
             {g.items.map((m) => (
               <MessageCard
                 key={`${m.channel_id}:${m.id}`}

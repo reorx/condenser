@@ -5,6 +5,7 @@ import { ChannelAvatar } from '@/components/ChannelAvatar';
 import { useSaveToggle } from '@/hooks/useSaveToggle';
 import { timeLabel } from '@/lib/format';
 import { linkify } from '@/lib/linkify';
+import { useUnreadIndicator } from '@/lib/unreadIndicator';
 import { cn } from '@/lib/utils';
 import type { DisplayMessage, MsgRef } from '@/lib/types';
 
@@ -26,6 +27,7 @@ function forwardSourceName(msg: DisplayMessage): string | null {
 
 function MessageCardImpl({ msg, channelLabel, observe }: Props) {
   const save = useSaveToggle();
+  const { mode } = useUnreadIndicator();
   const ref: MsgRef = { channel_id: msg.channel_id, message_id: msg.id };
   const fwdName = forwardSourceName(msg);
 
@@ -49,17 +51,27 @@ function MessageCardImpl({ msg, channelLabel, observe }: Props) {
   );
 
   return (
-    <article ref={attach} data-read={msg.is_read ? '' : undefined} className="group relative px-4 py-3 sm:px-5">
+    <article
+      ref={attach}
+      data-read={msg.is_read ? '' : undefined}
+      className={cn(
+        'group relative border-b py-3 transition-colors duration-500',
+        mode === 'divider' && !msg.is_read ? 'border-sky-500 dark:border-sky-400' : 'border-border/50',
+      )}
+    >
       <header className="flex items-center gap-2 text-xs text-muted-foreground">
-        <div className="relative flex items-center gap-2">
-          {/* Unread marker: a sky dot in the left gutter, transparent once read so it fades out. */}
-          <span
-            aria-hidden
-            className={cn(
-              'absolute -left-3 top-1/2 size-2 -translate-y-1/2 rounded-full transition-colors duration-500',
-              !msg.is_read && 'bg-sky-500 dark:bg-sky-400',
-            )}
-          />
+        <div className="flex items-center gap-2">
+          {/* Unread marker (dot mode): a sky dot before the avatar; fades to transparent
+              once the message is read. Rendered only in dot mode so divider mode has no slot. */}
+          {mode === 'dot' && (
+            <span
+              aria-hidden
+              className={cn(
+                'size-2 shrink-0 rounded-full transition-colors duration-500',
+                !msg.is_read && 'bg-sky-500 dark:bg-sky-400',
+              )}
+            />
+          )}
           <ChannelAvatar channelId={msg.channel_id} name={channelLabel} className="size-5 text-[10px]" />
           <span className="font-medium text-foreground/80">{channelLabel}</span>
         </div>
