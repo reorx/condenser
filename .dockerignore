@@ -1,0 +1,19 @@
+# Build context = the condenser/ dir; the Dockerfile only needs pyproject.toml,
+# uv.lock and the condenser/ package. Keep everything else out of the context.
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.git/
+.firecrawl/
+
+# Frontend is not part of the backend image (spec step 8 not wired yet).
+frontend/
+
+# Local-only artifacts
+tmp/
+*.db
+*.db-journal
+.env
+condenser_entity_cache.json

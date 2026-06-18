@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "Self-hosted single-user Telegram channel aggregating reader"
 requires-python = ">=3.10"
 dependencies = [
-    "telememo",
+    "telememo>=0.1.0",
     "fastapi>=0.110.0",
     "uvicorn[standard]>=0.29.0",
     "pydantic>=2.5.0",
@@ -27,9 +27,6 @@ dev = [
 
 [project.scripts]
 condenser = "condenser.__main__:main"
-
-[tool.uv.sources]
-telememo = { path = "../telememo", editable = true }
 
 [tool.hatch.build.targets.wheel]
 packages = ["condenser"]

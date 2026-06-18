@@ -10,7 +10,7 @@ This repository currently implements the **backend** (spec Parts A/B/C). The Rea
 ## Architecture
 
 A single Python process runs FastAPI and a Telethon (MTProto user-account) client on one
-asyncio loop. It shares **one SQLite file** with [telememo](../telememo):
+asyncio loop. It shares **one SQLite file** with [telememo](https://pypi.org/project/telememo/):
 
 - telememo owns `channels` / `messages` / `comments` (a rebuildable cache).
 - condenser owns `subscriptions` / `keyword_filters` / `read_messages` /
@@ -23,14 +23,45 @@ the timeline query only reads a boolean. Saved records snapshot full message dat
 
 ## Development
 
-Requires [uv](https://docs.astral.dev/uv/) and a local `../telememo` checkout.
+Requires [uv](https://docs.astral.dev/uv/). [telememo](https://pypi.org/project/telememo/)
+is pulled from PyPI, so no sibling checkout is needed for a normal install.
 
 ```bash
-uv sync --extra dev          # installs condenser + editable telememo
+uv sync --extra dev          # installs condenser + deps (telememo from PyPI)
 cp .env.example .env         # fill in the values below
 uv run python -m condenser   # serves http://localhost:8792
 uv run pytest                # backend test suite (Telegram fully mocked)
 ```
+
+### Co-developing telememo locally (like `npm link`)
+
+To run condenser against a local `../telememo` checkout instead of the PyPI release —
+e.g. when changing the shared DB schema — overlay an **editable install** of it:
+
+```bash
+uv pip install -e ../telememo   # link the local checkout into the venv
+```
+
+`uv run` re-syncs the venv to the lockfile on every invocation, which would silently
+restore the PyPI version, so disable that sync while the link is active:
+
+```bash
+export UV_NO_SYNC=1             # for the session (or pass --no-sync to each `uv run`)
+uv run uvicorn condenser.app:create_app --factory --reload \
+  --reload-dir condenser --reload-dir ../telememo/telememo --port 8792
+uv run pytest
+```
+
+To **unlink**, restore the locked PyPI version:
+
+```bash
+uv sync --extra dev
+```
+
+This overlay is preferred over editing `pyproject.toml` because it never risks
+committing a local path dependency. (If you'd rather have a persistent link,
+`uv add --editable ../telememo` works too — just don't commit the resulting
+`pyproject.toml` / `uv.lock` changes.)
 
 ### Configuration (env vars)
 
@@ -48,9 +79,9 @@ uv run pytest                # backend test suite (Telegram fully mocked)
 docker compose up --build    # from condenser/
 ```
 
-The build context is the parent directory so the `../telememo` path dependency resolves;
-arrange a workspace containing only `telememo/` and `condenser/` to keep the context small.
-SQLite is persisted to the `condenser-data` volume.
+telememo is installed from PyPI during the build, so the build context is just the
+`condenser/` directory — no sibling checkout required. SQLite is persisted to the
+`condenser-data` volume.
 
 ## ⚠️ Risk notice (spec D2)
 

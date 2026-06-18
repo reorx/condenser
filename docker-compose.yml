@@ -1,10 +1,10 @@
 # Run from the condenser/ directory: `docker compose up --build`
-# The build context is the parent dir so telememo/ is available to the path dependency.
+# telememo is installed from PyPI during the build, so the context is just this dir.
 services:
   condenser:
     build:
-      context: ..
-      dockerfile: condenser/Dockerfile
+      context: .
+      dockerfile: Dockerfile
     env_file: .env
     ports:
       - "8792:8792"

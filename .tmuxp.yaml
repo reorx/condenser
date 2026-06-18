@@ -11,9 +11,11 @@ windows:
       #
       # --reload-dir scopes the file watcher to the Python sources only. Without it,
       # --reload walks the whole repo (.venv ~78M, frontend/node_modules ~204M, tmp/),
-      # which is slow and wasteful. We also watch the editable telememo dependency so
-      # edits there (shared DB/models) reload the backend too.
-      - shell_command: uv run uvicorn condenser.app:create_app --factory --reload --reload-dir condenser --reload-dir ../telememo/telememo --port 8792
+      # which is slow and wasteful. telememo comes from PyPI, so it isn't watched.
+      # Co-developing telememo? Link it and keep the link across `uv run`:
+      #   uv pip install -e ../telememo && export UV_NO_SYNC=1
+      # then append `--reload-dir ../telememo/telememo` to the command below.
+      - shell_command: uv run uvicorn condenser.app:create_app --factory --reload --reload-dir condenser --port 8792
       # Vite dev server on :5792, proxies /api -> http://localhost:8792.
       - shell_command: pnpm dev
         start_directory: frontend

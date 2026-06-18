@@ -13,7 +13,9 @@ build + README.
 ## Architecture
 
 Single Python process: FastAPI + a Telethon MTProto **user-account** client on one asyncio
-loop. Shares **one SQLite file** with [telememo](../telememo) (editable path dependency).
+loop. Shares **one SQLite file** with [telememo](https://pypi.org/project/telememo/)
+(a **PyPI dependency**; co-develop a local `../telememo` checkout via an editable overlay
+— see the README "Co-developing telememo locally" section).
 
 - telememo owns `channels` / `messages` / `comments` + the `messages.is_filtered` overlay
   column (a rebuildable cache). `messages.media_width` / `media_height` are telememo-native
@@ -133,14 +135,18 @@ Remaining: Docker multi-stage frontend build + README (spec step 9).
 ## Dev
 
 ```bash
-uv sync --extra dev
+uv sync --extra dev    # telememo comes from PyPI; no ../telememo checkout needed
 cp .env.example .env   # fill TELEGRAM_API_ID/HASH, CONDENSER_APP_PASSWORD, CONDENSER_SECRET_KEY
-uv run pytest          # 18 backend tests, Telegram mocked
+uv run pytest          # 31 backend tests, Telegram mocked
 
-# Local dev backend (auto-reload; watcher scoped to the Python sources + editable telememo):
-uv run uvicorn condenser.app:create_app --factory --reload \
-  --reload-dir condenser --reload-dir ../telememo/telememo --port 8792
+# Local dev backend (auto-reload; watcher scoped to the Python sources):
+uv run uvicorn condenser.app:create_app --factory --reload --reload-dir condenser --port 8792
 # No-reload / prod-style run (binds 0.0.0.0): uv run python -m condenser
+
+# Co-developing telememo (npm-link style): overlay an editable install, then keep it
+# alive across `uv run` (which otherwise re-syncs to the lock and restores PyPI):
+#   uv pip install -e ../telememo && export UV_NO_SYNC=1
+# then add `--reload-dir ../telememo/telememo` above. Unlink with `uv sync`.
 
 cd frontend && pnpm install && pnpm dev   # proxies /api -> :8792 (CONDENSER_BACKEND overrides)
 pnpm build                                # -> frontend/dist (served by backend in prod)
