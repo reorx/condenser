@@ -13,3 +13,6 @@ frontend/node_modules/.tmp/
 
 # firecrawl search cache (local tooling artifact)
 .firecrawl/
+
+# Telethon forward-entity name cache (runtime artifact; CONDENSER_ENTITY_CACHE_PATH)
+condenser_entity_cache.json
