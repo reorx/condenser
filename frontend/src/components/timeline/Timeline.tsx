@@ -132,7 +132,6 @@ export function Timeline({ channelId, unreadOnly, date }: { channelId?: number; 
                 msg={m}
                 channelLabel={labels.get(m.channel_id) ?? `Channel ${m.channel_id}`}
                 observe={observe}
-                showChannel={channelId == null}
               />
             ))}
           </div>
