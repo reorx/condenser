@@ -1,9 +1,11 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { useInfiniteQuery } from '@tanstack/react-query';
 import { ArrowUp, Inbox } from 'lucide-react';
 
+import { AllChannelsHidden, ChannelFilter } from '@/components/ChannelFilter';
 import { Spinner } from '@/components/Spinner';
 import { Button } from '@/components/ui/button';
+import { useChannelFilter } from '@/hooks/useChannelFilter';
 import { useNewContent } from '@/hooks/useNewContent';
 import { useScrollToRead } from '@/hooks/useScrollToRead';
 import { useChannelLabels, useSubscriptions } from '@/hooks/useSubscriptions';
@@ -55,7 +57,18 @@ export function Timeline({ channelId, unreadOnly, date }: { channelId?: number; 
   });
 
   const items = useMemo(() => query.data?.pages.flatMap((p) => p.items) ?? [], [query.data]);
-  const groups = useMemo(() => groupByDay(items), [items]);
+
+  // Client-side channel filter over the loaded messages; hidden channels drop out of view.
+  const nameOf = useCallback((m: DisplayMessage) => labels.get(m.channel_id) ?? `Channel ${m.channel_id}`, [labels]);
+  const filter = useChannelFilter(items, nameOf);
+  const showFilter = filter.channels.length > 1;
+  // With only one channel present (e.g. a single-channel view) there's nothing to
+  // filter — bypass the hidden set so it can't leak in from another mounted view.
+  const visible = showFilter ? filter.visible : items;
+  const groups = useMemo(() => groupByDay(visible), [visible]);
+  const filterControl = showFilter ? (
+    <ChannelFilter channels={filter.channels} hidden={filter.hidden} onToggle={filter.toggle} onClear={filter.clear} />
+  ) : null;
 
   // New-content poll: anchored to the newest loaded item; disabled in date-filtered views.
   const headCursor = query.data?.pages[0]?.head_cursor ?? null;
@@ -108,6 +121,19 @@ export function Timeline({ channelId, unreadOnly, date }: { channelId?: number; 
     );
   }
 
+  // Everything was filtered out — keep the control reachable so the user can recover.
+  if (showFilter && filter.visible.length === 0) {
+    return (
+      <div>
+        <div className="sticky top-12 z-10 flex items-center justify-between gap-2 border-b bg-background/80 px-4 py-1.5 text-xs font-medium text-muted-foreground backdrop-blur sm:px-5 md:top-0">
+          <span>All channels hidden</span>
+          {filterControl}
+        </div>
+        <AllChannelsHidden icon={Inbox} onClear={filter.clear} />
+      </div>
+    );
+  }
+
   return (
     <div>
       {newCount > 0 && !query.isRefetching && (
@@ -122,8 +148,9 @@ export function Timeline({ channelId, unreadOnly, date }: { channelId?: number; 
       )}
       {groups.map((g) => (
         <section key={g.day}>
-          <div className="sticky top-12 z-10 border-b bg-background/80 px-4 py-1.5 text-xs font-medium text-muted-foreground backdrop-blur sm:px-5 md:top-0">
-            {dayLabel(g.items[0].date)}
+          <div className="sticky top-12 z-10 flex items-center justify-between gap-2 border-b bg-background/80 px-4 py-1.5 text-xs font-medium text-muted-foreground backdrop-blur sm:px-5 md:top-0">
+            <span>{dayLabel(g.items[0].date)}</span>
+            {filterControl}
           </div>
           <div className="divide-y divide-border/50">
             {g.items.map((m) => (
