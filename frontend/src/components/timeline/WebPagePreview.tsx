@@ -1,6 +1,8 @@
 import { useState } from 'react';
 
+import { Skeleton } from '@/components/ui/skeleton';
 import { mediaUrl } from '@/lib/api';
+import { cn } from '@/lib/utils';
 import type { WebPagePreview as WebPagePreviewData } from '@/lib/types';
 
 /** Hostname for the accent line when the preview has no site_name. */
@@ -27,6 +29,7 @@ export function WebPagePreview({
   webpage: WebPagePreviewData;
 }) {
   const [imgFailed, setImgFailed] = useState(false);
+  const [imgLoaded, setImgLoaded] = useState(false);
   if (!webpage.url) return null;
 
   const source = webpage.site_name || webpage.author || hostOf(webpage.display_url || webpage.url);
@@ -41,14 +44,22 @@ export function WebPagePreview({
       className="mt-2 flex gap-3 overflow-hidden rounded-lg border border-l-[3px] border-l-sky-500 bg-muted/30 p-3 transition-colors hover:bg-muted/60"
     >
       {showImage && (
-        <img
-          src={mediaUrl(channelId, messageId, true)}
-          alt=""
-          loading="lazy"
-          decoding="async"
-          onError={() => setImgFailed(true)}
-          className="size-16 shrink-0 rounded-md bg-muted object-cover sm:size-20"
-        />
+        <div className="relative size-16 shrink-0 overflow-hidden rounded-md sm:size-20">
+          {!imgLoaded && <Skeleton className="absolute inset-0 rounded-md" />}
+          <img
+            src={mediaUrl(channelId, messageId, true)}
+            alt=""
+            loading="lazy"
+            decoding="async"
+            onLoad={() => setImgLoaded(true)}
+            onError={() => setImgFailed(true)}
+            className={cn(
+              'absolute inset-0 h-full w-full object-cover',
+              'transition-opacity duration-300 ease-out',
+              imgLoaded ? 'opacity-100' : 'opacity-0',
+            )}
+          />
+        </div>
       )}
       <div className="min-w-0 flex-1">
         {source && <div className="truncate text-xs font-medium text-sky-600 dark:text-sky-400">{source}</div>}

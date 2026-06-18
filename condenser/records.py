@@ -15,7 +15,8 @@ from . import db
 
 _MSG_COLS = """
     id, channel_id AS channel, text, date, sender_id, sender_name,
-    views, forwards, replies, is_edited, edit_date, media_type, has_media, grouped_id,
+    views, forwards, replies, is_edited, edit_date, media_type, has_media,
+    media_width, media_height, grouped_id,
     webpage,
     is_forwarded, fwd_from_channel_id, fwd_from_channel_name, fwd_from_user_id,
     fwd_from_user_name, fwd_from_message_id, fwd_original_date, fwd_post_author

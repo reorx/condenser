@@ -6,6 +6,9 @@ export interface MediaItem {
   message_id: number;
   media_type: string | null;
   has_media: boolean;
+  /** Pixel dimensions of the media, when known (NULL for historical rows pre-migration). */
+  width: number | null;
+  height: number | null;
 }
 
 export interface ForwardInfo {

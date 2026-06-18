@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { FileText } from 'lucide-react';
 
+import { Skeleton } from '@/components/ui/skeleton';
 import { mediaUrl } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import type { MediaItem } from '@/lib/types';
@@ -14,18 +15,28 @@ function isRenderable(item: MediaItem): boolean {
   return item.has_media && item.media_type !== 'webpage' && item.media_type != null;
 }
 
+const SINGLE_FALLBACK_ASPECT = '4 / 3';
+const GRID_ASPECT = '1 / 1';
+
 function Thumb({
   channelId,
   item,
   className,
+  initialAspect,
+  /** When true, container aspect always stays at initialAspect (grid cells). */
+  lockAspect,
   onOpen,
 }: {
   channelId: number;
   item: MediaItem;
   className?: string;
+  initialAspect: string;
+  lockAspect?: boolean;
   onOpen: () => void;
 }) {
   const [failed, setFailed] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+  const [aspect, setAspect] = useState<string>(initialAspect);
 
   // No preview image (audio/doc) -> a chip linking to the proxied file, not the lightbox.
   if (failed) {
@@ -46,14 +57,42 @@ function Thumb({
   }
 
   return (
-    <button type="button" onClick={onOpen} className={cn('block cursor-zoom-in overflow-hidden', className)}>
+    <button
+      type="button"
+      onClick={onOpen}
+      style={{ aspectRatio: aspect }}
+      className={cn(
+        // max-h caps portrait thumbs (object-cover then crops); full image lives in the Lightbox.
+        'relative block w-full cursor-zoom-in overflow-hidden',
+        'transition-[aspect-ratio] duration-300 ease-out',
+        className,
+      )}
+    >
+      {!loaded && <Skeleton className="absolute inset-0 rounded-none" />}
       <img
         src={mediaUrl(channelId, item.message_id, true)}
         alt=""
         loading="lazy"
         decoding="async"
+        onLoad={(e) => {
+          const img = e.currentTarget;
+          // Override the placeholder aspect with the natural one ONLY when:
+          //  - the caller didn't lock it (grid cells stay square), AND
+          //  - we didn't already get exact dimensions from the API.
+          // For new rows with API dimensions, the inline aspect already matches.
+          if (!lockAspect && (!item.width || !item.height)) {
+            if (img.naturalWidth > 0 && img.naturalHeight > 0) {
+              setAspect(`${img.naturalWidth} / ${img.naturalHeight}`);
+            }
+          }
+          setLoaded(true);
+        }}
         onError={() => setFailed(true)}
-        className="h-full w-full bg-muted object-cover"
+        className={cn(
+          'absolute inset-0 h-full w-full object-cover',
+          'transition-opacity duration-300 ease-out',
+          loaded ? 'opacity-100' : 'opacity-0',
+        )}
       />
     </button>
   );
@@ -64,13 +103,19 @@ export function MessageMedia({ channelId, items }: { channelId: number; items: M
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   if (media.length === 0) return null;
 
+  const singleAspect =
+    media.length === 1 && media[0].width && media[0].height
+      ? `${media[0].width} / ${media[0].height}`
+      : SINGLE_FALLBACK_ASPECT;
+
   const grid =
     media.length === 1 ? (
       <div className="mt-2 overflow-hidden rounded-lg border">
         <Thumb
           channelId={channelId}
           item={media[0]}
-          className="max-h-[28rem] w-auto"
+          initialAspect={singleAspect}
+          className="max-h-[28rem]"
           onOpen={() => setLightboxIndex(0)}
         />
       </div>
@@ -86,7 +131,8 @@ export function MessageMedia({ channelId, items }: { channelId: number; items: M
             key={item.message_id}
             channelId={channelId}
             item={item}
-            className="aspect-square"
+            initialAspect={GRID_ASPECT}
+            lockAspect
             onOpen={() => setLightboxIndex(i)}
           />
         ))}

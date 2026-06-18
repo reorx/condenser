@@ -13,7 +13,9 @@ Single Python process: FastAPI + a Telethon MTProto **user-account** client on o
 loop. Shares **one SQLite file** with [telememo](../telememo) (editable path dependency).
 
 - telememo owns `channels` / `messages` / `comments` + the `messages.is_filtered` overlay
-  column (a rebuildable cache).
+  column (a rebuildable cache). `messages.media_width` / `media_height` are telememo-native
+  (filled on ingest via `message.file.width/height`, used by the frontend to reserve image
+  placeholder space; NULL on historical rows pre-2026-06-18).
 - condenser owns `subscriptions` / `keyword_filters` / `read_messages` / `telegram_records`
   / `tg_session` / `app_meta` (the user's assets + app state).
 
@@ -85,6 +87,12 @@ React Router v7, **pnpm**. Backend `app.py` auto-serves `frontend/dist` at `/` i
   and naive forms (appends `Z`). Day grouping/calendar use the UTC day key. Media: try
   thumbnail, `<img onError>` → file chip (video/file both report `media_type='document'`);
   thumbnails open `Lightbox`. entities not rendered (backend doesn't persist them).
+- **Media skeleton + aspect-ratio transition**: `MessageMedia` `Thumb` reserves space with
+  inline `style={{ aspectRatio }}` (API `width/height` → exact; else 4/3 single / 1/1 grid),
+  shows `<Skeleton />` (in `components/ui/skeleton.tsx`) until `<img>.onLoad`, then fades the
+  image in via `opacity` and — for single images without API dimensions — overwrites the
+  aspect with `naturalWidth/naturalHeight`. `lockAspect` keeps multi-grid cells square.
+  WebPagePreview thumbs use the same skeleton+fade pattern (fixed-size, no aspect change).
 - **Forwarded messages**: `MessageCard` renders `↪ Forwarded` above the box, source name
   (`from_channel_name` → `from_user_name` → `post_author`) as the first line inside the
   box. `forwardSourceName(msg)` returns the name or null; null means just show "Forwarded"
