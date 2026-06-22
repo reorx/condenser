@@ -1,0 +1,31 @@
+// Zellij layout mirroring .tmuxp.yaml — the condenser dev environment.
+//
+// Launch from the project root (relative `cwd` resolves against zellij's start dir):
+//   zellij --layout condenser.kdl
+// To name the session like tmuxp's `session_name: condenser`:
+//   zellij --session condenser --layout condenser.kdl
+layout {
+    cwd "."
+    // tmux `even-horizontal` = panes side by side → zellij `vertical` split.
+    tab name="dev" split_direction="vertical" {
+        // FastAPI backend on :8792 with auto-reload. Loads .env from the project root
+        // (TELEGRAM_API_* / CONDENSER_APP_PASSWORD / CONDENSER_SECRET_KEY).
+        //
+        // --reload-dir scopes the file watcher to the Python sources only. Without it,
+        // --reload walks the whole repo (.venv ~78M, frontend/node_modules ~204M, tmp/),
+        // which is slow and wasteful. telememo comes from PyPI, so it isn't watched.
+        // Co-developing telememo? Link it and keep the link across `uv run`:
+        //   uv pip install -e ../telememo && export UV_NO_SYNC=1
+        // then append  --reload-dir ../telememo/telememo  to the args below.
+        pane name="backend" {
+            command "uv"
+            args "run" "uvicorn" "condenser.app:create_app" "--factory" "--reload" "--reload-dir" "condenser" "--port" "8792"
+        }
+        // Vite dev server on :5792, proxies /api -> http://localhost:8792.
+        pane name="frontend" {
+            cwd "frontend"
+            command "pnpm"
+            args "dev"
+        }
+    }
+}
