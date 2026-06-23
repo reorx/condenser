@@ -1,17 +1,15 @@
 import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Check, RefreshCw, Search } from 'lucide-react';
+import { RefreshCw, Search } from 'lucide-react';
 import { toast } from 'sonner';
 
-import { ChannelAvatar } from '@/components/ChannelAvatar';
 import { Spinner } from '@/components/Spinner';
+import { BrowseChannelRow } from '@/components/subscriptions/BrowseChannelRow';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { api, errorMessage } from '@/lib/api';
-import { channelName } from '@/lib/format';
 import type { JoinedChannel } from '@/lib/types';
-import { cn } from '@/lib/utils';
 
 interface BrowseChannelsDialogProps {
   open: boolean;
@@ -122,50 +120,14 @@ export function BrowseChannelsDialog({ open, onOpenChange }: BrowseChannelsDialo
             </p>
           ) : (
             <ul className="flex flex-col gap-0.5">
-              {filtered.map((c) => {
-                const isSelected = selected.has(c.channel_id);
-                return (
-                  <li key={c.channel_id}>
-                    <button
-                      type="button"
-                      disabled={c.subscribed}
-                      onClick={() => toggle(c.channel_id)}
-                      className={cn(
-                        'flex w-full items-center gap-3 rounded-md px-2.5 py-2 text-left transition-colors',
-                        c.subscribed ? 'cursor-default opacity-60' : 'hover:bg-accent/60',
-                        isSelected && 'bg-accent',
-                      )}
-                    >
-                      <ChannelAvatar channelId={c.channel_id} name={channelName(c)} className="size-8" letterOnly />
-                      <div className="min-w-0 flex-1">
-                        <div className="truncate text-sm font-medium">{channelName(c)}</div>
-                        {c.username && <div className="truncate text-xs text-muted-foreground">@{c.username}</div>}
-                      </div>
-                      {c.unread > 0 && (
-                        <span
-                          className="shrink-0 rounded-full bg-muted px-1.5 text-[11px] tabular-nums text-muted-foreground"
-                          title={`${c.unread} unread on Telegram`}
-                        >
-                          {c.unread > 999 ? '999+' : c.unread}
-                        </span>
-                      )}
-                      {c.subscribed ? (
-                        <span className="shrink-0 text-xs text-muted-foreground">Added</span>
-                      ) : (
-                        <span
-                          className={cn(
-                            'flex size-5 shrink-0 items-center justify-center rounded border transition-colors',
-                            isSelected ? 'border-primary bg-primary text-primary-foreground' : 'border-input',
-                          )}
-                          aria-hidden
-                        >
-                          {isSelected && <Check className="size-3.5" />}
-                        </span>
-                      )}
-                    </button>
-                  </li>
-                );
-              })}
+              {filtered.map((c) => (
+                <BrowseChannelRow
+                  key={c.channel_id}
+                  channel={c}
+                  selected={selected.has(c.channel_id)}
+                  onToggle={toggle}
+                />
+              ))}
             </ul>
           )}
         </div>

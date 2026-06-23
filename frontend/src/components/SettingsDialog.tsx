@@ -3,6 +3,7 @@ import { useMutation } from '@tanstack/react-query';
 import { Circle, Lock, LogOut, Minus, Monitor, Moon, Phone, Sun } from 'lucide-react';
 
 import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { SegmentedOption } from '@/components/SegmentedOption';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useTgStatus } from '@/hooks/useTgStatus';
@@ -10,7 +11,6 @@ import { api } from '@/lib/api';
 import { queryClient, TG_STATUS_KEY } from '@/lib/queryClient';
 import { type Theme, useTheme } from '@/lib/theme';
 import { type UnreadIndicatorMode, useUnreadIndicator } from '@/lib/unreadIndicator';
-import { cn } from '@/lib/utils';
 
 const THEME_OPTIONS: { value: Theme; label: string; icon: typeof Sun }[] = [
   { value: 'light', label: 'Light', icon: Sun },
@@ -78,54 +78,30 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
         <div className="space-y-2">
           <SectionLabel>Appearance</SectionLabel>
           <div className="grid grid-cols-3 gap-1.5">
-            {THEME_OPTIONS.map((opt) => {
-              const Icon = opt.icon;
-              const active = theme === opt.value;
-              return (
-                <button
-                  key={opt.value}
-                  type="button"
-                  onClick={() => setTheme(opt.value)}
-                  className={cn(
-                    'flex flex-col items-center gap-1.5 rounded-md border py-2.5 text-xs transition-colors',
-                    active
-                      ? 'border-primary bg-accent text-accent-foreground'
-                      : 'text-muted-foreground hover:bg-accent/50',
-                  )}
-                  aria-pressed={active}
-                >
-                  <Icon className="size-4" />
-                  {opt.label}
-                </button>
-              );
-            })}
+            {THEME_OPTIONS.map((opt) => (
+              <SegmentedOption
+                key={opt.value}
+                icon={opt.icon}
+                label={opt.label}
+                active={theme === opt.value}
+                onClick={() => setTheme(opt.value)}
+              />
+            ))}
           </div>
         </div>
 
         <div className="space-y-2">
           <SectionLabel>Unread</SectionLabel>
           <div className="grid grid-cols-2 gap-1.5">
-            {UNREAD_OPTIONS.map((opt) => {
-              const Icon = opt.icon;
-              const active = unreadMode === opt.value;
-              return (
-                <button
-                  key={opt.value}
-                  type="button"
-                  onClick={() => setUnreadMode(opt.value)}
-                  className={cn(
-                    'flex flex-col items-center gap-1.5 rounded-md border py-2.5 text-xs transition-colors',
-                    active
-                      ? 'border-primary bg-accent text-accent-foreground'
-                      : 'text-muted-foreground hover:bg-accent/50',
-                  )}
-                  aria-pressed={active}
-                >
-                  <Icon className="size-4" />
-                  {opt.label}
-                </button>
-              );
-            })}
+            {UNREAD_OPTIONS.map((opt) => (
+              <SegmentedOption
+                key={opt.value}
+                icon={opt.icon}
+                label={opt.label}
+                active={unreadMode === opt.value}
+                onClick={() => setUnreadMode(opt.value)}
+              />
+            ))}
           </div>
         </div>
 

@@ -3,32 +3,15 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Bookmark, Filter, Inbox, Plus, Radio, Search, Settings, Sparkles } from 'lucide-react';
 import { NavLink, useLocation } from 'react-router-dom';
 
-import { ChannelAvatar } from '@/components/ChannelAvatar';
 import { SettingsDialog } from '@/components/SettingsDialog';
+import { navLinkClass, SidebarChannelLink } from '@/components/SidebarChannelLink';
 import { BrowseChannelsDialog } from '@/components/subscriptions/BrowseChannelsDialog';
 import { Spinner } from '@/components/Spinner';
+import { UnreadBadge } from '@/components/UnreadBadge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useSubscriptions } from '@/hooks/useSubscriptions';
 import { api, ApiError } from '@/lib/api';
-import { channelName } from '@/lib/format';
-import { cn } from '@/lib/utils';
-
-function navClass({ isActive }: { isActive: boolean }) {
-  return cn(
-    'flex items-center gap-2 rounded-md px-2.5 py-1.5 text-sm transition-colors',
-    isActive ? 'bg-accent text-accent-foreground font-medium' : 'text-muted-foreground hover:bg-accent/60',
-  );
-}
-
-function UnreadBadge({ count }: { count: number }) {
-  if (count <= 0) return null;
-  return (
-    <span className="ml-auto rounded-full bg-muted px-1.5 text-[11px] tabular-nums text-muted-foreground">
-      {count > 999 ? '999+' : count}
-    </span>
-  );
-}
 
 export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   const qc = useQueryClient();
@@ -61,24 +44,24 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
       </div>
 
       <nav className="flex flex-col gap-0.5">
-        <NavLink to="/" end className={navClass({ isActive: allActive })} onClick={onNavigate}>
+        <NavLink to="/" end className={navLinkClass({ isActive: allActive })} onClick={onNavigate}>
           <Inbox className="size-4" />
           All
         </NavLink>
-        <NavLink to="/?unread=1" className={navClass({ isActive: unreadActive })} onClick={onNavigate}>
+        <NavLink to="/?unread=1" className={navLinkClass({ isActive: unreadActive })} onClick={onNavigate}>
           <Sparkles className="size-4" />
           Unread
           <UnreadBadge count={totalUnread} />
         </NavLink>
-        <NavLink to="/saved" className={navClass} onClick={onNavigate}>
+        <NavLink to="/saved" className={navLinkClass} onClick={onNavigate}>
           <Bookmark className="size-4" />
           Saved
         </NavLink>
-        <NavLink to="/filters" className={navClass} onClick={onNavigate}>
+        <NavLink to="/filters" className={navLinkClass} onClick={onNavigate}>
           <Filter className="size-4" />
           Filters
         </NavLink>
-        <NavLink to="/subscriptions" className={navClass} onClick={onNavigate}>
+        <NavLink to="/subscriptions" className={navLinkClass} onClick={onNavigate}>
           <Radio className="size-4" />
           Manage channels
         </NavLink>
@@ -90,11 +73,7 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
         </div>
         <div className="flex flex-col gap-0.5">
           {enabledSubs.map((s) => (
-            <NavLink key={s.channel_id} to={`/c/${s.channel_id}`} className={navClass} onClick={onNavigate}>
-              <ChannelAvatar channelId={s.channel_id} name={channelName(s)} className="size-5 text-[10px]" />
-              <span className="truncate">{channelName(s)}</span>
-              <UnreadBadge count={s.unread} />
-            </NavLink>
+            <SidebarChannelLink key={s.channel_id} sub={s} onNavigate={onNavigate} />
           ))}
           {enabledSubs.length === 0 && <p className="px-2.5 py-1 text-xs text-muted-foreground/70">No channels yet.</p>}
         </div>

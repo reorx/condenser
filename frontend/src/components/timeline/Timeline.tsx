@@ -7,11 +7,11 @@ import { Button } from '@/components/ui/button';
 import { useNewContent } from '@/hooks/useNewContent';
 import { useScrollToRead } from '@/hooks/useScrollToRead';
 import { useChannelLabels, useSubscriptions } from '@/hooks/useSubscriptions';
-import { dayKey, dayLabel } from '@/lib/format';
+import { dayKey } from '@/lib/format';
 import type { DisplayMessage } from '@/lib/types';
 import type { TimelineQuery } from '@/hooks/useTimeline';
 
-import { MessageCard } from './MessageCard';
+import { TimelineDayGroup } from './TimelineDayGroup';
 import { TimelineSkeleton } from './TimelineSkeleton';
 
 interface DayGroup {
@@ -134,22 +134,7 @@ export function Timeline({
         </button>
       )}
       {groups.map((g) => (
-        <section key={g.day}>
-          {/* Date divider: a static marker between days, not a floating sticky bar. */}
-          <div className="px-4 pt-6 pb-2 text-xs font-medium text-muted-foreground sm:px-5">
-            {dayLabel(g.items[0].date)}
-          </div>
-          <div>
-            {g.items.map((m) => (
-              <MessageCard
-                key={`${m.channel_id}:${m.id}`}
-                msg={m}
-                channelLabel={labels.get(m.channel_id) ?? `Channel ${m.channel_id}`}
-                observe={observe}
-              />
-            ))}
-          </div>
-        </section>
+        <TimelineDayGroup key={g.day} items={g.items} labels={labels} observe={observe} />
       ))}
 
       <div ref={sentinel} />

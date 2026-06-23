@@ -1,6 +1,6 @@
 import { Filter, type LucideIcon } from 'lucide-react';
 
-import { ChannelAvatar } from '@/components/ChannelAvatar';
+import { ChannelFilterOption } from '@/components/ChannelFilterOption';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import type { ChannelSummary } from '@/hooks/useChannelFilter';
@@ -43,26 +43,9 @@ export function ChannelFilter({ channels, hidden, onToggle, onClear, className }
       </PopoverTrigger>
       <PopoverContent align="end" className="w-60 p-1">
         <div className="max-h-80 space-y-0.5 overflow-y-auto">
-          {channels.map((c) => {
-            const off = hidden.has(c.id);
-            return (
-              <button
-                key={c.id}
-                type="button"
-                onClick={() => onToggle(c.id)}
-                aria-pressed={!off}
-                className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm transition-colors hover:bg-accent"
-              >
-                <ChannelAvatar
-                  channelId={c.id}
-                  name={c.name}
-                  className={cn('size-6 text-[11px] transition-opacity', off && 'opacity-30')}
-                />
-                <span className={cn('flex-1 truncate', off && 'text-muted-foreground')}>{c.name}</span>
-                <span className="shrink-0 tabular-nums text-xs text-muted-foreground">{c.count}</span>
-              </button>
-            );
-          })}
+          {channels.map((c) => (
+            <ChannelFilterOption key={c.id} channel={c} off={hidden.has(c.id)} onToggle={onToggle} />
+          ))}
         </div>
         {active && (
           <div className="mt-1 border-t pt-1">

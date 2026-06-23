@@ -5,10 +5,10 @@ import { Bookmark } from 'lucide-react';
 import { AllChannelsHidden, ChannelFilter } from '@/components/ChannelFilter';
 import { IconBadge, PageHeader } from '@/components/PageHeader';
 import { Spinner } from '@/components/Spinner';
-import { MessageCard } from '@/components/timeline/MessageCard';
+import { SavedMessageItem } from '@/components/timeline/SavedMessageItem';
 import { useChannelFilter } from '@/hooks/useChannelFilter';
 import { api } from '@/lib/api';
-import { channelName, fullDateLabel } from '@/lib/format';
+import { channelName } from '@/lib/format';
 import type { DisplayMessage } from '@/lib/types';
 
 export function RecordsView() {
@@ -69,10 +69,7 @@ export function RecordsView() {
       {filter.visible.length > 0 && (
         <div className="divide-y divide-border/50">
           {filter.visible.map((m) => (
-            <div key={`${m.channel_id}:${m.id}`}>
-              <div className="px-4 pt-2 text-[11px] text-muted-foreground/70 sm:px-5">{fullDateLabel(m.date)}</div>
-              <MessageCard msg={m} channelLabel={channelName(m.channel)} />
-            </div>
+            <SavedMessageItem key={`${m.channel_id}:${m.id}`} msg={m} />
           ))}
         </div>
       )}
