@@ -1003,3 +1003,40 @@ def test_auth_error_demotes_session_to_unauthorized(env):
         row = db.get_tg_session()
         assert row.authorized is False and row.session_enc is None and row.phone == '+1'
         assert client.get('/api/tg/status').json()['status'] == 'unauthorized'
+
+
+# --- full channel info (member_count / description) -------------------------
+
+
+def test_enrich_channel_fills_member_count_and_description(env):
+    """resolve_channel only carries basic info; GetFullChannelRequest backfills the stats.
+
+    The enrich task must persist member_count + description through telememo's writer so the
+    subscription list can show them.
+    """
+    import asyncio
+    from types import SimpleNamespace
+
+    from telememo.types import ChannelInfo
+
+    with _client() as client:
+        _login(client)
+        seed_channel(5, 'TechNews', 'technews')  # base row from resolve/backfill
+        db.add_subscription(5)
+
+        full = SimpleNamespace(full_chat=SimpleNamespace(about='Daily tech digest', participants_count=4200))
+        fake = _fake_authorized_service()
+        fake.client = AsyncMock()  # client(req) and client.get_entity(...) both awaitable
+        fake.client.get_entity = AsyncMock(return_value=SimpleNamespace(id=5))
+        fake.client.return_value = full
+        tg = client.app.state.tg
+        tg.service = fake
+
+        asyncio.run(tg._enrich_channel(ChannelInfo(id=5, title='TechNews', username='technews')))
+
+        ch = tdb.get_channel(5)
+        assert ch.member_count == 4200
+        assert ch.description == 'Daily tech digest'
+
+        sub = client.get('/api/subscriptions').json()[0]
+        assert sub['member_count'] == 4200 and sub['description'] == 'Daily tech digest'

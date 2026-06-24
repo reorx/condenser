@@ -38,6 +38,8 @@ def list_subscriptions():
                 'backfill_done': bool(sub.backfill_done),
                 'title': channel.title if channel else None,
                 'username': channel.username if channel else None,
+                'member_count': channel.member_count if channel else None,
+                'description': channel.description if channel else None,
                 'unread': counts.get(sub.channel_id, 0),
             }
         )

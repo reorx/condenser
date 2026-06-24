@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from telethon.errors import FloodWaitError, UnauthorizedError
+from telethon.tl.functions.channels import GetFullChannelRequest
 
 from telememo import db as tdb
 from telememo.entity_cache import EntityNameCache
@@ -339,7 +340,37 @@ class TgManager:
         tdb.get_or_create_channel(info)
         db.add_subscription(info.id)
         self._spawn(self._backfill_channel(info.id))
+        self._spawn(self._enrich_channel(info))
         return info
+
+    async def _enrich_channel(self, info: ChannelInfo) -> None:
+        """Fill member_count/description, which a plain ``resolve_channel`` doesn't carry.
+
+        ``resolve_channel`` uses ``get_entity``, whose result lacks the full-chat stats — so
+        the subscription list shows no member count. Fetch them once via ``GetFullChannelRequest``
+        and persist through telememo's own writer (``get_or_create_channel`` updates the native
+        title/username/description/member_count columns), preserving the rest of ``info``.
+        Best-effort + auth-aware: a failure just leaves the basic info in place.
+        """
+        if self.service is None:
+            return
+        handle = self._channel_handle(info.id)
+        try:
+            entity = await self.service.client.get_entity(handle)
+            full = await self.service.client(GetFullChannelRequest(entity))
+        except Exception as e:  # noqa: BLE001 — background enrichment must never crash a subscribe
+            if self._is_auth_error(e):
+                await self._demote_session()
+                return
+            log.exception('full-channel enrich failed for %s', info.id)
+            return
+        about = getattr(full.full_chat, 'about', None)
+        participants = getattr(full.full_chat, 'participants_count', None)
+        if about:
+            info.description = about
+        if participants is not None:
+            info.member_count = participants
+        tdb.get_or_create_channel(info)
 
     async def _add_subscription(self, handle: str) -> ChannelInfo:
         """Resolve a handle then register the subscription (see _register_subscription)."""
