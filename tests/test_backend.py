@@ -1,5 +1,6 @@
 """Behavior tests for the condenser backend (spec §7 scenarios). Telegram mocked."""
 
+import os
 from unittest.mock import AsyncMock, MagicMock
 
 from fastapi.testclient import TestClient
@@ -10,6 +11,16 @@ from telememo.types import SignInResult
 from condenser import db, filters
 from condenser.app import create_app
 from tests.conftest import md, seed_channel, seed_messages
+
+
+# --- data layer: WAL journaling (robustness) --------------------------------
+
+
+def test_init_db_enables_wal(env):
+    """init_db must leave the file in WAL mode so concurrent reads/writes don't lock."""
+    db.init_db(os.environ['CONDENSER_DB_PATH'])
+    mode = tdb.db.execute_sql('PRAGMA journal_mode').fetchone()[0]
+    assert mode.lower() == 'wal'
 
 
 def _client(env_unused=None):

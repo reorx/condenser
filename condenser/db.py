@@ -125,6 +125,22 @@ def init_db(db_path: str) -> None:
     """Initialize the shared SQLite file: telememo tables (+ is_filtered) then condenser tables."""
     tdb.init_db(db_path, optional_fields=MESSAGES_OPTIONAL_FIELDS)
     tdb.db.create_tables(CONDENSER_TABLES)
+    _enable_wal(db_path)
+
+
+def _enable_wal(db_path: str) -> None:
+    """Switch the database to WAL journaling so a writer and readers can coexist.
+
+    Realtime ingest writes from the event-loop thread while user requests run on
+    uvicorn's sync threadpool — multiple connections to one file. WAL lets readers
+    proceed during a write instead of hitting ``database is locked``. The mode is a
+    persistent property stored in the file header, so setting it once is enough; new
+    per-thread connections inherit it. In-memory databases don't support WAL (each
+    ``:memory:`` connection is a distinct db), so we skip them.
+    """
+    if db_path == ':memory:':
+        return
+    tdb.db.execute_sql('PRAGMA journal_mode=WAL')
 
 
 def close_db() -> None:
