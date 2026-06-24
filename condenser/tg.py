@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Optional
 
-from telethon.errors import FloodWaitError
+from telethon.errors import FloodWaitError, UnauthorizedError
 
 from telememo import db as tdb
 from telememo.entity_cache import EntityNameCache
@@ -175,6 +175,38 @@ class TgManager:
             raise RuntimeError('telegram not authorized')
         return self.service
 
+    @staticmethod
+    def _is_auth_error(exc: BaseException) -> bool:
+        """Whether an exception means the *authorization* is dead (vs. a transient network error).
+
+        AuthKeyUnregistered / SessionRevoked / UserDeactivated all subclass UnauthorizedError.
+        """
+        return isinstance(exc, UnauthorizedError)
+
+    async def _demote_session(self) -> None:
+        """Tear down a session Telegram no longer accepts (revoked / auth key invalidated).
+
+        Telethon transparently reconnects dropped transports, but an invalidated
+        *authorization* never self-heals — every RPC keeps failing. Drop the service and
+        mark the stored session unauthorized (clearing the dead session blob so a restart
+        won't retry it) so ``status()`` reports ``unauthorized`` and the UI prompts a fresh
+        login. The phone is kept to pre-fill the login form. Best-effort disconnect of the
+        old client so it stops its background reconnect loop.
+        """
+        log.warning('telegram session invalidated; demoting to unauthorized (re-login required)')
+        old, self.service = self.service, None
+        self._pending_code_hash = None
+        self._awaiting_2fa = False
+        self._dialogs_cache = None
+        self._dialogs_cache_at = 0.0
+        row = db.get_tg_session()
+        db.save_tg_session(row.phone if row else self._pending_phone, None, authorized=False)
+        if old is not None:
+            try:
+                await old.disconnect()
+            except Exception:
+                log.exception('disconnect of demoted session failed')
+
     def _channel_handle(self, channel_id: int) -> str | int:
         """Prefer ``@username`` over a raw id for Telethon's ``get_entity``.
 
@@ -229,7 +261,10 @@ class TgManager:
         try:
             async for dm in service.backfill(handle, since_days=since_days):
                 ids.extend(dm.raw_message_ids or [dm.id])
-        except Exception:
+        except Exception as e:
+            if self._is_auth_error(e):
+                await self._demote_session()
+                return 0
             log.exception('backfill failed for channel %s', channel_id)
             return 0
         finally:
@@ -271,7 +306,10 @@ class TgManager:
         try:
             async for dm in service.backfill(handle, offset_id=oldest, max_messages=count, persist=True):
                 ids.extend(dm.raw_message_ids or [dm.id])
-        except Exception:
+        except Exception as e:
+            if self._is_auth_error(e):
+                await self._demote_session()
+                return 0
             log.exception('fetch-older failed for channel %s', channel_id)
             return 0
         if ids:
@@ -376,6 +414,9 @@ class TgManager:
                         raise
                     waited += e.seconds + 1
                     await asyncio.sleep(e.seconds + 1)
+                except UnauthorizedError:  # session died mid-listing — demote, then surface
+                    await self._demote_session()
+                    raise
 
             self._dialogs_cache = sorted(found.values(), key=lambda c: c.last_message_date or _EPOCH, reverse=True)
             self._dialogs_cache_at = time.monotonic()  # stamp after the fetch, not before the back-off

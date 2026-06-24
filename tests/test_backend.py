@@ -957,3 +957,49 @@ def test_startup_warms_entity_cache_from_dialogs(env):
         await tg._warm_entity_cache()  # swallows the error
 
     asyncio.run(scenario())
+
+
+# --- runtime session invalidation (revoke / dead auth key) ------------------
+
+
+def test_auth_error_demotes_session_to_unauthorized(env):
+    """An UnauthorizedError mid-operation tears down the session so the UI re-prompts login.
+
+    Telethon reconnects dropped transports, but a revoked authorization never self-heals.
+    The session must drop to 'unauthorized' (and the dead blob cleared) instead of looping.
+    """
+    import asyncio
+
+    from telethon.errors import UnauthorizedError
+
+    from condenser.config import get_settings
+    from condenser.crypto import encrypt_session
+
+    class _Revoked(UnauthorizedError):  # construct without telethon's RPCError args
+        def __init__(self):
+            pass
+
+    with _client() as client:
+        _login(client)
+        seed_channel(5, 'TechNews', 'technews')
+        db.add_subscription(5)
+        s = get_settings()
+        db.save_tg_session('+1', encrypt_session(s.condenser_secret_key, 'SESSION'), authorized=True)
+
+        async def fake_backfill(channel, since_days=None, **kw):
+            raise _Revoked()
+            yield  # async generator
+
+        fake = _fake_authorized_service()
+        fake.backfill = fake_backfill
+        fake.disconnect = AsyncMock()
+        tg = client.app.state.tg
+        tg.service = fake
+
+        asyncio.run(tg._backfill_channel(5))
+
+        assert tg.service is None
+        fake.disconnect.assert_awaited_once()  # old client torn down (stops reconnect loop)
+        row = db.get_tg_session()
+        assert row.authorized is False and row.session_enc is None and row.phone == '+1'
+        assert client.get('/api/tg/status').json()['status'] == 'unauthorized'
