@@ -95,7 +95,30 @@ class AppMeta(CondenserBaseModel):
         table_name = 'app_meta'
 
 
-CONDENSER_TABLES = [Subscription, KeywordFilter, ReadMessage, TelegramRecord, TgSession, AppMeta]
+class LinkPreviewCache(CondenserBaseModel):
+    """Cache of self-fetched URL previews, keyed by a normalized URL.
+
+    Condenser-owned (not a telememo table), so the extension-column contract does
+    not apply — we may upsert freely. ``ok`` distinguishes successful previews from
+    cached failures (negative caching with a shorter TTL). ``fetched_at`` is stored
+    naive-UTC so peewee round-trips it in its default datetime format.
+    """
+
+    url = TextField(primary_key=True)
+    ok = BooleanField()
+    title = TextField(null=True)
+    description = TextField(null=True)
+    image = TextField(null=True)
+    site_name = TextField(null=True)
+    canonical_url = TextField(null=True)
+    error = TextField(null=True)
+    fetched_at = DateTimeField()
+
+    class Meta:
+        table_name = 'link_previews'
+
+
+CONDENSER_TABLES = [Subscription, KeywordFilter, ReadMessage, TelegramRecord, TgSession, AppMeta, LinkPreviewCache]
 
 
 def init_db(db_path: str) -> None:
@@ -110,6 +133,11 @@ def close_db() -> None:
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def _now_naive() -> datetime:
+    """Current UTC time as a naive datetime (peewee round-trips naive datetimes cleanly)."""
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 # --- tg_session (single row, id=1) ------------------------------------------
@@ -316,4 +344,39 @@ def get_meta(key: str) -> Optional[str]:
 def set_meta(key: str, value: str) -> None:
     AppMeta.insert(key=key, value=value).on_conflict(
         conflict_target=[AppMeta.key], update={AppMeta.value: value}
+    ).execute()
+
+
+# --- link preview cache -----------------------------------------------------
+
+
+def get_cached_preview(url_key: str) -> Optional[LinkPreviewCache]:
+    return LinkPreviewCache.get_or_none(LinkPreviewCache.url == url_key)
+
+
+def upsert_preview(
+    url_key: str,
+    *,
+    ok: bool,
+    title: Optional[str] = None,
+    description: Optional[str] = None,
+    image: Optional[str] = None,
+    site_name: Optional[str] = None,
+    canonical_url: Optional[str] = None,
+    error: Optional[str] = None,
+) -> None:
+    """Insert/replace a cached preview keyed by the normalized URL."""
+    fields = {
+        'ok': ok,
+        'title': title,
+        'description': description,
+        'image': image,
+        'site_name': site_name,
+        'canonical_url': canonical_url,
+        'error': error,
+        'fetched_at': _now_naive(),
+    }
+    LinkPreviewCache.insert(url=url_key, **fields).on_conflict(
+        conflict_target=[LinkPreviewCache.url],
+        update={getattr(LinkPreviewCache, k): v for k, v in fields.items()},
     ).execute()

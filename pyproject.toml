@@ -16,13 +16,18 @@ dependencies = [
     "cryptography>=42.0.0",
     "itsdangerous>=2.1.0",
     "python-multipart>=0.0.9",
+    "httpx>=0.27.0",
+    "metadata-parser>=1.0,<2",
+    # metadata-parser 1.0 imports the stdlib `cgi` module (only in its requests-fetch
+    # path, which we bypass); `cgi` was removed in Python 3.13 (PEP 594), so we provide
+    # the maintained backport on 3.13+ to keep `import metadata_parser` working.
+    "legacy-cgi>=2.6; python_version >= '3.13'",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=7.4.0",
     "pytest-asyncio>=0.23.0",
-    "httpx>=0.27.0",
 ]
 
 [project.scripts]

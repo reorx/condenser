@@ -6,8 +6,9 @@ for the original brief. **Backend (spec Parts A/B/C) is implemented. Frontend (P
 milestones 1 & 2 are done** — scaffold + auth/TG-login + timeline, plus full subscription
 management, calendar date-filter, new-content polling, media lightbox, settings + theme,
 channel avatars, a dedicated `/filters` page (global + per-channel keyword rules
-with Gmail-style preview), and a redesigned reading view (unified `PageHeader`, static
-date dividers, bordered content column). Remaining v1 work: Docker multi-stage frontend
+with Gmail-style preview), a redesigned reading view (unified `PageHeader`, static
+date dividers, bordered content column), and unified link previews (own URL-metadata
+fetcher + click-to-open pane). Remaining v1 work: Docker multi-stage frontend
 build + README.
 
 ## Architecture
@@ -36,8 +37,9 @@ condenser's peewee models bind to telememo's `db` instance, so everything is one
 | `filters.py` | keyword-filter **materialization** into `messages.is_filtered` (on ingest + rule change) |
 | `timeline.py` | timeline query: cursor pagination (+ `head_cursor` for new-content poll), album merge, date/channel/unread filters, read/saved markers, `days`/`new`/`unread_counts` |
 | `records.py` | source-decoupled snapshots into `raw_data`, rendered without telememo tables |
+| `preview.py` | source-agnostic link previews: fetch a URL (async httpx) + extract metadata (`metadata_parser`), `link_previews` cache, per-message batch w/ Telegram-bonus fill, image fetch for the proxy |
 | `tg.py` | `TgManager`: lifecycle (C1), step-login→encrypted storage, realtime ingest, backfill scheduling, subscription orchestration |
-| `auth.py` + `routers/*` | C2 endpoints behind the app-password cookie gate; `routers/channels.py` = avatar proxy; `/api/tg/status` carries `phone` |
+| `auth.py` + `routers/*` | C2 endpoints behind the app-password cookie gate; `routers/channels.py` = avatar proxy, `routers/preview.py` = link-preview + image proxy; `/api/tg/status` carries `phone` |
 | `app.py` / `__main__.py` | FastAPI factory + lifespan; uvicorn entry; serves a static frontend dir if present |
 
 ## Conventions & gotchas
@@ -56,8 +58,10 @@ condenser's peewee models bind to telememo's `db` instance, so everything is one
 - **Telethon `StringSession` does NOT persist its entity cache** (only auth_key + DC). After a
   restart, `client.get_entity(int)` for a peer Telethon hasn't met yet in the current process
   fails with `Could not find input entity for PeerUser`. Always prefer `@username` over a bare
-  id when one is available — see `tg.py:_channel_handle`. Private channels (no username) still
-  fall through to the int and can hit this; persisting access_hash is the real fix.
+  id when one is available — see `tg.py:_channel_handle`. The media + avatar proxies
+  (`routers/media.py`, `routers/channels.py`) route through it too (since 2026-06-24) so image
+  thumbnails and avatars survive restarts. Private channels (no username) still fall through to
+  the int and can hit this; persisting access_hash is the real fix.
 - **Forward source names** (`fwd_from_channel_name` / `fwd_from_user_name`) are filled on
   ingest by a three-tier cascade: (1) `message.forward.chat.title` / `forward.sender` —
   Telethon-resolved entities, no API call; (2) persistent `EntityNameCache` JSON file at
@@ -129,6 +133,13 @@ React Router v7, **pnpm**. Backend `app.py` auto-serves `frontend/dist` at `/` i
 - **New-content poll**: `useNewContent` polls `/api/timeline/new?after=head_cursor` (from page-1
   `head_cursor`) every 30s, paused when hidden → floating banner → refetch + scroll-to-top.
 - **Avatars**: `ChannelAvatar` hits `/api/channels/{id}/avatar`, falls back to a colored initial.
+- **Link previews**: clicking a message opens `LinkPreviewPane` (shadcn `Sheet`, mounted once in
+  `AppShell`, covers timeline + saved views) with previews for the message's URLs from
+  `GET /api/messages/{cid}/{mid}/previews`. Whole-card click in `MessageCard`; the listener drops
+  once that card's pane is open so text selects normally; offered only when the inline Telegram card
+  doesn't already cover the links. `lib/extractUrls.ts` is the shared URL source (linkify + pane).
+  Thumbnails proxy via `/api/preview/image` (toggle with `CONDENSER_PREVIEW_IMAGE_PROXY`), falling
+  back to the media proxy for Telegram-bonus images.
 
 Remaining: Docker multi-stage frontend build + README (spec step 9).
 
@@ -173,9 +184,11 @@ finished", success or failure. `_backfill_channel` marks it `True` in a `finally
 add a new column if errors need to be surfaced.
 
 **Private channels + entity cache (open):** `_channel_handle` routes around the StringSession
-entity-cache limitation by preferring `@username`, but channels with no username still
-depend on Telethon having seen the peer in the current process. Real fix is persisting
-access_hash / `InputPeerChannel` ourselves.
+entity-cache limitation by preferring `@username` — used by ingest and (since 2026-06-24) the
+media + avatar proxies, so username channels survive restarts. Channels with **no** username still
+depend on Telethon having seen the peer in the current process (bare-id fallback). Real fix is
+persisting access_hash / `InputPeerChannel` ourselves, or warming the cache on startup via
+`get_dialogs`.
 
 ## Documentation
 

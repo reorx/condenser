@@ -67,6 +67,24 @@ export interface DisplayMessage {
   channel?: ChannelRef | null;
 }
 
+/**
+ * Unified, source-agnostic link preview from the backend (GET /api/preview and
+ * /api/messages/{cid}/{mid}/previews). `source` is 'telegram' when the backend fell
+ * back to Telegram's bonus preview; `tg_image_message_id`, when set, means the image
+ * is available via the media proxy for that Telegram message. `error` is set in-band
+ * when the fetch failed (the URL is still returned).
+ */
+export interface LinkPreview {
+  url: string;
+  title: string | null;
+  description: string | null;
+  image: string | null;
+  site_name: string | null;
+  source: 'fetched' | 'telegram';
+  tg_image_message_id: number | null;
+  error: string | null;
+}
+
 export interface Subscription {
   channel_id: number;
   enabled: boolean;

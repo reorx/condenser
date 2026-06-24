@@ -7,6 +7,7 @@ import type {
   FilterPreviewResult,
   JoinedChannel,
   KeywordFilter,
+  LinkPreview,
   MsgRef,
   Subscription,
   TgStatus,
@@ -145,6 +146,13 @@ export const api = {
   markReadBulk: (body: { channel_id?: number | null; before_date?: string | null }) =>
     post<{ ok: true }>('/api/read/bulk', body),
 
+  // ---- link previews ----
+  // Previews for every URL in a message (album-aware; Telegram's preview folded in as a bonus).
+  messagePreviews: (channelId: number, messageId: number) =>
+    request<LinkPreview[]>(`/api/messages/${channelId}/${messageId}/previews`),
+  // Generic single-URL preview (reusable for future feed types).
+  urlPreview: (url: string) => request<LinkPreview>('/api/preview' + qs({ url })),
+
   // ---- records (saved) ----
   listRecords: () => request<DisplayMessage[]>('/api/records'),
   saveRecord: (ref: MsgRef) => post<{ ok: true }>('/api/records', ref),
@@ -159,4 +167,9 @@ export function mediaUrl(channelId: number, messageId: number, thumb = false): s
 /** URL for a channel's avatar proxy; 404/503 lets the UI fall back to a letter. */
 export function channelAvatarUrl(channelId: number): string {
   return `/api/channels/${channelId}/avatar`;
+}
+
+/** Proxy a preview's thumbnail through the backend (private + hotlink-proof). */
+export function previewImageUrl(originUrl: string): string {
+  return `/api/preview/image?url=${encodeURIComponent(originUrl)}`;
 }
