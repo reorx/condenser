@@ -916,3 +916,44 @@ def test_tg_step_login_with_2fa(env):
         # session persisted + encrypted
         row = db.get_tg_session()
         assert row is not None and row.authorized and row.session_enc
+
+
+# --- entity-cache warming on restart (private/no-username channels) ----------
+
+
+def test_startup_warms_entity_cache_from_dialogs(env):
+    """On restart with a stored session, startup iterates dialogs to re-register peers.
+
+    StringSession drops Telethon's entity cache, so a private (no-username) channel's
+    bare-id get_entity fails until the peer is met again. Warming via iter_dialogs fixes
+    it for the process lifetime; here we assert the warm task ran (dialogs cache filled).
+    """
+    import asyncio
+
+    from condenser.config import get_settings
+    from condenser.crypto import encrypt_session
+    from condenser.tg import TgManager
+
+    async def scenario():
+        db.init_db(os.environ['CONDENSER_DB_PATH'])
+        settings = get_settings()
+        db.save_tg_session('+1', encrypt_session(settings.condenser_secret_key, 'SESSION'), authorized=True)
+
+        fake = _service_with_dialogs(lambda: [_fake_dialog(7, 'Private', username=None)])
+        fake.connect = AsyncMock()
+        tg = TgManager(settings)
+        tg._new_service = lambda session=None: fake
+
+        await tg.startup()
+        await asyncio.gather(*list(tg._tasks))  # drain the spawned warm task
+
+        assert tg._dialogs_cache is not None and len(tg._dialogs_cache) == 1
+
+        # warming is best-effort: a dialogs failure must not raise out of the warm task
+        boom = _service_with_dialogs(lambda: (_ for _ in ()).throw(RuntimeError('floodless boom')))
+        tg.service = boom
+        tg._dialogs_cache = None
+        tg._dialogs_cache_at = 0.0
+        await tg._warm_entity_cache()  # swallows the error
+
+    asyncio.run(scenario())

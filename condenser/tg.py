@@ -80,6 +80,7 @@ class TgManager:
             self._pending_phone = row.phone
             log.info('telegram session restored (authorized) for %s', row.phone)
             await self.start_listening()
+            self._spawn(self._warm_entity_cache())
         else:
             log.warning('stored telegram session is no longer authorized; re-login required')
             self.service = None
@@ -94,6 +95,24 @@ class TgManager:
         task = asyncio.create_task(coro)
         self._tasks.add(task)
         task.add_done_callback(self._tasks.discard)
+
+    async def _warm_entity_cache(self) -> None:
+        """Re-populate Telethon's in-session entity cache from the account's dialogs.
+
+        ``StringSession`` persists only the auth_key + DC, not the entity cache, so after a
+        restart a bare-id ``get_entity`` for a private (username-less) channel fails until
+        Telethon has "met" the peer this process — breaking the media/avatar proxies for
+        those channels. Iterating dialogs registers every joined channel's access_hash, so
+        the bare-id fallback resolves again. Username channels already route around this via
+        ``_channel_handle``; this covers the private ones (you must be a member to read them,
+        so they appear in dialogs). Best-effort: reuses the FloodWait-bounded dialogs path and
+        swallows failures so a warm miss never crashes startup.
+        """
+        try:
+            channels = await self.list_joined_channels(force=True)
+            log.info('entity cache warmed from %d joined channels', len(channels))
+        except Exception:
+            log.exception('entity cache warm failed (non-fatal)')
 
     # ---- status ----
     def status(self) -> str:

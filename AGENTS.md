@@ -60,8 +60,10 @@ condenser's peewee models bind to telememo's `db` instance, so everything is one
   fails with `Could not find input entity for PeerUser`. Always prefer `@username` over a bare
   id when one is available — see `tg.py:_channel_handle`. The media + avatar proxies
   (`routers/media.py`, `routers/channels.py`) route through it too (since 2026-06-24) so image
-  thumbnails and avatars survive restarts. Private channels (no username) still fall through to
-  the int and can hit this; persisting access_hash is the real fix.
+  thumbnails and avatars survive restarts. Private channels (no username) fall through to the
+  int, but `TgManager._warm_entity_cache` (spawned in `startup`) iterates dialogs once on boot
+  to re-register every joined peer's access_hash, so the bare-id fallback resolves them for the
+  process lifetime. Persisting access_hash ourselves is the remaining durable alternative.
 - **Forward source names** (`fwd_from_channel_name` / `fwd_from_user_name`) are filled on
   ingest by a three-tier cascade: (1) `message.forward.chat.title` / `forward.sender` —
   Telethon-resolved entities, no API call; (2) persistent `EntityNameCache` JSON file at
@@ -184,12 +186,14 @@ finished", success or failure. `_backfill_channel` marks it `True` in a `finally
 "backfilling…" badge clears either way. Don't repurpose the boolean to mean "succeeded" —
 add a new column if errors need to be surfaced.
 
-**Private channels + entity cache (open):** `_channel_handle` routes around the StringSession
+**Private channels + entity cache:** `_channel_handle` routes around the StringSession
 entity-cache limitation by preferring `@username` — used by ingest and (since 2026-06-24) the
-media + avatar proxies, so username channels survive restarts. Channels with **no** username still
-depend on Telethon having seen the peer in the current process (bare-id fallback). Real fix is
-persisting access_hash / `InputPeerChannel` ourselves, or warming the cache on startup via
-`get_dialogs`.
+media + avatar proxies, so username channels survive restarts. For channels with **no** username,
+`TgManager._warm_entity_cache` (spawned in `startup`, reuses the FloodWait-bounded
+`list_joined_channels`) iterates dialogs once on boot to re-register every joined peer's
+access_hash, so the bare-id fallback resolves for the process lifetime. Remaining durable
+alternative: persist access_hash / `InputPeerChannel` ourselves (covers peers not in dialogs,
+e.g. a private channel you've left but still have cached messages for).
 
 ## Documentation
 
