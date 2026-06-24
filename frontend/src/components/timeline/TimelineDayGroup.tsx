@@ -16,8 +16,16 @@ interface TimelineDayGroupProps {
 export function TimelineDayGroup({ items, labels, observe }: TimelineDayGroupProps) {
   return (
     <section>
-      {/* Date divider: a static marker between days, not a floating sticky bar. */}
-      <div className="px-4 pt-6 pb-2 text-xs font-medium text-muted-foreground sm:px-5">{dayLabel(items[0].date)}</div>
+      {/* Date divider: a full-width rule between days (not a floating sticky bar) with the
+          day label floating ON the line (z-axis) — the line runs edge-to-edge behind the
+          label, which masks its own slice with the page background. Symmetric py keeps the
+          rule centered on the text via top-1/2 (no magic offsets). */}
+      <div className="relative px-4 py-4 sm:px-5">
+        <div className="absolute inset-x-0 top-1/2 h-px -translate-y-1/2 bg-border" />
+        <span className="relative inline-block bg-background pr-3 text-xs font-medium text-muted-foreground">
+          {dayLabel(items[0].date)}
+        </span>
+      </div>
       <div>
         {items.map((m) => (
           <MessageCard

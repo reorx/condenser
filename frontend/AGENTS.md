@@ -90,3 +90,41 @@ Two conventions this list exists to protect:
   `useScrollToRead`, `useNewContent`, `useRefresh`, mutations, …).
 - `lib/` — `api.ts` (typed fetch client), `types.ts` (backend JSON mirror), `format.ts`,
   `linkify.tsx`, `theme.tsx`, `unreadIndicator.tsx`, `queryClient.ts`, `utils.ts`.
+
+## Debugging
+
+### Render a component in isolation and screenshot it
+
+To verify a visual change **without a logged-in backend**, use the dev-only preview harness
+instead of the real app (which is behind the auth + TG-login gate):
+
+- `preview.html` + `src/preview/` — mounts `PreviewApp` with only the providers the cards need
+  (`QueryClientProvider`, `UnreadIndicatorProvider`, `ThemeProvider`); **no router, no auth gate**.
+  Vite serves it in dev only at `/preview.html` (not a production build input).
+- `src/preview/PreviewApp.tsx` — the gallery + a toolbar (toggle theme / unread-mode). Add a
+  case here for the component/state you're verifying.
+- `src/preview/mocks.ts` — `makeMsg()` factory + sample `DisplayMessage`s. `ChannelAvatar`'s
+  proxy 404s here and falls back to the colored initial (expected, not an error).
+
+Loop (dev server already on `:5792` via `pnpm dev`):
+
+```bash
+agent-browser --session cond-preview open http://127.0.0.1:5792/preview.html
+agent-browser --session cond-preview wait --text "<some text on the page>"
+agent-browser --session cond-preview screenshot /abs/tmp/shot.png --full      # then Read it
+agent-browser --session cond-preview find text "theme:" click                 # toggle dark, re-shot
+agent-browser --session cond-preview close                                    # when done
+```
+
+`--full` needs an explicit output path (the `--screenshot-dir` form mis-parses with `--full`).
+Selector-scoped screenshots aren't supported — to inspect fine detail (a 8px dot, a 1px rule),
+crop + upscale the PNG instead:
+
+```bash
+# left top right bottom [scale] — Pillow via uv, no project dep needed
+uv run --with pillow python - "$@" <<'PY'   # or keep a tmp/crop.py helper
+import sys; from PIL import Image
+src,out,*rest = sys.argv[1:]; box=tuple(map(int,rest[:4])); s=int(rest[4]) if len(rest)>4 else 3
+c=Image.open(src).crop(box); c.resize((c.width*s,c.height*s), Image.NEAREST).save(out)
+PY
+```

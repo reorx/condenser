@@ -60,14 +60,15 @@ function MessageCardImpl({ msg, channelLabel, observe }: Props) {
       )}
     >
       <header className="flex items-center gap-2 text-xs text-muted-foreground">
-        <div className="flex items-center gap-2">
-          {/* Unread marker (dot mode): a sky dot before the avatar; fades to transparent
-              once the message is read. Rendered only in dot mode so divider mode has no slot. */}
+        <div className="relative flex items-center gap-2">
+          {/* Unread marker (dot mode): a sky dot floating in the left gutter, beside the
+              avatar (not inline with it); fades to transparent once the message is read.
+              Rendered only in dot mode so divider mode has no slot. */}
           {mode === 'dot' && (
             <span
               aria-hidden
               className={cn(
-                'size-2 shrink-0 rounded-full transition-colors duration-500',
+                'absolute top-1/2 right-full mr-1.5 size-2 -translate-y-1/2 rounded-full transition-colors duration-500',
                 !msg.is_read && 'bg-sky-500 dark:bg-sky-400',
               )}
             />
@@ -102,7 +103,7 @@ function MessageCardImpl({ msg, channelLabel, observe }: Props) {
             <Forward className="size-3" />
             Forwarded
           </div>
-          <div className="mt-1 ml-8 rounded-lg border bg-muted/30 p-3">
+          <div className="mt-1 rounded-lg border bg-muted/30 p-3">
             {fwdName && <div className="text-xs font-medium text-foreground/80">{fwdName}</div>}
             {body}
           </div>
