@@ -23,6 +23,54 @@ def test_init_db_enables_wal(env):
     assert mode.lower() == 'wal'
 
 
+# --- app_meta: schema version + runtime backfill_days override --------------
+
+
+def test_app_meta_records_schema_version_and_overrides_backfill_days(env):
+    with _client() as client:
+        _login(client)
+
+        # schema version recorded on init; backfill window defaults to the env value
+        meta = client.get('/api/app/meta').json()
+        assert meta['schema_version'] == db.SCHEMA_VERSION
+        assert meta['backfill_days'] == 7
+
+        # a runtime override wins over the env default and persists in app_meta
+        assert client.patch('/api/app/meta', json={'backfill_days': 3}).json()['backfill_days'] == 3
+        assert client.get('/api/app/meta').json()['backfill_days'] == 3
+        assert db.effective_backfill_days(7) == 3
+
+        # rejected when non-positive; a malformed stored value falls back to the env default
+        assert client.patch('/api/app/meta', json={'backfill_days': 0}).status_code == 422
+        db.set_meta('backfill_days', 'garbage')
+        assert db.effective_backfill_days(7) == 7
+
+
+def test_backfill_uses_runtime_day_override(env):
+    """_backfill_channel must pass the app_meta override (not just the env value) to the service."""
+    import asyncio
+
+    with _client() as client:
+        _login(client)
+        seed_channel(5, 'TechNews', 'technews')
+        db.add_subscription(5)
+        db.set_meta('backfill_days', '2')
+
+        seen = {}
+
+        async def fake_backfill(channel, since_days=None, since_date=None, persist=True):
+            seen['since_days'] = since_days
+            return
+            yield  # async generator
+
+        fake = _fake_authorized_service()
+        fake.backfill = fake_backfill
+        client.app.state.tg.service = fake
+
+        asyncio.run(client.app.state.tg._backfill_channel(5))
+        assert seen['since_days'] == 2
+
+
 def _client(env_unused=None):
     return TestClient(create_app())
 

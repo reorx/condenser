@@ -206,8 +206,9 @@ class TgManager:
         service = self._require_service()
         ids: list[int] = []
         handle = self._channel_handle(channel_id)
+        since_days = db.effective_backfill_days(self.settings.condenser_backfill_days)
         try:
-            async for dm in service.backfill(handle, since_days=self.settings.condenser_backfill_days):
+            async for dm in service.backfill(handle, since_days=since_days):
                 ids.extend(dm.raw_message_ids or [dm.id])
         except Exception:
             log.exception('backfill failed for channel %s', channel_id)

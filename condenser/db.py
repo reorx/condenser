@@ -29,6 +29,11 @@ MESSAGES_OPTIONAL_FIELDS = {
     'messages': [{'name': 'is_filtered', 'type': 'BOOLEAN', 'default': 0}],
 }
 
+# Bumped when condenser's own table shapes change; recorded in app_meta on init so a
+# future startup can detect an upgrade and run a migration. Telememo manages its own
+# table migrations separately (init_db optional_fields / ALTER TABLE).
+SCHEMA_VERSION = 1
+
 
 class CondenserBaseModel(Model):
     class Meta:
@@ -126,6 +131,7 @@ def init_db(db_path: str) -> None:
     tdb.init_db(db_path, optional_fields=MESSAGES_OPTIONAL_FIELDS)
     tdb.db.create_tables(CONDENSER_TABLES)
     _enable_wal(db_path)
+    set_meta('schema_version', str(SCHEMA_VERSION))
 
 
 def _enable_wal(db_path: str) -> None:
@@ -361,6 +367,23 @@ def set_meta(key: str, value: str) -> None:
     AppMeta.insert(key=key, value=value).on_conflict(
         conflict_target=[AppMeta.key], update={AppMeta.value: value}
     ).execute()
+
+
+def effective_backfill_days(env_default: int) -> int:
+    """Resolve the backfill window: an app_meta runtime override wins over the env default.
+
+    ``CONDENSER_BACKFILL_DAYS`` sets the baseline, but the value can be tuned at runtime
+    (via ``PATCH /api/app/meta``) without a restart. A malformed/absent override falls
+    back to the env default.
+    """
+    raw = get_meta('backfill_days')
+    if raw is None:
+        return env_default
+    try:
+        days = int(raw)
+    except ValueError:
+        return env_default
+    return days if days > 0 else env_default
 
 
 # --- link preview cache -----------------------------------------------------

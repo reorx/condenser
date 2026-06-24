@@ -60,3 +60,9 @@ class ReadBulkBody(BaseModel):
 class RecordBody(BaseModel):
     channel_id: int
     message_id: int
+
+
+class AppMetaPatch(BaseModel):
+    """Runtime app settings backed by app_meta. None = leave unchanged."""
+
+    backfill_days: Optional[int] = None
