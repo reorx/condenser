@@ -46,6 +46,7 @@
     "@types/react-dom": "^19.0.3",
     "@vitejs/plugin-react": "^4.3.4",
     "jsdom": "^29.1.1",
+    "react-grab": "^0.1.47",
     "tailwindcss": "^4.0.5",
     "tailwindcss-animate": "^1.0.7",
     "typescript": "^5.7.3",
