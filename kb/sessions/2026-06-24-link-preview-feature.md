@@ -1,3 +1,14 @@
+---
+created: 2026-06-24
+tags:
+  - link-preview
+  - backend
+  - frontend
+  - telegram
+  - metadata-parser
+  - entity-cache
+---
+
 # Session 2026-06-24 — Unified link previews (backend fetcher + click-to-open pane)
 
 ## Goal
@@ -22,6 +33,8 @@ preview becomes a *bonus seed*, not the standard.
   listener drops so text selects normally; clicks on links/buttons and text selections never
   open the pane.
 - **Images:** proxied through the backend (`GET /api/preview/image?url=`) — private, hotlink-proof.
+  Feature-flagged by `CONDENSER_PREVIEW_IMAGE_PROXY` (default `true`); when `false` the endpoint
+  307-redirects to the origin image (zero frontend change, falls back to direct loading).
 - **SSRF guard:** built one (per-hop private-IP rejection), then **removed it at the user's
   request** — single-user self-hosted, the proxy intentionally fetches any URL. Removing it
   also let httpx follow redirects natively (simpler code). If ever exposed multi-tenant, add a
@@ -76,15 +89,46 @@ For the URL Telegram previewed: if our fetch found no image but `has_photo`, set
 `tg_image_message_id` (frontend loads it free via the media proxy); if our fetch wholly failed,
 fall back to Telegram's title/description and mark `source='telegram'`.
 
+## Post-restart bug found + fixed: media/avatar entity resolution
+
+After restarting the server, the user saw **no channel avatars or message photos** and a flood of
+`ValueError: Could not find the input entity for PeerUser(...)`. Root cause is **not** the
+link-preview feature: `routers/media.py` (`/api/media`) and `routers/channels.py` (`/api/channels/{id}/avatar`)
+passed the **bare channel id** to Telethon, and Telethon's `StringSession` drops its entity cache on
+restart, so a bare-id lookup fails until it "meets" the peer again. The ingest path already worked
+around this via `tg._channel_handle()` (prefer `@username`); the proxies didn't.
+
+**Fix:** route both proxies through `tg._channel_handle(channel_id)` — passes `@username` when known
+(resolves reliably via `resolveUsername`), falls back to the id otherwise (unchanged). Verified all of
+the user's channels have usernames, so this fully resolves their case. Regression test
+(`test_media_and_avatar_resolve_via_username`) seeds a channel with a username and asserts both proxies
+call the service with `@username`. **Requires a server restart to take effect.**
+
 ## Validation
 
-- Backend: 43 pytest (12 new in `tests/test_preview.py`). Real-fetch smoke (`tmp/try_fetch.py`)
-  confirms GitHub returns title/description/absolute og:image/site_name end-to-end.
+- Backend: 45 pytest — 13 in `tests/test_preview.py` (incl. the image-proxy-disabled redirect) +
+  the media/avatar regression test. Real-fetch smoke (`tmp/try_fetch.py`) confirms GitHub returns
+  title/description/absolute og:image/site_name end-to-end (works now that the SSRF guard is gone).
 - Frontend: 21 vitest (7 new in `src/lib/extractUrls.test.ts`), `tsc -b` clean, preview harness
   screenshotted (card gallery light+dark + pane slide-in/error state).
 
+## Commits (branch `feat/link-previews`, off `master`)
+
+- `4fe9d13` feat(preview): unified link previews — backend fetcher + click-to-open pane
+- `15064c3` feat(preview): add image-proxy feature flag
+- `6af62ad` fix(media): resolve channel by @username in media + avatar proxies
+
 ## Still open / follow-ups
 
-- Preview-pane visuals only verified with mock data (no logged-in backend in the harness).
-- If the app is ever multi-tenant/exposed, restore an SSRF guard (transport-level peer-IP check).
+- **Restart the backend** to apply the media/avatar fix, then confirm avatars + photos load.
+- **Username-less / private channels** still hit the entity issue (routing falls back to the bare id).
+  Durable fix: warm Telethon's entity cache on startup via `get_dialogs` (FloodWait-prone — there's
+  already a dialogs cache TTL), or persist `access_hash` / `InputPeerChannel` ourselves (the "real fix"
+  noted in the root AGENTS.md). Not needed for the current user (all channels have usernames).
+- Preview-pane visuals only verified with mock data (no logged-in backend in the harness) — eyeball
+  with real data on the next full-stack run.
+- If the app is ever multi-tenant/exposed, restore an SSRF guard on the preview fetch + image proxy
+  (transport-level peer-IP check; a pre-resolve check isn't DNS-rebinding-safe).
+- `kb/docs/timeline-message-box-components.md` is an unrelated untracked doc from a prior session —
+  left uncommitted on purpose.
 - `tmp/try_fetch.py`, `tmp/try_fetch_local.py`, `tmp/introspect_mp.py` left for reference.
