@@ -173,10 +173,11 @@ remains: subscription "delete-with-messages" option (Q4), full channel info
 realtime edit handling. Full checklist:
 `kb/sessions/2026-06-09-backend-remaining-work.md` — read before picking up backend work.
 
-**Known bug (album unread count):** marking an album read only inserts its primary
-message id, but `timeline.unread_counts` counts by `COALESCE(grouped_id, id)` so an album's
-other rows keep it counted as unread — albums never clear from the unread badge. Fix by
-marking all `raw_message_ids` read or counting by display unit (see the M2 session).
+**Album unread count (fixed):** `unread_counts` counts display units by
+`COALESCE(grouped_id, id)`, so marking only an album's primary id used to leave its sibling
+rows unread and the badge stuck. `db.mark_read` now expands each pair to its album siblings
+via `_expand_album_siblings` (and `mark_read_bulk` already selects every raw row), so albums
+clear fully. Locked by `test_read_album_clears_unread_count` + `test_read_bulk_clears_album_unread_count`.
 
 **`backfill_done` semantics:** since 2026-06-18, this flag means "a backfill attempt
 finished", success or failure. `_backfill_channel` marks it `True` in a `finally`, so the
