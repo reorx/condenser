@@ -21,15 +21,15 @@ tags:
 
 - [ ] **取消订阅的「连同消息删除」选项**（Q4 / C2 DELETE）：当前 `DELETE /api/subscriptions/{id}` 只做默认「保留消息」。需额外提供删除该频道消息的选项（如 `?purge=1`），删除 `messages`（收藏 `telegram_records` 自包含，不受影响）。
 - [x] ~~**全局关键词规则的 API**（D9 / C5）~~：2026-06-18 完成。新增 `GET /api/filters` / `POST /api/filters` / `POST /api/filters/preview`（preview 复用 `filters.text_is_filtered`，对最近 1000 条消息做 dry-run）；旧的 `GET/POST /api/subscriptions/{cid}/filters` 同步删除，所有调用迁到新端点。前端新增 `/filters` 独立页 + `CreateFilterDialog`。
-- [ ] **频道完整信息落库**（B1）：`resolve_channel` 用 `get_entity`，拿不到 `member_count` / `description`。需要 `GetFullChannelRequest` 才能填 `channels.member_count`（订阅列表目前无成员数）。
-- [ ] **接上 `app_meta`**（B2）：表与 get/set helper 已就绪，但未用于「schema 版本」与「`backfill_days` 运行时覆盖」。当前 backfill 天数只读环境变量。
+- [x] ~~**频道完整信息落库**（B1）~~：2026-06-24 完成（condenser 侧）。`TgManager._enrich_channel` 在订阅注册后台用 `GetFullChannelRequest` 取 `about` / `participants_count`，经 telememo 自己的 `get_or_create_channel`（写原生列，遵守契约）落库，`GET /api/subscriptions` 暴露 `member_count` / `description`。
+- [x] ~~**接上 `app_meta`**（B2）~~：2026-06-24 完成。`init_db` 写 `schema_version`；`db.effective_backfill_days` 让 `app_meta` 的运行时覆盖优先于环境变量，`_backfill_channel` 经它解析；新增 `GET/PATCH /api/app/meta` 读写。
 
 ### 二、健壮性 / 正确性缺口
 
-- [ ] **开启 SQLite WAL**（性价比最高）：sync 路由跑在 threadpool（多线程多连接），实时入库写 + 用户写并发时可能偶发 `database is locked`。建议 `init_db` 后执行 `PRAGMA journal_mode=WAL`。
-- [ ] **实时监听消息编辑**：当前只订阅 `events.NewMessage`，未订阅 `MessageEdited`，频道消息被编辑后 realtime 不会更新 `text` / 重算 `is_filtered`。
+- [x] ~~**开启 SQLite WAL**~~：2026-06-24 完成。`db._enable_wal` 在 `init_db` 后执行 `PRAGMA journal_mode=WAL`（`:memory:` 跳过）。测试 `test_init_db_enables_wal`。
+- [x] ~~**实时监听消息编辑**~~：2026-06-24 完成（telememo 0.2.0）。`service.subscribe` 同一 handler 注册 `NewMessage` + `MessageEdited`，`save_message_smart` 按 `edit_date` 变化原地更新 `text`，再 dispatch → condenser `_on_new_message` 重算 `is_filtered`。**需发布 telememo 0.2.0 + bump lock 才在 condenser 生效**。
 - [ ] **backfill 批间隔**（A4「回填分批 + 间隔」）：已做分批 + FloodWait 退避，但未在批之间主动 sleep，回填大频道更易撞限流。
-- [ ] **运行时 session 失效处理**：启动 connect 失败有兜底；运行中 session 被 revoke / AuthKeyError 未专门处理（Telethon 会自动重连，但鉴权失效不会自愈）。
+- [x] ~~**运行时 session 失效处理**~~：2026-06-24 完成。`TgManager._demote_session` 在 `UnauthorizedError`（AuthKeyUnregistered / SessionRevoked / UserDeactivated）时落地：丢弃 service、清空 session blob、置 `authorized=0`、断开旧 client；接在 `_backfill_channel` / `fetch_older` / `list_joined_channels` 的失败路径上。测试 `test_auth_error_demotes_session_to_unauthorized`。
 
 ### 三、测试覆盖缺口
 

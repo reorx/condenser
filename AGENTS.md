@@ -74,9 +74,11 @@ condenser's peewee models bind to telememo's `db` instance, so everything is one
 
 ## Part A in telememo (`../telememo`, separate git repo)
 
-`service.py` (`TelegramService` facade; accepts `entity_cache=`), `db.py`
-(`init_db(optional_fields=...)` + forward columns + migration), `telegram.py` (module-level
-converters + `async resolve_forward_entity_names(md, client, cache, allow_network)`),
+`service.py` (`TelegramService` facade; accepts `entity_cache=`; `subscribe` registers one
+handler for **both** `NewMessage` and `MessageEdited` since 0.2.0, so edits update stored
+text + re-dispatch), `db.py` (`init_db(optional_fields=...)` + forward columns + migration;
+`save_message_smart` updates a row in place when `edit_date` changed), `telegram.py`
+(module-level converters + `async resolve_forward_entity_names(md, client, cache, allow_network)`),
 `utils.py` (`group_messages_to_display(raw_messages_map=None)`, `extract_forward_info` reads
 `message.forward.chat`/`sender`), `entity_cache.py` (`EntityNameCache` JSON-backed
 id→name map), `types.py` (`SignInResult` + `fwd_*`), `tests/test_part_a.py`,
@@ -169,11 +171,21 @@ pnpm build                                # -> frontend/dist (served by backend 
 
 ## Status / known gaps
 
-Backend endpoints (spec C2) all exist and §7 scenarios are tested, but some v1 work
-remains: subscription "delete-with-messages" option (Q4), full channel info
-(`member_count`/`description`) on resolve, wiring `app_meta`, plus SQLite WAL and
-realtime edit handling. Full checklist:
-`kb/sessions/2026-06-09-backend-remaining-work.md` — read before picking up backend work.
+Backend endpoints (spec C2) all exist and §7 scenarios are tested. Recently closed
+(2026-06-24): SQLite WAL, `app_meta` wiring (schema version + runtime `backfill_days`
+override via `PATCH /api/app/meta`), full channel info (`member_count`/`description` via
+`GetFullChannelRequest` in `TgManager._enrich_channel`), runtime session-invalidation
+(`_demote_session`), entity-cache warming on startup, and realtime **edit** handling
+(telememo 0.2.0 `MessageEdited` — see below). Still open: subscription
+"delete-with-messages" option (Q4 / `?purge=1`) and the backfill batch-interval sleep.
+Full checklist: `kb/sessions/2026-06-09-backend-remaining-work.md`.
+
+**Realtime edits need telememo 0.2.0:** the `MessageEdited` handling lives in telememo's
+`service.subscribe` (a local `feat/realtime-message-edits` branch, version bumped to 0.2.0).
+condenser needs **no** code change — `_on_new_message` recomputes `is_filtered` for the
+dispatched edit — but the feature only reaches condenser once **telememo 0.2.0 is published
+to PyPI and the lock bumped** (`uv lock --upgrade-package telememo`; `pyproject` already
+allows `>=0.1.0`). Until then condenser runs against PyPI 0.1.0 (no edit events).
 
 **Album unread count (fixed):** `unread_counts` counts display units by
 `COALESCE(grouped_id, id)`, so marking only an album's primary id used to leave its sibling
