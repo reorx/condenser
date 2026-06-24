@@ -10,7 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from . import db
 from .config import get_settings
 from .logconf import configure_logging
-from .routers import auth, channels, media, reading, subscriptions, tg
+from .routers import auth, channels, media, preview, reading, subscriptions, tg
 from .tg import TgManager
 
 configure_logging()
@@ -42,6 +42,7 @@ def create_app() -> FastAPI:
     app.include_router(reading.router)
     app.include_router(media.router)
     app.include_router(channels.router)
+    app.include_router(preview.router)
 
     # 4. serve the React build (if present) as static assets at '/'
     static_dir = os.getenv('CONDENSER_STATIC_DIR', str(Path(__file__).resolve().parent.parent / 'frontend' / 'dist'))

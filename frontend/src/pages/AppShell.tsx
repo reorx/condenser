@@ -3,7 +3,9 @@ import { Menu, Sparkles, X } from 'lucide-react';
 import { Outlet, useLocation } from 'react-router-dom';
 
 import { Sidebar } from '@/components/Sidebar';
+import { LinkPreviewPane } from '@/components/timeline/LinkPreviewPane';
 import { Button } from '@/components/ui/button';
+import { LinkPreviewPaneProvider } from '@/lib/linkPreviewPane';
 
 export function AppShell() {
   const [open, setOpen] = useState(false);
@@ -13,8 +15,9 @@ export function AppShell() {
   useEffect(() => setOpen(false), [location.pathname, location.search]);
 
   return (
-    <div className="min-h-dvh bg-background">
-      {/* Mobile top bar */}
+    <LinkPreviewPaneProvider>
+      <div className="min-h-dvh bg-background">
+        {/* Mobile top bar */}
       <div className="sticky top-0 z-30 flex h-12 items-center gap-2 border-b bg-background/90 px-3 backdrop-blur md:hidden">
         <Button variant="ghost" size="icon" className="size-8" onClick={() => setOpen(true)} aria-label="Open menu">
           <Menu />
@@ -47,11 +50,13 @@ export function AppShell() {
         </div>
       )}
 
-      <main className="md:pl-64">
-        <div className="mx-auto min-h-dvh max-w-2xl md:border-x md:border-border">
-          <Outlet />
-        </div>
-      </main>
-    </div>
+        <main className="md:pl-64">
+          <div className="mx-auto min-h-dvh max-w-2xl md:border-x md:border-border">
+            <Outlet />
+          </div>
+        </main>
+      </div>
+      <LinkPreviewPane />
+    </LinkPreviewPaneProvider>
   );
 }

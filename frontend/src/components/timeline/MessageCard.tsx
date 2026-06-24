@@ -1,10 +1,12 @@
-import { memo, useCallback } from 'react';
+import { memo, useCallback, useMemo, type MouseEvent } from 'react';
 import { Bookmark, Forward, Pencil } from 'lucide-react';
 
 import { ChannelAvatar } from '@/components/ChannelAvatar';
 import { useSaveToggle } from '@/hooks/useSaveToggle';
+import { messageHasPreviewableLinks } from '@/lib/extractUrls';
 import { timeLabel } from '@/lib/format';
 import { linkify } from '@/lib/linkify';
+import { useLinkPreviewPane } from '@/lib/linkPreviewPane';
 import { useUnreadIndicator } from '@/lib/unreadIndicator';
 import { cn } from '@/lib/utils';
 import type { DisplayMessage, MsgRef } from '@/lib/types';
@@ -28,8 +30,26 @@ function forwardSourceName(msg: DisplayMessage): string | null {
 function MessageCardImpl({ msg, channelLabel, observe }: Props) {
   const save = useSaveToggle();
   const { mode } = useUnreadIndicator();
+  const { open, openPane } = useLinkPreviewPane();
   const ref: MsgRef = { channel_id: msg.channel_id, message_id: msg.id };
   const fwdName = forwardSourceName(msg);
+
+  // Twitter-style: the card is click-to-open *until* its own pane is open, at which
+  // point the listener drops so the user can freely select text inside it.
+  const hasPreviewable = useMemo(() => messageHasPreviewableLinks(msg), [msg]);
+  const isActive = open?.channel_id === msg.channel_id && open?.message_id === msg.id;
+  const clickable = hasPreviewable && !isActive;
+
+  const onCardClick = useCallback(
+    (e: MouseEvent<HTMLElement>) => {
+      // Let links / bookmark / media thumbs keep their own behavior, and don't hijack a
+      // text selection (drag-to-select ends in a click on the article).
+      if ((e.target as HTMLElement).closest('a, button')) return;
+      if (window.getSelection()?.toString()) return;
+      openPane({ channel_id: msg.channel_id, message_id: msg.id });
+    },
+    [openPane, msg.channel_id, msg.id],
+  );
 
   const attach = useCallback(
     (el: HTMLElement | null) => {
@@ -54,9 +74,12 @@ function MessageCardImpl({ msg, channelLabel, observe }: Props) {
     <article
       ref={attach}
       data-read={msg.is_read ? '' : undefined}
+      onClick={clickable ? onCardClick : undefined}
       className={cn(
         'group relative border-b px-4 py-3 transition-colors duration-500 sm:px-5',
         mode === 'divider' && !msg.is_read ? 'border-sky-500 dark:border-sky-400' : 'border-border/50',
+        clickable && 'cursor-pointer hover:bg-muted/30',
+        isActive && 'bg-muted/40',
       )}
     >
       <header className="flex items-center gap-2 text-xs text-muted-foreground">

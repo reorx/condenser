@@ -27,6 +27,23 @@ class Settings(BaseSettings):
     # and FloodWait-prone, so we serve repeated browse-dialog opens from cache.
     condenser_dialogs_cache_ttl: int = 300
 
+    # --- link preview fetching (condenser/preview.py) ---
+    # Total per-request timeout (seconds) for fetching a URL/its image.
+    condenser_preview_fetch_timeout: float = 8.0
+    # TTL (seconds) for successful previews; negatives (failed fetches) expire sooner.
+    condenser_preview_cache_ttl: int = 7 * 24 * 3600
+    condenser_preview_neg_cache_ttl: int = 3600
+    # Hard caps on downloaded bytes (HTML page vs. proxied image).
+    condenser_preview_max_bytes: int = 2_000_000
+    condenser_preview_image_max_bytes: int = 5_000_000
+    # Max URLs previewed per message + max concurrent outbound fetches.
+    condenser_preview_max_urls: int = 8
+    condenser_preview_max_concurrency: int = 5
+    condenser_preview_max_redirects: int = 5
+    condenser_preview_user_agent: str = (
+        'Mozilla/5.0 (compatible; CondenserBot/0.1; +https://github.com/reorx/condenser)'
+    )
+
 
 @lru_cache
 def get_settings() -> Settings:

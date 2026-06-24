@@ -1,8 +1,8 @@
 // Mock data for the component preview page (`/preview.html`, dev-only). Lets us render
 // real components with deterministic data and screenshot them to verify visual changes.
-import type { DisplayMessage } from '@/lib/types';
+import type { DisplayMessage, LinkPreview } from '@/lib/types';
 
-const CHANNEL_ID = 1833253016;
+export const CHANNEL_ID = 1833253016;
 
 export const channelLabels = new Map<number, string>([[CHANNEL_ID, 'yihong0618 和朋友们的频道']]);
 
@@ -32,7 +32,47 @@ export function makeMsg(over: Partial<DisplayMessage> & Pick<DisplayMessage, 'id
   };
 }
 
+/** Sample previews for the LinkPreviewCard gallery (images 404 in the harness; layout still shows). */
+export const samplePreviews: LinkPreview[] = [
+  {
+    url: 'https://example.com/a-very-cool-article-about-things-that-matter',
+    title: 'A very cool article about things that matter in 2026',
+    description:
+      'The meta description goes here and is clamped to three lines so very long summaries do not blow out the card height in the preview pane.',
+    image: 'https://example.com/cover.png',
+    site_name: 'Example News',
+    source: 'fetched',
+    tg_image_message_id: null,
+    error: null,
+  },
+  {
+    url: 'https://github.com/encode/httpx',
+    title: 'encode/httpx: A next-generation HTTP client for Python',
+    description: null,
+    image: null,
+    site_name: 'GitHub',
+    source: 'fetched',
+    tg_image_message_id: null,
+    error: null,
+  },
+  {
+    url: 'https://broken.example.com/gone',
+    title: null,
+    description: null,
+    image: null,
+    site_name: null,
+    source: 'fetched',
+    tg_image_message_id: null,
+    error: 'request timed out',
+  },
+];
+
 export const dayItems: DisplayMessage[] = [
+  makeMsg({
+    id: 13554,
+    date: '2026-06-23T03:13:00+00:00',
+    text: 'Two links, no Telegram preview — click the card to open the pane: https://example.com/post and https://github.com/encode/httpx',
+  }),
   makeMsg({
     id: 13553,
     text: '10 年的诗写满了这个朋友心境的变化，真是个有趣的人啊。',

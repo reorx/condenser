@@ -1,10 +1,10 @@
 import type { ReactNode } from 'react';
 
+import { TRAILING, URL_RE } from './extractUrls';
+
 // v1 renders plain text + clickable URLs only (no rich entities — the backend
-// does not persist Telegram message entities yet; see spec D3 note).
-const URL_RE = /(https?:\/\/[^\s<]+|www\.[^\s<]+)/gi;
-// Trailing punctuation that is almost never part of the URL itself.
-const TRAILING = /[.,;:!?)\]}'"]+$/;
+// does not persist Telegram message entities yet; see spec D3 note). The URL regex
+// is shared with `extractUrls` so what we linkify matches what the preview pane fetches.
 
 export function linkify(text: string): ReactNode[] {
   const out: ReactNode[] = [];
