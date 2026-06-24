@@ -5,9 +5,11 @@ from urllib.parse import urlsplit
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi.responses import RedirectResponse
 
 from .. import preview
 from ..auth import require_auth
+from ..config import get_settings
 
 router = APIRouter(prefix='/api', tags=['preview'], dependencies=[Depends(require_auth)])
 
@@ -35,8 +37,14 @@ async def message_previews(channel_id: int, message_id: int) -> list[preview.Lin
 
 @router.get('/preview/image')
 async def preview_image(url: str):
-    """Proxy a preview's thumbnail image through the server (private + hotlink-proof)."""
+    """Proxy a preview's thumbnail image through the server (private + hotlink-proof).
+
+    Feature-flagged: when ``condenser_preview_image_proxy`` is off, redirect the browser
+    to the origin URL instead of proxying — the simple non-proxied fallback.
+    """
     _require_http_url(url)
+    if not get_settings().condenser_preview_image_proxy:
+        return RedirectResponse(url, status_code=307)
     try:
         data, mime = await preview.fetch_image(url)
     except (preview.PreviewError, httpx.HTTPError):

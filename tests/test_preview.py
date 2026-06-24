@@ -203,3 +203,17 @@ def test_image_proxy_rejects_non_image(env, monkeypatch):
     with _client() as client:
         _login(client)
         assert client.get('/api/preview/image', params={'url': 'https://x.com/p'}).status_code == 502
+
+
+def test_image_proxy_disabled_redirects_to_origin(env, monkeypatch):
+    from condenser.config import get_settings
+
+    monkeypatch.setenv('CONDENSER_PREVIEW_IMAGE_PROXY', 'false')
+    get_settings.cache_clear()
+    with _client() as client:
+        _login(client)
+        r = client.get(
+            '/api/preview/image', params={'url': 'https://cdn.example.com/x.png'}, follow_redirects=False
+        )
+        assert r.status_code == 307
+        assert r.headers['location'] == 'https://cdn.example.com/x.png'

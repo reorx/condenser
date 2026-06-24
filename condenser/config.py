@@ -40,6 +40,10 @@ class Settings(BaseSettings):
     condenser_preview_max_urls: int = 8
     condenser_preview_max_concurrency: int = 5
     condenser_preview_max_redirects: int = 5
+    # When True, preview thumbnails stream through the backend (private, hotlink-proof).
+    # When False, the image endpoint redirects the browser to the origin URL instead
+    # (simpler fallback — loads images directly, as a non-proxied setup would).
+    condenser_preview_image_proxy: bool = True
     condenser_preview_user_agent: str = (
         'Mozilla/5.0 (compatible; CondenserBot/0.1; +https://github.com/reorx/condenser)'
     )
