@@ -14,7 +14,9 @@ async def get_media(channel_id: int, message_id: int, thumb: bool = False, tg: T
     service = tg.service
     if service is None or not service.is_authorized:
         raise HTTPException(status_code=503, detail='telegram not authorized')
-    stream, mime = await service.get_media(channel_id, message_id, thumb=thumb)
+    # Resolve via @username when available: a bare id fails after a restart because
+    # Telethon's StringSession doesn't persist its entity cache (see tg._channel_handle).
+    stream, mime = await service.get_media(tg._channel_handle(channel_id), message_id, thumb=thumb)
     # Browser may cache; the server keeps nothing on disk.
     headers = {'Cache-Control': 'private, max-age=86400'}
     return StreamingResponse(stream, media_type=mime, headers=headers)

@@ -639,6 +639,31 @@ def test_channel_avatar_proxy(env):
         assert client.get('/api/channels/5/avatar').status_code == 404
 
 
+def test_media_and_avatar_resolve_via_username(env):
+    """Regression: after a restart Telethon's StringSession has no entity cache, so a bare
+    channel id can't be resolved. When the channel has a username, both proxies must pass
+    ``@username`` (which resolves reliably) instead of the int."""
+    with _client() as client:
+        _login(client)
+        seed_channel(7, 'Tech', 'techchan')
+
+        async def chunks():
+            yield b'img'
+
+        fake = MagicMock()
+        type(fake).is_authorized = property(lambda self: True)
+        fake.get_media = AsyncMock(return_value=(chunks(), 'image/png'))
+        fake.get_channel_photo = AsyncMock(return_value=(b'avatar', 'image/jpeg'))
+        fake.disconnect = AsyncMock()
+        client.app.state.tg.service = fake
+
+        assert client.get('/api/media/7/50?thumb=1').status_code == 200
+        fake.get_media.assert_awaited_once_with('@techchan', 50, thumb=True)
+
+        assert client.get('/api/channels/7/avatar').status_code == 200
+        fake.get_channel_photo.assert_awaited_once_with('@techchan')
+
+
 def _fake_dialog(cid, title, username=None, *, is_channel=True, is_group=False, unread=0, date=None):
     """Build a Telethon-like Dialog stub (entity has no ``full`` -> ChannelInfo stays null).
 
