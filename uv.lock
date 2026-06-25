@@ -1090,7 +1090,7 @@ wheels = [
 
 [[package]]
 name = "telememo"
-version = "0.1.0"
+version = "0.2.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "click" },
@@ -1102,9 +1102,9 @@ dependencies = [
     { name = "rich" },
     { name = "telethon" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/be/2d/8d011e8ae57885186282ab876d6b964a3d7d4f9996a7a9c04e80d674efec/telememo-0.1.0.tar.gz", hash = "sha256:ba2bf1bbbb3f4bfa5313dc824e08c4083993237334b8a9d5fe4882448c17da0a", size = 47905, upload-time = "2026-06-18T14:20:57.419Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/55/93/96052d1957ce26204a81098416ceebcdfbd6130fefc2ebb9d9b860f24716/telememo-0.2.0.tar.gz", hash = "sha256:d3c256ed058254ca4dbe15f229a35f2d0ebbecc3a72d0832898530099b1284d0", size = 48352, upload-time = "2026-06-25T05:07:59.939Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/31/8d/b7f8573d50a3fe010a15010d2a31dc44ef1e5ea2e0b0ff913362c1b95e5b/telememo-0.1.0-py3-none-any.whl", hash = "sha256:5451938cabb9a7598be3e919f9bc3a8c9bbf66ccbaf25c378f139185e09f8e6f", size = 44821, upload-time = "2026-06-18T14:20:58.772Z" },
+    { url = "https://files.pythonhosted.org/packages/db/02/2ebd2090498f4bfab715ea0d4fe1c4ee8564de59af2e8c2c474b86210705/telememo-0.2.0-py3-none-any.whl", hash = "sha256:dcbadd54248ec734265bfde1cb4c2dbcb210439ae1420503b345f4a29dcd01dc", size = 45100, upload-time = "2026-06-25T05:07:58.601Z" },
 ]
 
 [[package]]
