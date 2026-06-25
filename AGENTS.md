@@ -180,12 +180,11 @@ override via `PATCH /api/app/meta`), full channel info (`member_count`/`descript
 "delete-with-messages" option (Q4 / `?purge=1`) and the backfill batch-interval sleep.
 Full checklist: `kb/sessions/2026-06-09-backend-remaining-work.md`.
 
-**Realtime edits need telememo 0.2.0:** the `MessageEdited` handling lives in telememo's
-`service.subscribe` (a local `feat/realtime-message-edits` branch, version bumped to 0.2.0).
+**Realtime edits (live on telememo 0.2.0):** `MessageEdited` handling lives in telememo's
+`service.subscribe` (one handler registered for both `NewMessage` + `MessageEdited`). telememo
+**0.2.0 is published to PyPI and pinned in `uv.lock`** (bumped 2026-06-25), so it's active.
 condenser needs **no** code change — `_on_new_message` recomputes `is_filtered` for the
-dispatched edit — but the feature only reaches condenser once **telememo 0.2.0 is published
-to PyPI and the lock bumped** (`uv lock --upgrade-package telememo`; `pyproject` already
-allows `>=0.1.0`). Until then condenser runs against PyPI 0.1.0 (no edit events).
+dispatched edit; `save_message_smart` updates the row's text/edit_date in place.
 
 **Album unread count (fixed):** `unread_counts` counts display units by
 `COALESCE(grouped_id, id)`, so marking only an album's primary id used to leave its sibling
