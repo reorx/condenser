@@ -8,8 +8,10 @@ management, calendar date-filter, new-content polling, media lightbox, settings 
 channel avatars, a dedicated `/filters` page (global + per-channel keyword rules
 with Gmail-style preview), a redesigned reading view (unified `PageHeader`, static
 date dividers, bordered content column), and unified link previews (own URL-metadata
-fetcher + click-to-open pane). Remaining v1 work: Docker multi-stage frontend
-build + README.
+fetcher + click-to-open pane). **v1 is shipped**: multi-stage Docker build (frontend +
+backend in one image), README, GitHub Actions → ghcr.io/reorx/condenser → webhook deploy
+to https://condenser.reorx.com (Ansible role `condenser` in the deploy workspace, host
+port 3459, SQLite bind-mounted at `/opt/apps/condenser/data/`).
 
 ## Architecture
 
