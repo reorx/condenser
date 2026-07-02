@@ -1,5 +1,6 @@
-# Build context = the condenser/ dir; the Dockerfile only needs pyproject.toml,
-# uv.lock and the condenser/ package. Keep everything else out of the context.
+# Build context = the condenser/ dir; the Dockerfile needs pyproject.toml,
+# uv.lock, the condenser/ package and the frontend/ sources. Keep everything
+# else out of the context.
 .venv/
 __pycache__/
 *.pyc
@@ -8,8 +9,9 @@ __pycache__/
 .git/
 .firecrawl/
 
-# Frontend is not part of the backend image (spec step 8 not wired yet).
-frontend/
+# Frontend sources are built inside the image; local artifacts stay out.
+frontend/node_modules/
+frontend/dist/
 
 # Local-only artifacts
 tmp/

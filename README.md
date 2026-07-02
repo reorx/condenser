@@ -4,8 +4,8 @@ Self-hosted, single-user **Telegram channel aggregating reader** — a Google Re
 timeline where the information source is Telegram channels instead of RSS. See
 [`spec.md`](./spec.md) for the full design.
 
-This repository currently implements the **backend** (spec Parts A/B/C). The React SPA
-(Part D) is not built yet.
+The repository contains the **backend** (spec Parts A/B/C, FastAPI + Telethon) and the
+**React SPA** (Part D, in `frontend/`). In production a single Docker image serves both.
 
 ## Architecture
 
@@ -32,6 +32,19 @@ cp .env.example .env         # fill in the values below
 uv run python -m condenser   # serves http://localhost:8792
 uv run pytest                # backend test suite (Telegram fully mocked)
 ```
+
+The frontend ([`frontend/`](./frontend)) is React 19 + Vite + Tailwind, managed with pnpm:
+
+```bash
+cd frontend
+pnpm install
+pnpm dev                     # dev server, proxies /api -> :8792
+pnpm build                   # production build -> frontend/dist
+```
+
+The backend serves `frontend/dist` at `/` when it exists (override the location with
+`CONDENSER_STATIC_DIR`), so a production deployment is a single process. To launch
+backend + frontend dev servers together in tmux panes: `tmuxp load .tmuxp.yaml`.
 
 ### Co-developing telememo locally (like `npm link`)
 
@@ -72,16 +85,37 @@ committing a local path dependency. (If you'd rather have a persistent link,
 | `CONDENSER_SECRET_KEY` | signs the session cookie and encrypts the stored Telegram session |
 | `CONDENSER_DB_PATH` | SQLite path (default `condenser.db`) |
 | `CONDENSER_BACKFILL_DAYS` | days to backfill when subscribing (default `7`) |
+| `CONDENSER_ENTITY_CACHE_PATH` | JSON cache for forward-source names (default `condenser_entity_cache.json`) |
+| `CONDENSER_STATIC_DIR` | frontend build to serve at `/` (default `frontend/dist`) |
 
 ## Deployment (Docker)
 
+The image is a multi-stage build: a `node` stage builds the SPA (`pnpm build`), then the
+Python stage installs the backend with uv and serves the SPA from `CONDENSER_STATIC_DIR`.
+telememo is installed from PyPI during the build, so the build context is just the
+`condenser/` directory — no sibling checkout required.
+
 ```bash
-docker compose up --build    # from condenser/
+docker compose up --build    # from condenser/; builds frontend + backend in the image
 ```
 
-telememo is installed from PyPI during the build, so the build context is just the
-`condenser/` directory — no sibling checkout required. SQLite is persisted to the
-`condenser-data` volume.
+SQLite and the entity cache are persisted to the `condenser-data` volume (`/data`).
+
+Pushes to `master` also build and publish `ghcr.io/reorx/condenser:latest` via GitHub
+Actions (`.github/workflows/deploy.yml`) and trigger a webhook-based deploy, so a server
+can run the prebuilt image instead of building locally:
+
+```yaml
+services:
+  condenser:
+    image: ghcr.io/reorx/condenser:latest
+    env_file: .env
+    ports:
+      - '127.0.0.1:8792:8792'
+    volumes:
+      - ./data:/data
+    restart: unless-stopped
+```
 
 ## ⚠️ Risk notice (spec D2)
 
