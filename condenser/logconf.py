@@ -7,11 +7,61 @@ apply a full ``dictConfig`` modeled on uvicorn's default, adding ``asctime`` to 
 three formatters. Importing this module after uvicorn has configured its own logging
 (which is the case for both ``uvicorn ...`` CLI and ``python -m condenser``) lets ours
 win, since ``dictConfig`` reconfigures the already-registered uvicorn loggers.
+
+``CONDENSER_LOG_FORMAT=json`` swaps every formatter for one-JSON-object-per-line
+output (production containers need this so grep hits whole entries and jq can
+filter by field); unset/anything else keeps the pretty human-readable lines.
 """
 
+import json
 import logging.config
+import os
 
 _DATEFMT = '%Y-%m-%d %H:%M:%S'
+
+
+class JSONFormatter(logging.Formatter):
+    """One log entry per line as a JSON object: time/level/logger/msg (+exc)."""
+
+    def format(self, record: logging.LogRecord) -> str:
+        entry = self.entry(record)
+        if record.exc_info:
+            entry['exc'] = self.formatException(record.exc_info)
+        return json.dumps(entry, ensure_ascii=False)
+
+    def entry(self, record: logging.LogRecord) -> dict:
+        return {
+            'time': self.formatTime(record, _DATEFMT),
+            'level': record.levelname,
+            'logger': record.name,
+            'msg': record.getMessage(),
+        }
+
+
+class AccessJSONFormatter(JSONFormatter):
+    """uvicorn.access records carry (client_addr, method, full_path, http_version,
+    status_code) in ``args``; expose them as structured fields."""
+
+    def entry(self, record: logging.LogRecord) -> dict:
+        entry = super().entry(record)
+        client_addr, method, path, http_version, status = record.args
+        entry.update(
+            {
+                'client_addr': client_addr,
+                'method': method,
+                'path': path,
+                'http_version': http_version,
+                'status': status,
+            }
+        )
+        return entry
+
+
+_JSON_FORMATTERS = {
+    'default': {'()': JSONFormatter},
+    'access': {'()': AccessJSONFormatter},
+    'named': {'()': JSONFormatter},
+}
 
 LOGGING_CONFIG = {
     'version': 1,
@@ -51,4 +101,7 @@ LOGGING_CONFIG = {
 
 
 def configure_logging() -> None:
-    logging.config.dictConfig(LOGGING_CONFIG)
+    config = LOGGING_CONFIG
+    if os.getenv('CONDENSER_LOG_FORMAT') == 'json':
+        config = {**LOGGING_CONFIG, 'formatters': _JSON_FORMATTERS}
+    logging.config.dictConfig(config)
