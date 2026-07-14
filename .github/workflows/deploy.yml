@@ -49,6 +49,9 @@ jobs:
     steps:
       - name: Trigger deploy via webhook
         run: |
+          # ghcr :latest tag->digest propagation lags a few seconds after push;
+          # deploying immediately can pull the previous image
+          sleep 20
           curl -sf -X POST \
             -H "X-Deploy-Token: ${{ secrets.WEBHOOK_SECRET }}" \
             https://apps-webhook.reorx.com/hooks/deploy-condenser
