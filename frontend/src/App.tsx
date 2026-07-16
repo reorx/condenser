@@ -1,4 +1,4 @@
-import { Route, Routes } from 'react-router-dom';
+import { Route, Routes, useLocation } from 'react-router-dom';
 
 import { FullScreenSpinner } from '@/components/Spinner';
 import { Button } from '@/components/ui/button';
@@ -6,6 +6,7 @@ import { useTgStatus } from '@/hooks/useTgStatus';
 import { ApiError } from '@/lib/api';
 import { AppShell } from '@/pages/AppShell';
 import { AppLogin } from '@/pages/AppLogin';
+import { AuthorizeView } from '@/pages/AuthorizeView';
 import { FiltersView } from '@/pages/FiltersView';
 import { RecordsView } from '@/pages/RecordsView';
 import { SubscriptionsView } from '@/pages/SubscriptionsView';
@@ -25,12 +26,15 @@ function ErrorScreen({ message, onRetry }: { message: string; onRetry: () => voi
 
 export default function App() {
   const { data, error, isError, isPending, refetch } = useTgStatus();
+  const location = useLocation();
 
   if (isError) {
     if (error instanceof ApiError && error.status === 401) return <AppLogin />;
     return <ErrorScreen message="Cannot reach the server." onRetry={() => refetch()} />;
   }
   if (isPending || !data) return <FullScreenSpinner />;
+  // Device authorization only needs the cookie session, not a Telegram login.
+  if (location.pathname === '/authorize') return <AuthorizeView />;
   if (data.status !== 'authorized') return <TgLogin status={data.status} />;
 
   return (

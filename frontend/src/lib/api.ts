@@ -3,6 +3,7 @@
 
 import type {
   DayCount,
+  Device,
   DisplayMessage,
   FilterPreviewResult,
   JoinedChannel,
@@ -81,6 +82,12 @@ export const api = {
   // ---- app auth ----
   login: (password: string) => post<{ ok: true }>('/api/auth/login', { password }),
   logout: () => post<{ ok: true }>('/api/auth/logout'),
+
+  // ---- devices (client bearer tokens; cookie-authed management) ----
+  // The raw token appears in this response only — hand it to the device, never store it.
+  createDevice: (name: string) => post<{ id: number; name: string; token: string }>('/api/auth/device', { name }),
+  listDevices: () => request<Device[]>('/api/auth/devices'),
+  deleteDevice: (deviceId: number) => del<{ ok: true }>(`/api/auth/devices/${deviceId}`),
 
   // ---- telegram step-login ----
   tgStatus: () => request<{ status: TgStatus; phone?: string | null }>('/api/tg/status'),

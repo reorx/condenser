@@ -6,6 +6,7 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from . import db
 from .config import get_settings
@@ -14,6 +15,24 @@ from .routers import auth, channels, media, preview, reading, settings as settin
 from .tg import TgManager
 
 configure_logging()
+
+
+class SPAStaticFiles(StaticFiles):
+    """StaticFiles with an index.html fallback for client-side routes.
+
+    ``html=True`` only serves index.html for directory requests; cold-loading a
+    React Router path (/authorize, /saved, ...) must return the SPA shell instead
+    of 404. Unmatched /api paths keep 404ing — this mount sits after the routers,
+    so anything reaching it under /api is a genuinely unknown endpoint.
+    """
+
+    async def get_response(self, path: str, scope):
+        try:
+            return await super().get_response(path, scope)
+        except StarletteHTTPException as exc:
+            if exc.status_code == 404 and not path.startswith('api/'):
+                return await super().get_response('index.html', scope)
+            raise
 
 
 def create_app() -> FastAPI:
@@ -48,6 +67,6 @@ def create_app() -> FastAPI:
     # 4. serve the React build (if present) as static assets at '/'
     static_dir = os.getenv('CONDENSER_STATIC_DIR', str(Path(__file__).resolve().parent.parent / 'frontend' / 'dist'))
     if Path(static_dir).is_dir():
-        app.mount('/', StaticFiles(directory=static_dir, html=True), name='static')
+        app.mount('/', SPAStaticFiles(directory=static_dir, html=True), name='static')
 
     return app

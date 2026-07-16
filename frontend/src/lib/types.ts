@@ -156,3 +156,11 @@ export interface MsgRef {
   channel_id: number;
   message_id: number;
 }
+
+/** An authorized client device (bearer token holder); the token itself is never listed. */
+export interface Device {
+  id: number;
+  name: string;
+  created_at: string;
+  last_seen_at: string | null;
+}

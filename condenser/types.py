@@ -9,6 +9,10 @@ class LoginBody(BaseModel):
     password: str
 
 
+class DeviceCreateBody(BaseModel):
+    name: str
+
+
 class PhoneBody(BaseModel):
     phone: str
 

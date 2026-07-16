@@ -27,6 +27,11 @@ def decrypt_session(secret_key: str, token: bytes) -> str:
     return _fernet(secret_key).decrypt(bytes(token)).decode('utf-8')
 
 
+def hash_device_token(token: str) -> str:
+    """sha256 hex of a raw device token — only the hash is stored (spec: devices table)."""
+    return hashlib.sha256(token.encode('utf-8')).hexdigest()
+
+
 _COOKIE_SALT = 'condenser-app-session'
 
 

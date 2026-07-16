@@ -32,7 +32,7 @@ MESSAGES_OPTIONAL_FIELDS = {
 # Bumped when condenser's own table shapes change; recorded in app_meta on init so a
 # future startup can detect an upgrade and run a migration. Telememo manages its own
 # table migrations separately (init_db optional_fields / ALTER TABLE).
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 class CondenserBaseModel(Model):
@@ -123,7 +123,29 @@ class LinkPreviewCache(CondenserBaseModel):
         table_name = 'link_previews'
 
 
-CONDENSER_TABLES = [Subscription, KeywordFilter, ReadMessage, TelegramRecord, TgSession, AppMeta, LinkPreviewCache]
+class Device(CondenserBaseModel):
+    """An authorized client device (e.g. the iOS reader). Only the token hash is stored."""
+
+    id = AutoField()
+    name = TextField()
+    token_hash = CharField(unique=True)
+    created_at = DateTimeField()
+    last_seen_at = DateTimeField(null=True)
+
+    class Meta:
+        table_name = 'devices'
+
+
+CONDENSER_TABLES = [
+    Subscription,
+    KeywordFilter,
+    ReadMessage,
+    TelegramRecord,
+    TgSession,
+    AppMeta,
+    LinkPreviewCache,
+    Device,
+]
 
 
 def init_db(db_path: str) -> None:
@@ -353,6 +375,38 @@ def delete_record(channel_id: int, message_id: int) -> None:
 
 def list_records() -> list[TelegramRecord]:
     return list(TelegramRecord.select().order_by(TelegramRecord.created_at.desc()))
+
+
+# --- devices (client bearer tokens) ------------------------------------------
+
+# Skip the last_seen_at write when the previous one is this recent, so the hot
+# request path doesn't hit SQLite on every call.
+DEVICE_SEEN_THROTTLE_SECONDS = 3600
+
+
+def create_device(name: str, token_hash: str) -> Device:
+    return Device.create(name=name, token_hash=token_hash, created_at=_now_naive())
+
+
+def get_device_by_token_hash(token_hash: str) -> Optional[Device]:
+    return Device.get_or_none(Device.token_hash == token_hash)
+
+
+def list_devices() -> list[Device]:
+    return list(Device.select().order_by(Device.created_at.desc()))
+
+
+def delete_device(device_id: int) -> int:
+    """Revoke a device; returns rows deleted (0 = unknown id)."""
+    return Device.delete().where(Device.id == device_id).execute()
+
+
+def touch_device_last_seen(device: Device) -> None:
+    now = _now_naive()
+    last = device.last_seen_at
+    if last is not None and (now - last).total_seconds() < DEVICE_SEEN_THROTTLE_SECONDS:
+        return
+    Device.update(last_seen_at=now).where(Device.id == device.id).execute()
 
 
 # --- app_meta ---------------------------------------------------------------

@@ -35,9 +35,10 @@ Two conventions this list exists to protect:
 | `ChannelFilter` + `AllChannelsHidden` | Dropdown to toggle per-channel visibility in multi-channel views; `AllChannelsHidden` is the all-filtered-out empty state |
 | `ChannelFilterOption` | One row inside the `ChannelFilter` dropdown (avatar + name + message count) |
 | `ConfirmDialog` | Generic confirm/cancel modal (destructive variant + pending state) |
+| `DeviceList` | Authorized devices (bearer-token clients) in `SettingsDialog`: list + revoke with confirm |
 | `PageHeader` + `IconBadge` | Unified reading-view top bar (leading icon + title + meta + right-aligned actions); `IconBadge` wraps a lucide icon in a muted circle |
 | `SegmentedOption` | One icon-over-label button in a segmented control; shared by `SettingsDialog`'s theme + unread pickers |
-| `SettingsDialog` | Settings modal: Telegram account, theme, unread-indicator mode, lock app |
+| `SettingsDialog` | Settings modal: Telegram account, theme, unread-indicator mode, devices, lock app |
 | `Sidebar` | Left navigation: nav links (Unread first, `/` = Unread, `/?all=1` = All), channel list, browse, settings |
 | `SidebarChannelLink` + `navLinkClass` | One channel link in the sidebar; also exports the shared nav-row className used by the top-level links |
 | `Spinner` + `FullScreenSpinner` | Loading spinner (inline + full-screen) |
@@ -88,7 +89,8 @@ Two conventions this list exists to protect:
 ## Where things live (non-components)
 
 - `pages/` — route screens (`TimelineView`, `RecordsView`, `FiltersView`, `SubscriptionsView`,
-  `AppShell`, `AppLogin`, `TgLogin`).
+  `AppShell`, `AppLogin`, `TgLogin`, `AuthorizeView` — the device-authorization page cold-loaded
+  by the iOS app; only needs the cookie session, so `App.tsx` renders it before the TG gate).
 - `hooks/` — data + behavior hooks (`useTimeline`, `useSubscriptions`, `useChannelFilter`,
   `useScrollToRead`, `useNewContent`, `useRefresh`, mutations, …).
 - `lib/` — `api.ts` (typed fetch client), `types.ts` (backend JSON mirror), `format.ts`,

@@ -41,8 +41,8 @@ condenser's peewee models bind to telememo's `db` instance, so everything is one
 | `records.py` | source-decoupled snapshots into `raw_data`, rendered without telememo tables |
 | `preview.py` | source-agnostic link previews: fetch a URL (async httpx) + extract metadata (`metadata_parser`), `link_previews` cache, per-message batch w/ Telegram-bonus fill, image fetch for the proxy |
 | `tg.py` | `TgManager`: lifecycle (C1), step-login→encrypted storage, realtime ingest, backfill scheduling, subscription orchestration |
-| `auth.py` + `routers/*` | C2 endpoints behind the app-password cookie gate; `routers/channels.py` = avatar proxy, `routers/preview.py` = link-preview + image proxy; `/api/tg/status` carries `phone` |
-| `app.py` / `__main__.py` | FastAPI factory + lifespan; uvicorn entry; serves a static frontend dir if present |
+| `auth.py` + `routers/*` | C2 endpoints behind `require_auth` = app-password cookie **or** device Bearer token (`devices` table, sha256 hash only, issued via the web `/authorize` page for the iOS app; management endpoints are cookie-only — see `kb/plans/2026-07-16-mobile-client-api-device-token.md`); `routers/channels.py` = avatar proxy, `routers/preview.py` = link-preview + image proxy; `/api/tg/status` carries `phone` |
+| `app.py` / `__main__.py` | FastAPI factory + lifespan; uvicorn entry; serves a static frontend dir if present via `SPAStaticFiles` (index.html fallback for client routes — `/authorize` cold-load depends on it; unknown `/api/*` still 404) |
 
 ## Conventions & gotchas
 
@@ -149,6 +149,16 @@ React Router v7, **pnpm**. Backend `app.py` auto-serves `frontend/dist` at `/` i
 
 Remaining: Docker multi-stage frontend build + README (spec step 9).
 
+## iOS app (`ios/`, monorepo)
+
+Native SwiftUI read-only client (spec: `kb/plans/2026-07-16-ios-reader-app.md`; device-token
+auth spec: `kb/plans/2026-07-16-mobile-client-api-device-token.md`). Pure-CLI workflow —
+xcodegen `project.yml` (single source of truth, `.xcodeproj` gitignored) + Makefile
+(`make build / test / run / gen / clean`, simulator via `simctl`). Two layers:
+`CondenserKit/` local SPM package (pure logic + Swift Testing tests, no UIKit) and
+`Condenser/` app target. See `ios/AGENTS.md` for commands and conventions.
+Phase 1 (skeleton) done; next phases: auth → core reading → channels/saved/settings.
+
 ## Dev
 
 ```bash
@@ -178,7 +188,9 @@ Backend endpoints (spec C2) all exist and §7 scenarios are tested. Recently clo
 override via `PATCH /api/app/meta`), full channel info (`member_count`/`description` via
 `GetFullChannelRequest` in `TgManager._enrich_channel`), runtime session-invalidation
 (`_demote_session`), entity-cache warming on startup, and realtime **edit** handling
-(telememo 0.2.0 `MessageEdited` — see below). Still open: subscription
+(telememo 0.2.0 `MessageEdited` — see below). Closed 2026-07-16: **device Bearer-token auth**
+for the iOS app (devices table + web `/authorize` flow + SettingsDialog device management +
+SPA fallback; spec `kb/plans/2026-07-16-mobile-client-api-device-token.md`). Still open: subscription
 "delete-with-messages" option (Q4 / `?purge=1`) and the backfill batch-interval sleep.
 Full checklist: `kb/sessions/2026-06-09-backend-remaining-work.md`.
 

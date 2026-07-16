@@ -3,6 +3,7 @@ import { useMutation } from '@tanstack/react-query';
 import { Circle, Lock, LogOut, Minus, Monitor, Moon, Phone, Sun } from 'lucide-react';
 
 import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { DeviceList } from '@/components/DeviceList';
 import { SegmentedOption } from '@/components/SegmentedOption';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -103,6 +104,11 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
               />
             ))}
           </div>
+        </div>
+
+        <div className="space-y-2">
+          <SectionLabel>Devices</SectionLabel>
+          <DeviceList />
         </div>
 
         <Button
