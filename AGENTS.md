@@ -158,8 +158,15 @@ xcodegen `project.yml` (single source of truth, `.xcodeproj` gitignored) + Makef
 `CondenserKit/` local SPM package (pure logic + Swift Testing tests, no UIKit) and
 `Condenser/` app target. See `ios/AGENTS.md` for commands and conventions.
 Phases 1 (skeleton) + 2 (auth: `AuthFlow`/`TokenStore` in Kit, `AuthSession` + `LoginView`
-via SwiftUI `webAuthenticationSession`, 401 → `handleUnauthorized()` hook awaiting APIClient
-wiring) done; next phases: core reading → channels/saved/settings.
+via SwiftUI `webAuthenticationSession`) + 3 (core reading: Models mirrored from
+`frontend/src/lib/types.ts` with real-JSON fixtures, `APIClient` (Bearer, 401 →
+`APIError.unauthorized`), `CondenserAPI` protocol for test stubs, `TimelineStore` /
+`ReadReporter` / `NewContentPoller` in Kit — 47 tests; app side: `ReaderSession` composition
+root wiring 401 → `AuthSession.handleUnauthorized`, `TimelineScreen` with scroll-to-read via
+`onGeometryChange`, infinite scroll, pull-to-refresh, new-content capsule, unread toggle,
+`MessageCard` / `MessageDetailSheet` / authed `ImageLoader`; debug-token env injection for
+simulator, see `ios/AGENTS.md`) done; next phase 4: channels/saved tabs, SnapshotCache,
+fullscreen image viewer, settings.
 
 ## Dev
 

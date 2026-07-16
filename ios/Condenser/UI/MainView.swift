@@ -1,25 +1,28 @@
 import SwiftUI
+import CondenserKit
 
-/// 登录后的主界面占位：phase 3 替换为 TabView（Timeline / 频道 / 收藏）。
+/// 登录后的主界面：phase 3 为单 Timeline（NavigationStack）；
+/// phase 4 扩展为 TabView（Timeline / 频道 / 收藏）。
 struct MainView: View {
-    @Environment(AuthSession.self) private var session
+    @Environment(AuthSession.self) private var auth
+    @State private var reader: ReaderSession?
 
     var body: some View {
-        VStack(spacing: 16) {
-            Image(systemName: "checkmark.circle.fill")
-                .font(.system(size: 48))
-                .foregroundStyle(.green)
-            Text("已连接")
-                .font(.title2.bold())
-            if let host = session.serverURL?.host() {
-                Text(host)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+        Group {
+            if let reader {
+                NavigationStack {
+                    TimelineScreen()
+                }
+                .environment(reader)
+            } else {
+                ProgressView()
             }
-            Button("登出", role: .destructive) {
-                session.signOut()
+        }
+        .onAppear {
+            guard reader == nil, let server = auth.serverURL, let token = auth.token else { return }
+            reader = ReaderSession(server: server, token: token) { [weak auth] in
+                auth?.handleUnauthorized()
             }
-            .padding(.top, 24)
         }
     }
 }

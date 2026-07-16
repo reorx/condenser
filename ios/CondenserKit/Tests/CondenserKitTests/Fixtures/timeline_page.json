@@ -1,0 +1,1063 @@
+{
+  "items": [
+    {
+      "id": 18249,
+      "channel_id": 1283701973,
+      "date": "2026-07-16T09:26:05Z",
+      "is_edited": true,
+      "edit_date": "2026-07-16T09:26:13Z",
+      "sender_id": -1001283701973,
+      "sender_name": "厘米碎碎念",
+      "text": "广州 自家糖水\n\n群友推荐的店面，小小角落一间但味道很不错。糖水我最热爱的就是香芋西米露，这家做得还可以，芋头很香，椰奶也浓厚，我觉得稍微有一点点太甜但是无伤大雅。鱼蛋也好吃，配番茄酱超棒。",
+      "is_album": true,
+      "grouped_id": 14273551723252437,
+      "media_items": [
+        {
+          "message_id": 18249,
+          "media_type": "photo",
+          "has_media": true,
+          "width": 2560,
+          "height": 1920
+        },
+        {
+          "message_id": 18250,
+          "media_type": "photo",
+          "has_media": true,
+          "width": 2560,
+          "height": 1920
+        },
+        {
+          "message_id": 18251,
+          "media_type": "photo",
+          "has_media": true,
+          "width": 2560,
+          "height": 1920
+        },
+        {
+          "message_id": 18252,
+          "media_type": "photo",
+          "has_media": true,
+          "width": 2560,
+          "height": 1920
+        }
+      ],
+      "webpage": null,
+      "is_forwarded": true,
+      "forward_info": {
+        "from_channel_id": 1785911732,
+        "from_channel_name": "harukachan eats delicious meals",
+        "from_user_id": null,
+        "from_user_name": null,
+        "from_message_id": 1846,
+        "original_date": "2026-07-16T08:30:50Z",
+        "post_author": "nowano"
+      },
+      "views": 3,
+      "forwards_count": null,
+      "replies_count": null,
+      "raw_message_ids": [
+        18249,
+        18250,
+        18251,
+        18252
+      ],
+      "is_read": false,
+      "is_saved": false
+    },
+    {
+      "id": 13701,
+      "channel_id": 1833253016,
+      "date": "2026-07-01T10:14:06Z",
+      "is_edited": true,
+      "edit_date": "2026-07-01T10:19:00Z",
+      "sender_id": -1001833253016,
+      "sender_name": "yihong0618 和朋友们的频道",
+      "text": "抹茶发现 netfilter userspace library \"libnftnl\" 的 examples/nft-set-elem-add.c 跑不起来，看 syscall 也看不懂，毕竟 netlink msg 谁™能看懂？\n\n一起痛骂 “libnftnl 是什么垃圾” 和 “你的 7.2 内核太新了，新内核全是 bug 很合理” 之后，我也好奇起来了，netlink syscall 报错溯因对我来说也是个谜，正好学习一下，而且这周工作写文档太恶心了想裸奔。\n\n经过一堆准备工作之后：\n1. 修改代码让它变成一个“启动暂停、 ctrl-c 继续运行” 的两阶段程序，延长进程生命方便我用 pid 过滤事件\n2. 下载 linux-image-$(uname -r)-dbgsym 方便映射符号\n3. 准备 @eBPFTalk001 的 bpfsnoop 方便用 lbr 回溯内核执行流\n4. 准备 brendangregg/perf-tools 方便用 funcgraph \n5. 下载 Ubuntu-hwe-6.17-6.17.0-35.35_24.04.1 源码\n神秘的 Linux 内核系列又回来啦！\n\n首先要找个合适的回溯点。直接从 __x64_sys_sendto syscall 回溯 lbr 得不到太多信息，全是 kfree_skb 之类的清理，所以找找看 netfilter netlink error 相关的 kprobe，结果还真找到一个：\n```$ bpftrace -p $(pidof nft-set-elem-add) -e 'k:*nf*err* {printf(\"%s\\n\", probe);}' \nAttached 11 probes\nkprobe:nfnl_err_add```\n然后用 lbr 检查内核是如何执行到这里的：\n```$ ./bpfsnoop -k nfnl_err_add --output-lbr --filter-pid $(pidof nft-set-elem-add) --mode entry\n      __nla_validate_parse+0xb6  (lib/nlattr.c:655)                    -> __nla_parse+0x23                (lib/nlattr.c:734)                   \n      __nla_parse+0x35           (lib/nlattr.c:734)                    -> nft_data_init+0x77              (net/netfilter/nf_tables_api.c:11894)\n      nft_data_init+0xae         (net/netfilter/nf_tables_api.c:11847) -> nft_data_init+0x115             (net/netfilter/nf_tables_api.c:11890)\n      nft_data_init+0x11a        (net/netfilter/nf_tables_api.c:11890) -> nft_data_init+0xba              (net/netfilter/nf_tables_api.c:11912)\n      nft_data_init+0xe0         (net/netfilter/nf_tables_api.c:11912) -> nft_add_set_elem+0x2be          (net/netfilter/nf_tables_api.c:7380) ```\n\n还有另一种思路，看整个 syscall 的 funcgraph，也能看到 nfnl_err_add 和完整的执行流\n```$ ./funcgraph -p $(pidof nft-set-elem-add) -m 50 __x64_sys_sendto\n  6)               |              nf_tables_newsetelem [nf_tables]() {\n  6)   0.634 us    |                nft_set_lookup_global [nf_tables]();\n  6)               |                nft_add_set_elem [nf_tables]() {\n  6)   0.586 us    |                  nft_data_init [nf_tables]();\n  6)   1.659 us    |                }\n  6)   7.547 us    |              }\n  6)               |              nfnl_err_add [nfnetlink]() {\n  6)               |                __kmalloc_cache_noprof() {\n  6)   0.106 us    |                  __cond_resched();\n  6)   1.109 us    |                }\n  6)   1.444 us    |              }```\n\n两份 trace log 一结合，立刻能知道是在 nft_data_init() 里返回了 -EINVAL，然后用 lbr 跳转记录仔细跟一下源码，看到这一条跳转：\n```nft_data_init+0xae (net/netfilter/nf_tables_api.c:11847) -> nft_data_init+0x115 (net/netfilter/nf_tables_api.c:11890)```\n对应的源码是\n```11846         if (desc->len) {\n11847                 if (len != desc->len)\n11848                         return -EINVAL;\n[...]\n11890                 return -EINVAL;                                                                                                                                                                                \n[...]```\n看懂了吧，len != desc->len 所以 return -EINVAL，看下 desc->len 是 nft_set->klen 由 nft table 的 set type 决定的长度，比如我是用\n```nft add set ip t s '{ type ipv4_addr; }'```\n定义的 ipv4_addr type, desc->len = klen = 4；但是 nft-set-elem-add.c 里传给 netlink 的 uint16_t data 长度是 2，所以内核检查不通过，返回 -EINVAL，QED。\n\n你以为我很高兴吗，不，我很悲伤，因为我其实一开始就用 LLM 解答万物了，把 Linux 源码 + nft-set-elem-add.c 源码 + strace 日志扔给 codex5.5 medium，它只用了三十秒就找到了问题；然后我自己再用上面这些眼花缭乱的 tracing 手段去追溯源码，用了一个小时。投降了，已皈依 LLM 神教饶我狗命🐕",
+      "is_album": false,
+      "grouped_id": null,
+      "media_items": [],
+      "webpage": null,
+      "is_forwarded": true,
+      "forward_info": {
+        "from_channel_id": 1459082815,
+        "from_channel_name": "Welcome to the Black Parade",
+        "from_user_id": null,
+        "from_user_name": null,
+        "from_message_id": 1083,
+        "original_date": "2026-07-01T10:00:55Z",
+        "post_author": null
+      },
+      "views": 27,
+      "forwards_count": 0,
+      "replies_count": 0,
+      "raw_message_ids": [
+        13701
+      ],
+      "is_read": false,
+      "is_saved": false
+    },
+    {
+      "id": 13700,
+      "channel_id": 1833253016,
+      "date": "2026-07-01T09:45:31Z",
+      "is_edited": true,
+      "edit_date": "2026-07-01T09:50:13Z",
+      "sender_id": -1001833253016,
+      "sender_name": "yihong0618 和朋友们的频道",
+      "text": "#人工智能\n《[为 AI Agent 构建记忆系统](https://nowledge-labs.ai/zh/blog/building-memory-systems-for-ai-agents)》，[视频](https://www.bilibili.com/video/BV13ZDLB4EDr/?t=5&bvid=BV13ZDLB4EDr&vd_source=5511de30968924dcf3c19f0e7ba6d170)，[slide](https://siwei.io/talks/memory-2026/1)",
+      "is_album": false,
+      "grouped_id": null,
+      "media_items": [
+        {
+          "message_id": 13700,
+          "media_type": "webpage",
+          "has_media": true,
+          "width": null,
+          "height": null
+        }
+      ],
+      "webpage": {
+        "url": "https://nowledge-labs.ai/zh/blog/building-memory-systems-for-ai-agents",
+        "display_url": "nowledge-labs.ai/zh/blog/building-memory-systems-for-ai-agents",
+        "type": "article",
+        "site_name": "Nowledge Labs",
+        "title": "为 AI Agent 构建记忆系统",
+        "description": "构建 AI Agent 记忆系统的五个核心挑战，以及每一个背后的工程决策。来自 vLLM 北京 Meetup 和 KCD 的分享。",
+        "author": "古思为",
+        "has_photo": false
+      },
+      "is_forwarded": true,
+      "forward_info": {
+        "from_channel_id": 1356252119,
+        "from_channel_name": "codedump的电报频道",
+        "from_user_id": null,
+        "from_user_name": null,
+        "from_message_id": 914,
+        "original_date": "2026-07-01T09:45:19Z",
+        "post_author": "老C"
+      },
+      "views": 35,
+      "forwards_count": 0,
+      "replies_count": 0,
+      "raw_message_ids": [
+        13700
+      ],
+      "is_read": false,
+      "is_saved": false
+    },
+    {
+      "id": 914,
+      "channel_id": 1356252119,
+      "date": "2026-07-01T09:45:19Z",
+      "is_edited": true,
+      "edit_date": "2026-07-01T09:50:08Z",
+      "sender_id": -1001356252119,
+      "sender_name": "codedump的电报频道",
+      "text": "#人工智能\n《[为 AI Agent 构建记忆系统](https://nowledge-labs.ai/zh/blog/building-memory-systems-for-ai-agents)》，[视频](https://www.bilibili.com/video/BV13ZDLB4EDr/?t=5&bvid=BV13ZDLB4EDr&vd_source=5511de30968924dcf3c19f0e7ba6d170)，[slide](https://siwei.io/talks/memory-2026/1)",
+      "is_album": false,
+      "grouped_id": null,
+      "media_items": [
+        {
+          "message_id": 914,
+          "media_type": "webpage",
+          "has_media": true,
+          "width": null,
+          "height": null
+        }
+      ],
+      "webpage": {
+        "url": "https://nowledge-labs.ai/zh/blog/building-memory-systems-for-ai-agents",
+        "display_url": "nowledge-labs.ai/zh/blog/building-memory-systems-for-ai-agents",
+        "type": "article",
+        "site_name": "Nowledge Labs",
+        "title": "为 AI Agent 构建记忆系统",
+        "description": "构建 AI Agent 记忆系统的五个核心挑战，以及每一个背后的工程决策。来自 vLLM 北京 Meetup 和 KCD 的分享。",
+        "author": "古思为",
+        "has_photo": false
+      },
+      "is_forwarded": false,
+      "forward_info": null,
+      "views": 74,
+      "forwards_count": 2,
+      "replies_count": 0,
+      "raw_message_ids": [
+        914
+      ],
+      "is_read": false,
+      "is_saved": false
+    },
+    {
+      "id": 18035,
+      "channel_id": 1283701973,
+      "date": "2026-07-01T09:23:09Z",
+      "is_edited": true,
+      "edit_date": "2026-07-01T09:31:00Z",
+      "sender_id": -1001283701973,
+      "sender_name": "厘米碎碎念",
+      "text": "我也想要小妹妹。",
+      "is_album": false,
+      "grouped_id": null,
+      "media_items": [],
+      "webpage": null,
+      "is_forwarded": false,
+      "forward_info": null,
+      "views": 47,
+      "forwards_count": 0,
+      "replies_count": 0,
+      "raw_message_ids": [
+        18035
+      ],
+      "is_read": false,
+      "is_saved": false
+    },
+    {
+      "id": 13699,
+      "channel_id": 1833253016,
+      "date": "2026-07-01T08:42:18Z",
+      "is_edited": true,
+      "edit_date": "2026-07-01T08:42:22Z",
+      "sender_id": -1001833253016,
+      "sender_name": "yihong0618 和朋友们的频道",
+      "text": "https://blog.codingconfessions.com/p/virtual-memory",
+      "is_album": false,
+      "grouped_id": null,
+      "media_items": [
+        {
+          "message_id": 13699,
+          "media_type": "webpage",
+          "has_media": true,
+          "width": 1600,
+          "height": 800
+        }
+      ],
+      "webpage": {
+        "url": "https://blog.codingconfessions.com/p/virtual-memory",
+        "display_url": "blog.codingconfessions.com/p/virtual-memory",
+        "type": "photo",
+        "site_name": "Codingconfessions",
+        "title": "Virtual Memory from First Principles",
+        "description": "A practical guide to page faults, page tables, TLBs, NUMA topology, Linux internals, and performance in data-intensive systems.",
+        "author": "Abhinav Upadhyay",
+        "has_photo": true
+      },
+      "is_forwarded": true,
+      "forward_info": {
+        "from_channel_id": 2725616333,
+        "from_channel_name": "Cason's life",
+        "from_user_id": null,
+        "from_user_name": null,
+        "from_message_id": 782,
+        "original_date": "2026-07-01T08:41:11Z",
+        "post_author": "Cason Kervis"
+      },
+      "views": 2,
+      "forwards_count": 0,
+      "replies_count": 0,
+      "raw_message_ids": [
+        13699
+      ],
+      "is_read": false,
+      "is_saved": false
+    },
+    {
+      "id": 682,
+      "channel_id": 1037603752,
+      "date": "2026-07-01T08:20:38Z",
+      "is_edited": true,
+      "edit_date": "2026-07-01T08:20:41Z",
+      "sender_id": -1001037603752,
+      "sender_name": "KAIX.IN",
+      "text": "我讨厌「配料表干净」这个新近流行起来的说法。人们发现什么「好用」就一定要把它用到烂似的，发现这个宣传点好用，任何商品就都一下子变成了配料表干净了。不管真假、不管产品特性，一律配料表干净。只有浓缩苹果汁的苹果汁到底叫不叫配料表干净呢？再配合上其它伎俩比如名字叫 NFC 而不是真的 NFC，不但配料表不干净，人心也十分不干净。\n...\n《配料表干净》\nhttps://kaix.in/2026/0701",
+      "is_album": false,
+      "grouped_id": null,
+      "media_items": [
+        {
+          "message_id": 682,
+          "media_type": "webpage",
+          "has_media": true,
+          "width": 300,
+          "height": 240
+        }
+      ],
+      "webpage": {
+        "url": "https://kaix.in/2026/0701/",
+        "display_url": "kaix.in/2026/0701",
+        "type": "article",
+        "site_name": "KAIX.IN",
+        "title": "配料表干净",
+        "description": "我讨厌「配料表干净」这个新近流行起来的说法。人们发现什么「好用」就一定要把它用到烂似的，发现这个宣传点好用，任何商品就都一下子变成了配料表干净了。不管真假、不管产品特性，一律配料表干净。只有浓缩苹果汁的苹果汁到底叫不叫配料表干净呢？再配合上其它伎俩比如名字叫 NFC 而不是真的 NFC，不但配料表不干净，人心也十分不干净。...汉语, 流行语, 广告。",
+        "author": "dimlau",
+        "has_photo": true
+      },
+      "is_forwarded": false,
+      "forward_info": null,
+      "views": 1,
+      "forwards_count": 0,
+      "replies_count": 0,
+      "raw_message_ids": [
+        682
+      ],
+      "is_read": false,
+      "is_saved": false
+    },
+    {
+      "id": 13698,
+      "channel_id": 1833253016,
+      "date": "2026-07-01T06:58:42Z",
+      "is_edited": true,
+      "edit_date": "2026-07-01T07:50:00Z",
+      "sender_id": -1001833253016,
+      "sender_name": "yihong0618 和朋友们的频道",
+      "text": "__via__ my nbkls",
+      "is_album": false,
+      "grouped_id": null,
+      "media_items": [
+        {
+          "message_id": 13698,
+          "media_type": "photo",
+          "has_media": true,
+          "width": 608,
+          "height": 536
+        }
+      ],
+      "webpage": null,
+      "is_forwarded": true,
+      "forward_info": {
+        "from_channel_id": 1341930464,
+        "from_channel_name": "每日沙雕墙",
+        "from_user_id": null,
+        "from_user_name": null,
+        "from_message_id": 202405,
+        "original_date": "2026-07-01T06:58:26Z",
+        "post_author": "投稿机器人 2.0"
+      },
+      "views": 143,
+      "forwards_count": 1,
+      "replies_count": 0,
+      "raw_message_ids": [
+        13698
+      ],
+      "is_read": false,
+      "is_saved": false
+    },
+    {
+      "id": 18034,
+      "channel_id": 1283701973,
+      "date": "2026-07-01T06:56:21Z",
+      "is_edited": true,
+      "edit_date": "2026-07-01T08:10:34Z",
+      "sender_id": -1001283701973,
+      "sender_name": "厘米碎碎念",
+      "text": "这个跑了三个月后被你们发现了，但是我们有更牛逼的你们还没发现。\n\n你看，还是有后手。\nhttps://x.com/trq212/status/2072079729331777817",
+      "is_album": false,
+      "grouped_id": null,
+      "media_items": [
+        {
+          "message_id": 18034,
+          "media_type": "webpage",
+          "has_media": true,
+          "width": 200,
+          "height": 200
+        }
+      ],
+      "webpage": {
+        "url": "https://x.com/trq212/status/2072079729331777817",
+        "display_url": "x.com/trq212/status/2072079729331777817",
+        "type": "article",
+        "site_name": "X (formerly Twitter)",
+        "title": "Thariq (@trq212) on X",
+        "description": "@IntCyberDigest Hi, this is an experiment we launched in March that was meant to prevent account abuse from unauthorized resellers and protect against distillation. \n\nThe team has landed stronger mitigations since then and we’ve actually been meaning to take this down for a while. We merged the",
+        "author": null,
+        "has_photo": true
+      },
+      "is_forwarded": false,
+      "forward_info": null,
+      "views": 143,
+      "forwards_count": 0,
+      "replies_count": 0,
+      "raw_message_ids": [
+        18034
+      ],
+      "is_read": false,
+      "is_saved": false
+    },
+    {
+      "id": 18033,
+      "channel_id": 1283701973,
+      "date": "2026-07-01T06:48:27Z",
+      "is_edited": true,
+      "edit_date": "2026-07-01T06:48:34Z",
+      "sender_id": -1001283701973,
+      "sender_name": "厘米碎碎念",
+      "text": "真就是中转站生意就是个残运会。",
+      "is_album": false,
+      "grouped_id": null,
+      "media_items": [],
+      "webpage": null,
+      "is_forwarded": false,
+      "forward_info": null,
+      "views": 3,
+      "forwards_count": 0,
+      "replies_count": 0,
+      "raw_message_ids": [
+        18033
+      ],
+      "is_read": false,
+      "is_saved": false
+    },
+    {
+      "id": 18032,
+      "channel_id": 1283701973,
+      "date": "2026-07-01T06:32:29Z",
+      "is_edited": true,
+      "edit_date": "2026-07-01T06:32:33Z",
+      "sender_id": -1001283701973,
+      "sender_name": "厘米碎碎念",
+      "text": "乐得我合不拢嘴。",
+      "is_album": false,
+      "grouped_id": null,
+      "media_items": [],
+      "webpage": null,
+      "is_forwarded": false,
+      "forward_info": null,
+      "views": 5,
+      "forwards_count": 0,
+      "replies_count": 0,
+      "raw_message_ids": [
+        18032
+      ],
+      "is_read": false,
+      "is_saved": false
+    },
+    {
+      "id": 18031,
+      "channel_id": 1283701973,
+      "date": "2026-07-01T06:29:52Z",
+      "is_edited": true,
+      "edit_date": "2026-07-01T06:35:04Z",
+      "sender_id": -1001283701973,
+      "sender_name": "厘米碎碎念",
+      "text": "https://linux.do/t/topic/2062489\n> claude不愧是A/。之前就听说过佬友们说claude容易封号，并且敌视我们国家。但是我之前一直使用DMIT家的机房IP，创建了5个号都好好的，后来开通了Pro套餐。为了确保安全，于是购买了纯净美国家宽。也订阅了好几个月的Pro，一直没有封号。\n就在刚刚，我脑子抽风，询问claude是否可以将我刚刚编写的程序API服务替换为deepseek。并且让他验证可行性，期间claude检索了deepseek官网。随后，界面就提示让我重新登录，接着邮件就发来了噩耗！\n这下是体会到A/的作风了，以后绝对不敢提国内模型了！",
+      "is_album": false,
+      "grouped_id": null,
+      "media_items": [
+        {
+          "message_id": 18031,
+          "media_type": "webpage",
+          "has_media": true,
+          "width": 896,
+          "height": 896
+        }
+      ],
+      "webpage": null,
+      "is_forwarded": false,
+      "forward_info": null,
+      "views": 45,
+      "forwards_count": 1,
+      "replies_count": 0,
+      "raw_message_ids": [
+        18031
+      ],
+      "is_read": false,
+      "is_saved": false
+    },
+    {
+      "id": 13697,
+      "channel_id": 1833253016,
+      "date": "2026-07-01T06:23:26Z",
+      "is_edited": true,
+      "edit_date": "2026-07-01T06:23:29Z",
+      "sender_id": -1001833253016,
+      "sender_name": "yihong0618 和朋友们的频道",
+      "text": "https://www.databricks.com/blog/lakebase-ltap-rethinking-database-storage",
+      "is_album": false,
+      "grouped_id": null,
+      "media_items": [],
+      "webpage": null,
+      "is_forwarded": false,
+      "forward_info": null,
+      "views": 1,
+      "forwards_count": 0,
+      "replies_count": 0,
+      "raw_message_ids": [
+        13697
+      ],
+      "is_read": false,
+      "is_saved": false
+    },
+    {
+      "id": 913,
+      "channel_id": 1356252119,
+      "date": "2026-07-01T04:46:33Z",
+      "is_edited": true,
+      "edit_date": "2026-07-01T06:52:21Z",
+      "sender_id": -1001356252119,
+      "sender_name": "codedump的电报频道",
+      "text": "#杂\n《[晓婧”回宫“](https://www.bilibili.com/video/BV1trKX62Epd/?vd_source=5511de30968924dcf3c19f0e7ba6d170)》：我是又笑又哭看完的这段脱口秀，相信在职场有过和前东家纠结的人，看了这段脱口秀多少能会有些共鸣。",
+      "is_album": false,
+      "grouped_id": null,
+      "media_items": [
+        {
+          "message_id": 913,
+          "media_type": "webpage",
+          "has_media": true,
+          "width": null,
+          "height": null
+        }
+      ],
+      "webpage": null,
+      "is_forwarded": false,
+      "forward_info": null,
+      "views": 245,
+      "forwards_count": 2,
+      "replies_count": 0,
+      "raw_message_ids": [
+        913
+      ],
+      "is_read": false,
+      "is_saved": false
+    },
+    {
+      "id": 18030,
+      "channel_id": 1283701973,
+      "date": "2026-07-01T03:51:06Z",
+      "is_edited": true,
+      "edit_date": "2026-07-01T03:51:09Z",
+      "sender_id": -1001283701973,
+      "sender_name": "厘米碎碎念",
+      "text": "**贝利Baily**\n香港快运促销：香港 ⇋ 内地\n单程低至62元起，暑期含税500+往返多城（三亚、北京等）\n退税后更香：\n– 香港 ↔ 三亚 ≈ ¥580+\n– 香港 ↔ 北京 ≈ ¥600\n– 北京 ↔ 香港 ≈ ¥744\n• 其他：宁波、无锡、常州、义乌等地往返香港余票充足\n出行日期：7月13日-12月15日（中秋国庆可能无票，实测暑期有）\n建议：HK Express官网/小程序 + OTA比价，叠券更低！\n\n[Link](https://x.com/bailyLU/status/2072163714690855140)",
+      "is_album": false,
+      "grouped_id": null,
+      "media_items": [
+        {
+          "message_id": 18030,
+          "media_type": "photo",
+          "has_media": true,
+          "width": 899,
+          "height": 696
+        }
+      ],
+      "webpage": null,
+      "is_forwarded": true,
+      "forward_info": {
+        "from_channel_id": null,
+        "from_channel_name": null,
+        "from_user_id": null,
+        "from_user_name": "CryptoDataCat - Dev",
+        "from_message_id": null,
+        "original_date": "2026-07-01T03:45:20Z",
+        "post_author": null
+      },
+      "views": 2,
+      "forwards_count": 0,
+      "replies_count": 0,
+      "raw_message_ids": [
+        18030
+      ],
+      "is_read": false,
+      "is_saved": false
+    },
+    {
+      "id": 18029,
+      "channel_id": 1283701973,
+      "date": "2026-07-01T03:44:49Z",
+      "is_edited": true,
+      "edit_date": "2026-07-01T03:44:52Z",
+      "sender_id": -1001283701973,
+      "sender_name": "厘米碎碎念",
+      "text": "https://github.com/lxgw/BlackSugarPlumCandy",
+      "is_album": false,
+      "grouped_id": null,
+      "media_items": [
+        {
+          "message_id": 18029,
+          "media_type": "webpage",
+          "has_media": true,
+          "width": 1200,
+          "height": 600
+        }
+      ],
+      "webpage": {
+        "url": "https://github.com/lxgw/BlackSugarPlumCandy",
+        "display_url": "github.com/lxgw/BlackSugarPlumCandy",
+        "type": "photo",
+        "site_name": "GitHub",
+        "title": "GitHub - lxgw/BlackSugarPlumCandy: 黑糖话梅：公众号「霞鹜」曾分享的手机美化字体，于 GitHub 正式开源发布。Black Sugar Plum Candy is a mobile phone beautification font formerly shared on the WeChat Official Account LXGWSHARE, and has now been officially open-sourced and released on GitHub.",
+        "description": "黑糖话梅：公众号「霞鹜」曾分享的手机美化字体，于 GitHub 正式开源发布。Black Sugar Plum Candy is a mobile phone beautification font formerly shared on the WeChat Official Account LXGWSHARE, and has now been officially open-source...",
+        "author": null,
+        "has_photo": true
+      },
+      "is_forwarded": false,
+      "forward_info": null,
+      "views": 1,
+      "forwards_count": 0,
+      "replies_count": 0,
+      "raw_message_ids": [
+        18029
+      ],
+      "is_read": false,
+      "is_saved": false
+    },
+    {
+      "id": 18028,
+      "channel_id": 1283701973,
+      "date": "2026-07-01T03:13:29Z",
+      "is_edited": true,
+      "edit_date": "2026-07-01T03:34:21Z",
+      "sender_id": -1001283701973,
+      "sender_name": "厘米碎碎念",
+      "text": "**Bread🍞**\n在我们的测试中，Sonnet 5 在股票分析方面显著优于 Opus 4.8（两者均使用“最大努力”模式）……\n\n我的粗略分析表明，原因在于 Sonnet 5 倾向于频繁调用工具来验证事实，而 Opus 4.8 则更倾向于根据自身内部知识猜测答案。\n\n同时，Sonnet 5 的 token 消耗量是 Opus 4.8 的五到六倍。\n\n[Link](https://x.com/himself65/status/2072152048926400657)",
+      "is_album": false,
+      "grouped_id": null,
+      "media_items": [],
+      "webpage": null,
+      "is_forwarded": true,
+      "forward_info": {
+        "from_channel_id": null,
+        "from_channel_name": null,
+        "from_user_id": null,
+        "from_user_name": "CryptoDataCat - Dev",
+        "from_message_id": null,
+        "original_date": "2026-07-01T03:00:30Z",
+        "post_author": null
+      },
+      "views": 99,
+      "forwards_count": 4,
+      "replies_count": 0,
+      "raw_message_ids": [
+        18028
+      ],
+      "is_read": false,
+      "is_saved": false
+    },
+    {
+      "id": 18027,
+      "channel_id": 1283701973,
+      "date": "2026-07-01T01:00:22Z",
+      "is_edited": true,
+      "edit_date": "2026-07-01T01:00:26Z",
+      "sender_id": -1001283701973,
+      "sender_name": "厘米碎碎念",
+      "text": "https://github.com/FradSer/apple-sync-kit",
+      "is_album": false,
+      "grouped_id": null,
+      "media_items": [
+        {
+          "message_id": 18027,
+          "media_type": "webpage",
+          "has_media": true,
+          "width": 1200,
+          "height": 600
+        }
+      ],
+      "webpage": {
+        "url": "https://github.com/FradSer/apple-sync-kit",
+        "display_url": "github.com/FradSer/apple-sync-kit",
+        "type": "photo",
+        "site_name": "GitHub",
+        "title": "GitHub - FradSer/apple-sync-kit: Generic, entity-agnostic Swift 6 library for bidirectional last-write-wins sync against a Cloudflare D1 Worker (crypto, persistence, SQLite, HTTP).",
+        "description": "Generic, entity-agnostic Swift 6 library for bidirectional last-write-wins sync against a Cloudflare D1 Worker (crypto, persistence, SQLite, HTTP). - FradSer/apple-sync-kit",
+        "author": null,
+        "has_photo": true
+      },
+      "is_forwarded": false,
+      "forward_info": null,
+      "views": 1,
+      "forwards_count": 0,
+      "replies_count": 0,
+      "raw_message_ids": [
+        18027
+      ],
+      "is_read": false,
+      "is_saved": false
+    },
+    {
+      "id": 18026,
+      "channel_id": 1283701973,
+      "date": "2026-07-01T00:50:14Z",
+      "is_edited": true,
+      "edit_date": "2026-07-01T09:24:02Z",
+      "sender_id": -1001283701973,
+      "sender_name": "厘米碎碎念",
+      "text": "sonnet 5 看起来就想是减少思考预算的 opus 4.8，另外这图是不是在说 opus 4.8 跟 gpt 5.5 根本没法比？Fable 5 超出 GPT 5.5 的分数 8%，但是费用多了两倍多。\nhttps://cursor.com/cn/evals",
+      "is_album": false,
+      "grouped_id": null,
+      "media_items": [
+        {
+          "message_id": 18026,
+          "media_type": "photo",
+          "has_media": true,
+          "width": 2560,
+          "height": 1440
+        }
+      ],
+      "webpage": null,
+      "is_forwarded": false,
+      "forward_info": null,
+      "views": 291,
+      "forwards_count": 0,
+      "replies_count": 0,
+      "raw_message_ids": [
+        18026
+      ],
+      "is_read": false,
+      "is_saved": false
+    },
+    {
+      "id": 18025,
+      "channel_id": 1283701973,
+      "date": "2026-07-01T00:37:06Z",
+      "is_edited": true,
+      "edit_date": "2026-07-01T00:37:09Z",
+      "sender_id": -1001283701973,
+      "sender_name": "厘米碎碎念",
+      "text": null,
+      "is_album": false,
+      "grouped_id": null,
+      "media_items": [
+        {
+          "message_id": 18025,
+          "media_type": "document",
+          "has_media": true,
+          "width": 512,
+          "height": 512
+        }
+      ],
+      "webpage": null,
+      "is_forwarded": false,
+      "forward_info": null,
+      "views": 2,
+      "forwards_count": 0,
+      "replies_count": 0,
+      "raw_message_ids": [
+        18025
+      ],
+      "is_read": false,
+      "is_saved": false
+    },
+    {
+      "id": 18024,
+      "channel_id": 1283701973,
+      "date": "2026-07-01T00:24:59Z",
+      "is_edited": true,
+      "edit_date": "2026-07-01T00:25:02Z",
+      "sender_id": -1001283701973,
+      "sender_name": "厘米碎碎念",
+      "text": "https://www.zhihu.com/question/1966801899245266330",
+      "is_album": false,
+      "grouped_id": null,
+      "media_items": [
+        {
+          "message_id": 18024,
+          "media_type": "photo",
+          "has_media": true,
+          "width": 1592,
+          "height": 480
+        }
+      ],
+      "webpage": null,
+      "is_forwarded": false,
+      "forward_info": null,
+      "views": 1,
+      "forwards_count": 0,
+      "replies_count": 0,
+      "raw_message_ids": [
+        18024
+      ],
+      "is_read": false,
+      "is_saved": false
+    },
+    {
+      "id": 18023,
+      "channel_id": 1283701973,
+      "date": "2026-07-01T00:12:53Z",
+      "is_edited": true,
+      "edit_date": "2026-07-01T00:13:24Z",
+      "sender_id": -1001283701973,
+      "sender_name": "厘米碎碎念",
+      "text": "过马路“左右看”，有的人顺着车道看是为啥？",
+      "is_album": false,
+      "grouped_id": null,
+      "media_items": [
+        {
+          "message_id": 18023,
+          "media_type": "photo",
+          "has_media": true,
+          "width": 2268,
+          "height": 1262
+        }
+      ],
+      "webpage": null,
+      "is_forwarded": false,
+      "forward_info": null,
+      "views": 3,
+      "forwards_count": 0,
+      "replies_count": 0,
+      "raw_message_ids": [
+        18023
+      ],
+      "is_read": false,
+      "is_saved": false
+    },
+    {
+      "id": 13696,
+      "channel_id": 1833253016,
+      "date": "2026-06-30T23:40:40Z",
+      "is_edited": true,
+      "edit_date": "2026-06-30T23:40:44Z",
+      "sender_id": -1001833253016,
+      "sender_name": "yihong0618 和朋友们的频道",
+      "text": "#selected #mark \nhttps://youtu.be/B9bztU1sTFA",
+      "is_album": false,
+      "grouped_id": null,
+      "media_items": [
+        {
+          "message_id": 13696,
+          "media_type": "webpage",
+          "has_media": true,
+          "width": 1280,
+          "height": 720
+        }
+      ],
+      "webpage": {
+        "url": "https://youtu.be/B9bztU1sTFA",
+        "display_url": "youtube.com/watch?v=B9bztU1sTFA",
+        "type": "video",
+        "site_name": "YouTube",
+        "title": "The Scanline Sweeper: A Glyph Rendering Algorithm",
+        "description": "The Scanline Sweeper is an algorithm I developed for the game engine I'm working on. Like other approaches before it, it renders glyphs directly from Bézier curve data on the GPU. Unlike other approaches though, it does so using a continuous coverage estimate, which is more naturally numerically robust compared to computing per-sample winding numbers.\n\nFollow me on bsky: https://bsky.app/profile/scuff3drook.bsky.social\n\nCompanion paper: https://rookandpossum.com/posts/scanline-sweeper/\n\nChapters:\n\n0:00 Scanline Sweeper demo\n0:53 Motivation and overview of other techniques\n3:50 Scanline Sweeper overview\n9:48 Implementation\n10:51 Bézier monotonicity demo\n13:09 Bézier subdivision demo\n15:10 Quadratic Bézier root finding\n19:53 Contour overlap handling\n20:25 Monotonic intersection code\n22:50 Scanline sweep code\n27:52 Pixel footprint code\n31:18 Half-precision usage\n32:42 Higher quality footprints\n34:35 Performance evaluation\n36:44 Future optimization discussion\n39:05 Outro!\n\nCredit to  @SebastianLague  who did a great job covering and tackling the problem space of writing a glyph ray stabber:  https://www.youtube.com/watch?v=SO83KQuuZvg\n\nUnderstanding how this works isn't needed to understand the scanline sweeper, but you'd need that knowledge to understand how to evaluate the tradeoffs between the two techniques. The SLUG paper was mentioned in the video and likely may have been useful to me, but I confess I read it only after the video was made -- I thought the technique was still patented at the time I made this video and implemented the code.\n\nTessellation is another technique for rendering fonts aside from texture sampling, SDF sampling, and ray stabbing. I don't cover this because it's not as practical to ship a tessellator for use in a real-time game engine.\n\nOther references consulted:\n\n- https://wdobbie.com/post/gpu-text-rendering-with-vector-textures/\n- https://hhoppe.com/ravg.pdf (Random-Access Rendering of General Vector Graphics by Nehab and Hoppe)\n- http://rastertragedy.com/\n- https://faultlore.com/blah/text-hates-you/\n\nIf you're new to the theory of texture filtering in general, I suggest reading Heckbert's thesis: https://www2.eecs.berkeley.edu/Pubs/TechRpts/1989/Archive/CSD-89-516.pdf (Fundamentals of Texture Mapping and Image Warping). Excellent must-read document for any graphics programmer IMO (some of the best papers are from this era).\n\nI mentioned in the video something about my use of the mad instruction. I picked up this habit originally from a presentation by Emil Persson: https://www.gdcvault.com/play/1020352/Low-Level-Shader-Optimization-for\nUsage on this instruction is also covered in this post: https://momentsingraphics.de/FMA.html\n\nhttps://momentsingraphics.de/FMA.html\n\nAs with all of the content on this channel, NO AI was used to do ANYTHING. No AI to research the code, no AI to implement it, no AI for authoring the script for this video, no AI to edit the video, etc.\n\nIf you appreciate this sort of content, consider supporting us at https://www.patreon.com/c/RookAndPossum (totally optional, all educational materials we provide will always be freely available). We are a newer two-person studio, working on a game. I (Rook) am putting special effort into creating educational content along the way, not because this is going to help us get a game out the door faster, but because it's just something I want to do.\n\nIf you use any of these ideas in your own work, attribution is certainly appreciated, but not required.",
+        "author": null,
+        "has_photo": true
+      },
+      "is_forwarded": false,
+      "forward_info": null,
+      "views": 1,
+      "forwards_count": 0,
+      "replies_count": 0,
+      "raw_message_ids": [
+        13696
+      ],
+      "is_read": false,
+      "is_saved": false
+    },
+    {
+      "id": 13695,
+      "channel_id": 1833253016,
+      "date": "2026-06-30T21:15:13Z",
+      "is_edited": true,
+      "edit_date": "2026-06-30T21:15:17Z",
+      "sender_id": -1001833253016,
+      "sender_name": "yihong0618 和朋友们的频道",
+      "text": null,
+      "is_album": true,
+      "grouped_id": 14262832909688373,
+      "media_items": [
+        {
+          "message_id": 13695,
+          "media_type": "photo",
+          "has_media": true,
+          "width": 2160,
+          "height": 1408
+        }
+      ],
+      "webpage": null,
+      "is_forwarded": false,
+      "forward_info": null,
+      "views": 9,
+      "forwards_count": null,
+      "replies_count": null,
+      "raw_message_ids": [
+        13695
+      ],
+      "is_read": false,
+      "is_saved": false
+    },
+    {
+      "id": 1066,
+      "channel_id": 2107300983,
+      "date": "2026-06-30T21:14:08Z",
+      "is_edited": true,
+      "edit_date": "2026-06-30T21:14:11Z",
+      "sender_id": -1002107300983,
+      "sender_name": "查询精神状态",
+      "text": "美国的这帮庸医除了让你吃布洛芬就不会别的了🙄",
+      "is_album": false,
+      "grouped_id": null,
+      "media_items": [],
+      "webpage": null,
+      "is_forwarded": false,
+      "forward_info": null,
+      "views": 7,
+      "forwards_count": 0,
+      "replies_count": 1,
+      "raw_message_ids": [
+        1066
+      ],
+      "is_read": false,
+      "is_saved": false
+    },
+    {
+      "id": 2746,
+      "channel_id": 1853633861,
+      "date": "2026-06-30T15:21:59Z",
+      "is_edited": true,
+      "edit_date": "2026-06-30T15:22:04Z",
+      "sender_id": -1001853633861,
+      "sender_name": "橘橘橘子汁 & 🍊",
+      "text": null,
+      "is_album": false,
+      "grouped_id": null,
+      "media_items": [
+        {
+          "message_id": 2746,
+          "media_type": "photo",
+          "has_media": true,
+          "width": 580,
+          "height": 1280
+        }
+      ],
+      "webpage": null,
+      "is_forwarded": false,
+      "forward_info": null,
+      "views": 1,
+      "forwards_count": 0,
+      "replies_count": 0,
+      "raw_message_ids": [
+        2746
+      ],
+      "is_read": false,
+      "is_saved": false
+    },
+    {
+      "id": 18022,
+      "channel_id": 1283701973,
+      "date": "2026-06-30T15:14:56Z",
+      "is_edited": true,
+      "edit_date": "2026-06-30T15:14:59Z",
+      "sender_id": -1001283701973,
+      "sender_name": "厘米碎碎念",
+      "text": "当前端工程师碰到并发数据库锁。",
+      "is_album": false,
+      "grouped_id": null,
+      "media_items": [
+        {
+          "message_id": 18022,
+          "media_type": "photo",
+          "has_media": true,
+          "width": 116,
+          "height": 124
+        }
+      ],
+      "webpage": null,
+      "is_forwarded": false,
+      "forward_info": null,
+      "views": 1,
+      "forwards_count": 0,
+      "replies_count": 0,
+      "raw_message_ids": [
+        18022
+      ],
+      "is_read": false,
+      "is_saved": false
+    },
+    {
+      "id": 18021,
+      "channel_id": 1283701973,
+      "date": "2026-06-30T15:02:09Z",
+      "is_edited": true,
+      "edit_date": "2026-06-30T15:02:13Z",
+      "sender_id": -1001283701973,
+      "sender_name": "厘米碎碎念",
+      "text": null,
+      "is_album": false,
+      "grouped_id": null,
+      "media_items": [
+        {
+          "message_id": 18021,
+          "media_type": "photo",
+          "has_media": true,
+          "width": 1721,
+          "height": 1080
+        }
+      ],
+      "webpage": null,
+      "is_forwarded": false,
+      "forward_info": null,
+      "views": 2,
+      "forwards_count": 0,
+      "replies_count": 0,
+      "raw_message_ids": [
+        18021
+      ],
+      "is_read": false,
+      "is_saved": false
+    },
+    {
+      "id": 18020,
+      "channel_id": 1283701973,
+      "date": "2026-06-30T14:55:27Z",
+      "is_edited": true,
+      "edit_date": "2026-06-30T15:15:36Z",
+      "sender_id": -1001283701973,
+      "sender_name": "厘米碎碎念",
+      "text": "我觉得 claude code cli 里面还有别的秘密，周末认真扒一下。",
+      "is_album": false,
+      "grouped_id": null,
+      "media_items": [],
+      "webpage": null,
+      "is_forwarded": false,
+      "forward_info": null,
+      "views": 80,
+      "forwards_count": 1,
+      "replies_count": 0,
+      "raw_message_ids": [
+        18020
+      ],
+      "is_read": false,
+      "is_saved": false
+    },
+    {
+      "id": 18019,
+      "channel_id": 1283701973,
+      "date": "2026-06-30T14:16:52Z",
+      "is_edited": true,
+      "edit_date": "2026-06-30T14:18:16Z",
+      "sender_id": -1001283701973,
+      "sender_name": "厘米碎碎念",
+      "text": "草？？？vercel 可以部署 docker 容器了？？？\nhttps://x.com/vercel/status/2071951027302224262",
+      "is_album": false,
+      "grouped_id": null,
+      "media_items": [
+        {
+          "message_id": 18019,
+          "media_type": "webpage",
+          "has_media": true,
+          "width": 200,
+          "height": 200
+        }
+      ],
+      "webpage": {
+        "url": "https://x.com/vercel/status/2071951027302224262",
+        "display_url": "x.com/vercel/status/2071951027302224262",
+        "type": "article",
+        "site_name": "X (formerly Twitter)",
+        "title": "Vercel (@vercel) on X",
+        "description": "You can now run any Dockerfile on Vercel.\n\n# 𝙳𝚘𝚌𝚔𝚎𝚛𝚏𝚒𝚕𝚎.𝚟𝚎𝚛𝚌𝚎𝚕\n𝙵𝚁𝙾𝙼 𝚐𝚘𝚕𝚊𝚗𝚐:𝟷.𝟸𝟺\n𝙲𝙾𝙿𝚈 . .\n𝚁𝚄𝙽 𝚐𝚘 𝚋𝚞𝚒𝚕𝚍 -𝚘 /𝚜𝚎𝚛𝚟𝚎𝚛 .\n𝙲𝙼𝙳 [\"/𝚜𝚎𝚛𝚟𝚎𝚛\"]\n\nhttps://t.co/xOUMi4zxpD",
+        "author": null,
+        "has_photo": true
+      },
+      "is_forwarded": false,
+      "forward_info": null,
+      "views": 22,
+      "forwards_count": 2,
+      "replies_count": 2,
+      "raw_message_ids": [
+        18019
+      ],
+      "is_read": false,
+      "is_saved": false
+    }
+  ],
+  "next_cursor": "MjAyNi0wNi0zMCAxNDoxNjo1MiswMDowMB8xODAxOQ==",
+  "head_cursor": "MjAyNi0wNy0xNiAwOToyNjowNSswMDowMB8xODI1Mg=="
+}

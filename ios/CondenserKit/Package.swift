@@ -21,6 +21,7 @@ let package = Package(
         .testTarget(
             name: "CondenserKitTests",
             dependencies: ["CondenserKit"],
+            resources: [.copy("Fixtures")],
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
     ]

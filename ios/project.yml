@@ -37,6 +37,9 @@ targets:
         UILaunchScreen: {}
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
+        # 本地 dev 后端是 http://localhost，放行本地明文（不影响线上 https）
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
         # 认证回调 condenser://auth（spec: kb/plans/2026-07-16-ios-reader-app.md）
         CFBundleURLTypes:
           - CFBundleURLName: com.reorx.condenser.auth

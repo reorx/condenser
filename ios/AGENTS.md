@@ -45,6 +45,20 @@ make clean       # 清理构建产物与生成的 xcodeproj
 - 改了 `project.yml` 后必须 `make gen`（`make build` 已包含）
 - 模拟器构建无需签名（ad-hoc）；真机部署时再在 project.yml 配 `DEVELOPMENT_TEAM`
 
+## 开发调试：跳过授权直连本地后端
+
+模拟器验证 timeline 等真实数据 UI 时，不必走交互式授权：
+
+1. 起本地后端（dev DB 在 `tmp/condenser.db`，有真实消息数据）：
+   `CONDENSER_DB_PATH=tmp/condenser.db uv run uvicorn condenser.app:create_app --factory --port 8792`
+2. 往 devices 表插一个已知 token 的 sha256（`iOS Simulator (dev)` 行可能已存在，
+   token 明文 `devtoken-ios-sim`）
+3. 带 debug env 启动 app（AuthSession 的 `#if DEBUG` 注入口，仅内存态、不落 Keychain）：
+   `SIMCTL_CHILD_CONDENSER_DEBUG_SERVER=http://localhost:8792 SIMCTL_CHILD_CONDENSER_DEBUG_TOKEN=devtoken-ios-sim xcrun simctl launch "iPhone 17" com.reorx.condenser`
+
+Info.plist 已配 `NSAllowsLocalNetworking`（http://localhost 放行）。
+截图：`xcrun simctl io booted screenshot <path>.png`。
+
 ## 排错顺序
 
 构建怪异时先怀疑环境再怀疑代码：

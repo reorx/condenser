@@ -1,0 +1,243 @@
+{
+  "album": {
+    "id": 18249,
+    "channel_id": 1283701973,
+    "date": "2026-07-16T09:26:05Z",
+    "is_edited": true,
+    "edit_date": "2026-07-16T09:26:13Z",
+    "sender_id": -1001283701973,
+    "sender_name": "厘米碎碎念",
+    "text": "广州 自家糖水\n\n群友推荐的店面，小小角落一间但味道很不错。糖水我最热爱的就是香芋西米露，这家做得还可以，芋头很香，椰奶也浓厚，我觉得稍微有一点点太甜但是无伤大雅。鱼蛋也好吃，配番茄酱超棒。",
+    "is_album": true,
+    "grouped_id": 14273551723252437,
+    "media_items": [
+      {
+        "message_id": 18249,
+        "media_type": "photo",
+        "has_media": true,
+        "width": 2560,
+        "height": 1920
+      },
+      {
+        "message_id": 18250,
+        "media_type": "photo",
+        "has_media": true,
+        "width": 2560,
+        "height": 1920
+      },
+      {
+        "message_id": 18251,
+        "media_type": "photo",
+        "has_media": true,
+        "width": 2560,
+        "height": 1920
+      },
+      {
+        "message_id": 18252,
+        "media_type": "photo",
+        "has_media": true,
+        "width": 2560,
+        "height": 1920
+      }
+    ],
+    "webpage": null,
+    "is_forwarded": true,
+    "forward_info": {
+      "from_channel_id": 1785911732,
+      "from_channel_name": "harukachan eats delicious meals",
+      "from_user_id": null,
+      "from_user_name": null,
+      "from_message_id": 1846,
+      "original_date": "2026-07-16T08:30:50Z",
+      "post_author": "nowano"
+    },
+    "views": 3,
+    "forwards_count": null,
+    "replies_count": null,
+    "raw_message_ids": [
+      18249,
+      18250,
+      18251,
+      18252
+    ],
+    "is_read": false,
+    "is_saved": false
+  },
+  "forward": {
+    "id": 18249,
+    "channel_id": 1283701973,
+    "date": "2026-07-16T09:26:05Z",
+    "is_edited": true,
+    "edit_date": "2026-07-16T09:26:13Z",
+    "sender_id": -1001283701973,
+    "sender_name": "厘米碎碎念",
+    "text": "广州 自家糖水\n\n群友推荐的店面，小小角落一间但味道很不错。糖水我最热爱的就是香芋西米露，这家做得还可以，芋头很香，椰奶也浓厚，我觉得稍微有一点点太甜但是无伤大雅。鱼蛋也好吃，配番茄酱超棒。",
+    "is_album": true,
+    "grouped_id": 14273551723252437,
+    "media_items": [
+      {
+        "message_id": 18249,
+        "media_type": "photo",
+        "has_media": true,
+        "width": 2560,
+        "height": 1920
+      },
+      {
+        "message_id": 18250,
+        "media_type": "photo",
+        "has_media": true,
+        "width": 2560,
+        "height": 1920
+      },
+      {
+        "message_id": 18251,
+        "media_type": "photo",
+        "has_media": true,
+        "width": 2560,
+        "height": 1920
+      },
+      {
+        "message_id": 18252,
+        "media_type": "photo",
+        "has_media": true,
+        "width": 2560,
+        "height": 1920
+      }
+    ],
+    "webpage": null,
+    "is_forwarded": true,
+    "forward_info": {
+      "from_channel_id": 1785911732,
+      "from_channel_name": "harukachan eats delicious meals",
+      "from_user_id": null,
+      "from_user_name": null,
+      "from_message_id": 1846,
+      "original_date": "2026-07-16T08:30:50Z",
+      "post_author": "nowano"
+    },
+    "views": 3,
+    "forwards_count": null,
+    "replies_count": null,
+    "raw_message_ids": [
+      18249,
+      18250,
+      18251,
+      18252
+    ],
+    "is_read": false,
+    "is_saved": false
+  },
+  "media": {
+    "id": 18249,
+    "channel_id": 1283701973,
+    "date": "2026-07-16T09:26:05Z",
+    "is_edited": true,
+    "edit_date": "2026-07-16T09:26:13Z",
+    "sender_id": -1001283701973,
+    "sender_name": "厘米碎碎念",
+    "text": "广州 自家糖水\n\n群友推荐的店面，小小角落一间但味道很不错。糖水我最热爱的就是香芋西米露，这家做得还可以，芋头很香，椰奶也浓厚，我觉得稍微有一点点太甜但是无伤大雅。鱼蛋也好吃，配番茄酱超棒。",
+    "is_album": true,
+    "grouped_id": 14273551723252437,
+    "media_items": [
+      {
+        "message_id": 18249,
+        "media_type": "photo",
+        "has_media": true,
+        "width": 2560,
+        "height": 1920
+      },
+      {
+        "message_id": 18250,
+        "media_type": "photo",
+        "has_media": true,
+        "width": 2560,
+        "height": 1920
+      },
+      {
+        "message_id": 18251,
+        "media_type": "photo",
+        "has_media": true,
+        "width": 2560,
+        "height": 1920
+      },
+      {
+        "message_id": 18252,
+        "media_type": "photo",
+        "has_media": true,
+        "width": 2560,
+        "height": 1920
+      }
+    ],
+    "webpage": null,
+    "is_forwarded": true,
+    "forward_info": {
+      "from_channel_id": 1785911732,
+      "from_channel_name": "harukachan eats delicious meals",
+      "from_user_id": null,
+      "from_user_name": null,
+      "from_message_id": 1846,
+      "original_date": "2026-07-16T08:30:50Z",
+      "post_author": "nowano"
+    },
+    "views": 3,
+    "forwards_count": null,
+    "replies_count": null,
+    "raw_message_ids": [
+      18249,
+      18250,
+      18251,
+      18252
+    ],
+    "is_read": false,
+    "is_saved": false
+  },
+  "webpage": {
+    "id": 13700,
+    "channel_id": 1833253016,
+    "date": "2026-07-01T09:45:31Z",
+    "is_edited": true,
+    "edit_date": "2026-07-01T09:50:13Z",
+    "sender_id": -1001833253016,
+    "sender_name": "yihong0618 和朋友们的频道",
+    "text": "#人工智能\n《[为 AI Agent 构建记忆系统](https://nowledge-labs.ai/zh/blog/building-memory-systems-for-ai-agents)》，[视频](https://www.bilibili.com/video/BV13ZDLB4EDr/?t=5&bvid=BV13ZDLB4EDr&vd_source=5511de30968924dcf3c19f0e7ba6d170)，[slide](https://siwei.io/talks/memory-2026/1)",
+    "is_album": false,
+    "grouped_id": null,
+    "media_items": [
+      {
+        "message_id": 13700,
+        "media_type": "webpage",
+        "has_media": true,
+        "width": null,
+        "height": null
+      }
+    ],
+    "webpage": {
+      "url": "https://nowledge-labs.ai/zh/blog/building-memory-systems-for-ai-agents",
+      "display_url": "nowledge-labs.ai/zh/blog/building-memory-systems-for-ai-agents",
+      "type": "article",
+      "site_name": "Nowledge Labs",
+      "title": "为 AI Agent 构建记忆系统",
+      "description": "构建 AI Agent 记忆系统的五个核心挑战，以及每一个背后的工程决策。来自 vLLM 北京 Meetup 和 KCD 的分享。",
+      "author": "古思为",
+      "has_photo": false
+    },
+    "is_forwarded": true,
+    "forward_info": {
+      "from_channel_id": 1356252119,
+      "from_channel_name": "codedump的电报频道",
+      "from_user_id": null,
+      "from_user_name": null,
+      "from_message_id": 914,
+      "original_date": "2026-07-01T09:45:19Z",
+      "post_author": "老C"
+    },
+    "views": 35,
+    "forwards_count": 0,
+    "replies_count": 0,
+    "raw_message_ids": [
+      13700
+    ],
+    "is_read": false,
+    "is_saved": false
+  }
+}

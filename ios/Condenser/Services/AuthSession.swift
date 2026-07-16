@@ -20,6 +20,16 @@ final class AuthSession {
         self.store = store
         serverURL = store.serverURL
         token = store.token
+        #if DEBUG
+        // 开发直连：simctl launch 传 SIMCTL_CHILD_CONDENSER_DEBUG_SERVER/TOKEN，
+        // 仅内存态、不落 Keychain，跳过交互式授权以便模拟器验证
+        let env = ProcessInfo.processInfo.environment
+        if let debugServer = env["CONDENSER_DEBUG_SERVER"].flatMap(URL.init(string:)),
+           let debugToken = env["CONDENSER_DEBUG_TOKEN"] {
+            serverURL = debugServer
+            token = debugToken
+        }
+        #endif
     }
 
     func completeLogin(server: URL, token: String) {
