@@ -10,6 +10,7 @@ struct MessageDetailSheet: View {
 
     @Environment(ReaderSession.self) private var reader
     @State private var safariItem: SafariItem?
+    @State private var viewerItem: ImageViewerItem?
 
     var body: some View {
         ScrollView {
@@ -47,15 +48,18 @@ struct MessageDetailSheet: View {
             SafariView(url: item.url)
                 .ignoresSafeArea()
         }
+        .fullScreenCover(item: $viewerItem) { item in
+            ImageViewerScreen(item: item)
+        }
     }
 
     private var header: some View {
         HStack(spacing: 10) {
             ChannelAvatarView(
                 channelID: message.channelID,
-                title: reader.channelTitle(for: message.channelID), size: 40)
+                title: reader.channelTitle(for: message), size: 40)
             VStack(alignment: .leading, spacing: 2) {
-                Text(reader.channelTitle(for: message.channelID))
+                Text(reader.channelTitle(for: message))
                     .font(.headline)
                     .lineLimit(1)
                 Text(message.date.formatted(date: .abbreviated, time: .shortened))
@@ -84,13 +88,17 @@ struct MessageDetailSheet: View {
     @ViewBuilder
     private var images: some View {
         let photos = message.mediaItems.filter { $0.mediaType == "photo" && $0.hasMedia }
-        ForEach(photos, id: \.messageID) { item in
+        ForEach(Array(photos.enumerated()), id: \.element.messageID) { index, item in
             AuthedAsyncImage(
                 request: reader.api.authedRequest(
                     reader.api.mediaURL(channelID: message.channelID, messageID: item.messageID)),
                 contentMode: .fit)
                 .aspectRatio(aspectRatio(item), contentMode: .fit)
                 .clipShape(RoundedRectangle(cornerRadius: 10))
+                .onTapGesture {
+                    viewerItem = ImageViewerItem(
+                        channelID: message.channelID, photos: photos, startIndex: index)
+                }
         }
         let others = message.mediaItems.filter { $0.hasMedia && $0.mediaType != "photo" && $0.mediaType != "webpage" }
         ForEach(others, id: \.messageID) { item in
@@ -102,7 +110,7 @@ struct MessageDetailSheet: View {
 
     @ViewBuilder
     private var footer: some View {
-        if let username = reader.subscription(for: message.channelID)?.username,
+        if let username = reader.channelUsername(for: message),
            let url = URL(string: "https://t.me/\(username)/\(message.id)") {
             Link(destination: url) {
                 Label("在 Telegram 打开", systemImage: "paperplane")

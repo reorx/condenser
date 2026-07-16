@@ -97,7 +97,7 @@ struct LoginView: View {
             )
             switch AuthFlow.parseCallback(callback) {
             case .authorized(let token, _):
-                session.completeLogin(server: server, token: token)
+                session.completeLogin(server: server, token: token, deviceName: name)
             case .denied:
                 errorMessage = "授权被拒绝"
             case nil:

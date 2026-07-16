@@ -11,6 +11,8 @@ final class AuthSession {
 
     private(set) var serverURL: URL?
     private(set) var token: String?
+    /// 授权时填写的设备名（设置页展示用）
+    private(set) var deviceName: String?
     /// 登录页展示的一次性提示（如会话失效），进入登录流程时清除
     var notice: String?
 
@@ -20,6 +22,7 @@ final class AuthSession {
         self.store = store
         serverURL = store.serverURL
         token = store.token
+        deviceName = store.deviceName
         #if DEBUG
         // 开发直连：simctl launch 传 SIMCTL_CHILD_CONDENSER_DEBUG_SERVER/TOKEN，
         // 仅内存态、不落 Keychain，跳过交互式授权以便模拟器验证
@@ -32,11 +35,13 @@ final class AuthSession {
         #endif
     }
 
-    func completeLogin(server: URL, token: String) {
+    func completeLogin(server: URL, token: String, deviceName: String) {
         store.serverURL = server
         store.token = token
+        store.deviceName = deviceName
         serverURL = server
         self.token = token
+        self.deviceName = deviceName
         notice = nil
     }
 

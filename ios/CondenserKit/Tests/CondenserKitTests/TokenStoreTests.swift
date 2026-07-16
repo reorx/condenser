@@ -40,6 +40,18 @@ struct TokenStoreTests {
         #expect(rebuilt.serverURL?.absoluteString == "https://condenser.reorx.com")
     }
 
+    @Test("deviceName 持久化在 UserDefaults，clearToken 不清")
+    func deviceNamePersists() {
+        let (store, defaults) = makeStore()
+        #expect(store.deviceName == nil)
+        store.deviceName = "Reorx 的 iPhone"
+        #expect(store.deviceName == "Reorx 的 iPhone")
+        store.clearToken()
+        #expect(store.deviceName == "Reorx 的 iPhone")
+        let rebuilt = TokenStore(secureStore: InMemorySecureStore(), defaults: defaults)
+        #expect(rebuilt.deviceName == "Reorx 的 iPhone")
+    }
+
     @Test("clearToken 不清 serverURL（保留地址便于重新登录）")
     func clearKeepsServer() {
         let (store, _) = makeStore()

@@ -22,19 +22,31 @@ public final class TimelineStore {
     public let unreadOnly: Bool
     private let api: CondenserAPI
     private let pageSize: Int
+    private let cache: SnapshotCache?
+    private let cacheKey: String?
     private var nextCursor: String?
     private var loadedOnce = false
 
-    public init(api: CondenserAPI, channelID: Int? = nil, unreadOnly: Bool = false, pageSize: Int = 30) {
+    public init(
+        api: CondenserAPI, channelID: Int? = nil, unreadOnly: Bool = false, pageSize: Int = 30,
+        cache: SnapshotCache? = nil, cacheKey: String? = nil
+    ) {
         self.api = api
         self.channelID = channelID
         self.unreadOnly = unreadOnly
         self.pageSize = pageSize
+        self.cache = cache
+        self.cacheKey = cacheKey
     }
 
-    /// 首次加载；已加载过则无操作（refresh 负责重载）
+    /// 首次加载；已加载过则无操作（refresh 负责重载）。
+    /// 配了 cache 时冷启动先渲染快照，网络成功后整页替换。
     public func loadInitial() async {
         guard !loadedOnce, !isLoading else { return }
+        if items.isEmpty, let cache, let cacheKey,
+           let snapshot = cache.load(TimelinePage.self, key: cacheKey) {
+            apply(page: snapshot)
+        }
         await loadFirstPage()
     }
 
@@ -51,15 +63,22 @@ public final class TimelineStore {
             let page = try await api.timeline(
                 cursor: nil, limit: pageSize, channelID: channelID, date: nil,
                 unreadOnly: unreadOnly)
-            items = page.items
-            nextCursor = page.nextCursor
-            headCursor = page.headCursor
-            hasMore = page.nextCursor != nil
+            apply(page: page)
             loadedOnce = true
+            if let cache, let cacheKey {
+                cache.save(page, key: cacheKey)
+            }
         } catch {
             handle(error)
         }
         isLoading = false
+    }
+
+    private func apply(page: TimelinePage) {
+        items = page.items
+        nextCursor = page.nextCursor
+        headCursor = page.headCursor
+        hasMore = page.nextCursor != nil
     }
 
     public func loadMore() async {

@@ -161,12 +161,20 @@ Phases 1 (skeleton) + 2 (auth: `AuthFlow`/`TokenStore` in Kit, `AuthSession` + `
 via SwiftUI `webAuthenticationSession`) + 3 (core reading: Models mirrored from
 `frontend/src/lib/types.ts` with real-JSON fixtures, `APIClient` (Bearer, 401 →
 `APIError.unauthorized`), `CondenserAPI` protocol for test stubs, `TimelineStore` /
-`ReadReporter` / `NewContentPoller` in Kit — 47 tests; app side: `ReaderSession` composition
+`ReadReporter` / `NewContentPoller` in Kit; app side: `ReaderSession` composition
 root wiring 401 → `AuthSession.handleUnauthorized`, `TimelineScreen` with scroll-to-read via
 `onGeometryChange`, infinite scroll, pull-to-refresh, new-content capsule, unread toggle,
 `MessageCard` / `MessageDetailSheet` / authed `ImageLoader`; debug-token env injection for
-simulator, see `ios/AGENTS.md`) done; next phase 4: channels/saved tabs, SnapshotCache,
-fullscreen image viewer, settings.
+simulator, see `ios/AGENTS.md`) + 4 (three-tab `TabView`: Timeline / channels / saved —
+`MessageListView` extracted as the reusable list core, `ChannelsScreen` +
+`ChannelTimelineScreen` (per-channel `TimelineStore`, no snapshot/poller), `SavedScreen` on
+`RecordsStore` (optimistic unsave + positional rollback; records are self-contained via
+`message.channel`), `SnapshotCache` (Caches-dir JSON; timeline page 1 + subscriptions render
+before network on cold start), fullscreen `ImageViewerScreen` (paged album swipe, UIScrollView
+pinch/double-tap zoom, drag-down dismiss), `SettingsScreen` (server/device name, sign-out),
+`TokenStore.deviceName`; 63 Kit tests; DEBUG deep-link walkthrough via
+`SIMCTL_CHILD_CONDENSER_DEBUG_ROUTE`, see `ios/AGENTS.md`) done. v1 spec complete; remaining
+polish: end-to-end `ASWebAuthenticationSession` verify on device, video playback (non-goal).
 
 ## Dev
 

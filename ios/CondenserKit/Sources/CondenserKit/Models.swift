@@ -159,7 +159,7 @@ public struct DisplayMessage: Codable, Equatable, Sendable, Identifiable {
     public var ref: MsgRef { MsgRef(channelID: channelID, messageID: id) }
 }
 
-public struct Subscription: Codable, Equatable, Sendable, Identifiable {
+public struct Subscription: Codable, Equatable, Hashable, Sendable, Identifiable {
     public let channelID: Int
     public let enabled: Bool
     public let backfillDone: Bool

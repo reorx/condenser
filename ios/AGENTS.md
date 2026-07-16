@@ -59,6 +59,23 @@ make clean       # 清理构建产物与生成的 xcodeproj
 Info.plist 已配 `NSAllowsLocalNetworking`（http://localhost 放行）。
 截图：`xcrun simctl io booted screenshot <path>.png`。
 
+### CLI 驱动的界面走查（debug 深链路由）
+
+模拟器窗口不在当前 Space（AppleScript/cliclick 点不到）时，用启动环境变量直接导航到
+目标界面再截图（`MainView.handleDebugURL`，仅 DEBUG 构建）：
+
+```
+SIMCTL_CHILD_CONDENSER_DEBUG_ROUTE=<route> xcrun simctl launch "iPhone 17" com.reorx.condenser
+```
+
+route 取值：`tab/{timeline|channels|saved}` 切 tab；`channel/<id>` push 单频道
+timeline；`settings` 弹设置页；`detail/<cid>/<mid>` / `viewer/<cid>/<mid>` 弹详情
+sheet / 全屏图片浏览器（消息须在 timeline 首页内，路由会等首屏加载完才应用）。
+每换一个界面 terminate + 重新 launch 一次即可。也支持
+`xcrun simctl openurl booted "condenser://debug/<route>"`，但系统会弹
+"Open in Condenser?" 确认框（且该框跨 app 重启存活，误触发后要
+`simctl shutdown && boot` 才能清掉），无人值守走查一律用环境变量形式。
+
 ## 排错顺序
 
 构建怪异时先怀疑环境再怀疑代码：

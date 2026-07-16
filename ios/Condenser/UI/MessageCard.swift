@@ -5,6 +5,8 @@ import CondenserKit
 /// 媒体缩略图（单图按 API 尺寸预留纵横比，多图网格方形）；转发标记。
 struct MessageCard: View {
     let message: DisplayMessage
+    /// 收藏列表不展示未读点（records 不携带已读态）
+    var showsUnread = true
     var onToggleSaved: () -> Void
 
     @Environment(ReaderSession.self) private var reader
@@ -38,9 +40,9 @@ struct MessageCard: View {
         HStack(spacing: 10) {
             ChannelAvatarView(
                 channelID: message.channelID,
-                title: reader.channelTitle(for: message.channelID))
+                title: reader.channelTitle(for: message))
             VStack(alignment: .leading, spacing: 1) {
-                Text(reader.channelTitle(for: message.channelID))
+                Text(reader.channelTitle(for: message))
                     .font(.subheadline.weight(.semibold))
                     .lineLimit(1)
                 HStack(spacing: 4) {
@@ -69,7 +71,9 @@ struct MessageCard: View {
     private var isSaved: Bool { message.isSaved ?? false }
 
     private var isUnread: Bool {
-        !(message.isRead ?? false) && !reader.readReporter.readRefs.contains(message.ref)
+        showsUnread
+            && !(message.isRead ?? false)
+            && !reader.readReporter.readRefs.contains(message.ref)
     }
 
     private var forwardLabel: String {

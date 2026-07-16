@@ -54,6 +54,7 @@ public final class TokenStore {
     private enum Keys {
         static let token = "device-token"
         static let serverURL = "condenser.server-url"
+        static let deviceName = "condenser.device-name"
     }
 
     private let secureStore: SecureStore
@@ -81,6 +82,12 @@ public final class TokenStore {
     public var serverURL: URL? {
         get { defaults.string(forKey: Keys.serverURL).flatMap(URL.init(string:)) }
         set { defaults.set(newValue?.absoluteString, forKey: Keys.serverURL) }
+    }
+
+    /// 授权时填写的设备名（设置页展示用），登出保留
+    public var deviceName: String? {
+        get { defaults.string(forKey: Keys.deviceName) }
+        set { defaults.set(newValue, forKey: Keys.deviceName) }
     }
 
     public func clearToken() {

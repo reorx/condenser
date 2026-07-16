@@ -31,6 +31,8 @@ final class StubAPI: CondenserAPI, @unchecked Sendable {
     var saveCalls: [MsgRef] = []
     var deleteCalls: [MsgRef] = []
     var recordError: Error?
+    var recordsResults: [Result<[DisplayMessage], Error>] = []
+    var recordsCalls = 0
 
     func timeline(cursor: String?, limit: Int?, channelID: Int?, date: String?, unreadOnly: Bool) async throws -> TimelinePage {
         timelineCalls.append((cursor, channelID, unreadOnly))
@@ -51,7 +53,11 @@ final class StubAPI: CondenserAPI, @unchecked Sendable {
         markReadCalls.append(items)
     }
 
-    func records() async throws -> [DisplayMessage] { [] }
+    func records() async throws -> [DisplayMessage] {
+        recordsCalls += 1
+        guard !recordsResults.isEmpty else { return [] }
+        return try recordsResults.removeFirst().get()
+    }
 
     func saveRecord(_ ref: MsgRef) async throws {
         if let recordError { throw recordError }
