@@ -1,10 +1,12 @@
-import { Link2 } from 'lucide-react';
+import { ExternalLink, Link2 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useLinkPreviews } from '@/hooks/useLinkPreviews';
+import { useSubscriptions } from '@/hooks/useSubscriptions';
 import { errorMessage } from '@/lib/api';
+import { tgMessageUrl } from '@/lib/format';
 import { useLinkPreviewPane } from '@/lib/linkPreviewPane';
 
 import { LinkPreviewCard } from './LinkPreviewCard';
@@ -30,6 +32,8 @@ export function LinkPreviewPane() {
   const { open, close } = useLinkPreviewPane();
   const query = useLinkPreviews(open);
   const previews = query.data ?? [];
+  const subs = useSubscriptions();
+  const username = open ? subs.data?.find((s) => s.channel_id === open.channel_id)?.username : null;
 
   return (
     <Sheet
@@ -62,11 +66,22 @@ export function LinkPreviewPane() {
           ) : previews.length === 0 ? (
             <p className="py-12 text-center text-sm text-muted-foreground">No links found in this message.</p>
           ) : (
-            previews.map((p, i) => (
-              <LinkPreviewCard key={`${p.url}-${i}`} channelId={open!.channel_id} preview={p} />
-            ))
+            previews.map((p, i) => <LinkPreviewCard key={`${p.url}-${i}`} channelId={open!.channel_id} preview={p} />)
           )}
         </div>
+
+        {open && (
+          <div className="border-t p-4">
+            <a
+              href={tgMessageUrl(open.channel_id, open.message_id, username)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 text-sm text-muted-foreground transition-colors hover:text-foreground"
+            >
+              <ExternalLink className="size-4" /> Open original in Telegram
+            </a>
+          </div>
+        )}
       </SheetContent>
     </Sheet>
   );

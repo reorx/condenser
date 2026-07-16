@@ -1,5 +1,3 @@
-import type { DisplayMessage } from './types';
-
 // Single source of truth for URL matching, shared by `linkify` (rendering) and the
 // link-preview pane (which URLs to preview) so the two can never drift.
 export const URL_RE = /(https?:\/\/[^\s<]+|www\.[^\s<]+)/gi;
@@ -39,20 +37,4 @@ export function sameUrl(a: string, b: string): boolean {
       .replace(/^www\./, '')
       .replace(/\/+$/, '');
   return loose(a) === loose(b);
-}
-
-/**
- * Whether opening the link-preview pane would add anything for this message.
- *
- * The inline Telegram `WebPagePreview` already covers its one URL, so the pane is
- * only offered when there's no useful inline preview, or there are *other* URLs
- * beyond the one Telegram previewed — exactly the "Telegram gave no preview" gap.
- */
-export function messageHasPreviewableLinks(msg: DisplayMessage): boolean {
-  const urls = extractUrls(msg.text);
-  if (urls.length === 0) return false;
-  const wp = msg.webpage;
-  const wpCovers = !!(wp && wp.url && (wp.title || wp.description || wp.has_photo));
-  if (!wpCovers) return true;
-  return urls.some((u) => !sameUrl(u, wp!.url!));
 }

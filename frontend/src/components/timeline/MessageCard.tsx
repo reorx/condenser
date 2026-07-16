@@ -1,10 +1,9 @@
-import { memo, useCallback, useMemo, type MouseEvent } from 'react';
-import { Bookmark, Forward, Pencil } from 'lucide-react';
+import { memo, useCallback } from 'react';
+import { Bookmark, Forward } from 'lucide-react';
 
 import { ChannelAvatar } from '@/components/ChannelAvatar';
 import { useSaveToggle } from '@/hooks/useSaveToggle';
-import { messageHasPreviewableLinks } from '@/lib/extractUrls';
-import { timeLabel } from '@/lib/format';
+import { fullDateLabel, timeLabel } from '@/lib/format';
 import { linkify } from '@/lib/linkify';
 import { useLinkPreviewPane } from '@/lib/linkPreviewPane';
 import { useUnreadIndicator } from '@/lib/unreadIndicator';
@@ -34,22 +33,7 @@ function MessageCardImpl({ msg, channelLabel, observe }: Props) {
   const ref: MsgRef = { channel_id: msg.channel_id, message_id: msg.id };
   const fwdName = forwardSourceName(msg);
 
-  // Twitter-style: the card is click-to-open *until* its own pane is open, at which
-  // point the listener drops so the user can freely select text inside it.
-  const hasPreviewable = useMemo(() => messageHasPreviewableLinks(msg), [msg]);
   const isActive = open?.channel_id === msg.channel_id && open?.message_id === msg.id;
-  const clickable = hasPreviewable && !isActive;
-
-  const onCardClick = useCallback(
-    (e: MouseEvent<HTMLElement>) => {
-      // Let links / bookmark / media thumbs keep their own behavior, and don't hijack a
-      // text selection (drag-to-select ends in a click on the article).
-      if ((e.target as HTMLElement).closest('a, button')) return;
-      if (window.getSelection()?.toString()) return;
-      openPane({ channel_id: msg.channel_id, message_id: msg.id });
-    },
-    [openPane, msg.channel_id, msg.id],
-  );
 
   const attach = useCallback(
     (el: HTMLElement | null) => {
@@ -74,11 +58,9 @@ function MessageCardImpl({ msg, channelLabel, observe }: Props) {
     <article
       ref={attach}
       data-read={msg.is_read ? '' : undefined}
-      onClick={clickable ? onCardClick : undefined}
       className={cn(
         'group relative border-b px-4 py-3 transition-colors duration-500 sm:px-5',
         mode === 'divider' && !msg.is_read ? 'border-sky-500 dark:border-sky-400' : 'border-border/50',
-        clickable && 'cursor-pointer hover:bg-muted/30',
         isActive && 'bg-muted/40',
       )}
     >
@@ -100,12 +82,16 @@ function MessageCardImpl({ msg, channelLabel, observe }: Props) {
           <span className="font-medium text-foreground/80">{channelLabel}</span>
         </div>
         <span aria-hidden>·</span>
-        <time>{timeLabel(msg.date)}</time>
-        {msg.is_edited && (
-          <span className="inline-flex items-center gap-0.5" title="Edited">
-            <Pencil className="size-3" />
-          </span>
-        )}
+        {/* Unified pane entry: every message opens the link-preview drawer via its time. */}
+        <button
+          type="button"
+          onClick={() => openPane(ref)}
+          title={fullDateLabel(msg.date)}
+          aria-label="Open message details"
+          className="cursor-pointer rounded underline-offset-2 transition-colors hover:text-foreground hover:underline"
+        >
+          <time>{timeLabel(msg.date)}</time>
+        </button>
         <button
           type="button"
           onClick={() => save.mutate({ ref, saved: !msg.is_saved })}

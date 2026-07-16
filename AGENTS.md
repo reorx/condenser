@@ -139,11 +139,11 @@ React Router v7, **pnpm**. Backend `app.py` auto-serves `frontend/dist` at `/` i
 - **New-content poll**: `useNewContent` polls `/api/timeline/new?after=head_cursor` (from page-1
   `head_cursor`) every 30s, paused when hidden → floating banner → refetch + scroll-to-top.
 - **Avatars**: `ChannelAvatar` hits `/api/channels/{id}/avatar`, falls back to a colored initial.
-- **Link previews**: clicking a message opens `LinkPreviewPane` (shadcn `Sheet`, mounted once in
-  `AppShell`, covers timeline + saved views) with previews for the message's URLs from
-  `GET /api/messages/{cid}/{mid}/previews`. Whole-card click in `MessageCard`; the listener drops
-  once that card's pane is open so text selects normally; offered only when the inline Telegram card
-  doesn't already cover the links. `lib/extractUrls.ts` is the shared URL source (linkify + pane).
+- **Link previews**: clicking a message's **time** opens `LinkPreviewPane` (shadcn `Sheet`, mounted
+  once in `AppShell`, covers timeline + saved views) with previews for the message's URLs from
+  `GET /api/messages/{cid}/{mid}/previews` + a pinned "Open original in Telegram" footer link
+  (`tgMessageUrl`). The entry exists on **every** message (no whole-card click / previewable-links
+  gate anymore). `lib/extractUrls.ts` is the shared URL source (linkify + pane).
   Thumbnails proxy via `/api/preview/image` (toggle with `CONDENSER_PREVIEW_IMAGE_PROXY`), falling
   back to the media proxy for Telegram-bonus images.
 

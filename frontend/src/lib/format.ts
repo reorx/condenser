@@ -54,6 +54,11 @@ export function dayKeyLabel(key: string): string {
   return format(fromDayKey(key), 'MMM d');
 }
 
+/** Original t.me link for a message: public channels via @username, private via the /c/ form. */
+export function tgMessageUrl(channelId: number, messageId: number, username?: string | null): string {
+  return username ? `https://t.me/${username}/${messageId}` : `https://t.me/c/${channelId}/${messageId}`;
+}
+
 export function compactNumber(n: number | null | undefined): string {
   if (n == null) return '';
   if (n < 1000) return String(n);

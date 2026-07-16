@@ -51,11 +51,11 @@ Two conventions this list exists to protect:
 | `Timeline` | Presentational timeline list: day groups + infinite scroll + new-content banner + loading/error/empty states |
 | `TimelineDayGroup` | One calendar day's messages under a static date divider |
 | `TimelineSkeleton` | Loading placeholder rows for the timeline |
-| `MessageCard` | A single message: header (avatar/name/time/edited/save), text, media, webpage preview, forward box. Whole-card click opens the `LinkPreviewPane` when the message has previewable links (Twitter-style: the listener drops once that card's pane is open so text selects normally) |
+| `MessageCard` | A single message: header (avatar/name/time/save), text, media, webpage preview, forward box. The time is a button (full-date `title` tooltip) that opens the `LinkPreviewPane` — the unified drawer entry on every message |
 | `MessageMedia` | Media layout (single image vs 2/3-col grid) + lightbox trigger |
 | `MediaThumb` | One media thumbnail: skeleton + aspect-ratio transition + file-chip fallback when no preview image |
 | `WebPagePreview` | Telegram-style inline link preview card (thumbnail + site/title/description) |
-| `LinkPreviewPane` | Right-side slide-out (shadcn `Sheet`) that fetches + shows previews for a message's links; mounted once in `AppShell`, driven by the `linkPreviewPane` context |
+| `LinkPreviewPane` | Right-side slide-out (shadcn `Sheet`) that fetches + shows previews for a message's links + a pinned "Open original in Telegram" footer link (`tgMessageUrl`: @username or `/c/` form); mounted once in `AppShell`, driven by the `linkPreviewPane` context |
 | `LinkPreviewCard` | One self-fetched link preview shown in the pane (proxied image / Telegram-image fallback + site/title/description) |
 | `Lightbox` | Fullscreen media viewer with prev/next navigation |
 | `SavedMessageItem` | One saved message in the Saved view (full date line + `MessageCard`) |
@@ -94,7 +94,7 @@ Two conventions this list exists to protect:
 - `hooks/` — data + behavior hooks (`useTimeline`, `useSubscriptions`, `useChannelFilter`,
   `useScrollToRead`, `useNewContent`, `useRefresh`, mutations, …).
 - `lib/` — `api.ts` (typed fetch client), `types.ts` (backend JSON mirror), `format.ts`,
-  `linkify.tsx`, `extractUrls.ts` (shared URL regex/extraction, also gates the preview pane),
+  `linkify.tsx`, `extractUrls.ts` (shared URL regex/extraction for linkify + the preview pane),
   `linkPreviewPane.tsx` (open-message context for `LinkPreviewPane`), `theme.tsx`,
   `unreadIndicator.tsx`, `queryClient.ts`, `utils.ts`.
 
