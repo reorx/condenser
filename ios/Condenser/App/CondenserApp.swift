@@ -1,18 +1,19 @@
 import SwiftUI
-import CondenserKit
 
 @main
 struct CondenserApp: App {
+    @State private var session = AuthSession()
+
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            Group {
+                if session.isAuthenticated {
+                    MainView()
+                } else {
+                    LoginView()
+                }
+            }
+            .environment(session)
         }
-    }
-}
-
-struct ContentView: View {
-    var body: some View {
-        Text(Greeting().message(for: "Condenser"))
-            .padding(40)
     }
 }

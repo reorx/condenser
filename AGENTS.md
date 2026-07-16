@@ -157,7 +157,9 @@ xcodegen `project.yml` (single source of truth, `.xcodeproj` gitignored) + Makef
 (`make build / test / run / gen / clean`, simulator via `simctl`). Two layers:
 `CondenserKit/` local SPM package (pure logic + Swift Testing tests, no UIKit) and
 `Condenser/` app target. See `ios/AGENTS.md` for commands and conventions.
-Phase 1 (skeleton) done; next phases: auth → core reading → channels/saved/settings.
+Phases 1 (skeleton) + 2 (auth: `AuthFlow`/`TokenStore` in Kit, `AuthSession` + `LoginView`
+via SwiftUI `webAuthenticationSession`, 401 → `handleUnauthorized()` hook awaiting APIClient
+wiring) done; next phases: core reading → channels/saved/settings.
 
 ## Dev
 
