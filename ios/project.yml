@@ -1,0 +1,44 @@
+name: Condenser
+options:
+  bundleIdPrefix: com.reorx
+  deploymentTarget:
+    iOS: "18.0"
+  createIntermediateGroups: true
+
+# 第三方依赖统一在 CondenserKit/Package.swift 声明，app target 传递依赖
+packages:
+  CondenserKit:
+    path: CondenserKit
+
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+
+targets:
+  Condenser:
+    type: application
+    platform: iOS
+    sources:
+      - Condenser
+    dependencies:
+      - package: CondenserKit
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.reorx.condenser
+        # iPhone only（iPad 能跑即可，不专门适配 —— 见 kb/plans v1 非目标）
+        TARGETED_DEVICE_FAMILY: "1"
+        # 模拟器工作流无需签名；真机部署时再配 DEVELOPMENT_TEAM
+        CODE_SIGN_STYLE: Manual
+        CODE_SIGN_IDENTITY: "-"
+    info:
+      path: Condenser/Info.plist
+      properties:
+        CFBundleDisplayName: Condenser
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+        # 认证回调 condenser://auth（spec: kb/plans/2026-07-16-ios-reader-app.md）
+        CFBundleURLTypes:
+          - CFBundleURLName: com.reorx.condenser.auth
+            CFBundleURLSchemes:
+              - condenser
