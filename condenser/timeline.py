@@ -176,10 +176,15 @@ def query_timeline(
     return {'items': items, 'next_cursor': next_cursor, 'head_cursor': head_cursor}
 
 
-def query_new(channel_id: Optional[int], after_cursor: str, limit: int = 100) -> dict:
-    """Newer-direction poll: returns ``{count, items}`` strictly newer than the cursor."""
+def query_new(channel_id: Optional[int], after_cursor: str, limit: int = 100, unread_only: bool = False) -> dict:
+    """Newer-direction poll: returns ``{count, items}`` strictly newer than the cursor.
+
+    ``unread_only`` must mirror the timeline view being polled: the unread view's
+    head anchors the newest *unread* unit, so counting read messages newer than it
+    would surface "new" content the view can never display (a banner that never clears).
+    """
     cdate, cid = decode_cursor(after_cursor)
-    where, params = _base_where(channel_id, None, False)
+    where, params = _base_where(channel_id, None, unread_only)
     where.append('((m.date > ?) OR (m.date = ? AND m.id > ?))')
     params.extend([cdate, cdate, cid])
 

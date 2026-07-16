@@ -139,8 +139,10 @@ export const api = {
     ),
   timelineDays: (channelId?: number | null) =>
     request<DayCount[]>('/api/timeline/days' + qs({ channel_id: channelId })),
-  timelineNew: (after: string, channelId?: number | null, limit = 100) =>
-    request<TimelineNew>('/api/timeline/new' + qs({ after, channel_id: channelId, limit })),
+  timelineNew: (after: string, channelId?: number | null, limit = 100, unreadOnly = false) =>
+    request<TimelineNew>(
+      '/api/timeline/new' + qs({ after, channel_id: channelId, limit, unread_only: unreadOnly || undefined }),
+    ),
 
   markRead: (items: MsgRef[]) => post<{ ok: true }>('/api/read', { items }),
   markReadBulk: (body: { channel_id?: number | null; before_date?: string | null }) =>

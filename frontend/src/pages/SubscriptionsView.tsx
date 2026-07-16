@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { Search } from 'lucide-react';
+import { AtSign, Search } from 'lucide-react';
 
 import { Spinner } from '@/components/Spinner';
+import { AddByHandleDialog } from '@/components/subscriptions/AddByHandleDialog';
 import { BrowseChannelsDialog } from '@/components/subscriptions/BrowseChannelsDialog';
 import { SubscriptionRow } from '@/components/subscriptions/SubscriptionRow';
 import { Button } from '@/components/ui/button';
@@ -10,6 +11,7 @@ import { useSubscriptions } from '@/hooks/useSubscriptions';
 export function SubscriptionsView() {
   const { data: subs, isPending } = useSubscriptions();
   const [browseOpen, setBrowseOpen] = useState(false);
+  const [addOpen, setAddOpen] = useState(false);
 
   return (
     <>
@@ -21,13 +23,20 @@ export function SubscriptionsView() {
             <span className="font-medium">Filters</span>.
           </p>
         </div>
-        <Button variant="outline" size="sm" className="shrink-0" onClick={() => setBrowseOpen(true)}>
-          <Search className="size-4" />
-          Browse channels
-        </Button>
+        <div className="flex shrink-0 gap-2">
+          <Button variant="outline" size="sm" onClick={() => setBrowseOpen(true)}>
+            <Search className="size-4" />
+            Browse channels
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => setAddOpen(true)}>
+            <AtSign className="size-4" />
+            Add by handle
+          </Button>
+        </div>
       </div>
 
       <BrowseChannelsDialog open={browseOpen} onOpenChange={setBrowseOpen} />
+      <AddByHandleDialog open={addOpen} onOpenChange={setAddOpen} />
 
       {isPending ? (
         <div className="flex justify-center py-16">

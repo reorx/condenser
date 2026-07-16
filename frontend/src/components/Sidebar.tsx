@@ -1,38 +1,24 @@
 import { useState } from 'react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Bookmark, Filter, Inbox, Plus, Radio, Search, Settings, Sparkles } from 'lucide-react';
+import { Bookmark, Filter, Inbox, Radio, Search, Settings, Sparkles } from 'lucide-react';
 import { NavLink, useLocation } from 'react-router-dom';
 
 import { SettingsDialog } from '@/components/SettingsDialog';
 import { navLinkClass, SidebarChannelLink } from '@/components/SidebarChannelLink';
 import { BrowseChannelsDialog } from '@/components/subscriptions/BrowseChannelsDialog';
-import { Spinner } from '@/components/Spinner';
 import { UnreadBadge } from '@/components/UnreadBadge';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { useSubscriptions } from '@/hooks/useSubscriptions';
-import { api, ApiError } from '@/lib/api';
 
 export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
-  const qc = useQueryClient();
   const { data: subs } = useSubscriptions();
-  const [handle, setHandle] = useState('');
   const totalUnread = (subs ?? []).reduce((n, s) => n + (s.enabled ? s.unread : 0), 0);
-
-  const add = useMutation({
-    mutationFn: () => api.addSubscription(handle.trim()),
-    onSuccess: () => {
-      setHandle('');
-      qc.invalidateQueries({ queryKey: ['subscriptions'] });
-      qc.invalidateQueries({ queryKey: ['timeline'] });
-    },
-  });
 
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [browseOpen, setBrowseOpen] = useState(false);
   const location = useLocation();
-  const unreadActive = location.pathname === '/' && new URLSearchParams(location.search).get('unread') === '1';
-  const allActive = location.pathname === '/' && !unreadActive;
+  // "/" is the Unread home view; "?all=1" flips the aggregate view to All.
+  const allActive = location.pathname === '/' && new URLSearchParams(location.search).get('all') === '1';
+  const unreadActive = location.pathname === '/' && !allActive;
 
   const enabledSubs = (subs ?? []).filter((s) => s.enabled);
 
@@ -44,14 +30,14 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
       </div>
 
       <nav className="flex flex-col gap-0.5">
-        <NavLink to="/" end className={navLinkClass({ isActive: allActive })} onClick={onNavigate}>
-          <Inbox className="size-4" />
-          All
-        </NavLink>
-        <NavLink to="/?unread=1" className={navLinkClass({ isActive: unreadActive })} onClick={onNavigate}>
+        <NavLink to="/" end className={navLinkClass({ isActive: unreadActive })} onClick={onNavigate}>
           <Sparkles className="size-4" />
           Unread
           <UnreadBadge count={totalUnread} />
+        </NavLink>
+        <NavLink to="/?all=1" className={navLinkClass({ isActive: allActive })} onClick={onNavigate}>
+          <Inbox className="size-4" />
+          All
         </NavLink>
         <NavLink to="/saved" className={navLinkClass} onClick={onNavigate}>
           <Bookmark className="size-4" />
@@ -79,40 +65,10 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
         </div>
       </div>
 
-      <div className="space-y-1.5">
-        <Button variant="outline" size="sm" className="w-full justify-start" onClick={() => setBrowseOpen(true)}>
-          <Search className="size-4" />
-          Browse my channels
-        </Button>
-        <p className="px-0.5 text-[11px] text-muted-foreground/70">or add by handle</p>
-      </div>
-
-      <form
-        className="space-y-1.5"
-        onSubmit={(e) => {
-          e.preventDefault();
-          if (handle.trim()) add.mutate();
-        }}
-      >
-        <div className="flex gap-1.5">
-          <Input
-            value={handle}
-            onChange={(e) => setHandle(e.target.value)}
-            placeholder="@channel or t.me/…"
-            className="h-8 text-sm"
-            aria-invalid={!!add.error}
-          />
-          <Button type="submit" size="icon" className="size-8 shrink-0" disabled={!handle.trim() || add.isPending}>
-            {add.isPending ? <Spinner /> : <Plus />}
-          </Button>
-        </div>
-        {add.error && (
-          <p className="text-xs text-destructive">
-            {add.error instanceof ApiError ? add.error.message : 'Could not subscribe'}
-          </p>
-        )}
-        {add.isSuccess && <p className="text-xs text-muted-foreground">Subscribed — backfilling…</p>}
-      </form>
+      <Button variant="outline" size="sm" className="w-full justify-start" onClick={() => setBrowseOpen(true)}>
+        <Search className="size-4" />
+        Browse my channels
+      </Button>
 
       <Button
         variant="ghost"

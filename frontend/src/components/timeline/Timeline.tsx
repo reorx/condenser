@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { ArrowUp, Inbox } from 'lucide-react';
 
 import { AllChannelsHidden } from '@/components/ChannelFilter';
@@ -39,6 +40,8 @@ interface TimelineProps {
   viewKey: string;
   channelId?: number;
   date?: string;
+  /** Mirrors the view's unread filter into the new-content poll. */
+  unreadOnly?: boolean;
   /** Every loaded unit (pre-filter); drives the empty-vs-all-hidden distinction. */
   items: DisplayMessage[];
   /** Items after the header's channel filter; equals `items` when unfiltered. */
@@ -54,11 +57,13 @@ export function Timeline({
   viewKey,
   channelId,
   date,
+  unreadOnly,
   items,
   visible,
   onClearFilter,
   emptyLabel,
 }: TimelineProps) {
+  const qc = useQueryClient();
   const observe = useScrollToRead(viewKey);
   const { data: subs } = useSubscriptions();
   const labels = useChannelLabels(subs);
@@ -67,11 +72,18 @@ export function Timeline({
 
   // New-content poll: anchored to the newest loaded item; disabled in date-filtered views.
   const headCursor = query.data?.pages[0]?.head_cursor ?? null;
-  const newContent = useNewContent({ channelId, headCursor, active: !date });
+  const newContent = useNewContent({ channelId, headCursor, unreadOnly, active: !date });
   const newCount = newContent.data?.count ?? 0;
 
   function jumpToNewest() {
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    window.scrollTo(0, 0);
+    // Trim this view's cache to its first page before refetching: refetch then re-pulls
+    // just the fresh head instead of replaying every loaded page, and the updated
+    // head_cursor re-keys the poll query, which dismisses the banner.
+    qc.setQueriesData<{ pages: unknown[]; pageParams: unknown[] }>(
+      { queryKey: ['timeline'], type: 'active' },
+      (data) => data && { pages: data.pages.slice(0, 1), pageParams: data.pageParams.slice(0, 1) },
+    );
     void query.refetch();
   }
 

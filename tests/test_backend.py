@@ -396,6 +396,31 @@ def test_timeline_head_cursor_polls_only_newer(env):
         assert [it['id'] for it in new['items']] == [12]
 
 
+def test_timeline_new_respects_unread_only(env):
+    """In the unread view the poll must not count already-read messages newer than
+    the unread head — otherwise the "N new messages" banner can never clear."""
+    with _client() as client:
+        _login(client)
+        seed_channel(1, 'C')
+        seed_messages([md(1, 10, 1), md(1, 11, 2), md(1, 12, 3)])
+        db.add_subscription(1)
+
+        # the newest message is already read, so the unread view's head anchors msg 11
+        client.post('/api/read', json={'items': [{'channel_id': 1, 'message_id': 12}]})
+        head = client.get('/api/timeline?unread_only=true').json()['head_cursor']
+
+        # msg 12 is newer than the head but read -> it is NOT new content
+        new = client.get(f'/api/timeline/new?after={head}&unread_only=true').json()
+        assert new['count'] == 0
+
+        # a genuinely new (unread) message is still picked up
+        seed_messages([md(1, 13, 4)])
+        filters.recompute_messages(1, [13])
+        new = client.get(f'/api/timeline/new?after={head}&unread_only=true').json()
+        assert new['count'] == 1
+        assert [it['id'] for it in new['items']] == [13]
+
+
 # --- records: source-decoupled snapshot (§7) --------------------------------
 
 

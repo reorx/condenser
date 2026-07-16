@@ -32,8 +32,9 @@ def get_timeline_new(
     after: str,
     channel_id: Optional[int] = None,
     limit: int = Query(100, ge=1, le=200),
+    unread_only: bool = False,
 ):
-    return timeline.query_new(channel_id, after, limit)
+    return timeline.query_new(channel_id, after, limit, unread_only)
 
 
 @router.post('/read')

@@ -38,7 +38,7 @@ Two conventions this list exists to protect:
 | `PageHeader` + `IconBadge` | Unified reading-view top bar (leading icon + title + meta + right-aligned actions); `IconBadge` wraps a lucide icon in a muted circle |
 | `SegmentedOption` | One icon-over-label button in a segmented control; shared by `SettingsDialog`'s theme + unread pickers |
 | `SettingsDialog` | Settings modal: Telegram account, theme, unread-indicator mode, lock app |
-| `Sidebar` | Left navigation: nav links, channel list, browse/add-by-handle, settings |
+| `Sidebar` | Left navigation: nav links (Unread first, `/` = Unread, `/?all=1` = All), channel list, browse, settings |
 | `SidebarChannelLink` + `navLinkClass` | One channel link in the sidebar; also exports the shared nav-row className used by the top-level links |
 | `Spinner` + `FullScreenSpinner` | Loading spinner (inline + full-screen) |
 | `UnreadBadge` | Unread-count pill; renders nothing at 0, caps display at `999+` |
@@ -77,6 +77,7 @@ Two conventions this list exists to protect:
 
 | Component | Purpose |
 |---|---|
+| `AddByHandleDialog` | "Add by handle" modal on the Manage channels page: subscribe to a public channel by @handle / t.me link |
 | `BrowseChannelsDialog` | "Browse my channels" modal: search + multi-select + batch add |
 | `BrowseChannelRow` | One selectable channel row in `BrowseChannelsDialog` |
 | `SubscriptionRow` | One channel row on the Manage channels page: enable switch + actions menu + confirm dialogs |

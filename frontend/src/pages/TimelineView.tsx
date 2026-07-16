@@ -21,7 +21,9 @@ export function TimelineView() {
   const { channelId } = useParams();
   const [sp, setSp] = useSearchParams();
   const cid = channelId ? Number(channelId) : undefined;
-  const unreadOnly = sp.get('unread') === '1';
+  // Aggregate view defaults to Unread ("/" is the home view); "?all=1" shows everything.
+  // Channel views keep showing everything unless "?unread=1" narrows them.
+  const unreadOnly = cid != null ? sp.get('unread') === '1' : sp.get('all') !== '1';
   const date = sp.get('date');
   const { data: subs } = useSubscriptions();
   const labels = useChannelLabels(subs);
@@ -116,7 +118,17 @@ export function TimelineView() {
               size="icon"
               variant={unreadOnly ? 'default' : 'ghost'}
               className={cn('size-8', !unreadOnly && 'text-muted-foreground')}
-              onClick={() => patchParams((p) => (unreadOnly ? p.delete('unread') : p.set('unread', '1')))}
+              onClick={() =>
+                patchParams((p) => {
+                  if (cid != null) {
+                    if (unreadOnly) p.delete('unread');
+                    else p.set('unread', '1');
+                  } else {
+                    if (unreadOnly) p.set('all', '1');
+                    else p.delete('all');
+                  }
+                })
+              }
               title={unreadOnly ? 'Show all messages' : 'Show unread only'}
             >
               <Sparkles className="size-4" />
@@ -129,6 +141,7 @@ export function TimelineView() {
         viewKey={`${cid ?? 'all'}:${unreadOnly ? 'unread' : 'all'}:${date ?? ''}`}
         channelId={cid}
         date={date ?? undefined}
+        unreadOnly={unreadOnly}
         items={items}
         visible={visible}
         onClearFilter={filter.clear}
