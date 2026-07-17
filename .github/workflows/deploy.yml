@@ -1,5 +1,8 @@
-name: Build & Deploy
+name: Build
 
+# Build-only since 2026-07-17: condenser moved to hh-hk-01, which has no
+# webhook service — releases are manual:
+#   ssh hh-hk-01 'cd /opt/apps/condenser && docker compose pull && docker compose up -d'
 on:
   push:
     branches: [master]
@@ -41,17 +44,3 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-
-  deploy:
-    needs: build-and-push
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Trigger deploy via webhook
-        run: |
-          # ghcr :latest tag->digest propagation lags a few seconds after push;
-          # deploying immediately can pull the previous image
-          sleep 20
-          curl -sf -X POST \
-            -H "X-Deploy-Token: ${{ secrets.WEBHOOK_SECRET }}" \
-            https://apps-webhook.reorx.com/hooks/deploy-condenser
