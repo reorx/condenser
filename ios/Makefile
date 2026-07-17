@@ -8,7 +8,7 @@ SIM ?= iPhone 17
 XCODEBUILD := xcodebuild -project Condenser.xcodeproj -scheme Condenser \
 	-destination 'generic/platform=iOS Simulator' -derivedDataPath $(DERIVED_DATA)
 
-.PHONY: gen build test run dev clean
+.PHONY: gen build test run dev device clean
 
 # 从 project.yml 重新生成 Condenser.xcodeproj（xcodeproj 不入库）
 gen:
@@ -30,6 +30,11 @@ run:
 	@xcrun simctl launch "$(SIM)" $(BUNDLE_ID)
 
 dev: build run
+
+# 真机构建 + 推送安装（签名参数在脚本内命令行覆盖，不动 project.yml）
+# 用法：make device [TEAM_ID=ABCDE12345] [DEVICE="<设备名或UDID>"]
+device: gen
+	./scripts/device.sh
 
 clean:
 	rm -rf $(DERIVED_DATA) CondenserKit/.build Condenser.xcodeproj

@@ -35,6 +35,7 @@ make build       # xcodegen + xcodebuild Debug，模拟器 generic destination�
 make test        # CondenserKit swift test（宿主 macOS 上跑）
 make run         # boot 模拟器 + 安装 + 启动已构建的 app（不触发构建）
 make dev         # build + run
+make device      # 真机构建 + 推送安装（scripts/device.sh，见下）
 make gen         # 仅重新生成 xcodeproj
 make clean       # 清理构建产物与生成的 xcodeproj
 ```
@@ -43,7 +44,20 @@ make clean       # 清理构建产物与生成的 xcodeproj
 - 默认模拟器设备由 Makefile 的 `SIM` 变量指定，覆盖：`make run SIM="iPhone 17 Pro"`
 - 跑单个测试：`cd CondenserKit && swift test --filter <测试名>`
 - 改了 `project.yml` 后必须 `make gen`（`make build` 已包含）
-- 模拟器构建无需签名（ad-hoc）；真机部署时再在 project.yml 配 `DEVELOPMENT_TEAM`
+- 模拟器构建无需签名（ad-hoc）；真机签名参数由 `scripts/device.sh` 在 xcodebuild
+  命令行覆盖（`CODE_SIGN_STYLE=Automatic` + `DEVELOPMENT_TEAM`），不改 project.yml
+
+## 真机部署
+
+`make device`：xcodegen → 探测 Team ID（钥匙串 Apple Development 证书的 OU，可用
+`TEAM_ID=` 覆盖）→ 选设备（唯一已连接的真机，多台时 `DEVICE="<名称或UDID>"` 指定）→
+device 构建（`-allowProvisioningUpdates` 自动出 profile）→ `devicectl` 安装 + 启动。
+产物在 `.build/DerivedData/Build/Products/Debug-iphoneos/`（与模拟器产物不冲突）。
+
+前提（一次性）：Xcode → Settings → Accounts 登录 Apple ID；iPhone 数据线连 Mac 并信任；
+手机开启开发者模式（设置 → 隐私与安全性）。免费 Personal Team 签名 7 天过期，重跑
+`make device` 重装即可（Keychain 里的 token 不丢）；首次安装需在手机上信任开发者证书
+（设置 → 通用 → VPN 与设备管理）。首次 USB 配对后 devicectl 支持同一局域网 Wi-Fi 部署。
 
 ## 开发调试：跳过授权直连本地后端
 
