@@ -83,7 +83,7 @@ SIMCTL_CHILD_CONDENSER_DEBUG_ROUTE=<route> xcrun simctl launch "iPhone 17" com.r
 ```
 
 route 取值：`tab/{timeline|channels|saved}` 切 tab；`channel/<id>` push 单频道
-timeline；`settings` 弹设置页；`detail/<cid>/<mid>` / `viewer/<cid>/<mid>` 弹详情
+timeline；`settings` 切设置 tab；`detail/<cid>/<mid>` / `viewer/<cid>/<mid>` 弹详情
 sheet / 全屏图片浏览器（消息须在 timeline 首页内，路由会等首屏加载完才应用）。
 每换一个界面 terminate + 重新 launch 一次即可。也支持
 `xcrun simctl openurl booted "condenser://debug/<route>"`，但系统会弹

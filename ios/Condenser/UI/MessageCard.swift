@@ -1,13 +1,15 @@
 import SwiftUI
 import CondenserKit
 
-/// 紧凑消息卡片：头像 + 频道名 + 相对时间 + 收藏星；正文预览 5 行；
-/// 媒体缩略图（单图按 API 尺寸预留纵横比，多图网格方形）；转发标记。
+/// 紧凑消息卡片：头像 + 频道名 + 相对时间 + 收藏星；正文预览 5 行（截断显示蓝色 more，
+/// 链接可直接点击）；媒体缩略图（点击直接开全屏查看器）；转发标记。
 struct MessageCard: View {
     let message: DisplayMessage
     /// 收藏列表不展示未读点（records 不携带已读态）
     var showsUnread = true
     var onToggleSaved: () -> Void
+    /// 点击第 i 张图片（timeline 直接全屏查看，不经详情 sheet）
+    var onOpenPhoto: ((Int) -> Void)? = nil
 
     @Environment(ReaderSession.self) private var reader
 
@@ -21,12 +23,9 @@ struct MessageCard: View {
                     .lineLimit(1)
             }
             if let text = message.text, !text.isEmpty {
-                Text(text)
-                    .font(.subheadline)
-                    .lineLimit(5)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                TruncatableText(text: text)
             }
-            MessageMediaView(message: message)
+            MessageMediaView(message: message, onOpenPhoto: onOpenPhoto)
             if let webpage = message.webpage {
                 WebPagePreviewCard(message: message, webpage: webpage)
             }
@@ -83,10 +82,48 @@ struct MessageCard: View {
     }
 }
 
-/// 媒体区：photo 缩略图；单图按 API 尺寸预留纵横比，多图方形网格；
+/// 5 行截断正文：隐藏的不限行副本测高判断是否截断，截断时末尾追加蓝色 more；
+/// 链接高亮、可直接点击（由列表层的 openURL 环境接管）。
+private struct TruncatableText: View {
+    let text: String
+
+    @State private var limitedHeight: CGFloat = 0
+    @State private var fullHeight: CGFloat = 0
+
+    private var isTruncated: Bool { fullHeight > limitedHeight + 1 }
+
+    var body: some View {
+        let attributed = linkified(text)
+        VStack(alignment: .leading, spacing: 2) {
+            Text(attributed)
+                .font(.subheadline)
+                .lineLimit(5)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { limitedHeight = $0 }
+                .background(alignment: .topLeading) {
+                    // 测量用副本：不参与布局尺寸，只报告全文高度
+                    Text(attributed)
+                        .font(.subheadline)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .hidden()
+                        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { fullHeight = $0 }
+                }
+            if isTruncated {
+                Text("more")
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(.tint)
+            }
+        }
+    }
+}
+
+/// 媒体区：photo 缩略图；单图按 API 尺寸预留纵横比（竖图收敛到 3:4），多图方形网格；
+/// 缩略图始终装在固定占位盒里再裁剪，避免原图尺寸把布局撑爆。
 /// 视频/文件显示类型 chip（v1 不播放）。
 struct MessageMediaView: View {
     let message: DisplayMessage
+    /// 点击第 i 张图片；nil 时图片不响应点击
+    var onOpenPhoto: ((Int) -> Void)? = nil
 
     @Environment(ReaderSession.self) private var reader
 
@@ -112,14 +149,7 @@ struct MessageMediaView: View {
     }
 
     private func singlePhoto(_ item: MediaItem) -> some View {
-        let ratio: CGFloat = if let w = item.width, let h = item.height, h > 0 {
-            CGFloat(w) / CGFloat(h)
-        } else {
-            4 / 3
-        }
-        return AuthedAsyncImage(request: thumbRequest(item))
-            .aspectRatio(ratio, contentMode: .fit)
-            .clipShape(RoundedRectangle(cornerRadius: 10))
+        photoBox(item, index: 0, ratio: previewRatio(item), cornerRadius: 10)
     }
 
     private var photoGrid: some View {
@@ -128,12 +158,26 @@ struct MessageMediaView: View {
             repeating: GridItem(.flexible(), spacing: 4),
             count: photos.count == 2 || photos.count == 4 ? 2 : 3)
         return LazyVGrid(columns: columns, spacing: 4) {
-            ForEach(photos, id: \.messageID) { item in
-                AuthedAsyncImage(request: thumbRequest(item))
-                    .aspectRatio(1, contentMode: .fill)
-                    .clipShape(RoundedRectangle(cornerRadius: 6))
+            ForEach(Array(photos.enumerated()), id: \.element.messageID) { index, item in
+                photoBox(item, index: index, ratio: 1, cornerRadius: 6)
             }
         }
+    }
+
+    /// 固定纵横比的占位盒 + overlay 装图：图片以 fill 居中裁剪，绝不影响布局尺寸
+    private func photoBox(_ item: MediaItem, index: Int, ratio: CGFloat, cornerRadius: CGFloat) -> some View {
+        Color.clear
+            .aspectRatio(ratio, contentMode: .fit)
+            .overlay { AuthedAsyncImage(request: thumbRequest(item)) }
+            .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
+            .contentShape(RoundedRectangle(cornerRadius: cornerRadius))
+            .onTapGesture { onOpenPhoto?(index) }
+    }
+
+    /// 竖图收敛到最小 3:4，避免单图占满整屏（全图看详情/查看器）
+    private func previewRatio(_ item: MediaItem) -> CGFloat {
+        guard let w = item.width, let h = item.height, w > 0, h > 0 else { return 4 / 3 }
+        return max(CGFloat(w) / CGFloat(h), 3 / 4)
     }
 
     private func fileChip(_ item: MediaItem) -> some View {
@@ -153,12 +197,13 @@ struct MessageMediaView: View {
     }
 }
 
-/// Telegram 内嵌网页预览卡片
+/// Telegram 内嵌网页预览卡片；点击整卡打开链接（openURL 环境接管 → in-app Safari）
 struct WebPagePreviewCard: View {
     let message: DisplayMessage
     let webpage: WebPagePreview
 
     @Environment(ReaderSession.self) private var reader
+    @Environment(\.openURL) private var openURL
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
@@ -193,5 +238,11 @@ struct WebPagePreviewCard: View {
         }
         .padding(8)
         .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 10))
+        .contentShape(RoundedRectangle(cornerRadius: 10))
+        .onTapGesture {
+            if let raw = webpage.url, let url = URL(string: raw) {
+                openURL(url)
+            }
+        }
     }
 }

@@ -27,12 +27,8 @@ struct MessageDetailSheet: View {
                 }
                 images
                 if let webpage = message.webpage {
+                    // 点击卡片打开链接：WebPagePreviewCard 自带 openURL 点击，走下方环境接管
                     WebPagePreviewCard(message: message, webpage: webpage)
-                        .onTapGesture {
-                            if let raw = webpage.url, let url = URL(string: raw) {
-                                safariItem = SafariItem(url: url)
-                            }
-                        }
                 }
                 footer
             }
@@ -125,23 +121,6 @@ struct MessageDetailSheet: View {
         } else {
             4 / 3
         }
-    }
-
-    /// NSDataDetector 标注 URL → AttributedString 链接（openURL 环境接管点击）
-    private func linkified(_ text: String) -> AttributedString {
-        var attr = AttributedString(text)
-        guard let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue)
-        else { return attr }
-        let ns = text as NSString
-        for match in detector.matches(in: text, range: NSRange(location: 0, length: ns.length)) {
-            guard let url = match.url,
-                  let range = Range(match.range, in: text),
-                  let attrRange = attr.range(of: String(text[range]))
-            else { continue }
-            attr[attrRange].link = url
-            attr[attrRange].foregroundColor = .accentColor
-        }
-        return attr
     }
 }
 

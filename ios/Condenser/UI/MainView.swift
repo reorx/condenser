@@ -1,10 +1,10 @@
 import SwiftUI
 import CondenserKit
 
-/// 登录后的主界面：三 tab（Timeline / 频道 / 收藏），各自持有独立 NavigationStack。
+/// 登录后的主界面：四 tab（Timeline / 频道 / 收藏 / 设置），各自持有独立 NavigationStack。
 struct MainView: View {
     enum MainTab: Hashable {
-        case timeline, channels, saved
+        case timeline, channels, saved, settings
     }
 
     @Environment(AuthSession.self) private var auth
@@ -14,7 +14,6 @@ struct MainView: View {
     #if DEBUG
     @State private var debugDetail: DisplayMessage?
     @State private var debugViewer: ImageViewerItem?
-    @State private var debugSettings = false
     #endif
 
     var body: some View {
@@ -51,14 +50,16 @@ struct MainView: View {
                     SavedScreen()
                 }
             }
+            Tab("设置", systemImage: "gearshape", value: MainTab.settings) {
+                NavigationStack {
+                    SettingsScreen()
+                }
+            }
         }
         #if DEBUG
         .onOpenURL { handleDebugURL($0, reader: reader) }
         .sheet(item: $debugDetail) { message in
             MessageDetailSheet(message: message, onToggleSaved: {})
-        }
-        .sheet(isPresented: $debugSettings) {
-            SettingsScreen()
         }
         .fullScreenCover(item: $debugViewer) { item in
             ImageViewerScreen(item: item)
@@ -81,7 +82,7 @@ struct MainView: View {
     }
 
     /// 路由：tab/{timeline|channels|saved} 切 tab；channel/{id} push 频道 timeline；
-    /// settings 弹设置页；detail/{cid}/{mid}、viewer/{cid}/{mid} 弹详情 sheet / 全屏图
+    /// settings 切设置 tab；detail/{cid}/{mid}、viewer/{cid}/{mid} 弹详情 sheet / 全屏图
     /// （消息须已在 timeline 首页中）。也可 `simctl openurl booted "condenser://debug/<route>"`
     /// （需在模拟器里手动点一次 Open 确认）。
     private func handleDebugURL(_ url: URL, reader: ReaderSession) {
@@ -101,7 +102,7 @@ struct MainView: View {
                 channelsPath.append(sub)
             }
         case "settings":
-            debugSettings = true
+            selectedTab = .settings
         case "detail":
             debugDetail = debugMessage(parts, reader: reader)
         case "viewer":

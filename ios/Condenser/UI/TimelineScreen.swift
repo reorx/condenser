@@ -1,13 +1,11 @@
 import SwiftUI
 import CondenserKit
 
-/// Timeline 主屏（tab 1）：MessageListView + 新消息胶囊 + 未读过滤 + 设置入口；
-/// 负责 poller 生命周期与 scenePhase 时的已读冲刷。
+/// Timeline 主屏（tab 1）：MessageListView + 新消息胶囊 + 未读过滤（默认只看未读）；
+/// 负责 poller 生命周期与 scenePhase 时的已读冲刷。设置入口在底部 tab 栏。
 struct TimelineScreen: View {
     @Environment(ReaderSession.self) private var reader
     @Environment(\.scenePhase) private var scenePhase
-
-    @State private var showSettings = false
 
     var body: some View {
         MessageListView(
@@ -17,9 +15,6 @@ struct TimelineScreen: View {
             .navigationTitle(reader.unreadOnly ? "未读" : "Timeline")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { toolbarContent }
-            .sheet(isPresented: $showSettings) {
-                SettingsScreen()
-            }
             .task(id: ObjectIdentifier(reader.timeline)) {
                 reader.poller.start()
             }
@@ -38,18 +33,12 @@ struct TimelineScreen: View {
 
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
-        ToolbarItem(placement: .topBarLeading) {
-            Button {
-                showSettings = true
-            } label: {
-                Image(systemName: "gearshape")
-            }
-        }
+        // eye.slash = 已读被隐藏（未读模式）；eye = 全部可见
         ToolbarItem(placement: .topBarTrailing) {
             Button {
                 reader.setUnreadOnly(!reader.unreadOnly)
             } label: {
-                Image(systemName: reader.unreadOnly ? "envelope.badge.fill" : "envelope.badge")
+                Image(systemName: reader.unreadOnly ? "eye.slash" : "eye")
             }
         }
     }

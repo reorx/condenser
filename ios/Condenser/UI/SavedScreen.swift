@@ -6,6 +6,8 @@ import CondenserKit
 struct SavedScreen: View {
     @Environment(ReaderSession.self) private var reader
     @State private var selectedMessage: DisplayMessage?
+    @State private var safariItem: SafariItem?
+    @State private var viewerItem: ImageViewerItem?
 
     var body: some View {
         ScrollView {
@@ -20,7 +22,8 @@ struct SavedScreen: View {
                         MessageCard(
                             message: message,
                             showsUnread: false,
-                            onToggleSaved: { unsave(message) })
+                            onToggleSaved: { unsave(message) },
+                            onOpenPhoto: { openViewer(for: message, at: $0) })
                             .onTapGesture { selectedMessage = message }
                         Divider().padding(.leading, 16)
                     }
@@ -33,15 +36,35 @@ struct SavedScreen: View {
                 }
             }
         }
+        .autoHideBars()
         .refreshable { await reader.records.refresh() }
         .navigationTitle("收藏")
         .navigationBarTitleDisplayMode(.inline)
+        .environment(\.openURL, OpenURLAction { url in
+            safariItem = SafariItem(url: url)
+            return .handled
+        })
         .sheet(item: $selectedMessage) { message in
             MessageDetailSheet(
                 message: message,
                 onToggleSaved: { unsave(message) })
         }
+        .sheet(item: $safariItem) { item in
+            SafariView(url: item.url)
+                .ignoresSafeArea()
+        }
+        .fullScreenCover(item: $viewerItem) { item in
+            ImageViewerScreen(item: item)
+        }
         .task { await reader.records.refresh() }
+    }
+
+    private func openViewer(for message: DisplayMessage, at index: Int) {
+        let photos = message.mediaItems.filter { $0.mediaType == "photo" && $0.hasMedia }
+        guard !photos.isEmpty else { return }
+        viewerItem = ImageViewerItem(
+            channelID: message.channelID, photos: photos,
+            startIndex: min(index, photos.count - 1))
     }
 
     private var emptyState: some View {

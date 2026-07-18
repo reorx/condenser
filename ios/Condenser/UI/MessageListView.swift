@@ -11,6 +11,8 @@ struct MessageListView: View {
 
     @Environment(ReaderSession.self) private var reader
     @State private var selectedMessage: DisplayMessage?
+    @State private var safariItem: SafariItem?
+    @State private var viewerItem: ImageViewerItem?
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -18,6 +20,7 @@ struct MessageListView: View {
                 Color.clear.frame(height: 1).id("timeline-top")
                 listBody
             }
+            .autoHideBars()
             .refreshable { await refresh() }
             .overlay(alignment: .top) {
                 if let poller, poller.count > 0 {
@@ -25,10 +28,22 @@ struct MessageListView: View {
                 }
             }
         }
+        // 卡片正文/预览卡里的链接点击 → in-app Safari
+        .environment(\.openURL, OpenURLAction { url in
+            safariItem = SafariItem(url: url)
+            return .handled
+        })
         .sheet(item: $selectedMessage) { message in
             MessageDetailSheet(
                 message: currentVersion(of: message),
                 onToggleSaved: { toggleSaved(message) })
+        }
+        .sheet(item: $safariItem) { item in
+            SafariView(url: item.url)
+                .ignoresSafeArea()
+        }
+        .fullScreenCover(item: $viewerItem) { item in
+            ImageViewerScreen(item: item)
         }
         .task(id: ObjectIdentifier(store)) {
             await store.loadInitial()
@@ -44,7 +59,10 @@ struct MessageListView: View {
             }
             ForEach(Array(store.items.enumerated()), id: \.element.unitKey) { index, message in
                 VStack(spacing: 0) {
-                    MessageCard(message: message, onToggleSaved: { toggleSaved(message) })
+                    MessageCard(
+                        message: message,
+                        onToggleSaved: { toggleSaved(message) },
+                        onOpenPhoto: { openViewer(for: message, at: $0) })
                         .onTapGesture { selectedMessage = message }
                     Divider().padding(.leading, 16)
                 }
@@ -122,8 +140,18 @@ struct MessageListView: View {
     }
 
     private func refresh() async {
+        // 先冲刷已读队列（debounce 可能还没发出去），未读视图重载才会真正剔除已读项
+        await reader.readReporter.flushNow()
         await store.refresh()
         poller?.reset()
+    }
+
+    private func openViewer(for message: DisplayMessage, at index: Int) {
+        let photos = message.mediaItems.filter { $0.mediaType == "photo" && $0.hasMedia }
+        guard !photos.isEmpty else { return }
+        viewerItem = ImageViewerItem(
+            channelID: message.channelID, photos: photos,
+            startIndex: min(index, photos.count - 1))
     }
 
     /// sheet 打开期间收藏态变化要跟随 store（乐观更新可见）

@@ -5,8 +5,9 @@ import CondenserKit
 /// 登录后的组合根：持有 APIClient + TimelineStore / RecordsStore / ReadReporter /
 /// NewContentPoller + SnapshotCache，统一把 401 接到 AuthSession.handleUnauthorized。
 /// unreadOnly 切换时重建 timeline + poller（两者的过滤参数必须一致，见
-/// timeline.py:query_new 注释）。快照只服务冷启动的主 timeline（All 视图）与
-/// subscriptions；未读/频道视图是临时态，不落快照。
+/// timeline.py:query_new 注释）。主 timeline 默认只看未读；All/未读两个视图各落一份
+/// 冷启动快照（未读快照可能含此后已读的条目，网络刷新整页替换即自愈）；
+/// 频道视图是临时态，不落快照。
 @MainActor
 @Observable
 final class ReaderSession {
@@ -16,13 +17,14 @@ final class ReaderSession {
     private(set) var readReporter: ReadReporter
     private(set) var poller: NewContentPoller!
     private(set) var subscriptions: [Subscription] = []
-    private(set) var unreadOnly = false
+    private(set) var unreadOnly = true
 
     private let snapshots = SnapshotCache()
     private let onUnauthorized: @MainActor () -> Void
 
     private enum SnapshotKeys {
-        static let timeline = "timeline-all"
+        static let timelineAll = "timeline-all"
+        static let timelineUnread = "timeline-unread"
         static let subscriptions = "subscriptions"
     }
 
@@ -31,7 +33,7 @@ final class ReaderSession {
         self.api = api
         self.onUnauthorized = onUnauthorized
         timeline = TimelineStore(
-            api: api, cache: snapshots, cacheKey: SnapshotKeys.timeline)
+            api: api, unreadOnly: true, cache: snapshots, cacheKey: SnapshotKeys.timelineUnread)
         records = RecordsStore(api: api)
         readReporter = ReadReporter(api: api)
         timeline.onUnauthorized = onUnauthorized
@@ -46,8 +48,8 @@ final class ReaderSession {
         unreadOnly = value
         poller.stop()
         timeline = TimelineStore(
-            api: api, unreadOnly: value,
-            cache: value ? nil : snapshots, cacheKey: value ? nil : SnapshotKeys.timeline)
+            api: api, unreadOnly: value, cache: snapshots,
+            cacheKey: value ? SnapshotKeys.timelineUnread : SnapshotKeys.timelineAll)
         timeline.onUnauthorized = onUnauthorized
         poller = makePoller()
         poller.start()
