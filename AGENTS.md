@@ -172,12 +172,15 @@ simulator, see `ios/AGENTS.md`) + 4 (three-tab `TabView`: Timeline / channels / 
 `message.channel`), `SnapshotCache` (Caches-dir JSON; timeline page 1 + subscriptions render
 before network on cold start), fullscreen `ImageViewerScreen` (paged album swipe, UIScrollView
 pinch/double-tap zoom, drag-down dismiss), `SettingsScreen` (server/device name, sign-out),
-`TokenStore.deviceName`; 63 Kit tests; DEBUG deep-link walkthrough via
+`TokenStore.deviceName`; 72 Kit tests; DEBUG deep-link walkthrough via
 `SIMCTL_CHILD_CONDENSER_DEBUG_ROUTE`, see `ios/AGENTS.md`) done. Reading-experience polish
 (2026-07-18): default view is **unread** (eye / eye.slash toolbar toggle; both modes snapshot-
 cached), Settings is a 4th tab (screen no longer wraps its own NavigationStack), nav + tab bars
-auto-hide on scroll-down / reappear on scroll-up (`AutoHideBars` on the ScrollView,
-`onScrollGeometryChange`), card links + photos + webpage cards are directly tappable (shared
+auto-hide on scroll-down / reappear on scroll-up (`AutoHideBars` on the ScrollView; decision
+logic lives in Kit's `BarsVisibilityModel` — bar toggles change safe-area insets which feed
+back into scroll geometry, so direction detection runs only during user scroll phases plus a
+post-toggle cooldown, else it self-oscillates into a main-thread relayout freeze), card links
++ photos + webpage cards are directly tappable (shared
 `linkified` in `Linkify.swift`, list-level `openURL` env → in-app Safari, photo tap → fullscreen
 viewer), 5-line truncated text shows a blue "more" (hidden measuring copy), photo thumbs render
 in fixed aspect boxes (`Color.clear.aspectRatio` + overlay + clip — fixes album grid overflow;
