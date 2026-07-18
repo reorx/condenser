@@ -12,7 +12,7 @@ struct TimelineScreen: View {
             store: reader.timeline,
             poller: reader.poller,
             emptyLabel: reader.unreadOnly ? "没有未读消息" : "暂无内容")
-            .navigationTitle(reader.unreadOnly ? "未读" : "Timeline")
+            .navigationTitle(reader.unreadOnly ? "Timeline (unread)" : "Timeline")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { toolbarContent }
             .task(id: ObjectIdentifier(reader.timeline)) {

@@ -48,14 +48,9 @@ struct MessageCard: View {
                     if isUnread {
                         Circle().fill(.tint).frame(width: 6, height: 6)
                     }
-                    Text(message.date.formatted(.relative(presentation: .named)))
+                    Text(timestampText)
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                    if message.isEdited {
-                        Text("已编辑")
-                            .font(.caption2)
-                            .foregroundStyle(.tertiary)
-                    }
                 }
             }
             Spacer(minLength: 8)
@@ -64,6 +59,16 @@ struct MessageCard: View {
                     .foregroundStyle(isSaved ? .orange : .secondary)
             }
             .buttonStyle(.plain)
+        }
+    }
+
+    /// 3 天内相对时间，更早直接绝对时间（与详情 sheet 同格式）
+    private var timestampText: String {
+        switch MessageTimestamp.style(for: message.date) {
+        case .relative:
+            message.date.formatted(.relative(presentation: .named))
+        case .absolute:
+            message.date.formatted(date: .abbreviated, time: .shortened)
         }
     }
 
@@ -82,7 +87,7 @@ struct MessageCard: View {
     }
 }
 
-/// 5 行截断正文：隐藏的不限行副本测高判断是否截断，截断时末尾追加蓝色 more；
+/// 8 行截断正文：隐藏的不限行副本测高判断是否截断，截断时末尾追加蓝色 more；
 /// 链接高亮、可直接点击（由列表层的 openURL 环境接管）。
 private struct TruncatableText: View {
     let text: String
@@ -97,7 +102,7 @@ private struct TruncatableText: View {
         VStack(alignment: .leading, spacing: 2) {
             Text(attributed)
                 .font(.subheadline)
-                .lineLimit(5)
+                .lineLimit(8)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { limitedHeight = $0 }
                 .background(alignment: .topLeading) {
