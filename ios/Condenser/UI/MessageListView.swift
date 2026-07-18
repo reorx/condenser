@@ -20,6 +20,7 @@ struct MessageListView: View {
                 Color.clear.frame(height: 1).id("timeline-top")
                 listBody
             }
+            .readingFontScale()
             .autoHideBars()
             .refreshable { await refresh() }
             .overlay(alignment: .top) {

@@ -9,6 +9,9 @@ struct SettingsScreen: View {
     @Environment(ReaderSession.self) private var reader
 
     @State private var confirmSignOut = false
+    @AppStorage(FontScale.storageKey) private var fontScaleRaw = FontScale.default.rawValue
+
+    private var fontScale: FontScale { FontScale(storedValue: fontScaleRaw) }
 
     var body: some View {
         Form {
@@ -20,6 +23,14 @@ struct SettingsScreen: View {
                 LabeledContent("主题", value: "跟随系统")
             } header: {
                 Text("外观")
+            }
+            Section {
+                fontScaleSlider
+                FontScalePreviewCard(scale: fontScale)
+            } header: {
+                Text("字号")
+            } footer: {
+                Text("调整消息列表与详情页的文字大小。")
             }
             Section {
                 Button("登出", role: .destructive) {
@@ -49,5 +60,72 @@ struct SettingsScreen: View {
         let short = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
         let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?"
         return "\(short) (\(build))"
+    }
+
+    /// 离散滑块（4 档）+ 档位标签；标签可直接点选
+    private var fontScaleSlider: some View {
+        VStack(spacing: 4) {
+            Slider(
+                value: Binding(
+                    get: { Double(fontScale.sliderIndex) },
+                    set: { fontScaleRaw = FontScale(sliderIndex: Int($0.rounded())).rawValue }),
+                in: 0...Double(FontScale.allCases.count - 1),
+                step: 1)
+            HStack {
+                ForEach(Array(FontScale.allCases.enumerated()), id: \.element) { index, scale in
+                    Text(scale.displayName)
+                        .font(.caption)
+                        .foregroundStyle(scale == fontScale ? Color.accentColor : Color.secondary)
+                        .frame(maxWidth: .infinity, alignment: labelAlignment(index))
+                        .contentShape(Rectangle())
+                        .onTapGesture { fontScaleRaw = scale.rawValue }
+                }
+            }
+        }
+        .padding(.vertical, 4)
+    }
+
+    private func labelAlignment(_ index: Int) -> Alignment {
+        switch index {
+        case 0: .leading
+        case FontScale.allCases.count - 1: .trailing
+        default: .center
+        }
+    }
+}
+
+/// 字号预览：静态 mock 消息卡片（不依赖网络/真实数据），布局与 MessageCard 一致
+private struct FontScalePreviewCard: View {
+    let scale: FontScale
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 10) {
+                Circle()
+                    .fill(.tint.opacity(0.15))
+                    .frame(width: 36, height: 36)
+                    .overlay {
+                        Text("凝")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.tint)
+                    }
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Condenser 精选")
+                        .font(.subheadline.weight(.semibold))
+                        .lineLimit(1)
+                    Text("5 分钟前")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 8)
+                Image(systemName: "star")
+                    .foregroundStyle(.secondary)
+            }
+            Text("这是消息卡片的字号预览。滑动上方滑块，正文会像这样实时缩放，方便找到最舒适的阅读大小。")
+                .font(.subheadline)
+        }
+        .padding(.vertical, 4)
+        .dynamicTypeSize(scale.dynamicTypeSize)
+        .animation(.snappy(duration: 0.15), value: scale)
     }
 }

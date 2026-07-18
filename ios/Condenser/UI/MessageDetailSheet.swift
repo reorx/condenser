@@ -34,6 +34,7 @@ struct MessageDetailSheet: View {
             }
             .padding(16)
         }
+        .readingFontScale()
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
         .environment(\.openURL, OpenURLAction { url in

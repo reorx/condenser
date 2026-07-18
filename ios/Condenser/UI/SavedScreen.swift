@@ -36,6 +36,7 @@ struct SavedScreen: View {
                 }
             }
         }
+        .readingFontScale()
         .autoHideBars()
         .refreshable { await reader.records.refresh() }
         .navigationTitle("收藏")
