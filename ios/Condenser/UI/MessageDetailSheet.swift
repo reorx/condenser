@@ -11,6 +11,7 @@ struct MessageDetailSheet: View {
     @Environment(ReaderSession.self) private var reader
     @State private var safariItem: SafariItem?
     @State private var viewerItem: ImageViewerItem?
+    @State private var copied = false
 
     var body: some View {
         ScrollView {
@@ -20,9 +21,7 @@ struct MessageDetailSheet: View {
                     forwardBox
                 }
                 if let text = message.text, !text.isEmpty {
-                    Text(linkified(text))
-                        .font(.body)
-                        .textSelection(.enabled)
+                    SelectableTextView(text: text)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 images
@@ -30,7 +29,8 @@ struct MessageDetailSheet: View {
                     // 点击卡片打开链接：WebPagePreviewCard 自带 openURL 点击，走下方环境接管
                     WebPagePreviewCard(message: message, webpage: webpage)
                 }
-                footer
+                Divider()
+                actions
             }
             .padding(16)
         }
@@ -105,15 +105,35 @@ struct MessageDetailSheet: View {
         }
     }
 
-    @ViewBuilder
-    private var footer: some View {
-        if let username = reader.channelUsername(for: message),
-           let url = URL(string: "https://t.me/\(username)/\(message.id)") {
-            Link(destination: url) {
-                Label("在 Telegram 打开", systemImage: "paperplane")
-                    .font(.footnote)
+    private var actions: some View {
+        HStack(spacing: 10) {
+            if let text = message.text, !text.isEmpty {
+                Button {
+                    UIPasteboard.general.string = text
+                    copied = true
+                    Task {
+                        try? await Task.sleep(for: .seconds(1.5))
+                        copied = false
+                    }
+                } label: {
+                    Label(copied ? "已复制" : "复制全文",
+                          systemImage: copied ? "checkmark" : "doc.on.doc")
+                        .font(.footnote)
+                }
+                .buttonStyle(.bordered)
+                .tint(copied ? .green : nil)
             }
+            if let username = reader.channelUsername(for: message),
+               let url = URL(string: "https://t.me/\(username)/\(message.id)") {
+                Link(destination: url) {
+                    Label("在 Telegram 打开", systemImage: "paperplane")
+                        .font(.footnote)
+                }
+                .buttonStyle(.bordered)
+            }
+            Spacer()
         }
+        .sensoryFeedback(.success, trigger: copied) { _, new in new }
     }
 
     private func aspectRatio(_ item: MediaItem) -> CGFloat {
