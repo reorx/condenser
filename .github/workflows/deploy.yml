@@ -1,8 +1,8 @@
-name: Build
+name: Build and Deploy
 
-# Build-only since 2026-07-17: condenser moved to hh-hk-01, which has no
-# webhook service — releases are manual:
-#   ssh hh-hk-01 'cd /opt/apps/condenser && docker compose pull && docker compose up -d'
+# CD restored 2026-07-19 via hookploy: push -> build -> POST /hooks/condenser
+# with the image digest; the hookploy edge on hh-hk-01 pins + recreates.
+# 202 = accepted (async); check `hookploy deploys condenser` for the result.
 on:
   push:
     branches: [master]
@@ -38,9 +38,17 @@ jobs:
             type=sha,prefix=
 
       - name: Build and push
+        id: build
         uses: docker/build-push-action@v6
         with:
           context: .
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+
+      - name: Trigger deploy via hookploy
+        run: |
+          curl -fsS -X POST "${{ vars.HOOKPLOY_URL }}/hooks/condenser" \
+            -H "Authorization: Bearer ${{ secrets.HOOKPLOY_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d '{"digest": "${{ steps.build.outputs.digest }}"}'
