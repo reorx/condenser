@@ -52,13 +52,18 @@ export function HackerNewsSection() {
           <p className="mt-0.5 text-xs text-muted-foreground">
             每日首页 story 采样存档 —— 订阅后才开始采集，官方 API 无历史，订阅一天才有一天的数据。
           </p>
+          {status && !status.source_enabled && (
+            <p className="mt-1 text-xs text-destructive">
+              服务端已禁用 HN 信源（CONDENSER_HN_ENABLED=false），采样不会运行。
+            </p>
+          )}
         </div>
         {status && !status.subscribed && (
           <Button
             variant="outline"
             size="sm"
             className="shrink-0"
-            disabled={subscribe.isPending}
+            disabled={subscribe.isPending || !status.source_enabled}
             onClick={() => subscribe.mutate()}
           >
             {subscribe.isPending ? <Spinner className="size-4" /> : <Plus className="size-4" />}

@@ -98,6 +98,8 @@ export interface Subscription {
 export interface HnStatus {
   subscribed: boolean;
   enabled: boolean;
+  /** Server-side master switch (CONDENSER_HN_ENABLED); false = no sampling loop exists. */
+  source_enabled: boolean;
   config: { display_mode?: string } | null;
   last_poll_at: string | null;
   last_error: string | null;

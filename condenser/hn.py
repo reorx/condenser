@@ -14,6 +14,7 @@ without network or extra dependencies.
 import asyncio
 import json
 import logging
+import threading
 from datetime import date, datetime, time as dtime, timedelta, timezone
 from typing import Any, Callable, Optional
 from urllib.parse import urlsplit
@@ -64,12 +65,17 @@ class HNManager:
         self._tasks: set[asyncio.Task] = set()
         self._wake = asyncio.Event()
         self._sleep = asyncio.sleep
+        self._loop_ref: Optional[asyncio.AbstractEventLoop] = None
+        # Guards the pending-backfill set: schedule_backfill runs on FastAPI's
+        # threadpool while the sampling loop rewrites the set from the event loop.
+        self._pending_lock = threading.Lock()
 
     # ---- lifecycle ----
     async def startup(self) -> None:
         if not self.settings.condenser_hn_enabled:
             log.info('hn source disabled by config')
             return
+        self._loop_ref = asyncio.get_running_loop()
         task = asyncio.create_task(self._loop())
         self._tasks.add(task)
         task.add_done_callback(self._tasks.discard)
@@ -81,12 +87,22 @@ class HNManager:
             await self._client.aclose()
 
     def kick(self) -> None:
-        """Wake the loop for an immediate round (called right after subscribing)."""
-        self._wake.set()
+        """Wake the loop for an immediate round (called right after subscribing).
+
+        Callers run on FastAPI's threadpool; asyncio primitives are not
+        thread-safe, so the set() is marshalled onto the loop's thread. No-op
+        when the loop never started (source disabled / before startup).
+        """
+        if self._loop_ref is None or self._loop_ref.is_closed():
+            return
+        self._loop_ref.call_soon_threadsafe(self._wake.set)
 
     async def _loop(self) -> None:
         while True:
-            await self.poll_once()
+            try:
+                await self.poll_once()
+            except Exception:  # noqa: BLE001 — the sampler must outlive anything a round can throw
+                log.exception('hn poll round crashed')
             try:
                 await asyncio.wait_for(self._wake.wait(), timeout=self.settings.condenser_hn_poll_interval)
             except asyncio.TimeoutError:
@@ -143,6 +159,10 @@ class HNManager:
                 continue
             fetched.add(sid)
             if item is None:
+                # Never-seen id with a null item: store a dead placeholder so the id
+                # isn't refetched every round while it stays on the front page.
+                now = self._now()
+                db.insert_hn_story(id=sid, first_seen_at=now, day=str(now.date()), peak_rank=rank, is_dead=True)
                 continue
             self._insert_item(item, first_seen_at=self._now(), rank=rank)
             await self._sleep(self.item_throttle)
@@ -190,7 +210,11 @@ class HNManager:
                 except Exception:  # noqa: BLE001 — per-item tolerance (spec)
                     log.exception('hn snapshot refresh failed for %s', story.id)
                     return
-                if item is None or item.get('dead') or item.get('deleted'):
+                if item is None:
+                    # Firebase transiently returns null for live items; a dead mark here
+                    # would silently freeze the story forever. Retry next round instead.
+                    return
+                if item.get('dead') or item.get('deleted'):
                     db.mark_hn_story_dead(story.id)
                     return
                 db.update_hn_snapshot(story.id, item.get('score') or 0, item.get('descendants') or 0, self._now())
@@ -209,9 +233,10 @@ class HNManager:
         if days <= 0:
             return
         today = self._now().date()
-        pending = self._pending_days()
-        pending.update(str(today - timedelta(days=d)) for d in range(days + 1))
-        self._save_pending(pending)
+        with self._pending_lock:
+            pending = self._pending_days()
+            pending.update(str(today - timedelta(days=d)) for d in range(days + 1))
+            self._save_pending(pending)
 
     def _pending_days(self) -> set[str]:
         raw = db.get_meta(PENDING_META_KEY)
@@ -219,6 +244,17 @@ class HNManager:
 
     def _save_pending(self, days: set[str]) -> None:
         db.set_meta(PENDING_META_KEY, json.dumps(sorted(days)))
+
+    def _discard_pending_day(self, day_str: str) -> None:
+        """Drop one completed day via a fresh read-modify-write.
+
+        The backfill round spans long awaits; writing back its stale snapshot
+        would clobber days a concurrent schedule_backfill just added.
+        """
+        with self._pending_lock:
+            pending = self._pending_days()
+            pending.discard(day_str)
+            self._save_pending(pending)
 
     async def _backfill_eligible_days(self) -> None:
         """Serially fetch eligible pending days from hckrnews; failures stay pending."""
@@ -237,8 +273,7 @@ class HNManager:
             except Exception:  # noqa: BLE001 — a failed day stays pending for the next round (spec)
                 log.exception('hn backfill failed for %s', day_str)
                 continue
-            pending.discard(day_str)
-            self._save_pending(pending)
+            self._discard_pending_day(day_str)
 
     async def _backfill_day(self, day: date) -> None:
         """Import one hckrnews archive day; item details still come from the official API."""
@@ -270,6 +305,7 @@ class HNManager:
         return {
             'subscribed': sub is not None,
             'enabled': bool(sub.enabled) if sub is not None else False,
+            'source_enabled': self.settings.condenser_hn_enabled,
             'config': json.loads(sub.config) if sub is not None and sub.config else None,
             'last_poll_at': db.get_meta('hn_last_poll_at'),
             'last_error': db.get_meta('hn_last_error') or None,

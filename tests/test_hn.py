@@ -13,6 +13,7 @@ from fastapi.testclient import TestClient
 
 from condenser import db
 from condenser.app import create_app
+from telememo import db as tdb
 
 TOPSTORIES = 'https://hacker-news.firebaseio.com/v0/topstories.json'
 
@@ -126,6 +127,34 @@ def test_subscriptions_table_migrates_to_v3(env):
     # migration is idempotent: init again on the migrated file
     db.init_db(path)
     assert db.get_subscription(5) is not None
+
+    # rollback safety (C1): pre-v3 code INSERTs without the source column;
+    # the rebuilt table must default it to 'telegram'
+    tdb.db.execute_sql(
+        "INSERT INTO subscriptions (channel_id, enabled, backfill_done, added_at) VALUES (8, 1, 0, '2026-06-03 10:00:00')"
+    )
+    s8 = db.get_subscription(8)
+    assert s8 is not None and s8.source == 'telegram'
+
+
+def test_fresh_subscriptions_table_defaults_source_column(env):
+    """A freshly created (never-migrated) table must survive old-code INSERTs too."""
+    db.init_db(os.environ['CONDENSER_DB_PATH'])
+    tdb.db.execute_sql(
+        "INSERT INTO subscriptions (channel_id, enabled, backfill_done, added_at) VALUES (9, 1, 0, '2026-06-03 10:00:00')"
+    )
+    s9 = db.get_subscription(9)
+    assert s9 is not None and s9.source == 'telegram'
+
+
+def test_add_subscription_coerces_str_channel_id(env):
+    """channel_id has no SQLite affinity since v3 — the TG write entry must coerce to int (C2)."""
+    db.init_db(os.environ['CONDENSER_DB_PATH'])
+    db.add_subscription('5')
+    db.add_subscription(5)  # idempotent with the str form: still one row
+    rows = db.list_subscriptions()
+    assert len(rows) == 1
+    assert rows[0].channel_id == 5 and isinstance(rows[0].channel_id, int)
 
 
 def test_fresh_db_records_schema_version_3(env):
@@ -241,7 +270,8 @@ def test_day_key_is_utc(env):
     assert db.get_hn_story(7).day == '2026-07-18'
 
 
-def test_dead_item_marked_and_not_refreshed(env):
+def test_transient_null_survives_but_dead_flag_marks_dead(env):
+    """A2: Firebase's transient nulls for live items must not permanently kill a story."""
     fetch = FakeFetch()
     mgr = make_manager(fetch)
     subscribe_front()
@@ -251,21 +281,79 @@ def test_dead_item_marked_and_not_refreshed(env):
     fetch.set(item_url(2), story(2))
     asyncio.run(mgr.poll_once())
 
-    # story 1 gets deleted upstream (null item), story 2 flagged dead
+    # story 1 hits a transient null -> stays live; story 2 flagged dead -> marked
     mgr._now = lambda: NOW + timedelta(hours=1)
     fetch.set(TOPSTORIES, [])
     fetch.set(item_url(1), None)
     fetch.set(item_url(2), story(2, dead=True))
     asyncio.run(mgr.poll_once())
-    assert bool(db.get_hn_story(1).is_dead)
+    assert not bool(db.get_hn_story(1).is_dead)
     assert bool(db.get_hn_story(2).is_dead)
 
-    # dead stories drop out of the refresh set
+    # story 1 recovers next round and keeps refreshing; dead story 2 stays excluded
     mgr._now = lambda: NOW + timedelta(hours=2)
-    n1, n2 = fetch.count(item_url(1)), fetch.count(item_url(2))
+    n2 = fetch.count(item_url(2))
+    fetch.set(item_url(1), story(1, score=77, descendants=9))
     asyncio.run(mgr.poll_once())
-    assert fetch.count(item_url(1)) == n1
+    s1 = db.get_hn_story(1)
+    assert s1.score == 77 and s1.comments_count == 9
     assert fetch.count(item_url(2)) == n2
+
+
+def test_loop_survives_poll_once_crash(env, monkeypatch):
+    """A1: an exception escaping poll_once (e.g. DB locked before its guard) must not kill the loop."""
+    fetch = FakeFetch()
+    mgr = make_manager(fetch)
+    subscribe_front()
+    fetch.set(TOPSTORIES, [101])
+    fetch.set(item_url(101), story(101))
+
+    real_active = db.hn_sampling_active
+    calls = {'n': 0}
+
+    def flaky():
+        calls['n'] += 1
+        if calls['n'] == 1:
+            raise RuntimeError('database is locked')
+        return real_active()
+
+    monkeypatch.setattr(db, 'hn_sampling_active', flaky)
+
+    async def run():
+        task = asyncio.create_task(mgr._loop())
+        for _ in range(200):
+            await asyncio.sleep(0)
+            if db.get_hn_story(101) is not None:
+                break
+            mgr._wake.set()  # skip the inter-round wait
+        alive = not task.done()
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+        return alive
+
+    assert asyncio.run(run())  # loop still alive after the crash round
+    assert calls['n'] >= 2  # a second round actually ran
+    assert db.get_hn_story(101) is not None
+
+
+def test_null_front_item_not_refetched_every_round(env):
+    """D2: an id whose item fetch returns null must not be re-pulled every round."""
+    fetch = FakeFetch()
+    mgr = make_manager(fetch)
+    subscribe_front()
+
+    fetch.set(TOPSTORIES, [1])
+    fetch.set(item_url(1), None)
+    asyncio.run(mgr.poll_once())
+    assert fetch.count(item_url(1)) == 1
+
+    # still on the front page next round: the placeholder row dedupes the fetch
+    mgr._now = lambda: NOW + timedelta(minutes=10)
+    asyncio.run(mgr.poll_once())
+    assert fetch.count(item_url(1)) == 1
 
 
 def test_single_item_failure_does_not_kill_round(env):
@@ -421,6 +509,48 @@ def test_backfill_requests_are_throttled(env):
     assert sleeps.count(3) >= len(eligible) - 1
 
 
+def test_backfill_completion_does_not_clobber_concurrent_schedule(env):
+    """A3: a schedule_backfill landing mid-round must not be overwritten by the round's stale snapshot."""
+    fetch = FakeFetch()
+    mgr = make_manager(fetch)
+    subscribe_front()
+    fetch.set(TOPSTORIES, [])
+
+    day_a, day_b = TODAY - timedelta(days=3), TODAY - timedelta(days=2)
+    db.set_meta('hn_backfill_pending', json.dumps([str(day_a), str(day_b)]))
+
+    async def fake_backfill(day):
+        if str(day) == str(day_a):
+            mgr.schedule_backfill()  # a re-subscribe lands while the round is running
+
+    mgr._backfill_day = fake_backfill
+    asyncio.run(mgr.poll_once())
+
+    pending = set(json.loads(db.get_meta('hn_backfill_pending')))
+    # the freshly scheduled window survives, minus the two days this round completed
+    expected = {str(TODAY - timedelta(days=d)) for d in range(8)} - {str(day_a), str(day_b)}
+    assert pending == expected
+
+
+def test_kick_safe_without_loop_and_wakes_across_threads(env):
+    """B3: kick() must be a no-op before startup and thread-safe afterwards."""
+    fetch = FakeFetch()
+    mgr = make_manager(fetch)
+    mgr.kick()  # no loop yet -> must not raise
+
+    async def run():
+        await mgr.startup()
+        # cancel the sampling task so it can't consume the wake event first
+        for t in list(mgr._tasks):
+            t.cancel()
+        await asyncio.sleep(0)
+        await asyncio.to_thread(mgr.kick)  # threadpool caller, like the router endpoints
+        await asyncio.wait_for(mgr._wake.wait(), timeout=2)
+
+    asyncio.run(run())
+    asyncio.run(mgr.shutdown())
+
+
 def test_backfill_disabled_by_config(env, monkeypatch):
     monkeypatch.setenv('CONDENSER_HN_BACKFILL_DAYS', '0')
     from condenser.config import get_settings
@@ -501,6 +631,51 @@ def test_hn_subscription_lifecycle_endpoints(env):
         assert client.delete('/api/sources/hn/subscriptions/front').status_code == 404
 
 
+def test_resubscribe_reenables_paused_subscription(env):
+    """B1: POST means subscribe-and-enable — a paused row must come back enabled."""
+    with _client() as client:
+        _login(client)
+        _quiet_hn(client)
+        client.post('/api/sources/hn/subscriptions', json={'channel_id': 'front'})
+        client.patch('/api/sources/hn/subscriptions/front', json={'enabled': False})
+        assert not bool(db.get_hn_subscription('front').enabled)
+
+        r = client.post('/api/sources/hn/subscriptions', json={'channel_id': 'front'})
+        assert r.status_code == 200
+        assert r.json()['enabled'] is True
+        assert bool(db.get_hn_subscription('front').enabled)
+
+
+def test_resubscribe_does_not_reschedule_backfill(env):
+    """D1: an idempotent re-subscribe must not push completed days back into pending."""
+    with _client() as client:
+        _login(client)
+        _quiet_hn(client)
+        client.post('/api/sources/hn/subscriptions', json={'channel_id': 'front'})
+        db.set_meta('hn_backfill_pending', '[]')  # simulate a finished backfill
+        client.post('/api/sources/hn/subscriptions', json={'channel_id': 'front'})
+        assert json.loads(db.get_meta('hn_backfill_pending')) == []
+
+
+def test_source_disabled_rejects_writes_and_reports_status(env, monkeypatch):
+    """B2: with CONDENSER_HN_ENABLED=false the sampler never runs — writes must not pretend otherwise."""
+    monkeypatch.setenv('CONDENSER_HN_ENABLED', 'false')
+    from condenser.config import get_settings
+
+    get_settings.cache_clear()
+    with _client() as client:
+        _login(client)
+        r = client.post('/api/sources/hn/subscriptions', json={'channel_id': 'front'})
+        assert r.status_code == 503
+        assert db.get_hn_subscription('front') is None
+        assert client.get('/api/hn/status').json()['source_enabled'] is False
+
+        # enabling an existing row is rejected too; pausing it is still allowed
+        subscribe_front()
+        assert client.patch('/api/sources/hn/subscriptions/front', json={'enabled': True}).status_code == 503
+        assert client.patch('/api/sources/hn/subscriptions/front', json={'enabled': False}).status_code == 200
+
+
 def test_hn_status_reports_story_counts(env):
     # the app's manager runs on the real clock, so "today" must too
     real_today = datetime.now(timezone.utc).date()
@@ -524,3 +699,4 @@ def test_hn_status_reports_story_counts(env):
         assert st['stories_today'] == 1
         assert st['last_poll_at'] == '2026-07-19 11:50:00'
         assert st['last_error'] is None
+        assert st['source_enabled'] is True

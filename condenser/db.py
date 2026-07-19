@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from peewee import (
+    SQL,
     AutoField,
     BareField,
     BlobField,
@@ -50,7 +51,8 @@ class Subscription(CondenserBaseModel):
     gives the column no SQLite affinity so both round-trip as inserted.
     """
 
-    source = CharField(default='telegram')  # 'telegram' | 'hn'
+    # SQL-level DEFAULT keeps INSERTs from pre-v3 code working after a version rollback
+    source = CharField(default='telegram', constraints=[SQL("DEFAULT 'telegram'")])  # 'telegram' | 'hn'
     channel_id = BareField()
     enabled = BooleanField(default=True)
     backfill_done = BooleanField(default=False)  # telegram-only
@@ -214,7 +216,7 @@ def _migrate_subscriptions_v3() -> None:
     with tdb.db.atomic():
         tdb.db.execute_sql(
             'CREATE TABLE subscriptions_v3 ('
-            'source VARCHAR(255) NOT NULL, channel_id NOT NULL, enabled INTEGER NOT NULL, '
+            "source VARCHAR(255) NOT NULL DEFAULT 'telegram', channel_id NOT NULL, enabled INTEGER NOT NULL, "
             'backfill_done INTEGER NOT NULL, added_at DATETIME NOT NULL, name TEXT, config TEXT, '
             'PRIMARY KEY (source, channel_id))'
         )
@@ -294,6 +296,9 @@ def get_subscription(channel_id: int) -> Optional[Subscription]:
 
 
 def add_subscription(channel_id: int) -> Subscription:
+    # channel_id lost its SQLite affinity in v3 (BareField); coerce so '123' and 123
+    # can never coexist as distinct rows
+    channel_id = int(channel_id)
     sub, _ = Subscription.get_or_create(
         source='telegram',
         channel_id=channel_id,
@@ -336,8 +341,10 @@ def get_hn_subscription(feed: str = 'front') -> Optional[Subscription]:
     return Subscription.get_or_none(_HN & (Subscription.channel_id == feed))
 
 
-def add_hn_subscription(feed: str, name: str, config: Optional[dict] = None) -> Subscription:
-    sub, _ = Subscription.get_or_create(
+def add_hn_subscription(feed: str, name: str, config: Optional[dict] = None) -> tuple[Subscription, bool]:
+    """Subscribe-and-enable. A paused existing row is re-enabled (POST semantics);
+    returns ``(sub, created)`` so callers can skip one-shot work on re-subscribes."""
+    sub, created = Subscription.get_or_create(
         source='hn',
         channel_id=feed,
         defaults={
@@ -348,7 +355,10 @@ def add_hn_subscription(feed: str, name: str, config: Optional[dict] = None) -> 
             'config': json.dumps(config) if config is not None else None,
         },
     )
-    return sub
+    if not created and not sub.enabled:
+        Subscription.update(enabled=True).where(_HN & (Subscription.channel_id == feed)).execute()
+        sub.enabled = True
+    return sub, created
 
 
 def update_hn_subscription(feed: str, enabled: Optional[bool] = None, config: Optional[dict] = None) -> None:
