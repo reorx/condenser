@@ -47,6 +47,17 @@ class FilterScopeBody(BaseModel):
     channel_id: Optional[int] = None
 
 
+class HNSubscribeBody(BaseModel):
+    channel_id: str  # feed key within the hn source; v1: only 'front'
+
+
+class HNSubscriptionPatch(BaseModel):
+    """Partial update; None = leave unchanged."""
+
+    enabled: Optional[bool] = None
+    config: Optional[dict] = None
+
+
 class ReadItem(BaseModel):
     channel_id: int
     message_id: int

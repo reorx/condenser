@@ -27,6 +27,17 @@ class Settings(BaseSettings):
     # and FloodWait-prone, so we serve repeated browse-dialog opens from cache.
     condenser_dialogs_cache_ttl: int = 300
 
+    # --- hacker news source (condenser/hn.py) ---
+    # Master switch for the sampling loop; sampling itself is subscription-driven.
+    condenser_hn_enabled: bool = True
+    condenser_hn_poll_interval: int = 600
+    # How many topstories ids count as "the front page" per sampling round.
+    condenser_hn_front_size: int = 30
+    # Stories keep getting score/comment snapshot refreshes this long after first sighting.
+    condenser_hn_refresh_hours: int = 48
+    # hckrnews history window backfilled on subscribe (0 = no backfill).
+    condenser_hn_backfill_days: int = 7
+
     # --- link preview fetching (condenser/preview.py) ---
     # Total per-request timeout (seconds) for fetching a URL/its image.
     condenser_preview_fetch_timeout: float = 8.0

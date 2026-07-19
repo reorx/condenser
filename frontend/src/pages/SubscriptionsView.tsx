@@ -4,6 +4,7 @@ import { AtSign, Search } from 'lucide-react';
 import { Spinner } from '@/components/Spinner';
 import { AddByHandleDialog } from '@/components/subscriptions/AddByHandleDialog';
 import { BrowseChannelsDialog } from '@/components/subscriptions/BrowseChannelsDialog';
+import { HackerNewsSection } from '@/components/subscriptions/HackerNewsSection';
 import { SubscriptionRow } from '@/components/subscriptions/SubscriptionRow';
 import { Button } from '@/components/ui/button';
 import { useSubscriptions } from '@/hooks/useSubscriptions';
@@ -52,6 +53,8 @@ export function SubscriptionsView() {
           )}
         </ul>
       )}
+
+      <HackerNewsSection />
     </>
   );
 }

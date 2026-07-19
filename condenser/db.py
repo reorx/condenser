@@ -12,6 +12,7 @@ from typing import Optional
 
 from peewee import (
     AutoField,
+    BareField,
     BlobField,
     BooleanField,
     CharField,
@@ -32,7 +33,7 @@ MESSAGES_OPTIONAL_FIELDS = {
 # Bumped when condenser's own table shapes change; recorded in app_meta on init so a
 # future startup can detect an upgrade and run a migration. Telememo manages its own
 # table migrations separately (init_db optional_fields / ALTER TABLE).
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 
 class CondenserBaseModel(Model):
@@ -41,13 +42,25 @@ class CondenserBaseModel(Model):
 
 
 class Subscription(CondenserBaseModel):
-    channel_id = IntegerField(primary_key=True)
+    """A subscription within a source (multi-source since v3).
+
+    ``channel_id`` carries the subscription's id *within its source* (RSS-style
+    channel concept) and is typed per source: Telegram rows store an int channel
+    id, HN rows store a feed key string (v1: only ``'front'``). ``BareField``
+    gives the column no SQLite affinity so both round-trip as inserted.
+    """
+
+    source = CharField(default='telegram')  # 'telegram' | 'hn'
+    channel_id = BareField()
     enabled = BooleanField(default=True)
-    backfill_done = BooleanField(default=False)
+    backfill_done = BooleanField(default=False)  # telegram-only
     added_at = DateTimeField(default=datetime.now)
+    name = TextField(null=True)  # display name; NULL for TG (resolved from channels)
+    config = TextField(null=True)  # per-subscription JSON config (e.g. HN display_mode)
 
     class Meta:
         table_name = 'subscriptions'
+        primary_key = CompositeKey('source', 'channel_id')
 
 
 class KeywordFilter(CondenserBaseModel):
@@ -136,6 +149,35 @@ class Device(CondenserBaseModel):
         table_name = 'devices'
 
 
+class HNStory(CondenserBaseModel):
+    """A Hacker News story that has appeared on the front page (append-only archive).
+
+    ``first_seen_at`` (first front-page sighting, naive UTC) is the timeline sort
+    key; ``day`` is its UTC date string — the archival day rankings partition on.
+    """
+
+    id = IntegerField(primary_key=True)  # HN item id
+    title = TextField(null=True)
+    url = TextField(null=True)  # NULL = self-post (Ask HN etc.)
+    domain = TextField(null=True)
+    author = TextField(null=True)
+    text = TextField(null=True)  # self-post HTML
+    type = CharField(default='story')  # story | job
+    submitted_at = DateTimeField(null=True)
+    first_seen_at = DateTimeField(index=True)
+    day = CharField()  # YYYY-MM-DD (UTC)
+    score = IntegerField(default=0)
+    comments_count = IntegerField(default=0)
+    score_updated_at = DateTimeField(null=True)
+    peak_rank = IntegerField(null=True)  # best observed front-page position
+    is_dead = BooleanField(default=False)
+    backfilled = BooleanField(default=False)  # from hckrnews history (first_seen_at approximate)
+
+    class Meta:
+        table_name = 'hn_stories'
+        indexes = ((('day', 'score'), False),)
+
+
 CONDENSER_TABLES = [
     Subscription,
     KeywordFilter,
@@ -145,15 +187,43 @@ CONDENSER_TABLES = [
     AppMeta,
     LinkPreviewCache,
     Device,
+    HNStory,
 ]
 
 
 def init_db(db_path: str) -> None:
     """Initialize the shared SQLite file: telememo tables (+ is_filtered) then condenser tables."""
     tdb.init_db(db_path, optional_fields=MESSAGES_OPTIONAL_FIELDS)
+    _migrate_subscriptions_v3()
     tdb.db.create_tables(CONDENSER_TABLES)
     _enable_wal(db_path)
     set_meta('schema_version', str(SCHEMA_VERSION))
+
+
+def _migrate_subscriptions_v3() -> None:
+    """Rebuild a pre-v3 ``subscriptions`` table (single-column PK, no source) in place.
+
+    SQLite cannot alter a primary key, so the composite ``(source, channel_id)`` key
+    requires create-new -> copy -> swap. Detection is shape-based (missing ``source``
+    column) rather than version-based, so it also covers DBs from before version
+    tracking. Runs before ``create_tables`` (which would skip the existing table).
+    """
+    cols = [r[1] for r in tdb.db.execute_sql('PRAGMA table_info(subscriptions)').fetchall()]
+    if not cols or 'source' in cols:
+        return
+    with tdb.db.atomic():
+        tdb.db.execute_sql(
+            'CREATE TABLE subscriptions_v3 ('
+            'source VARCHAR(255) NOT NULL, channel_id NOT NULL, enabled INTEGER NOT NULL, '
+            'backfill_done INTEGER NOT NULL, added_at DATETIME NOT NULL, name TEXT, config TEXT, '
+            'PRIMARY KEY (source, channel_id))'
+        )
+        tdb.db.execute_sql(
+            'INSERT INTO subscriptions_v3 (source, channel_id, enabled, backfill_done, added_at) '
+            "SELECT 'telegram', channel_id, enabled, backfill_done, added_at FROM subscriptions"
+        )
+        tdb.db.execute_sql('DROP TABLE subscriptions')
+        tdb.db.execute_sql('ALTER TABLE subscriptions_v3 RENAME TO subscriptions')
 
 
 def _enable_wal(db_path: str) -> None:
@@ -208,47 +278,96 @@ def clear_tg_session() -> None:
     TgSession.delete().where(TgSession.id == 1).execute()
 
 
-# --- subscriptions ----------------------------------------------------------
+# --- subscriptions (telegram) ------------------------------------------------
+# The table is multi-source since v3; the TG-named helpers below keep their old
+# signatures but scope every query to source='telegram'.
+
+_TG = Subscription.source == 'telegram'
 
 
 def list_subscriptions() -> list[Subscription]:
-    return list(Subscription.select().order_by(Subscription.added_at.desc()))
+    return list(Subscription.select().where(_TG).order_by(Subscription.added_at.desc()))
 
 
 def get_subscription(channel_id: int) -> Optional[Subscription]:
-    return Subscription.get_or_none(Subscription.channel_id == channel_id)
+    return Subscription.get_or_none(_TG & (Subscription.channel_id == channel_id))
 
 
 def add_subscription(channel_id: int) -> Subscription:
     sub, _ = Subscription.get_or_create(
-        channel_id=channel_id, defaults={'enabled': True, 'backfill_done': False, 'added_at': _now()}
+        source='telegram',
+        channel_id=channel_id,
+        defaults={'enabled': True, 'backfill_done': False, 'added_at': _now()},
     )
     return sub
 
 
 def set_subscription_enabled(channel_id: int, enabled: bool) -> None:
-    Subscription.update(enabled=enabled).where(Subscription.channel_id == channel_id).execute()
+    Subscription.update(enabled=enabled).where(_TG & (Subscription.channel_id == channel_id)).execute()
 
 
 def set_backfill_done(channel_id: int, done: bool = True) -> None:
-    Subscription.update(backfill_done=done).where(Subscription.channel_id == channel_id).execute()
+    Subscription.update(backfill_done=done).where(_TG & (Subscription.channel_id == channel_id)).execute()
 
 
 def delete_subscription(channel_id: int) -> None:
-    Subscription.delete().where(Subscription.channel_id == channel_id).execute()
+    Subscription.delete().where(_TG & (Subscription.channel_id == channel_id)).execute()
 
 
 def enabled_channel_ids() -> list[int]:
-    return [s.channel_id for s in Subscription.select().where(Subscription.enabled == True)]  # noqa: E712
+    return [s.channel_id for s in Subscription.select().where(_TG & (Subscription.enabled == True))]  # noqa: E712
 
 
 def pending_backfill_channel_ids() -> list[int]:
     return [
         s.channel_id
         for s in Subscription.select().where(
-            (Subscription.enabled == True) & (Subscription.backfill_done == False)  # noqa: E712
+            _TG & (Subscription.enabled == True) & (Subscription.backfill_done == False)  # noqa: E712
         )
     ]
+
+
+# --- subscriptions (hacker news) ---------------------------------------------
+
+_HN = Subscription.source == 'hn'
+
+
+def get_hn_subscription(feed: str = 'front') -> Optional[Subscription]:
+    return Subscription.get_or_none(_HN & (Subscription.channel_id == feed))
+
+
+def add_hn_subscription(feed: str, name: str, config: Optional[dict] = None) -> Subscription:
+    sub, _ = Subscription.get_or_create(
+        source='hn',
+        channel_id=feed,
+        defaults={
+            'enabled': True,
+            'backfill_done': False,
+            'added_at': _now(),
+            'name': name,
+            'config': json.dumps(config) if config is not None else None,
+        },
+    )
+    return sub
+
+
+def update_hn_subscription(feed: str, enabled: Optional[bool] = None, config: Optional[dict] = None) -> None:
+    fields = {}
+    if enabled is not None:
+        fields[Subscription.enabled] = enabled
+    if config is not None:
+        fields[Subscription.config] = json.dumps(config)
+    if fields:
+        Subscription.update(fields).where(_HN & (Subscription.channel_id == feed)).execute()
+
+
+def delete_hn_subscription(feed: str) -> None:
+    Subscription.delete().where(_HN & (Subscription.channel_id == feed)).execute()
+
+
+def hn_sampling_active() -> bool:
+    """Whether any enabled HN feed subscription exists (the sampling gate)."""
+    return Subscription.select().where(_HN & (Subscription.enabled == True)).exists()  # noqa: E712
 
 
 def channel_max_message_id(channel_id: int) -> int:
@@ -352,7 +471,7 @@ def mark_read_bulk(channel_id: Optional[int], before_date: Optional[str]) -> Non
     sql = (
         'INSERT OR IGNORE INTO read_messages (channel_id, message_id, read_at) '
         'SELECT m.channel_id, m.id, ? FROM messages m '
-        'JOIN subscriptions s ON s.channel_id = m.channel_id AND s.enabled = 1 '
+        "JOIN subscriptions s ON s.source = 'telegram' AND s.channel_id = m.channel_id AND s.enabled = 1 "
         'WHERE ' + ' AND '.join(where)
     )
     tdb.db.execute_sql(sql, (_now().isoformat(sep=' '), *params))
@@ -438,6 +557,57 @@ def effective_backfill_days(env_default: int) -> int:
     except ValueError:
         return env_default
     return days if days > 0 else env_default
+
+
+# --- hn stories (front-page archive) -----------------------------------------
+
+
+def get_hn_story(story_id: int) -> Optional[HNStory]:
+    return HNStory.get_or_none(HNStory.id == story_id)
+
+
+def existing_hn_story_ids(story_ids: list[int]) -> set[int]:
+    if not story_ids:
+        return set()
+    return {s.id for s in HNStory.select(HNStory.id).where(HNStory.id.in_(story_ids))}
+
+
+def insert_hn_story(**fields) -> None:
+    """Insert a story if unseen; an existing row is left untouched (first_seen_at is sticky)."""
+    HNStory.insert(**fields).on_conflict_ignore().execute()
+
+
+def update_hn_snapshot(story_id: int, score: int, comments_count: int, updated_at: datetime) -> None:
+    HNStory.update(score=score, comments_count=comments_count, score_updated_at=updated_at).where(
+        HNStory.id == story_id
+    ).execute()
+
+
+def update_hn_peak_rank(story_id: int, rank: int) -> None:
+    """Keep the best (lowest) observed front-page position."""
+    HNStory.update(peak_rank=rank).where(
+        (HNStory.id == story_id) & ((HNStory.peak_rank.is_null()) | (HNStory.peak_rank > rank))
+    ).execute()
+
+
+def mark_hn_story_dead(story_id: int) -> None:
+    HNStory.update(is_dead=True).where(HNStory.id == story_id).execute()
+
+
+def hn_stories_to_refresh(first_seen_after: datetime) -> list[HNStory]:
+    """Live stories still inside the snapshot-refresh window."""
+    return list(
+        HNStory.select().where(
+            (HNStory.first_seen_at >= first_seen_after) & (HNStory.is_dead == False)  # noqa: E712
+        )
+    )
+
+
+def hn_story_counts(today: str) -> tuple[int, int]:
+    """(total archived stories, stories first seen on ``today``)."""
+    total = HNStory.select().count()
+    today_count = HNStory.select().where(HNStory.day == today).count()
+    return total, today_count
 
 
 # --- link preview cache -----------------------------------------------------

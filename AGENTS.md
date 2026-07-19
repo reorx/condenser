@@ -25,7 +25,11 @@ loop. Shares **one SQLite file** with [telememo](https://pypi.org/project/teleme
   (filled on ingest via `message.file.width/height`, used by the frontend to reserve image
   placeholder space; NULL on historical rows pre-2026-06-18).
 - condenser owns `subscriptions` / `keyword_filters` / `read_messages` / `telegram_records`
-  / `tg_session` / `app_meta` (the user's assets + app state).
+  / `tg_session` / `app_meta` / `hn_stories` (the user's assets + app state).
+  `subscriptions` is **multi-source since SCHEMA_VERSION 3** (2026-07-19): composite PK
+  `(source, channel_id)`, `channel_id` is a `BareField` (TG rows store int, HN rows a feed
+  key str — v1 only `'front'`), plus `name` / `config` columns; a shape-based migration in
+  `db.init_db` rebuilds pre-v3 tables. All TG CRUD + timeline JOINs scope `source='telegram'`.
 
 condenser's peewee models bind to telememo's `db` instance, so everything is one connection.
 `condenser/db.py:init_db()` initializes telememo tables (+ `is_filtered`) then condenser tables.
@@ -40,6 +44,7 @@ condenser's peewee models bind to telememo's `db` instance, so everything is one
 | `timeline.py` | timeline query: cursor pagination (+ `head_cursor` for new-content poll, + `end_cursor` — last-unit anchor present even when `next_cursor` is null, lets iOS resume paging after fetch-older), album merge, date/channel/unread filters, read/saved markers, `days`/`new`/`unread_counts` |
 | `records.py` | source-decoupled snapshots into `raw_data`, rendered without telememo tables |
 | `preview.py` | source-agnostic link previews: fetch a URL (async httpx) + extract metadata (`metadata_parser`), `link_previews` cache, per-message batch w/ Telegram-bonus fill, image fetch for the proxy |
+| `hn.py` | `HNManager` (on `app.state.hn`, peer of `TgManager`): subscription-driven HN front-page sampling loop (`topstories` diff → `hn_stories`, sticky `first_seen_at`, peak_rank, 48h snapshot refresh, dead marking) + serial rate-limited hckrnews history backfill w/ pending-day set in `app_meta`; HTTP via injectable `fetch_json` (tests need no network). `routers/hn.py` = `/api/sources/hn/subscriptions*` + `/api/hn/status`. Multi-source plan Phase 1: `kb/plans/2026-07-19-multi-source-hn.md` |
 | `tg.py` | `TgManager`: lifecycle (C1), step-login→encrypted storage, realtime ingest, backfill scheduling, subscription orchestration |
 | `auth.py` + `routers/*` | C2 endpoints behind `require_auth` = app-password cookie **or** device Bearer token (`devices` table, sha256 hash only, issued via the web `/authorize` page for the iOS app; management endpoints are cookie-only — see `kb/plans/2026-07-16-mobile-client-api-device-token.md`); `routers/channels.py` = avatar proxy, `routers/preview.py` = link-preview + image proxy; `/api/tg/status` carries `phone` |
 | `app.py` / `__main__.py` | FastAPI factory + lifespan; uvicorn entry; serves a static frontend dir if present via `SPAStaticFiles` (index.html fallback for client routes — `/authorize` cold-load depends on it; unknown `/api/*` still 404) |
@@ -211,7 +216,7 @@ remaining polish: end-to-end `ASWebAuthenticationSession` verify on device, vide
 ```bash
 uv sync --extra dev    # telememo comes from PyPI; no ../telememo checkout needed
 cp .env.example .env   # fill TELEGRAM_API_ID/HASH, CONDENSER_APP_PASSWORD, CONDENSER_SECRET_KEY
-uv run pytest          # 31 backend tests, Telegram mocked
+uv run pytest          # backend tests — Telegram mocked, HN HTTP mocked via injectable fetch
 
 # Local dev backend (auto-reload; watcher scoped to the Python sources):
 uv run uvicorn condenser.app:create_app --factory --reload --reload-dir condenser --port 8792
@@ -237,7 +242,12 @@ override via `PATCH /api/app/meta`), full channel info (`member_count`/`descript
 (`_demote_session`), entity-cache warming on startup, and realtime **edit** handling
 (telememo 0.2.0 `MessageEdited` — see below). Closed 2026-07-16: **device Bearer-token auth**
 for the iOS app (devices table + web `/authorize` flow + SettingsDialog device management +
-SPA fallback; spec `kb/plans/2026-07-16-mobile-client-api-device-token.md`). Still open: subscription
+SPA fallback; spec `kb/plans/2026-07-16-mobile-client-api-device-token.md`). Closed 2026-07-19:
+**multi-source Phase 1** — subscriptions table generalized (v3 migration), `hn_stories` +
+`HNManager` sampling/backfill, `/api/sources/hn/*` endpoints, minimal Hacker News block on
+`/subscriptions` (`HackerNewsSection`). Deploy early so the archive accumulates; Phases 2-4
+(envelope API, federated timeline merge, web/iOS UI) are breaking and ship together — see
+`kb/plans/2026-07-19-multi-source-hn.md`. Still open: subscription
 "delete-with-messages" option (Q4 / `?purge=1`) and the backfill batch-interval sleep.
 Full checklist: `kb/sessions/2026-06-09-backend-remaining-work.md`.
 

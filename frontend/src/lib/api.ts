@@ -6,6 +6,7 @@ import type {
   Device,
   DisplayMessage,
   FilterPreviewResult,
+  HnStatus,
   JoinedChannel,
   KeywordFilter,
   LinkPreview,
@@ -121,6 +122,19 @@ export const api = {
       body: JSON.stringify({ enabled }),
     }),
   deleteSubscription: (channelId: number) => del<{ ok: true }>(`/api/subscriptions/${channelId}`),
+
+  // ---- hacker news source (Phase 1 minimal management; full /api/sources arrives in Phase 2) ----
+  hnStatus: () => request<HnStatus>('/api/hn/status'),
+  hnSubscribe: () =>
+    post<{ source: 'hn'; channel_id: string; name: string; enabled: boolean }>('/api/sources/hn/subscriptions', {
+      channel_id: 'front',
+    }),
+  hnSetEnabled: (enabled: boolean) =>
+    request<{ ok: true }>('/api/sources/hn/subscriptions/front', {
+      method: 'PATCH',
+      body: JSON.stringify({ enabled }),
+    }),
+  hnUnsubscribe: () => del<{ ok: true }>('/api/sources/hn/subscriptions/front'),
 
   // ---- keyword filters ----
   // Global + per-channel listing (channel_id=null = global).

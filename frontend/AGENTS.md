@@ -82,6 +82,7 @@ Two conventions this list exists to protect:
 | `BrowseChannelsDialog` | "Browse my channels" modal: search + multi-select + batch add |
 | `BrowseChannelRow` | One selectable channel row in `BrowseChannelsDialog` |
 | `SubscriptionRow` | One channel row on the Manage channels page: enable switch + actions menu + confirm dialogs |
+| `HackerNewsSection` | Phase-1 minimal Hacker News block on the Manage page: Front Page subscribe/unsubscribe, sampling pause switch, status line (`/api/hn/status`); superseded by the per-source management page in Phase 3 |
 
 > `components/ui/` holds generated shadcn/ui (new-york) primitives — intentionally **excluded**
 > from this inventory. Don't list them here. Import `Button` from `@/components/ui/button`.

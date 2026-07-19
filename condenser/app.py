@@ -10,8 +10,9 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from . import db
 from .config import get_settings
+from .hn import HNManager
 from .logconf import configure_logging
-from .routers import auth, channels, media, preview, reading, settings as settings_router, subscriptions, tg
+from .routers import auth, channels, hn, media, preview, reading, settings as settings_router, subscriptions, tg
 from .tg import TgManager
 
 configure_logging()
@@ -45,7 +46,11 @@ def create_app() -> FastAPI:
         # 2-3. reconnect stored TG session, resume listening + backfill
         app.state.tg = TgManager(settings)
         await app.state.tg.startup()
+        # hn sampling loop (no-ops until an hn subscription exists)
+        app.state.hn = HNManager(settings)
+        await app.state.hn.startup()
         yield
+        await app.state.hn.shutdown()
         await app.state.tg.shutdown()
         db.close_db()
 
@@ -63,6 +68,7 @@ def create_app() -> FastAPI:
     app.include_router(channels.router)
     app.include_router(preview.router)
     app.include_router(settings_router.router)
+    app.include_router(hn.router)
 
     # 4. serve the React build (if present) as static assets at '/'
     static_dir = os.getenv('CONDENSER_STATIC_DIR', str(Path(__file__).resolve().parent.parent / 'frontend' / 'dist'))

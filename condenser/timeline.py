@@ -34,7 +34,7 @@ _SELECT_COLS = """
 
 _FROM = """
     FROM messages m
-    JOIN subscriptions s ON s.channel_id = m.channel_id AND s.enabled = 1
+    JOIN subscriptions s ON s.source = 'telegram' AND s.channel_id = m.channel_id AND s.enabled = 1
     LEFT JOIN read_messages rm ON rm.channel_id = m.channel_id AND rm.message_id = m.id
     LEFT JOIN telegram_records tr ON tr.channel_id = m.channel_id AND tr.message_id = m.id
 """
@@ -211,7 +211,7 @@ def query_days(channel_id: Optional[int] = None) -> list[dict]:
         params.append(channel_id)
     sql = (
         'SELECT substr(m.date, 1, 10) AS day, COUNT(DISTINCT COALESCE(m.grouped_id, m.id)) AS cnt '
-        'FROM messages m JOIN subscriptions s ON s.channel_id = m.channel_id AND s.enabled = 1 '
+        "FROM messages m JOIN subscriptions s ON s.source = 'telegram' AND s.channel_id = m.channel_id AND s.enabled = 1 "
         'WHERE ' + ' AND '.join(where) + ' GROUP BY day ORDER BY day DESC'
     )
     cur = tdb.db.execute_sql(sql, tuple(params))
@@ -223,7 +223,7 @@ def unread_counts() -> dict[int, int]:
     sql = (
         'SELECT m.channel_id, COUNT(DISTINCT COALESCE(m.grouped_id, m.id)) '
         'FROM messages m '
-        'JOIN subscriptions s ON s.channel_id = m.channel_id AND s.enabled = 1 '
+        "JOIN subscriptions s ON s.source = 'telegram' AND s.channel_id = m.channel_id AND s.enabled = 1 "
         'LEFT JOIN read_messages rm ON rm.channel_id = m.channel_id AND rm.message_id = m.id '
         'WHERE m.is_filtered IS NOT 1 AND rm.message_id IS NULL '
         'GROUP BY m.channel_id'

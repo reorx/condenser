@@ -94,6 +94,19 @@ export interface Subscription {
   unread: number;
 }
 
+/** GET /api/hn/status — Hacker News source sampling + backfill state. */
+export interface HnStatus {
+  subscribed: boolean;
+  enabled: boolean;
+  config: { display_mode?: string } | null;
+  last_poll_at: string | null;
+  last_error: string | null;
+  stories_total: number;
+  stories_today: number;
+  /** Days (YYYY-MM-DD) still waiting for the hckrnews history backfill. */
+  backfill_pending_days: string[];
+}
+
 /** A broadcast channel the logged-in account follows, from GET /api/tg/dialogs. */
 export interface JoinedChannel {
   channel_id: number;
