@@ -41,6 +41,7 @@ tags:
 
 ## 遗留问题
 
+- **Post-merge code review 发现 10 个已验证缺陷**（采样循环无兜底、null 误标 dead、pending 竞态、订阅端点状态处理、迁移缺 DEFAULT 等），修复 handoff：[HN Phase 1 review 修复清单](../plans/2026-07-19-hn-phase1-review-fixes.md)。
 - Phase 2（envelope API + 统一 read/saved 表 + 联邦 timeline 归并）、Phase 3（web UI）、Phase 4（iOS）未开始；2-4 是 breaking，需按计划一起部署。
 - `hn_stories` 尚无任何读取端（timeline 不展示 HN），本阶段只积累数据——属计划内。
 - 回填的 `peak_rank` 为 NULL（hckrnews 不含名次信息），仅实时采样行有值。
