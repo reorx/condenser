@@ -2,7 +2,7 @@ import SwiftUI
 import CondenserKit
 
 /// TimelineStore 驱动的消息列表核心：无限滚动 + 下拉刷新 + 滚动即已读 + 详情 sheet。
-/// 主 timeline 传 poller 时渲染新消息胶囊（点击刷新 + 滚回顶）；
+/// 主 timeline 传 poller 时渲染新消息胶囊（点击瞬时回顶 + 刷新）；
 /// 频道 timeline 不传 poller，纯列表复用。
 struct MessageListView: View {
     let store: TimelineStore
@@ -124,10 +124,10 @@ struct MessageListView: View {
 
     private func newContentCapsule(count: Int, proxy: ScrollViewProxy) -> some View {
         Button {
-            Task {
-                await refresh()
-                withAnimation { proxy.scrollTo("timeline-top", anchor: .top) }
-            }
+            // 必须先瞬时回顶再刷新：refresh 替换 items 时若滚动位置还很深，
+            // 新首屏的卡片会落在视口上方（maxY < 0）被 scroll-to-read 误判为已读
+            proxy.scrollTo("timeline-top", anchor: .top)
+            Task { await refresh() }
         } label: {
             Label("\(count) 条新消息", systemImage: "arrow.up")
                 .font(.footnote.weight(.medium))
