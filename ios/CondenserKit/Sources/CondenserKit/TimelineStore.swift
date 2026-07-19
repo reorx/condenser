@@ -11,6 +11,10 @@ public final class TimelineStore {
     public private(set) var isLoading = false
     public private(set) var isLoadingMore = false
     public private(set) var hasMore = true
+    /// fetch-older 进行中（底部上拉触发的后端拉取）
+    public private(set) var isFetchingOlder = false
+    /// 上次 fetch-older 返回 0：Telegram 上也没有更早的消息了
+    public private(set) var olderExhausted = false
     /// 首页最新单元锚点，供 /timeline/new 轮询
     public private(set) var headCursor: String?
     public var error: String?
@@ -25,6 +29,8 @@ public final class TimelineStore {
     private let cache: SnapshotCache?
     private let cacheKey: String?
     private var nextCursor: String?
+    /// 已加载内容最后一个单元的锚点：本地到底后仍存在，fetch-older 之后用它续接
+    private var endCursor: String?
     private var loadedOnce = false
 
     public init(
@@ -77,8 +83,10 @@ public final class TimelineStore {
     private func apply(page: TimelinePage) {
         items = page.items
         nextCursor = page.nextCursor
+        endCursor = page.endCursor
         headCursor = page.headCursor
         hasMore = page.nextCursor != nil
+        olderExhausted = false
     }
 
     public func loadMore() async {
@@ -88,14 +96,49 @@ public final class TimelineStore {
             let page = try await api.timeline(
                 cursor: cursor, limit: pageSize, channelID: channelID, date: nil,
                 unreadOnly: unreadOnly)
-            let seen = Set(items.map(\.unitKey))
-            items.append(contentsOf: page.items.filter { !seen.contains($0.unitKey) })
-            nextCursor = page.nextCursor
-            hasMore = page.nextCursor != nil
+            append(page: page)
         } catch {
             handle(error)
         }
         isLoadingMore = false
+    }
+
+    private func append(page: TimelinePage) {
+        let seen = Set(items.map(\.unitKey))
+        items.append(contentsOf: page.items.filter { !seen.contains($0.unitKey) })
+        nextCursor = page.nextCursor
+        hasMore = page.nextCursor != nil
+        if let cursor = page.endCursor {
+            endCursor = cursor
+        }
+    }
+
+    /// 本地历史走完后（hasMore=false），触发后端从 Telegram 拉更早消息，
+    /// 再用 end_cursor 把新入库的历史接到列表尾部。仅频道视图有意义。
+    public func fetchOlderFromServer(count: Int = 200) async {
+        guard let channelID, !hasMore, !olderExhausted,
+              !isFetchingOlder, !isLoading, !isLoadingMore else { return }
+        isFetchingOlder = true
+        error = nil
+        do {
+            let fetched = try await api.fetchOlder(channelID: channelID, count: count)
+            if fetched == 0 {
+                olderExhausted = true
+            } else {
+                let page = try await api.timeline(
+                    cursor: endCursor, limit: pageSize, channelID: channelID, date: nil,
+                    unreadOnly: unreadOnly)
+                if endCursor == nil {
+                    // 此前列表为空（无锚点）：当作第一页整页替换
+                    apply(page: page)
+                } else {
+                    append(page: page)
+                }
+            }
+        } catch {
+            handle(error)
+        }
+        isFetchingOlder = false
     }
 
     /// 收藏乐观切换；失败回滚（错误文案交给调用方 toast）

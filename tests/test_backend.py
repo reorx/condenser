@@ -289,6 +289,70 @@ def test_timeline_cursor_pagination(env):
         assert page3['next_cursor'] is None
 
 
+def test_timeline_end_cursor_resumes_past_exhausted_pages(env):
+    """`end_cursor` anchors the page's last unit even when `next_cursor` is null, so a
+    client can keep paging after fetch-older imports rows older than the local end."""
+    with _client() as client:
+        _login(client)
+        seed_channel(1, 'C')
+        seed_messages([md(1, 10 + i, i) for i in range(3)])
+        db.add_subscription(1)
+
+        page1 = client.get('/api/timeline?limit=2').json()
+        assert [it['id'] for it in page1['items']] == [12, 11]
+        assert page1['end_cursor'] == page1['next_cursor']
+
+        page2 = client.get(f'/api/timeline?limit=2&cursor={page1["next_cursor"]}').json()
+        assert [it['id'] for it in page2['items']] == [10]
+        assert page2['next_cursor'] is None
+        assert page2['end_cursor']  # still present at the end of stored history
+
+        # fetch-older lands strictly older rows; the stored end_cursor picks them up
+        seed_messages([md(1, 9, -5), md(1, 8, -6)])
+        page3 = client.get(f'/api/timeline?limit=2&cursor={page2["end_cursor"]}').json()
+        assert [it['id'] for it in page3['items']] == [9, 8]
+
+        # an empty page carries no cursors at all
+        empty = client.get(f'/api/timeline?limit=2&cursor={page3["end_cursor"]}').json()
+        assert empty['items'] == []
+        assert empty['next_cursor'] is None
+        assert empty['end_cursor'] is None
+
+
+def test_timeline_serializes_forward_info(env):
+    with _client() as client:
+        _login(client)
+        seed_channel(1, 'C')
+        seed_messages(
+            [
+                md(1, 10, 1, text='plain'),
+                md(
+                    1,
+                    11,
+                    2,
+                    text='forwarded',
+                    is_forwarded=True,
+                    fwd_from_channel_id=999,
+                    fwd_from_channel_name='SrcChan',
+                    fwd_from_message_id=77,
+                    fwd_post_author='Alice',
+                ),
+            ]
+        )
+        db.add_subscription(1)
+
+        items = client.get('/api/timeline').json()['items']
+        fwd = next(it for it in items if it['id'] == 11)
+        assert fwd['is_forwarded'] is True
+        assert fwd['forward_info']['from_channel_id'] == 999
+        assert fwd['forward_info']['from_channel_name'] == 'SrcChan'
+        assert fwd['forward_info']['from_message_id'] == 77
+        assert fwd['forward_info']['post_author'] == 'Alice'
+        plain = next(it for it in items if it['id'] == 10)
+        assert plain['is_forwarded'] is False
+        assert plain['forward_info'] is None
+
+
 def test_read_marks_and_unread_count(env):
     with _client() as client:
         _login(client)
@@ -721,6 +785,23 @@ def test_channel_avatar_proxy(env):
         # a channel with no photo -> 404 (frontend falls back to a letter avatar)
         fake.get_channel_photo = AsyncMock(return_value=None)
         assert client.get('/api/channels/5/avatar').status_code == 404
+
+
+def test_channel_avatar_unresolvable_entity_returns_404(env):
+    """A forward-source channel we never met can't be resolved from a bare id after a
+    restart — the proxy must degrade to 404 (letter-avatar fallback), not 500."""
+    with _client() as client:
+        _login(client)
+
+        fake = MagicMock()
+        type(fake).is_authorized = property(lambda self: True)
+        fake.get_channel_photo = AsyncMock(
+            side_effect=ValueError('Could not find the input entity for PeerChannel(999)')
+        )
+        fake.disconnect = AsyncMock()
+        client.app.state.tg.service = fake
+
+        assert client.get('/api/channels/999/avatar').status_code == 404
 
 
 def test_media_and_avatar_resolve_via_username(env):

@@ -38,8 +38,9 @@ struct AuthedAsyncImage: View {
 }
 
 /// 频道头像：/api/channels/{id}/avatar，失败回退彩色首字母。
+/// channelID 为 nil（如转发来源只有署名没有 peer id）时不发请求，直接首字母兜底。
 struct ChannelAvatarView: View {
-    let channelID: Int
+    let channelID: Int?
     let title: String
     var size: CGFloat = 36
 
@@ -62,6 +63,7 @@ struct ChannelAvatarView: View {
         .frame(width: size, height: size)
         .clipShape(Circle())
         .task(id: channelID) {
+            guard let channelID else { return }
             image = try? await ImageLoader.shared.load(
                 reader.api.authedRequest(reader.api.avatarURL(channelID: channelID)))
         }
@@ -72,8 +74,9 @@ struct ChannelAvatarView: View {
     }
 
     private var fallbackColor: Color {
-        // 与 web 版一致的思路：按 id 稳定取色
+        // 与 web 版一致的思路：按 id 稳定取色（无 id 时按标题字符稳定取色）
+        let seed = channelID ?? title.unicodeScalars.reduce(0) { $0 + Int($1.value) }
         let palette: [Color] = [.blue, .green, .orange, .pink, .purple, .teal, .indigo, .red]
-        return palette[abs(channelID) % palette.count]
+        return palette[abs(seed) % palette.count]
     }
 }

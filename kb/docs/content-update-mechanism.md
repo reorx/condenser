@@ -120,6 +120,11 @@ This is the one worth understanding precisely, because Telegram's API shapes it.
 
 `POST /api/tg/fetch-older/{id}?count=200` → `{status, fetched}`.
 
+**Clients:** web exposes it as the 继续向更早获取 menu action (`useFetchOlder`); iOS triggers it
+by pulling up past the bottom of an exhausted channel timeline, then resumes cursor paging with
+the timeline response's `end_cursor` (the last-unit anchor that stays present even when
+`next_cursor` is null — added 2026-07-19 for exactly this hand-off).
+
 **Repeatability:** each click's `MIN(id)` is lower than the last (the previous fetch persisted older
 rows), so the anchor keeps walking backward, one 200-chunk at a time.
 

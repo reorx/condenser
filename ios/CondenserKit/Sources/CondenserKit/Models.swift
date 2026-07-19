@@ -157,6 +157,28 @@ public struct DisplayMessage: Codable, Equatable, Sendable, Identifiable {
     public var unitKey: String { "\(channelID)/\(id)" }
 
     public var ref: MsgRef { MsgRef(channelID: channelID, messageID: id) }
+
+    /// 转发消息的展示主体；nil = 非转发，或来源被隐藏（卡片按普通转发降级）
+    public var forwardSource: ForwardSource? {
+        guard isForwarded, let info = forwardInfo else { return nil }
+        if let name = info.fromChannelName {
+            return ForwardSource(peerID: info.fromChannelID, name: name)
+        }
+        if let name = info.fromUserName {
+            return ForwardSource(peerID: info.fromUserID, name: name)
+        }
+        if let name = info.postAuthor {
+            return ForwardSource(peerID: nil, name: name)
+        }
+        return nil
+    }
+}
+
+/// 转发来源主体：peerID 可喂给 /api/channels/{id}/avatar 取头像
+/// （未订阅频道后端可能 404，UI 回退首字母），nil 表示只有名字没有可用头像。
+public struct ForwardSource: Equatable, Sendable {
+    public let peerID: Int?
+    public let name: String
 }
 
 public struct Subscription: Codable, Equatable, Hashable, Sendable, Identifiable {
@@ -180,12 +202,16 @@ public struct Subscription: Codable, Equatable, Hashable, Sendable, Identifiable
 public struct TimelinePage: Codable, Equatable, Sendable {
     public let items: [DisplayMessage]
     public let nextCursor: String?
+    /// 本页最后一个单元的锚点：next_cursor 为 null（本地到底）时仍然存在，
+    /// fetch-older 拉到更早历史后用它续接翻页
+    public let endCursor: String?
     /// 本页最新单元的锚点，用于轮询 /timeline/new
     public let headCursor: String?
 
     enum CodingKeys: String, CodingKey {
         case items
         case nextCursor = "next_cursor"
+        case endCursor = "end_cursor"
         case headCursor = "head_cursor"
     }
 }

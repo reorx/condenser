@@ -15,7 +15,12 @@ async def get_channel_avatar(channel_id: int, tg: TgManager = Depends(get_tg)):
         raise HTTPException(status_code=503, detail='telegram not authorized')
     # Resolve via @username when available — a bare id fails after a restart because
     # Telethon's StringSession doesn't persist its entity cache (see tg._channel_handle).
-    result = await service.get_channel_photo(tg._channel_handle(channel_id))
+    # Unresolvable peers (e.g. a forward-source channel we never met) degrade to 404 so
+    # clients fall back to a letter avatar instead of surfacing a 500.
+    try:
+        result = await service.get_channel_photo(tg._channel_handle(channel_id))
+    except Exception:
+        result = None
     if result is None:
         raise HTTPException(status_code=404, detail='no channel photo')
     data, mime = result

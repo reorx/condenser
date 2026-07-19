@@ -146,7 +146,12 @@ def query_timeline(
     cursor: Optional[str] = None,
     limit: int = 30,
 ) -> dict:
-    """Older-direction page: returns ``{items, next_cursor}`` (date desc)."""
+    """Older-direction page: returns ``{items, next_cursor, end_cursor, head_cursor}`` (date desc).
+
+    ``next_cursor`` is null once stored history is exhausted; ``end_cursor`` still anchors
+    the page's last unit, so a client can resume paging after fetch-older imports rows
+    older than the local end (iOS pull-up-to-load-older).
+    """
     where, params = _base_where(channel_id, date, unread_only)
     if cursor:
         cdate, cid = decode_cursor(cursor)
@@ -162,9 +167,12 @@ def query_timeline(
     items = _serialize_units(page_units)
 
     next_cursor = None
-    if has_more and page_units:
+    end_cursor = None
+    if page_units:
         date_raw, mid = _unit_boundary(page_units[-1])
-        next_cursor = encode_cursor(date_raw, mid)
+        end_cursor = encode_cursor(date_raw, mid)
+        if has_more:
+            next_cursor = end_cursor
 
     # head_cursor anchors the newest unit on the page, so the frontend can poll
     # /timeline/new?after=head_cursor for content arriving after this page's top.
@@ -173,7 +181,7 @@ def query_timeline(
         hdate, hid = _unit_head(page_units[0])
         head_cursor = encode_cursor(hdate, hid)
 
-    return {'items': items, 'next_cursor': next_cursor, 'head_cursor': head_cursor}
+    return {'items': items, 'next_cursor': next_cursor, 'end_cursor': end_cursor, 'head_cursor': head_cursor}
 
 
 def query_new(channel_id: Optional[int], after_cursor: str, limit: int = 100, unread_only: bool = False) -> dict:

@@ -129,6 +129,9 @@ export interface FilterPreviewResult {
 export interface TimelinePage {
   items: DisplayMessage[];
   next_cursor: string | null;
+  /** Anchor of this page's last unit; present even when next_cursor is null,
+   *  so a client can resume paging after fetch-older (iOS pull-up). */
+  end_cursor: string | null;
   /** Anchor of the newest unit on this page; used to poll /timeline/new. */
   head_cursor: string | null;
 }

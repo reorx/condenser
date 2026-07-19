@@ -16,8 +16,9 @@ struct MessageCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             header
-            if message.isForwarded {
-                Label(forwardLabel, systemImage: "arrowshape.turn.up.right")
+            // 有来源主体的转发已在 header 展示；只剩隐藏来源时才补一行降级标记
+            if message.isForwarded, message.forwardSource == nil {
+                Label("转发", systemImage: "arrowshape.turn.up.right")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
@@ -35,22 +36,28 @@ struct MessageCard: View {
         .contentShape(Rectangle())
     }
 
+    /// 转发消息以来源频道/用户为主体（头像 + 名称），小字标 Forwarded by 订阅频道；
+    /// 普通消息主体即订阅频道本身。
     private var header: some View {
-        HStack(spacing: 10) {
+        let source = message.forwardSource
+        return HStack(spacing: 10) {
             ChannelAvatarView(
-                channelID: message.channelID,
-                title: reader.channelTitle(for: message))
+                channelID: source.map(\.peerID) ?? message.channelID,
+                title: source?.name ?? reader.channelTitle(for: message))
             VStack(alignment: .leading, spacing: 1) {
-                Text(reader.channelTitle(for: message))
+                Text(source?.name ?? reader.channelTitle(for: message))
                     .font(.subheadline.weight(.semibold))
                     .lineLimit(1)
                 HStack(spacing: 4) {
                     if isUnread {
                         Circle().fill(.tint).frame(width: 6, height: 6)
                     }
-                    Text(timestampText)
+                    Text(source != nil
+                        ? "Forwarded by \(reader.channelTitle(for: message)) · \(timestampText)"
+                        : timestampText)
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                        .lineLimit(1)
                 }
             }
             Spacer(minLength: 8)
@@ -78,12 +85,6 @@ struct MessageCard: View {
         showsUnread
             && !(message.isRead ?? false)
             && !reader.readReporter.readRefs.contains(message.ref)
-    }
-
-    private var forwardLabel: String {
-        let info = message.forwardInfo
-        let source = info?.fromChannelName ?? info?.fromUserName ?? info?.postAuthor
-        return source.map { "转发自 \($0)" } ?? "转发"
     }
 }
 

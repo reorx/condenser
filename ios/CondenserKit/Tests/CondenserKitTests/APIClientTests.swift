@@ -65,6 +65,18 @@ struct APIClientTests {
         }
     }
 
+    @Test("fetchOlder：POST /api/tg/fetch-older/{id}?count=，解析 fetched")
+    func fetchOlderRequest() async throws {
+        let captured = MockURLProtocol.respond(
+            status: 200, json: #"{"status": "ok", "fetched": 42}"#)
+        let fetched = try await makeClient().fetchOlder(channelID: 7, count: 200)
+        #expect(fetched == 42)
+        #expect(captured.method == "POST")
+        let comps = URLComponents(url: captured.url!, resolvingAgainstBaseURL: false)!
+        #expect(comps.path == "/api/tg/fetch-older/7")
+        #expect(comps.queryItems!.contains(URLQueryItem(name: "count", value: "200")))
+    }
+
     @Test("records 的 save/delete：方法与路径")
     func recordEndpoints() async throws {
         var captured = MockURLProtocol.respond(status: 200, json: #"{"ok": true}"#)

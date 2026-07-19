@@ -80,6 +80,14 @@ public final class APIClient: @unchecked Sendable {
             path: "/api/records/\(ref.channelID)/\(ref.messageID)", method: "DELETE"))
     }
 
+    public func fetchOlder(channelID: Int, count: Int = 200) async throws -> Int {
+        struct Reply: Decodable { let fetched: Int }
+        let data = try await send(request(
+            path: "/api/tg/fetch-older/\(channelID)", method: "POST",
+            query: ["count": String(count)]))
+        return try decoder.decode(Reply.self, from: data).fetched
+    }
+
     // MARK: - Authed resource URLs（AuthedAsyncImage 加载时仍需带 Bearer header）
 
     public func mediaURL(channelID: Int, messageID: Int, thumb: Bool = false) -> URL {

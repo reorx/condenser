@@ -13,6 +13,11 @@ struct MessageListView: View {
     @State private var selectedMessage: DisplayMessage?
     @State private var safariItem: SafariItem?
     @State private var viewerItem: ImageViewerItem?
+    @State private var pullOlderModel = PullToLoadOlderModel()
+    @State private var isUserDragging = false
+
+    /// 底部上拉触发 fetch-older 只对单频道视图开放（后端接口按频道拉取）
+    private var supportsFetchOlder: Bool { store.channelID != nil }
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -22,6 +27,25 @@ struct MessageListView: View {
             }
             .readingFontScale()
             .autoHideBars()
+            .onScrollPhaseChange { _, newPhase in
+                isUserDragging = newPhase == .tracking || newPhase == .interacting
+            }
+            .onScrollGeometryChange(for: CGFloat.self) { geo in
+                PullToLoadOlderModel.bottomOverscroll(
+                    contentOffsetY: geo.contentOffset.y,
+                    contentHeight: geo.contentSize.height,
+                    containerHeight: geo.containerSize.height,
+                    topInset: geo.contentInsets.top,
+                    bottomInset: geo.contentInsets.bottom)
+            } action: { _, overscroll in
+                // 只做模型判定 + 发起网络加载，不改任何布局状态，
+                // 不会踩 AutoHideBars 的 insets 自激振荡陷阱
+                guard supportsFetchOlder, !store.hasMore, !store.olderExhausted,
+                      !store.items.isEmpty else { return }
+                if pullOlderModel.handleOverscroll(overscroll, isDragging: isUserDragging) {
+                    Task { await store.fetchOlderFromServer() }
+                }
+            }
             .refreshable { await refresh() }
             .overlay(alignment: .top) {
                 if let poller, poller.count > 0 {
@@ -89,7 +113,30 @@ struct MessageListView: View {
                     .foregroundStyle(.red)
                     .padding(.vertical, 12)
             }
+            if supportsFetchOlder, !store.hasMore, !store.items.isEmpty {
+                fetchOlderFooter
+            }
         }
+    }
+
+    /// 本地历史到底后的底部提示：可上拉获取 / 拉取中 / Telegram 上也没有更早的了
+    private var fetchOlderFooter: some View {
+        Group {
+            if store.isFetchingOlder {
+                HStack(spacing: 8) {
+                    ProgressView()
+                    Text("正在获取更早消息…")
+                }
+            } else if store.olderExhausted {
+                Text("没有更早的消息了")
+            } else {
+                Label("继续上拉获取更早消息", systemImage: "arrow.up")
+            }
+        }
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 20)
     }
 
     private var skeleton: some View {

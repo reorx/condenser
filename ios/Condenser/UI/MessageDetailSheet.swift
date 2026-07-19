@@ -17,7 +17,7 @@ struct MessageDetailSheet: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
                 header
-                if message.isForwarded {
+                if message.isForwarded, message.forwardSource == nil {
                     forwardBox
                 }
                 if let text = message.text, !text.isEmpty {
@@ -50,18 +50,24 @@ struct MessageDetailSheet: View {
         }
     }
 
+    /// 与列表卡片一致：转发消息以来源为主体，小字标 Forwarded by 订阅频道
     private var header: some View {
-        HStack(spacing: 10) {
+        let source = message.forwardSource
+        let dateText = message.date.formatted(date: .abbreviated, time: .shortened)
+        return HStack(spacing: 10) {
             ChannelAvatarView(
-                channelID: message.channelID,
-                title: reader.channelTitle(for: message), size: 40)
+                channelID: source.map(\.peerID) ?? message.channelID,
+                title: source?.name ?? reader.channelTitle(for: message), size: 40)
             VStack(alignment: .leading, spacing: 2) {
-                Text(reader.channelTitle(for: message))
+                Text(source?.name ?? reader.channelTitle(for: message))
                     .font(.headline)
                     .lineLimit(1)
-                Text(message.date.formatted(date: .abbreviated, time: .shortened))
+                Text(source != nil
+                    ? "Forwarded by \(reader.channelTitle(for: message)) · \(dateText)"
+                    : dateText)
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                    .lineLimit(1)
             }
             Spacer()
             Button(action: onToggleSaved) {
@@ -72,12 +78,9 @@ struct MessageDetailSheet: View {
         }
     }
 
+    /// 隐藏来源的转发（无名字可展示）才走这行降级标记
     private var forwardBox: some View {
-        let info = message.forwardInfo
-        let source = info?.fromChannelName ?? info?.fromUserName ?? info?.postAuthor
-        return Label(
-            source.map { "转发自 \($0)" } ?? "转发",
-            systemImage: "arrowshape.turn.up.right")
+        Label("转发", systemImage: "arrowshape.turn.up.right")
             .font(.footnote)
             .foregroundStyle(.secondary)
     }

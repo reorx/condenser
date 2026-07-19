@@ -37,7 +37,7 @@ condenser's peewee models bind to telememo's `db` instance, so everything is one
 | `config.py` / `crypto.py` | env settings; Fernet session encryption + signed cookie from `CONDENSER_SECRET_KEY` |
 | `db.py` | condenser tables (peewee, bound to telememo's db) + CRUD + shared `init_db` |
 | `filters.py` | keyword-filter **materialization** into `messages.is_filtered` (on ingest + rule change) |
-| `timeline.py` | timeline query: cursor pagination (+ `head_cursor` for new-content poll), album merge, date/channel/unread filters, read/saved markers, `days`/`new`/`unread_counts` |
+| `timeline.py` | timeline query: cursor pagination (+ `head_cursor` for new-content poll, + `end_cursor` — last-unit anchor present even when `next_cursor` is null, lets iOS resume paging after fetch-older), album merge, date/channel/unread filters, read/saved markers, `days`/`new`/`unread_counts` |
 | `records.py` | source-decoupled snapshots into `raw_data`, rendered without telememo tables |
 | `preview.py` | source-agnostic link previews: fetch a URL (async httpx) + extract metadata (`metadata_parser`), `link_previews` cache, per-message batch w/ Telegram-bonus fill, image fetch for the proxy |
 | `tg.py` | `TgManager`: lifecycle (C1), step-login→encrypted storage, realtime ingest, backfill scheduling, subscription orchestration |
@@ -191,7 +191,18 @@ first so pull-to-refresh in unread mode actually drops just-read items. Settings
 (small/large/xLarge/xxLarge — overrides system Dynamic Type on reading surfaces only) via
 `.readingFontScale()` in `ReadingFontScale.swift`, persisted through
 `@AppStorage("condenser.fontScale")` and applied on `MessageListView` / `SavedScreen` /
-`MessageDetailSheet`. v1 spec complete;
+`MessageDetailSheet`. 2026-07-19: **pull-up-to-fetch-older** — in channel timelines, once
+local history is exhausted (`hasMore == false`) a bottom footer appears and continuing to
+pull up (overscroll ≥ 70pt while dragging, Kit's `PullToLoadOlderModel` + geometry helper)
+triggers `POST /api/tg/fetch-older/{id}` then resumes paging via the new `end_cursor`
+field (`TimelineStore.fetchOlderFromServer`; `fetched == 0` → `olderExhausted` sticky until
+refresh). Aggregate All/Unread views don't get the gesture (no per-channel semantics).
+**Forward-source-as-subject** — forwarded cards/detail render the origin (channel avatar via
+`/api/channels/{id}/avatar` — works for unsubscribed public channels, 404 → letter fallback;
+name from Kit's `DisplayMessage.forwardSource`: channel → user → post_author cascade) as the
+header subject, with "Forwarded by <subscribed channel> · time" as the caption line; hidden
+sources (no name) degrade to the old plain "转发" tag. `ChannelAvatarView.channelID` is now
+optional (nil → letter avatar, no request). v1 spec complete;
 remaining polish: end-to-end `ASWebAuthenticationSession` verify on device, video playback
 (non-goal).
 
