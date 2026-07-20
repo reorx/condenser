@@ -1,8 +1,9 @@
 """Saved records (user assets, source-decoupled — spec §1 / Part B).
 
-A saved record snapshots a message's full data into ``telegram_records.raw_data``
-so it renders even if the telememo ``messages`` cache is later cleared. The
-snapshot is self-contained: the album's message rows plus minimal channel info.
+A saved record snapshots an item's full data into ``saved_items.raw_data`` so it
+renders even if the source cache (telememo ``messages`` / ``hn_stories``) is
+later cleared. Telegram snapshots are self-contained: the album's message rows
+plus minimal channel info; HN snapshots are the story row as JSON.
 """
 
 import json
@@ -12,6 +13,7 @@ from telememo import db as tdb
 from telememo.utils import group_messages_to_display
 
 from . import db
+from .items import ItemKey, hn_envelope, iso_utc, tg_envelope
 
 _MSG_COLS = """
     id, channel_id AS channel, text, date, sender_id, sender_name,
@@ -30,7 +32,7 @@ def _rows(sql: str, params: tuple) -> list[dict]:
 
 
 def build_snapshot(channel_id: int, message_id: int) -> Optional[dict]:
-    """Snapshot a display unit (album-aware) into a self-contained dict, or None if absent."""
+    """Snapshot a TG display unit (album-aware) into a self-contained dict, or None if absent."""
     primary = _rows(f'SELECT {_MSG_COLS} FROM messages WHERE channel_id = ? AND id = ?', (channel_id, message_id))
     if not primary:
         return None
@@ -52,16 +54,41 @@ def build_snapshot(channel_id: int, message_id: int) -> Optional[dict]:
     return {'messages': messages, 'channel': channel_info}
 
 
-def save_record(channel_id: int, message_id: int) -> bool:
-    """Snapshot + persist a record. Returns False if the source message is missing."""
-    snapshot = build_snapshot(channel_id, message_id)
-    if snapshot is None:
+def _hn_snapshot(story: db.HNStory) -> dict:
+    return {
+        'id': story.id,
+        'title': story.title,
+        'url': story.url,
+        'domain': story.domain,
+        'author': story.author,
+        'text': story.text,
+        'type': story.type,
+        'submitted_at': iso_utc(story.submitted_at),
+        'first_seen_at': iso_utc(story.first_seen_at),
+        'day': story.day,
+        'score': story.score,
+        'comments_count': story.comments_count,
+        'peak_rank': story.peak_rank,
+        'backfilled': bool(story.backfilled),
+    }
+
+
+def save_item(key: ItemKey) -> bool:
+    """Snapshot + persist a record for an item key. Returns False if the source item is missing."""
+    if key.source == 'telegram':
+        snapshot = build_snapshot(key.ref1, key.ref2)
+        if snapshot is None:
+            return False
+        db.add_saved_item('telegram', key.ref1, key.ref2, snapshot)
+        return True
+    story = db.get_hn_story(key.ref1)
+    if story is None:
         return False
-    db.add_record(channel_id, message_id, snapshot)
+    db.add_saved_item('hn', key.ref1, 0, _hn_snapshot(story))
     return True
 
 
-def render_record(raw_data: str) -> Optional[dict]:
+def _render_tg_display(raw_data: str) -> Optional[dict]:
     """Rebuild a DisplayMessage dict (+ channel) from a stored snapshot, no telememo tables."""
     snapshot = json.loads(raw_data)
     messages = snapshot.get('messages') or []
@@ -80,16 +107,26 @@ def render_record(raw_data: str) -> Optional[dict]:
     if not displays:
         return None
     item = displays[0].model_dump(mode='json')
-    item['is_saved'] = True
     item['channel'] = snapshot.get('channel')
     return item
+
+
+def render_item(rec: db.SavedItem) -> Optional[dict]:
+    """Render one saved row into an item envelope (is_saved always True)."""
+    is_read = db.is_item_read(rec.source, rec.ref1, rec.ref2)
+    if rec.source == 'telegram':
+        display = _render_tg_display(rec.raw_data)
+        if display is None:
+            return None
+        return tg_envelope(display, is_read, True)
+    return hn_envelope(json.loads(rec.raw_data), is_read, True)
 
 
 def list_rendered_records() -> list[dict]:
     """All saved records rendered from their snapshots, newest first."""
     out = []
-    for rec in db.list_records():
-        rendered = render_record(rec.raw_data)
+    for rec in db.list_saved_items():
+        rendered = render_item(rec)
         if rendered is not None:
             out.append(rendered)
     return out

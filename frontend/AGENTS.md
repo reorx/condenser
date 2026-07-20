@@ -51,7 +51,8 @@ Two conventions this list exists to protect:
 | `Timeline` | Presentational timeline list: day groups + infinite scroll + new-content banner + loading/error/empty states |
 | `TimelineDayGroup` | One calendar day's messages under a static date divider |
 | `TimelineSkeleton` | Loading placeholder rows for the timeline |
-| `MessageCard` | A single message: header (avatar/name/time/save), text, media, webpage preview, forward box. The time is a button (full-date `title` tooltip) that opens the `LinkPreviewPane` — the unified drawer entry on every message |
+| `MessageCard` | A single Telegram item (takes the `TimelineItem` envelope; payload in `item.telegram`): header (avatar/name/time/save), text, media, webpage preview, forward box. The time is a button (full-date `title` tooltip) that opens the `LinkPreviewPane` — the unified drawer entry on every message |
+| `HnCard` | Minimal Hacker News story card (Phase-2 mechanical adaptation): orange Y badge, title link, score/comments/domain meta, scroll-to-read + save. The full treatment (self-post text, day-rank, job styling) is Phase 3 |
 | `MessageMedia` | Media layout (single image vs 2/3-col grid) + lightbox trigger |
 | `MediaThumb` | One media thumbnail: skeleton + aspect-ratio transition + file-chip fallback when no preview image |
 | `WebPagePreview` | Telegram-style inline link preview card (thumbnail + site/title/description) |

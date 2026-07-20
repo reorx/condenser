@@ -80,6 +80,15 @@ def _login(client):
     assert r.status_code == 200
 
 
+def _items(client, qs=''):
+    return client.get(f'/api/timeline{qs}').json()['items']
+
+
+def _tg_ids(items):
+    """Telegram message ids from a list of item envelopes."""
+    return [it['telegram']['id'] for it in items]
+
+
 # --- auth gate (C4 / D8) ----------------------------------------------------
 
 
@@ -112,11 +121,11 @@ def test_timeline_excludes_filtered_and_groups_album(env):
         r = client.post('/api/filters', json={'pattern': 'AD', 'channel_id': 1})
         assert r.status_code == 200
 
-        items = client.get('/api/timeline').json()['items']
-        ids = [it['id'] for it in items]
+        items = _items(client)
+        ids = _tg_ids(items)
         assert 11 not in ids  # filtered
         assert 12 in ids  # album collapsed to its primary (min) id
-        album = next(it for it in items if it['id'] == 12)
+        album = next(it for it in items if it['telegram']['id'] == 12)['telegram']
         assert album['is_album'] is True
         assert len(album['media_items']) == 2
         assert album['text'] == 'album caption'
@@ -124,8 +133,7 @@ def test_timeline_excludes_filtered_and_groups_album(env):
         # delete the rule -> message 11 reappears (is_filtered recomputed to 0)
         fid = client.get('/api/filters').json()[0]['id']
         assert client.delete(f'/api/filters/{fid}').status_code == 200
-        ids2 = [it['id'] for it in client.get('/api/timeline').json()['items']]
-        assert 11 in ids2
+        assert 11 in _tg_ids(_items(client))
 
 
 def test_timeline_includes_webpage_preview(env):
@@ -156,14 +164,14 @@ def test_timeline_includes_webpage_preview(env):
         )
         db.add_subscription(1)
 
-        items = client.get('/api/timeline').json()['items']
-        wp = next(it for it in items if it['id'] == 11)['webpage']
+        tgs = [it['telegram'] for it in _items(client)]
+        wp = next(t for t in tgs if t['id'] == 11)['webpage']
         assert wp['url'] == 'https://example.com'
         assert wp['title'] == 'Example'
         assert wp['site_name'] == 'Example Site'
         assert wp['has_photo'] is True
         # Messages without a link preview carry an explicit null.
-        assert next(it for it in items if it['id'] == 10)['webpage'] is None
+        assert next(t for t in tgs if t['id'] == 10)['webpage'] is None
 
 
 def test_filter_is_case_insensitive_substring(env):
@@ -206,7 +214,7 @@ def test_global_filter_create_list_and_preview(env):
         # Create a global rule (channel_id omitted) and confirm both channels recompute.
         created = client.post('/api/filters', json={'pattern': 'pizza'}).json()
         assert created['channel_id'] is None
-        ids = [it['id'] for it in client.get('/api/timeline').json()['items']]
+        ids = _tg_ids(_items(client))
         assert 10 not in ids and 20 not in ids  # both filtered by the global rule
         assert 11 in ids and 21 in ids
 
@@ -221,7 +229,7 @@ def test_global_filter_create_list_and_preview(env):
 
         # Deleting the global rule recomputes every enabled channel back to unfiltered.
         client.delete(f'/api/filters/{created["id"]}')
-        ids2 = [it['id'] for it in client.get('/api/timeline').json()['items']]
+        ids2 = _tg_ids(_items(client))
         assert 10 in ids2 and 20 in ids2  # pizza messages reappear
 
 
@@ -264,10 +272,10 @@ def test_timeline_date_and_channel_filter(env):
         db.add_subscription(1)
         db.add_subscription(2)
 
-        items = client.get('/api/timeline?channel_id=1&date=2026-06-01').json()['items']
-        assert sorted(it['id'] for it in items) == [10, 11, 12]
+        items = _items(client, '?channel_id=1&date=2026-06-01')
+        assert sorted(_tg_ids(items)) == [10, 11, 12]
         # order is date desc
-        assert [it['id'] for it in items] == [12, 11, 10]
+        assert _tg_ids(items) == [12, 11, 10]
 
 
 def test_timeline_cursor_pagination(env):
@@ -278,14 +286,14 @@ def test_timeline_cursor_pagination(env):
         db.add_subscription(1)
 
         page1 = client.get('/api/timeline?limit=2').json()
-        assert [it['id'] for it in page1['items']] == [14, 13]
+        assert _tg_ids(page1['items']) == [14, 13]
         assert page1['next_cursor']
 
         page2 = client.get(f'/api/timeline?limit=2&cursor={page1["next_cursor"]}').json()
-        assert [it['id'] for it in page2['items']] == [12, 11]
+        assert _tg_ids(page2['items']) == [12, 11]
 
         page3 = client.get(f'/api/timeline?limit=2&cursor={page2["next_cursor"]}').json()
-        assert [it['id'] for it in page3['items']] == [10]
+        assert _tg_ids(page3['items']) == [10]
         assert page3['next_cursor'] is None
 
 
@@ -299,18 +307,18 @@ def test_timeline_end_cursor_resumes_past_exhausted_pages(env):
         db.add_subscription(1)
 
         page1 = client.get('/api/timeline?limit=2').json()
-        assert [it['id'] for it in page1['items']] == [12, 11]
+        assert _tg_ids(page1['items']) == [12, 11]
         assert page1['end_cursor'] == page1['next_cursor']
 
         page2 = client.get(f'/api/timeline?limit=2&cursor={page1["next_cursor"]}').json()
-        assert [it['id'] for it in page2['items']] == [10]
+        assert _tg_ids(page2['items']) == [10]
         assert page2['next_cursor'] is None
         assert page2['end_cursor']  # still present at the end of stored history
 
         # fetch-older lands strictly older rows; the stored end_cursor picks them up
         seed_messages([md(1, 9, -5), md(1, 8, -6)])
         page3 = client.get(f'/api/timeline?limit=2&cursor={page2["end_cursor"]}').json()
-        assert [it['id'] for it in page3['items']] == [9, 8]
+        assert _tg_ids(page3['items']) == [9, 8]
 
         # an empty page carries no cursors at all
         empty = client.get(f'/api/timeline?limit=2&cursor={page3["end_cursor"]}').json()
@@ -341,14 +349,14 @@ def test_timeline_serializes_forward_info(env):
         )
         db.add_subscription(1)
 
-        items = client.get('/api/timeline').json()['items']
-        fwd = next(it for it in items if it['id'] == 11)
+        tgs = [it['telegram'] for it in _items(client)]
+        fwd = next(t for t in tgs if t['id'] == 11)
         assert fwd['is_forwarded'] is True
         assert fwd['forward_info']['from_channel_id'] == 999
         assert fwd['forward_info']['from_channel_name'] == 'SrcChan'
         assert fwd['forward_info']['from_message_id'] == 77
         assert fwd['forward_info']['post_author'] == 'Alice'
-        plain = next(it for it in items if it['id'] == 10)
+        plain = next(t for t in tgs if t['id'] == 10)
         assert plain['is_forwarded'] is False
         assert plain['forward_info'] is None
 
@@ -363,11 +371,11 @@ def test_read_marks_and_unread_count(env):
         subs = client.get('/api/subscriptions').json()
         assert subs[0]['unread'] == 2
 
-        r = client.post('/api/read', json={'items': [{'channel_id': 1, 'message_id': 11}]})
+        r = client.post('/api/read', json={'keys': ['tg:1:11']})
         assert r.status_code == 200
 
-        items = client.get('/api/timeline').json()['items']
-        read_flags = {it['id']: it['is_read'] for it in items}
+        items = _items(client)
+        read_flags = {it['telegram']['id']: it['is_read'] for it in items}
         assert read_flags == {11: True, 10: False}
         assert client.get('/api/subscriptions').json()[0]['unread'] == 1
 
@@ -395,17 +403,16 @@ def test_read_album_clears_unread_count(env):
         assert client.get('/api/subscriptions').json()[0]['unread'] == 2
 
         # mark the album read via its primary (display) id only
-        r = client.post('/api/read', json={'items': [{'channel_id': 1, 'message_id': 12}]})
+        r = client.post('/api/read', json={'keys': ['tg:1:12']})
         assert r.status_code == 200
 
         # the whole album is gone from the count; only the standalone remains
         assert client.get('/api/subscriptions').json()[0]['unread'] == 1
 
         # and it reports read in both the full and unread-only timelines
-        items = client.get('/api/timeline').json()['items']
-        assert {it['id']: it['is_read'] for it in items} == {12: True, 10: False}
-        unread_ids = [it['id'] for it in client.get('/api/timeline?unread_only=true').json()['items']]
-        assert unread_ids == [10]
+        items = _items(client)
+        assert {it['telegram']['id']: it['is_read'] for it in items} == {12: True, 10: False}
+        assert _tg_ids(_items(client, '?unread_only=true')) == [10]
 
 
 def test_read_bulk_clears_album_unread_count(env):
@@ -457,7 +464,7 @@ def test_timeline_head_cursor_polls_only_newer(env):
         filters.recompute_messages(1, [12])
         new = client.get(f'/api/timeline/new?after={head}').json()
         assert new['count'] == 1
-        assert [it['id'] for it in new['items']] == [12]
+        assert _tg_ids(new['items']) == [12]
 
 
 def test_timeline_new_respects_unread_only(env):
@@ -470,7 +477,7 @@ def test_timeline_new_respects_unread_only(env):
         db.add_subscription(1)
 
         # the newest message is already read, so the unread view's head anchors msg 11
-        client.post('/api/read', json={'items': [{'channel_id': 1, 'message_id': 12}]})
+        client.post('/api/read', json={'keys': ['tg:1:12']})
         head = client.get('/api/timeline?unread_only=true').json()['head_cursor']
 
         # msg 12 is newer than the head but read -> it is NOT new content
@@ -482,7 +489,7 @@ def test_timeline_new_respects_unread_only(env):
         filters.recompute_messages(1, [13])
         new = client.get(f'/api/timeline/new?after={head}&unread_only=true').json()
         assert new['count'] == 1
-        assert [it['id'] for it in new['items']] == [13]
+        assert _tg_ids(new['items']) == [13]
 
 
 # --- records: source-decoupled snapshot (§7) --------------------------------
@@ -495,21 +502,21 @@ def test_record_is_source_decoupled(env):
         seed_messages([md(1, 10, 1, text='precious post')])
         db.add_subscription(1)
 
-        assert client.post('/api/records', json={'channel_id': 1, 'message_id': 10}).status_code == 200
+        assert client.post('/api/records', json={'key': 'tg:1:10'}).status_code == 200
 
         # the source message is now flagged saved in the timeline
-        item = client.get('/api/timeline').json()['items'][0]
+        item = _items(client)[0]
         assert item['is_saved'] is True
 
         # wipe the telememo cache row -> record still renders from raw_data
         tdb.db.execute_sql('DELETE FROM messages WHERE channel_id = 1 AND id = 10')
         records = client.get('/api/records').json()
         assert len(records) == 1
-        assert records[0]['id'] == 10
-        assert records[0]['text'] == 'precious post'
+        assert records[0]['telegram']['id'] == 10
+        assert records[0]['telegram']['text'] == 'precious post'
 
         # unsave removes it
-        assert client.delete('/api/records/1/10').status_code == 200
+        assert client.delete('/api/records/tg:1:10').status_code == 200
         assert client.get('/api/records').json() == []
 
 
@@ -579,7 +586,7 @@ def test_backfill_persists_filters_and_marks_done(env):
         asyncio.run(tg._backfill_channel(5))
 
         assert db.get_subscription(5).backfill_done is True
-        ids = [it['id'] for it in client.get('/api/timeline').json()['items']]
+        ids = _tg_ids(_items(client))
         assert 60 in ids and 61 not in ids  # backfilled + filtered materialized
 
 
@@ -609,7 +616,7 @@ def test_refresh_channel_pulls_recent_window_and_reports_new(env):
         assert r.status_code == 200
         assert r.json()['new'] == 2  # ids 61, 62 are above the prior max id (60)
 
-        ids = [it['id'] for it in client.get('/api/timeline').json()['items']]
+        ids = _tg_ids(_items(client))
         assert 60 in ids and 61 in ids and 62 in ids
 
 
@@ -667,8 +674,7 @@ def test_fetch_older_pages_back_into_history(env):
         assert r.status_code == 200
         assert r.json()['fetched'] == 2
 
-        ids = sorted(it['id'] for it in client.get('/api/timeline').json()['items'])
-        assert ids == [58, 59, 60, 61]
+        assert sorted(_tg_ids(_items(client))) == [58, 59, 60, 61]
 
 
 def test_reset_channel_wipes_messages_and_read_then_resyncs(env):
@@ -684,8 +690,8 @@ def test_reset_channel_wipes_messages_and_read_then_resyncs(env):
         db.set_backfill_done(5, True)
         seed_messages([md(5, 60, 1, text='old one'), md(5, 61, 2, text='old two')])
         # save message 60 (a user asset) and mark 61 read
-        assert client.post('/api/records', json={'channel_id': 5, 'message_id': 60}).status_code == 200
-        assert client.post('/api/read', json={'items': [{'channel_id': 5, 'message_id': 61}]}).status_code == 200
+        assert client.post('/api/records', json={'key': 'tg:5:60'}).status_code == 200
+        assert client.post('/api/read', json={'keys': ['tg:5:61']}).status_code == 200
 
         async def fake_backfill(
             channel, since_days=None, since_date=None, persist=True, offset_id=0, max_messages=None
@@ -702,12 +708,12 @@ def test_reset_channel_wipes_messages_and_read_then_resyncs(env):
         assert r.json() == {'status': 'ok', 'deleted': 2, 'fetched': 1}
 
         # the old cache is gone; only the freshly re-synced message remains, and it reads as unread
-        items = client.get('/api/timeline').json()['items']
-        assert [it['id'] for it in items] == [70]
+        items = _items(client)
+        assert _tg_ids(items) == [70]
         assert items[0]['is_read'] is False
 
         # the saved record survived the wipe (source-decoupled) and subscription stays backfilled
-        assert [rec['id'] for rec in client.get('/api/records').json()] == [60]
+        assert [rec['telegram']['id'] for rec in client.get('/api/records').json()] == [60]
         assert db.get_subscription(5).backfill_done is True
 
 
@@ -733,16 +739,17 @@ def test_realtime_ingest_filtered_and_new_poll(env):
         # the on_message hook recomputes is_filtered for the freshly-ingested ids
         filters.recompute_messages(1, [50, 51])
 
-        ids = [it['id'] for it in client.get('/api/timeline').json()['items']]
+        ids = _tg_ids(_items(client))
         assert 50 in ids and 51 not in ids
 
         # /timeline/new (poll) sees the unfiltered new message, not the filtered one
-        from condenser.timeline import encode_cursor
+        from condenser.sources.base import pack_pos
+        from condenser.timeline import encode_cursor_map
 
-        old_cursor = encode_cursor('2020-01-01 00:00:00+00:00', 0)
+        old_cursor = encode_cursor_map({'telegram': pack_pos('2020-01-01 00:00:00+00:00', 0)})
         new = client.get(f'/api/timeline/new?after={old_cursor}').json()
         assert new['count'] == 1
-        assert [it['id'] for it in new['items']] == [50]
+        assert _tg_ids(new['items']) == [50]
 
 
 def test_media_proxy_streams(env):

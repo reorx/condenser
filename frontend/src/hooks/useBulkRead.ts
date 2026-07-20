@@ -2,7 +2,7 @@ import { type QueryClient, useMutation, useQueryClient } from '@tanstack/react-q
 import { toast } from 'sonner';
 
 import { api, errorMessage } from '@/lib/api';
-import type { DisplayMessage, Subscription, TimelinePage } from '@/lib/types';
+import type { Subscription, TimelineItem, TimelinePage } from '@/lib/types';
 
 export interface BulkReadArgs {
   channel_id?: number | null;
@@ -16,10 +16,10 @@ function sweepTimelineRead(qc: QueryClient, channelId: number | null, beforeDate
       ...data,
       pages: data.pages.map((page) => ({
         ...page,
-        items: page.items.map((m: DisplayMessage) => {
-          const channelMatch = channelId == null || m.channel_id === channelId;
-          const dateMatch = !beforeDate || m.date.slice(0, 10) < beforeDate;
-          return channelMatch && dateMatch ? { ...m, is_read: true } : m;
+        items: page.items.map((it: TimelineItem) => {
+          const channelMatch = channelId == null || it.telegram?.channel_id === channelId;
+          const dateMatch = !beforeDate || it.datetime.slice(0, 10) < beforeDate;
+          return channelMatch && dateMatch ? { ...it, is_read: true } : it;
         }),
       })),
     };
@@ -46,6 +46,7 @@ export function useBulkRead() {
     onSuccess: () => toast.success('Marked as read'),
     onSettled: () => {
       qc.invalidateQueries({ queryKey: ['subscriptions'] });
+      qc.invalidateQueries({ queryKey: ['sources'] });
       qc.invalidateQueries({ queryKey: ['timeline'] });
     },
   });

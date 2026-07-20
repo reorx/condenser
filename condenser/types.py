@@ -58,13 +58,10 @@ class HNSubscriptionPatch(BaseModel):
     config: Optional[dict] = None
 
 
-class ReadItem(BaseModel):
-    channel_id: int
-    message_id: int
-
-
 class ReadBody(BaseModel):
-    items: list[ReadItem]
+    """Item keys to mark read (multi-source: 'tg:{cid}:{mid}' / 'hn:{sid}')."""
+
+    keys: list[str]
 
 
 class ReadBulkBody(BaseModel):
@@ -73,8 +70,7 @@ class ReadBulkBody(BaseModel):
 
 
 class RecordBody(BaseModel):
-    channel_id: int
-    message_id: int
+    key: str
 
 
 class AppMetaPatch(BaseModel):

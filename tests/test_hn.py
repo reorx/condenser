@@ -157,10 +157,10 @@ def test_add_subscription_coerces_str_channel_id(env):
     assert rows[0].channel_id == 5 and isinstance(rows[0].channel_id, int)
 
 
-def test_fresh_db_records_schema_version_3(env):
+def test_fresh_db_records_schema_version(env):
     db.init_db(os.environ['CONDENSER_DB_PATH'])
     assert db.get_meta('schema_version') == str(db.SCHEMA_VERSION)
-    assert db.SCHEMA_VERSION == 3
+    assert db.SCHEMA_VERSION == 4
 
 
 # --- sampling: subscription-driven --------------------------------------------

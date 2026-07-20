@@ -1,18 +1,19 @@
 import { dayLabel } from '@/lib/format';
-import type { DisplayMessage, MsgRef } from '@/lib/types';
+import type { ReadTarget, TimelineItem } from '@/lib/types';
 
+import { HnCard } from './HnCard';
 import { MessageCard } from './MessageCard';
 
 interface TimelineDayGroupProps {
-  /** Messages belonging to a single calendar day (UTC), in display order. */
-  items: DisplayMessage[];
-  /** channel_id -> display label, joined client-side. */
+  /** Items belonging to a single calendar day (UTC), in display order. */
+  items: TimelineItem[];
+  /** channel_id -> display label, joined client-side (telegram items). */
   labels: Map<number, string>;
   /** Scroll-past-to-read observer, threaded down to each card. */
-  observe?: (el: Element | null, ref: MsgRef) => (() => void) | void;
+  observe?: (el: Element | null, target: ReadTarget) => (() => void) | void;
 }
 
-/** A day's worth of timeline messages under a static date divider. */
+/** A day's worth of timeline items under a static date divider, dispatched by source. */
 export function TimelineDayGroup({ items, labels, observe }: TimelineDayGroupProps) {
   return (
     <section>
@@ -23,18 +24,22 @@ export function TimelineDayGroup({ items, labels, observe }: TimelineDayGroupPro
       <div className="relative px-4 py-4 sm:px-5">
         <div className="absolute inset-x-0 top-1/2 h-px -translate-y-1/2 bg-border" />
         <span className="relative inline-block bg-background pr-3 text-xs font-medium text-muted-foreground">
-          {dayLabel(items[0].date)}
+          {dayLabel(items[0].datetime)}
         </span>
       </div>
       <div>
-        {items.map((m) => (
-          <MessageCard
-            key={`${m.channel_id}:${m.id}`}
-            msg={m}
-            channelLabel={labels.get(m.channel_id) ?? `Channel ${m.channel_id}`}
-            observe={observe}
-          />
-        ))}
+        {items.map((it) =>
+          it.telegram ? (
+            <MessageCard
+              key={it.key}
+              item={it}
+              channelLabel={labels.get(it.telegram.channel_id) ?? `Channel ${it.telegram.channel_id}`}
+              observe={observe}
+            />
+          ) : it.hn ? (
+            <HnCard key={it.key} item={it} observe={observe} />
+          ) : null,
+        )}
       </div>
     </section>
   );

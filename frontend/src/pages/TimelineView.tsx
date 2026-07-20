@@ -11,10 +11,11 @@ import { Button } from '@/components/ui/button';
 import { useBulkRead } from '@/hooks/useBulkRead';
 import { useChannelFilter } from '@/hooks/useChannelFilter';
 import { useRefreshAll, useRefreshChannel } from '@/hooks/useRefresh';
+import { useSources } from '@/hooks/useSources';
 import { useChannelLabels, useSubscriptions } from '@/hooks/useSubscriptions';
 import { useTimeline } from '@/hooks/useTimeline';
 import { channelName } from '@/lib/format';
-import type { DisplayMessage } from '@/lib/types';
+import type { TimelineItem } from '@/lib/types';
 import { cn } from '@/lib/utils';
 
 export function TimelineView() {
@@ -26,6 +27,7 @@ export function TimelineView() {
   const unreadOnly = cid != null ? sp.get('unread') === '1' : sp.get('all') !== '1';
   const date = sp.get('date');
   const { data: subs } = useSubscriptions();
+  const { data: sources } = useSources();
   const labels = useChannelLabels(subs);
   const bulkRead = useBulkRead();
   const refreshChannel = useRefreshChannel();
@@ -34,17 +36,26 @@ export function TimelineView() {
   const sub = cid != null ? subs?.find((s) => s.channel_id === cid) : undefined;
   const title = cid != null ? (sub ? channelName(sub) : `Channel ${cid}`) : unreadOnly ? 'Unread' : 'All';
 
-  // Unread count for the header: the channel's own count, or the sum across enabled
-  // channels for the All / Unread aggregate views.
+  // Unread count for the header: the channel's own count, or the sum across every
+  // source's enabled subscriptions (HN included) for the All / Unread aggregate views.
   const unreadCount =
-    cid != null ? (sub?.unread ?? 0) : (subs ?? []).reduce((n, s) => n + (s.enabled ? s.unread : 0), 0);
+    cid != null
+      ? (sub?.unread ?? 0)
+      : (sources ?? []).flatMap((g) => g.subscriptions).reduce((n, s) => n + (s.enabled ? s.unread : 0), 0);
 
   // The timeline query lives here (not in <Timeline>) so the header can build the
   // channel-filter control from the loaded items.
   const query = useTimeline({ channelId: cid, unreadOnly, date: date ?? undefined });
   const items = useMemo(() => query.data?.pages.flatMap((p) => p.items) ?? [], [query.data]);
-  const nameOf = useCallback((m: DisplayMessage) => labels.get(m.channel_id) ?? `Channel ${m.channel_id}`, [labels]);
-  const filter = useChannelFilter(items, nameOf);
+  const channelOf = useCallback((it: TimelineItem) => it.telegram?.channel_id ?? null, []);
+  const nameOf = useCallback(
+    (it: TimelineItem) => {
+      const cid2 = it.telegram?.channel_id;
+      return cid2 != null ? (labels.get(cid2) ?? `Channel ${cid2}`) : 'Hacker News';
+    },
+    [labels],
+  );
+  const filter = useChannelFilter(items, channelOf, nameOf);
   const showFilter = filter.channels.length > 1;
   // With a single channel present there's nothing to filter — show everything.
   const visible = showFilter ? filter.visible : items;

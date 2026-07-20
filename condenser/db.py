@@ -26,6 +26,8 @@ from peewee import (
 
 from telememo import db as tdb
 
+from .items import ItemKey
+
 # The condenser is_filtered overlay column declared on telememo's messages table.
 MESSAGES_OPTIONAL_FIELDS = {
     'messages': [{'name': 'is_filtered', 'type': 'BOOLEAN', 'default': 0}],
@@ -34,7 +36,7 @@ MESSAGES_OPTIONAL_FIELDS = {
 # Bumped when condenser's own table shapes change; recorded in app_meta on init so a
 # future startup can detect an upgrade and run a migration. Telememo manages its own
 # table migrations separately (init_db optional_fields / ALTER TABLE).
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 
 class CondenserBaseModel(Model):
@@ -75,25 +77,35 @@ class KeywordFilter(CondenserBaseModel):
         table_name = 'keyword_filters'
 
 
-class ReadMessage(CondenserBaseModel):
-    channel_id = IntegerField()
-    message_id = IntegerField()
+class ReadItem(CondenserBaseModel):
+    """Read marker for any source's item, keyed by the (source, ref1, ref2) triple.
+
+    TG: ``ref1=channel_id, ref2=message_id``; HN: ``ref1=story_id, ref2=0``.
+    The API layer converts item-key strings <-> triples (see items.py).
+    """
+
+    source = CharField()
+    ref1 = IntegerField()
+    ref2 = IntegerField(default=0)
     read_at = DateTimeField(default=datetime.now)
 
     class Meta:
-        table_name = 'read_messages'
-        primary_key = CompositeKey('channel_id', 'message_id')
+        table_name = 'read_items'
+        primary_key = CompositeKey('source', 'ref1', 'ref2')
 
 
-class TelegramRecord(CondenserBaseModel):
-    channel_id = IntegerField()
-    message_id = IntegerField()
+class SavedItem(CondenserBaseModel):
+    """Saved record (user asset): a source-decoupled JSON snapshot, triple-keyed."""
+
+    source = CharField()
+    ref1 = IntegerField()
+    ref2 = IntegerField(default=0)
     raw_data = TextField()
     created_at = DateTimeField(default=datetime.now)
 
     class Meta:
-        table_name = 'telegram_records'
-        primary_key = CompositeKey('channel_id', 'message_id')
+        table_name = 'saved_items'
+        primary_key = CompositeKey('source', 'ref1', 'ref2')
 
 
 class TgSession(CondenserBaseModel):
@@ -183,8 +195,8 @@ class HNStory(CondenserBaseModel):
 CONDENSER_TABLES = [
     Subscription,
     KeywordFilter,
-    ReadMessage,
-    TelegramRecord,
+    ReadItem,
+    SavedItem,
     TgSession,
     AppMeta,
     LinkPreviewCache,
@@ -198,6 +210,7 @@ def init_db(db_path: str) -> None:
     tdb.init_db(db_path, optional_fields=MESSAGES_OPTIONAL_FIELDS)
     _migrate_subscriptions_v3()
     tdb.db.create_tables(CONDENSER_TABLES)
+    _migrate_read_saved_v4()
     _enable_wal(db_path)
     set_meta('schema_version', str(SCHEMA_VERSION))
 
@@ -226,6 +239,32 @@ def _migrate_subscriptions_v3() -> None:
         )
         tdb.db.execute_sql('DROP TABLE subscriptions')
         tdb.db.execute_sql('ALTER TABLE subscriptions_v3 RENAME TO subscriptions')
+
+
+def _migrate_read_saved_v4() -> None:
+    """Copy pre-v4 ``read_messages`` / ``telegram_records`` into the unified triple-keyed
+    tables (source, ref1, ref2), then rename the old tables ``*_legacy``.
+
+    Shape-based (runs iff an old table still exists) and idempotent. Runs after
+    ``create_tables`` so the new tables are in place. The legacy copies are kept for
+    one schema version as a rollback net, to be dropped by a future migration.
+    """
+    tables = {r[0] for r in tdb.db.execute_sql("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
+    with tdb.db.atomic():
+        if 'read_messages' in tables:
+            tdb.db.execute_sql(
+                'INSERT OR IGNORE INTO read_items (source, ref1, ref2, read_at) '
+                "SELECT 'telegram', channel_id, message_id, read_at FROM read_messages"
+            )
+            tdb.db.execute_sql('DROP TABLE IF EXISTS read_messages_legacy')
+            tdb.db.execute_sql('ALTER TABLE read_messages RENAME TO read_messages_legacy')
+        if 'telegram_records' in tables:
+            tdb.db.execute_sql(
+                'INSERT OR IGNORE INTO saved_items (source, ref1, ref2, raw_data, created_at) '
+                "SELECT 'telegram', channel_id, message_id, raw_data, created_at FROM telegram_records"
+            )
+            tdb.db.execute_sql('DROP TABLE IF EXISTS telegram_records_legacy')
+            tdb.db.execute_sql('ALTER TABLE telegram_records RENAME TO telegram_records_legacy')
 
 
 def _enable_wal(db_path: str) -> None:
@@ -395,12 +434,12 @@ def channel_min_message_id(channel_id: int) -> int:
 def delete_channel_messages(channel_id: int) -> int:
     """Wipe a channel's cached messages, comments, and read markers; returns messages deleted.
 
-    Saved records (``telegram_records``) and keyword filters are intentionally preserved —
+    Saved records (``saved_items``) and keyword filters are intentionally preserved —
     they are user assets / config, not re-syncable source cache.
     """
     deleted = tdb.get_message_count(channel_id)
     with tdb.db.atomic():
-        ReadMessage.delete().where(ReadMessage.channel_id == channel_id).execute()
+        ReadItem.delete().where((ReadItem.source == 'telegram') & (ReadItem.ref1 == channel_id)).execute()
         tdb.db.execute_sql('DELETE FROM comments WHERE parent_channel_id = ?', (channel_id,))
         tdb.db.execute_sql('DELETE FROM messages WHERE channel_id = ?', (channel_id,))
     return deleted
@@ -454,22 +493,33 @@ def _expand_album_siblings(channel_id: int, message_id: int) -> list[int]:
     return sibs or [message_id]
 
 
-def mark_read(items: list[tuple[int, int]]) -> int:
-    """Mark (channel_id, message_id) pairs as read; idempotent. Returns count touched.
+def mark_read(items: list[ItemKey]) -> int:
+    """Mark item keys as read; idempotent. Returns count of rows touched.
 
-    Each pair is expanded to its album siblings so an album clears its unread count fully.
+    Telegram keys are expanded to their album siblings so an album clears its
+    unread count fully; other sources are written as-is.
     """
     if not items:
         return 0
-    pairs = {(c, sib) for c, m in items for sib in _expand_album_siblings(c, m)}
-    rows = [{'channel_id': c, 'message_id': m, 'read_at': _now()} for c, m in pairs]
+    triples: set[tuple[str, int, int]] = set()
+    for k in items:
+        if k.source == 'telegram':
+            triples.update(('telegram', k.ref1, sib) for sib in _expand_album_siblings(k.ref1, k.ref2))
+        else:
+            triples.add(k.triple)
+    rows = [{'source': s, 'ref1': r1, 'ref2': r2, 'read_at': _now()} for s, r1, r2 in triples]
     with tdb.db.atomic():
-        ReadMessage.insert_many(rows).on_conflict_ignore().execute()
+        ReadItem.insert_many(rows).on_conflict_ignore().execute()
     return len(rows)
 
 
 def mark_read_bulk(channel_id: Optional[int], before_date: Optional[str]) -> None:
-    """Mark every subscribed, unfiltered message before a date (optionally one channel) as read."""
+    """Mark every subscribed, unfiltered item before a date (optionally one TG channel) as read.
+
+    The aggregate form (no channel_id) covers every source: HN stories are included
+    when an enabled HN subscription exists (all archived rows — hidden ranks don't
+    affect visible counts and marking them keeps a later display-mode widening quiet).
+    """
     where = ['m.is_filtered IS NOT 1']
     params: list = []
     if channel_id is not None:
@@ -479,31 +529,51 @@ def mark_read_bulk(channel_id: Optional[int], before_date: Optional[str]) -> Non
         where.append('substr(m.date, 1, 10) < ?')
         params.append(before_date)
     sql = (
-        'INSERT OR IGNORE INTO read_messages (channel_id, message_id, read_at) '
-        'SELECT m.channel_id, m.id, ? FROM messages m '
+        'INSERT OR IGNORE INTO read_items (source, ref1, ref2, read_at) '
+        "SELECT 'telegram', m.channel_id, m.id, ? FROM messages m "
         "JOIN subscriptions s ON s.source = 'telegram' AND s.channel_id = m.channel_id AND s.enabled = 1 "
         'WHERE ' + ' AND '.join(where)
     )
     tdb.db.execute_sql(sql, (_now().isoformat(sep=' '), *params))
 
+    if channel_id is None and hn_sampling_active():
+        hn_where = ['h.is_dead = 0']
+        hn_params: list = []
+        if before_date:
+            hn_where.append('h.day < ?')
+            hn_params.append(before_date)
+        tdb.db.execute_sql(
+            'INSERT OR IGNORE INTO read_items (source, ref1, ref2, read_at) '
+            "SELECT 'hn', h.id, 0, ? FROM hn_stories h WHERE " + ' AND '.join(hn_where),
+            (_now().isoformat(sep=' '), *hn_params),
+        )
 
-# --- records (user assets, source-decoupled) --------------------------------
+
+def is_item_read(source: str, ref1: int, ref2: int = 0) -> bool:
+    return (
+        ReadItem.select()
+        .where((ReadItem.source == source) & (ReadItem.ref1 == ref1) & (ReadItem.ref2 == ref2))
+        .exists()
+    )
 
 
-def add_record(channel_id: int, message_id: int, raw_data: dict) -> None:
-    TelegramRecord.insert(
-        channel_id=channel_id, message_id=message_id, raw_data=json.dumps(raw_data), created_at=_now()
+# --- saved items (user assets, source-decoupled) -----------------------------
+
+
+def add_saved_item(source: str, ref1: int, ref2: int, raw_data: dict) -> None:
+    SavedItem.insert(
+        source=source, ref1=ref1, ref2=ref2, raw_data=json.dumps(raw_data), created_at=_now()
     ).on_conflict_ignore().execute()
 
 
-def delete_record(channel_id: int, message_id: int) -> None:
-    TelegramRecord.delete().where(
-        (TelegramRecord.channel_id == channel_id) & (TelegramRecord.message_id == message_id)
+def delete_saved_item(source: str, ref1: int, ref2: int = 0) -> None:
+    SavedItem.delete().where(
+        (SavedItem.source == source) & (SavedItem.ref1 == ref1) & (SavedItem.ref2 == ref2)
     ).execute()
 
 
-def list_records() -> list[TelegramRecord]:
-    return list(TelegramRecord.select().order_by(TelegramRecord.created_at.desc()))
+def list_saved_items() -> list[SavedItem]:
+    return list(SavedItem.select().order_by(SavedItem.created_at.desc()))
 
 
 # --- devices (client bearer tokens) ------------------------------------------

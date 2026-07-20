@@ -40,7 +40,8 @@ export interface WebPagePreview {
   has_photo: boolean;
 }
 
-/** One display unit (album-collapsed). Matches telememo's DisplayMessage + condenser flags. */
+/** One display unit (album-collapsed). Matches telememo's DisplayMessage; read/saved
+ *  flags live on the enclosing TimelineItem envelope since the multi-source API. */
 export interface DisplayMessage {
   id: number;
   channel_id: number;
@@ -60,11 +61,48 @@ export interface DisplayMessage {
   forwards_count: number | null;
   replies_count: number | null;
   raw_message_ids: number[];
-  // condenser-added flags
-  is_read?: boolean;
-  is_saved?: boolean;
-  // present on /api/records only
+  // present on /api/records payloads only
   channel?: ChannelRef | null;
+}
+
+export type Source = 'telegram' | 'hn';
+
+/** The `hn` payload of a TimelineItem: one archived Hacker News story. */
+export interface HnStory {
+  id: number;
+  title: string | null;
+  url: string | null;
+  domain: string | null;
+  author: string | null;
+  type: string | null;
+  text: string | null;
+  submitted_at: string | null;
+  first_seen_at: string;
+  score: number;
+  comments_count: number;
+  /** Query-time rank within the story's archive day; null on saved records. */
+  day_rank: number | null;
+  peak_rank: number | null;
+  backfilled: boolean;
+}
+
+/** Multi-source item envelope: exactly one of `telegram` / `hn` is present. */
+export interface TimelineItem {
+  source: Source;
+  /** Global item id, e.g. 'tg:123:45' / 'hn:678' — the read/save API currency. */
+  key: string;
+  /** Sort timestamp (ISO8601 UTC): TG = message time, HN = first front-page sighting. */
+  datetime: string;
+  is_read: boolean;
+  is_saved: boolean;
+  telegram?: DisplayMessage;
+  hn?: HnStory;
+}
+
+/** What scroll-to-read reports: the item key plus its TG channel (for badge math). */
+export interface ReadTarget {
+  key: string;
+  channelId: number | null;
 }
 
 /**
@@ -92,6 +130,23 @@ export interface Subscription {
   title: string | null;
   username: string | null;
   unread: number;
+}
+
+/** One subscription row inside a GET /api/sources group; `channel_id` is a
+ *  TG channel id (number) or a source-local feed key (string, e.g. HN 'front'). */
+export interface SourceSub {
+  channel_id: number | string;
+  name: string | null;
+  username: string | null;
+  enabled: boolean;
+  unread: number;
+  config: Record<string, unknown> | null;
+}
+
+/** GET /api/sources — sources that have at least one subscription. */
+export interface SourceGroup {
+  source: Source;
+  subscriptions: SourceSub[];
 }
 
 /** GET /api/hn/status — Hacker News source sampling + backfill state. */
@@ -142,7 +197,7 @@ export interface FilterPreviewResult {
 }
 
 export interface TimelinePage {
-  items: DisplayMessage[];
+  items: TimelineItem[];
   next_cursor: string | null;
   /** Anchor of this page's last unit; present even when next_cursor is null,
    *  so a client can resume paging after fetch-older (iOS pull-up). */
@@ -153,7 +208,7 @@ export interface TimelinePage {
 
 export interface TimelineNew {
   count: number;
-  items: DisplayMessage[];
+  items: TimelineItem[];
 }
 
 export interface DayCount {
@@ -169,7 +224,7 @@ export interface TimelineParams {
   unread_only?: boolean;
 }
 
-/** A (channel_id, message_id) pair used for read-marking and saving. */
+/** A (channel_id, message_id) pair for Telegram-scoped endpoints (media, previews). */
 export interface MsgRef {
   channel_id: number;
   message_id: number;

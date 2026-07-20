@@ -4,15 +4,15 @@
 import type {
   DayCount,
   Device,
-  DisplayMessage,
   FilterPreviewResult,
   HnStatus,
   JoinedChannel,
   KeywordFilter,
   LinkPreview,
-  MsgRef,
+  SourceGroup,
   Subscription,
   TgStatus,
+  TimelineItem,
   TimelineNew,
   TimelinePage,
   TimelineParams,
@@ -136,6 +136,9 @@ export const api = {
     }),
   hnUnsubscribe: () => del<{ ok: true }>('/api/sources/hn/subscriptions/front'),
 
+  // ---- sources (two-level source -> subscriptions listing, Phase 2) ----
+  listSources: () => request<SourceGroup[]>('/api/sources'),
+
   // ---- keyword filters ----
   // Global + per-channel listing (channel_id=null = global).
   listAllFilters: () => request<KeywordFilter[]>('/api/filters'),
@@ -165,7 +168,7 @@ export const api = {
       '/api/timeline/new' + qs({ after, channel_id: channelId, limit, unread_only: unreadOnly || undefined }),
     ),
 
-  markRead: (items: MsgRef[]) => post<{ ok: true }>('/api/read', { items }),
+  markRead: (keys: string[]) => post<{ ok: true }>('/api/read', { keys }),
   markReadBulk: (body: { channel_id?: number | null; before_date?: string | null }) =>
     post<{ ok: true }>('/api/read/bulk', body),
 
@@ -177,9 +180,9 @@ export const api = {
   urlPreview: (url: string) => request<LinkPreview>('/api/preview' + qs({ url })),
 
   // ---- records (saved) ----
-  listRecords: () => request<DisplayMessage[]>('/api/records'),
-  saveRecord: (ref: MsgRef) => post<{ ok: true }>('/api/records', ref),
-  deleteRecord: (ref: MsgRef) => del<{ ok: true }>(`/api/records/${ref.channel_id}/${ref.message_id}`),
+  listRecords: () => request<TimelineItem[]>('/api/records'),
+  saveRecord: (key: string) => post<{ ok: true }>('/api/records', { key }),
+  deleteRecord: (key: string) => del<{ ok: true }>(`/api/records/${encodeURIComponent(key)}`),
 };
 
 /** URL for the media proxy; `thumb` requests the small preview. */

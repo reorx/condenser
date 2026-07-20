@@ -8,6 +8,7 @@ interface Item {
   label: string;
 }
 
+const channelOf = (m: Item) => m.channel_id;
 const nameOf = (m: Item) => m.label;
 
 // channel 1 -> 3 msgs, channel 2 -> 2 msgs, channel 3 -> 1 msg
@@ -22,7 +23,7 @@ const items: Item[] = [
 
 describe('useChannelFilter', () => {
   it('summarizes the rendered channels with message counts, sorted by count desc', () => {
-    const { result } = renderHook(() => useChannelFilter(items, nameOf));
+    const { result } = renderHook(() => useChannelFilter(items, channelOf, nameOf));
 
     expect(result.current.channels).toEqual([
       { id: 1, name: 'Alpha', count: 3 },
@@ -36,20 +37,20 @@ describe('useChannelFilter', () => {
       { channel_id: 9, label: 'Zeta' },
       { channel_id: 4, label: 'Apple' },
     ];
-    const { result } = renderHook(() => useChannelFilter(tied, nameOf));
+    const { result } = renderHook(() => useChannelFilter(tied, channelOf, nameOf));
 
     expect(result.current.channels.map((c) => c.name)).toEqual(['Apple', 'Zeta']);
   });
 
   it('shows every item visible when nothing is hidden', () => {
-    const { result } = renderHook(() => useChannelFilter(items, nameOf));
+    const { result } = renderHook(() => useChannelFilter(items, channelOf, nameOf));
 
     expect(result.current.hidden.size).toBe(0);
     expect(result.current.visible).toHaveLength(items.length);
   });
 
   it('toggling a channel hides its messages but keeps it in the channel summary', () => {
-    const { result } = renderHook(() => useChannelFilter(items, nameOf));
+    const { result } = renderHook(() => useChannelFilter(items, channelOf, nameOf));
 
     act(() => result.current.toggle(1));
 
@@ -61,7 +62,7 @@ describe('useChannelFilter', () => {
   });
 
   it('toggling the same channel twice restores its messages', () => {
-    const { result } = renderHook(() => useChannelFilter(items, nameOf));
+    const { result } = renderHook(() => useChannelFilter(items, channelOf, nameOf));
 
     act(() => result.current.toggle(1));
     act(() => result.current.toggle(1));
@@ -71,7 +72,7 @@ describe('useChannelFilter', () => {
   });
 
   it('clear() un-hides every channel at once', () => {
-    const { result } = renderHook(() => useChannelFilter(items, nameOf));
+    const { result } = renderHook(() => useChannelFilter(items, channelOf, nameOf));
 
     act(() => result.current.toggle(1));
     act(() => result.current.toggle(2));

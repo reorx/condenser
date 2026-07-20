@@ -9,7 +9,7 @@ import { useNewContent } from '@/hooks/useNewContent';
 import { useScrollToRead } from '@/hooks/useScrollToRead';
 import { useChannelLabels, useSubscriptions } from '@/hooks/useSubscriptions';
 import { dayKey } from '@/lib/format';
-import type { DisplayMessage } from '@/lib/types';
+import type { TimelineItem } from '@/lib/types';
 import type { TimelineQuery } from '@/hooks/useTimeline';
 
 import { TimelineDayGroup } from './TimelineDayGroup';
@@ -17,19 +17,19 @@ import { TimelineSkeleton } from './TimelineSkeleton';
 
 interface DayGroup {
   day: string;
-  items: DisplayMessage[];
+  items: TimelineItem[];
 }
 
-function groupByDay(items: DisplayMessage[]): DayGroup[] {
+function groupByDay(items: TimelineItem[]): DayGroup[] {
   const groups: DayGroup[] = [];
   let current: DayGroup | null = null;
-  for (const m of items) {
-    const k = dayKey(m.date);
+  for (const it of items) {
+    const k = dayKey(it.datetime);
     if (!current || current.day !== k) {
       current = { day: k, items: [] };
       groups.push(current);
     }
-    current.items.push(m);
+    current.items.push(it);
   }
   return groups;
 }
@@ -43,9 +43,9 @@ interface TimelineProps {
   /** Mirrors the view's unread filter into the new-content poll. */
   unreadOnly?: boolean;
   /** Every loaded unit (pre-filter); drives the empty-vs-all-hidden distinction. */
-  items: DisplayMessage[];
+  items: TimelineItem[];
   /** Items after the header's channel filter; equals `items` when unfiltered. */
-  visible: DisplayMessage[];
+  visible: TimelineItem[];
   /** Clears the header's channel filter from the all-hidden recovery state. */
   onClearFilter: () => void;
   /** Shown when there are no messages at all in this view. */

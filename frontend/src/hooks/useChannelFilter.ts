@@ -18,13 +18,16 @@ export interface ChannelFilter<T> {
 }
 
 /**
- * Client-side channel filter over already-rendered messages. Derives the channel
+ * Client-side channel filter over already-rendered items. Derives the channel
  * list + counts from `items`, and tracks a hidden set so callers can drop those
- * channels from view. `nameOf` resolves a display name from an item (pass a
- * memoized callback — Timeline reads the labels map, Saved uses the embedded channel).
+ * channels from view. `channelOf` resolves an item's TG channel id (null = not
+ * channel-scoped, e.g. an HN story — always visible); `nameOf` resolves a display
+ * name (pass memoized callbacks — Timeline reads the labels map, Saved uses the
+ * embedded channel).
  */
-export function useChannelFilter<T extends { channel_id: number }>(
+export function useChannelFilter<T>(
   items: T[],
+  channelOf: (item: T) => number | null,
   nameOf: (item: T) => string,
 ): ChannelFilter<T> {
   const [hidden, setHidden] = useState<Set<number>>(() => new Set());
@@ -32,17 +35,22 @@ export function useChannelFilter<T extends { channel_id: number }>(
   const channels = useMemo<ChannelSummary[]>(() => {
     const byId = new Map<number, ChannelSummary>();
     for (const item of items) {
-      const existing = byId.get(item.channel_id);
+      const cid = channelOf(item);
+      if (cid == null) continue;
+      const existing = byId.get(cid);
       if (existing) existing.count += 1;
-      else byId.set(item.channel_id, { id: item.channel_id, name: nameOf(item), count: 1 });
+      else byId.set(cid, { id: cid, name: nameOf(item), count: 1 });
     }
     return [...byId.values()].sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
-  }, [items, nameOf]);
+  }, [items, channelOf, nameOf]);
 
-  const visible = useMemo(
-    () => (hidden.size ? items.filter((i) => !hidden.has(i.channel_id)) : items),
-    [items, hidden],
-  );
+  const visible = useMemo(() => {
+    if (!hidden.size) return items;
+    return items.filter((i) => {
+      const cid = channelOf(i);
+      return cid == null || !hidden.has(cid);
+    });
+  }, [items, hidden, channelOf]);
 
   const toggle = useCallback((id: number) => {
     setHidden((prev) => {

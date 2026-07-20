@@ -9,7 +9,7 @@ import { SavedMessageItem } from '@/components/timeline/SavedMessageItem';
 import { useChannelFilter } from '@/hooks/useChannelFilter';
 import { api } from '@/lib/api';
 import { channelName } from '@/lib/format';
-import type { DisplayMessage } from '@/lib/types';
+import type { TimelineItem } from '@/lib/types';
 
 export function RecordsView() {
   const { data, isPending, isError, refetch } = useQuery({
@@ -17,9 +17,10 @@ export function RecordsView() {
     queryFn: api.listRecords,
   });
 
-  // Same client-side channel filter as the timeline, over the saved messages.
-  const nameOf = useCallback((m: DisplayMessage) => channelName(m.channel), []);
-  const filter = useChannelFilter(data ?? [], nameOf);
+  // Same client-side channel filter as the timeline, over the saved items.
+  const channelOf = useCallback((it: TimelineItem) => it.telegram?.channel_id ?? null, []);
+  const nameOf = useCallback((it: TimelineItem) => channelName(it.telegram?.channel), []);
+  const filter = useChannelFilter(data ?? [], channelOf, nameOf);
   const showFilter = filter.channels.length > 1;
 
   return (
@@ -68,8 +69,8 @@ export function RecordsView() {
 
       {filter.visible.length > 0 && (
         <div className="divide-y divide-border/50">
-          {filter.visible.map((m) => (
-            <SavedMessageItem key={`${m.channel_id}:${m.id}`} msg={m} />
+          {filter.visible.map((it) => (
+            <SavedMessageItem key={it.key} item={it} />
           ))}
         </div>
       )}

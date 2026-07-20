@@ -8,16 +8,17 @@ import { linkify } from '@/lib/linkify';
 import { useLinkPreviewPane } from '@/lib/linkPreviewPane';
 import { useUnreadIndicator } from '@/lib/unreadIndicator';
 import { cn } from '@/lib/utils';
-import type { DisplayMessage, MsgRef } from '@/lib/types';
+import type { DisplayMessage, MsgRef, ReadTarget, TimelineItem } from '@/lib/types';
 
 import { MessageMedia } from './MessageMedia';
 import { WebPagePreview } from './WebPagePreview';
 
 interface Props {
-  msg: DisplayMessage;
+  /** Envelope with `telegram` present; read/saved flags live here, payload in `item.telegram`. */
+  item: TimelineItem;
   channelLabel: string;
   /** Attach for scroll-past-to-read; omit in the saved view. Returns a ref cleanup. */
-  observe?: (el: Element | null, ref: MsgRef) => (() => void) | void;
+  observe?: (el: Element | null, target: ReadTarget) => (() => void) | void;
 }
 
 function forwardSourceName(msg: DisplayMessage): string | null {
@@ -26,7 +27,8 @@ function forwardSourceName(msg: DisplayMessage): string | null {
   return f?.from_channel_name || f?.from_user_name || f?.post_author || null;
 }
 
-function MessageCardImpl({ msg, channelLabel, observe }: Props) {
+function MessageCardImpl({ item, channelLabel, observe }: Props) {
+  const msg = item.telegram!;
   const save = useSaveToggle();
   const { mode } = useUnreadIndicator();
   const { open, openPane } = useLinkPreviewPane();
@@ -37,10 +39,10 @@ function MessageCardImpl({ msg, channelLabel, observe }: Props) {
 
   const attach = useCallback(
     (el: HTMLElement | null) => {
-      if (observe && el && !msg.is_read) return observe(el, ref);
+      if (observe && el && !item.is_read) return observe(el, { key: item.key, channelId: msg.channel_id });
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [observe, msg.is_read, msg.channel_id, msg.id],
+    [observe, item.is_read, item.key, msg.channel_id],
   );
 
   // Text + media + webpage; reused inside the forward box or rendered bare otherwise.
@@ -57,10 +59,10 @@ function MessageCardImpl({ msg, channelLabel, observe }: Props) {
   return (
     <article
       ref={attach}
-      data-read={msg.is_read ? '' : undefined}
+      data-read={item.is_read ? '' : undefined}
       className={cn(
         'group relative border-b px-4 py-3 transition-colors duration-500 sm:px-5',
-        mode === 'divider' && !msg.is_read ? 'border-sky-500 dark:border-sky-400' : 'border-border/50',
+        mode === 'divider' && !item.is_read ? 'border-sky-500 dark:border-sky-400' : 'border-border/50',
         isActive && 'bg-muted/40',
       )}
     >
@@ -74,7 +76,7 @@ function MessageCardImpl({ msg, channelLabel, observe }: Props) {
               aria-hidden
               className={cn(
                 'absolute top-1/2 right-full mr-1.5 size-2 -translate-y-1/2 rounded-full transition-colors duration-500',
-                !msg.is_read && 'bg-sky-500 dark:bg-sky-400',
+                !item.is_read && 'bg-sky-500 dark:bg-sky-400',
               )}
             />
           )}
@@ -94,15 +96,15 @@ function MessageCardImpl({ msg, channelLabel, observe }: Props) {
         </button>
         <button
           type="button"
-          onClick={() => save.mutate({ ref, saved: !msg.is_saved })}
-          aria-label={msg.is_saved ? 'Remove from saved' : 'Save'}
-          aria-pressed={msg.is_saved}
+          onClick={() => save.mutate({ key: item.key, saved: !item.is_saved })}
+          aria-label={item.is_saved ? 'Remove from saved' : 'Save'}
+          aria-pressed={item.is_saved}
           className={cn(
             'ml-auto rounded p-1 transition-colors hover:bg-accent hover:text-accent-foreground',
-            msg.is_saved ? 'text-amber-500' : 'text-muted-foreground',
+            item.is_saved ? 'text-amber-500' : 'text-muted-foreground',
           )}
         >
-          <Bookmark className={cn('size-4', msg.is_saved && 'fill-current')} />
+          <Bookmark className={cn('size-4', item.is_saved && 'fill-current')} />
         </button>
       </header>
 

@@ -2,15 +2,17 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from 'react'
 import { type QueryClient, useQueryClient } from '@tanstack/react-query';
 
 import { api } from '@/lib/api';
-import type { DisplayMessage, MsgRef, Subscription, TimelinePage } from '@/lib/types';
-
-const refKey = (r: MsgRef) => `${r.channel_id}:${r.message_id}`;
+import type { ReadTarget, SourceGroup, Subscription, TimelineItem, TimelinePage } from '@/lib/types';
 
 /** Optimistically flip is_read in every cached timeline page + drop unread counts. */
-function applyReadOptimistic(qc: QueryClient, refs: MsgRef[]) {
-  const seen = new Set(refs.map(refKey));
+function applyReadOptimistic(qc: QueryClient, targets: ReadTarget[]) {
+  const seen = new Set(targets.map((t) => t.key));
   const perChannel = new Map<number, number>();
-  for (const r of refs) perChannel.set(r.channel_id, (perChannel.get(r.channel_id) ?? 0) + 1);
+  let hnCount = 0;
+  for (const t of targets) {
+    if (t.channelId != null) perChannel.set(t.channelId, (perChannel.get(t.channelId) ?? 0) + 1);
+    else hnCount += 1;
+  }
 
   qc.setQueriesData<{ pages: TimelinePage[]; pageParams: unknown[] }>({ queryKey: ['timeline'] }, (data) => {
     if (!data) return data;
@@ -18,9 +20,7 @@ function applyReadOptimistic(qc: QueryClient, refs: MsgRef[]) {
       ...data,
       pages: data.pages.map((page) => ({
         ...page,
-        items: page.items.map((m: DisplayMessage) =>
-          !m.is_read && seen.has(refKey({ channel_id: m.channel_id, message_id: m.id })) ? { ...m, is_read: true } : m,
-        ),
+        items: page.items.map((it: TimelineItem) => (!it.is_read && seen.has(it.key) ? { ...it, is_read: true } : it)),
       })),
     };
   });
@@ -29,6 +29,19 @@ function applyReadOptimistic(qc: QueryClient, refs: MsgRef[]) {
     subs?.map((s) =>
       perChannel.has(s.channel_id) ? { ...s, unread: Math.max(0, s.unread - perChannel.get(s.channel_id)!) } : s,
     ),
+  );
+
+  // The aggregate-view header sums /api/sources: drop TG counts per channel and
+  // HN (channelId == null, v1 = the single 'front' feed) by the read count.
+  qc.setQueryData<SourceGroup[]>(['sources'], (groups) =>
+    groups?.map((g) => ({
+      ...g,
+      subscriptions: g.subscriptions.map((s) => {
+        const drop =
+          g.source === 'hn' ? hnCount : typeof s.channel_id === 'number' ? (perChannel.get(s.channel_id) ?? 0) : 0;
+        return drop ? { ...s, unread: Math.max(0, s.unread - drop) } : s;
+      }),
+    })),
   );
 }
 
@@ -44,24 +57,29 @@ function applyReadOptimistic(qc: QueryClient, refs: MsgRef[]) {
  */
 export function useScrollToRead(viewKey: string) {
   const qc = useQueryClient();
-  const pending = useRef(new Map<string, MsgRef>());
+  const pending = useRef(new Map<string, ReadTarget>());
   const timer = useRef<number | undefined>(undefined);
-  const elToRef = useRef(new Map<Element, MsgRef>());
+  const elToRef = useRef(new Map<Element, ReadTarget>());
   const obsRef = useRef<IntersectionObserver | null>(null);
   // Gate: only mark-as-read once the user has manually scrolled in the current view.
   const armed = useRef(false);
 
   const flush = useCallback(() => {
-    const refs = [...pending.current.values()];
+    const targets = [...pending.current.values()];
     pending.current.clear();
-    if (!refs.length) return;
-    void api.markRead(refs).catch(() => {});
-    applyReadOptimistic(qc, refs);
+    if (!targets.length) return;
+    // Reconcile /api/sources once the server has the reads (the HN visible set
+    // is query-time, so the optimistic decrement can drift slightly).
+    void api
+      .markRead(targets.map((t) => t.key))
+      .then(() => qc.invalidateQueries({ queryKey: ['sources'] }))
+      .catch(() => {});
+    applyReadOptimistic(qc, targets);
   }, [qc]);
 
   const enqueue = useCallback(
-    (ref: MsgRef) => {
-      pending.current.set(refKey(ref), ref);
+    (target: ReadTarget) => {
+      pending.current.set(target.key, target);
       if (timer.current) window.clearTimeout(timer.current);
       timer.current = window.setTimeout(flush, 700);
     },
@@ -79,9 +97,9 @@ export function useScrollToRead(viewKey: string) {
             // Suppressed until the user actively scrolls this view; leave the
             // element observed so it re-fires once they do (see `armed`).
             if (!armed.current) continue;
-            const ref = elToRef.current.get(e.target);
-            if (ref) {
-              enqueue(ref);
+            const target = elToRef.current.get(e.target);
+            if (target) {
+              enqueue(target);
               obsRef.current?.unobserve(e.target);
               elToRef.current.delete(e.target);
             }
@@ -121,9 +139,9 @@ export function useScrollToRead(viewKey: string) {
   }, [viewKey, flush]);
 
   const observe = useCallback(
-    (el: Element | null, ref: MsgRef) => {
+    (el: Element | null, target: ReadTarget) => {
       if (!el || !observer) return;
-      elToRef.current.set(el, ref);
+      elToRef.current.set(el, target);
       observer.observe(el);
       return () => {
         observer.unobserve(el);

@@ -24,8 +24,13 @@ loop. Shares **one SQLite file** with [telememo](https://pypi.org/project/teleme
   column (a rebuildable cache). `messages.media_width` / `media_height` are telememo-native
   (filled on ingest via `message.file.width/height`, used by the frontend to reserve image
   placeholder space; NULL on historical rows pre-2026-06-18).
-- condenser owns `subscriptions` / `keyword_filters` / `read_messages` / `telegram_records`
+- condenser owns `subscriptions` / `keyword_filters` / `read_items` / `saved_items`
   / `tg_session` / `app_meta` / `hn_stories` (the user's assets + app state).
+  `read_items` / `saved_items` are **source-generic since SCHEMA_VERSION 4** (2026-07-19,
+  multi-source Phase 2): triple PK `(source, ref1, ref2)` — TG `(channel_id, message_id)`,
+  HN `(story_id, 0)`; a shape-based migration copies `read_messages` / `telegram_records`
+  and keeps them as `*_legacy` for one version. The API currency is the item-key string
+  (`tg:{cid}:{mid}` / `hn:{sid}`, see `items.py`).
   `subscriptions` is **multi-source since SCHEMA_VERSION 3** (2026-07-19): composite PK
   `(source, channel_id)`, `channel_id` is a `BareField` (TG rows store int, HN rows a feed
   key str — v1 only `'front'`), plus `name` / `config` columns; a shape-based migration in
@@ -41,8 +46,9 @@ condenser's peewee models bind to telememo's `db` instance, so everything is one
 | `config.py` / `crypto.py` | env settings; Fernet session encryption + signed cookie from `CONDENSER_SECRET_KEY` |
 | `db.py` | condenser tables (peewee, bound to telememo's db) + CRUD + shared `init_db` |
 | `filters.py` | keyword-filter **materialization** into `messages.is_filtered` (on ingest + rule change) |
-| `timeline.py` | timeline query: cursor pagination (+ `head_cursor` for new-content poll, + `end_cursor` — last-unit anchor present even when `next_cursor` is null, lets iOS resume paging after fetch-older), album merge, date/channel/unread filters, read/saved markers, `days`/`new`/`unread_counts` |
-| `records.py` | source-decoupled snapshots into `raw_data`, rendered without telememo tables |
+| `items.py` | item keys (`tg:{cid}:{mid}` / `hn:{sid}` ↔ `(source, ref1, ref2)` triple) + the item **envelope** (`{source, key, datetime, is_read, is_saved, telegram\|hn}`) shared by timeline + records |
+| `timeline.py` + `sources/` | **federated timeline merge** (Phase 2): `sources/telegram.py` (the old query — album buffer, unit cursors — unchanged in substance) and `sources/hn.py` (query-time `ROW_NUMBER()` day-rank, display_mode top10/top20/half/all from sub config) each return `SourceUnit` pages; `timeline.py` k-way merges by timestamp with a **composite cursor** `base64(json {source: "ts\x1fid"})` — a source absent from the map = not yet consumed, restarts from its top. `head_cursor`/`end_cursor` are composite too; `query_new` polls per-source anchors (an active source with zero units on page 1 gets a synthetic "now" anchor so its future items still poll). Merge keeps a per-source **floor**: a source drained below `limit` units with `has_more` ends the page early rather than letting older units from other sources jump ahead (album-dense TG pages). Bad/legacy cursors raise `InvalidCursor` → 422. HN unread counts respect the display mode (else the badge never clears) |
+| `records.py` | source-decoupled snapshots into `saved_items.raw_data` keyed by item key: TG = album rows + channel info, HN = story JSON; rendered back into envelopes without source tables |
 | `preview.py` | source-agnostic link previews: fetch a URL (async httpx) + extract metadata (`metadata_parser`), `link_previews` cache, per-message batch w/ Telegram-bonus fill, image fetch for the proxy |
 | `hn.py` | `HNManager` (on `app.state.hn`, peer of `TgManager`): subscription-driven HN front-page sampling loop (`topstories` diff → `hn_stories`, sticky `first_seen_at`, peak_rank, 48h snapshot refresh) + serial rate-limited hckrnews history backfill w/ pending-day set in `app_meta` (`threading.Lock` + per-day read-modify-write — `schedule_backfill` runs on the threadpool while the loop rewrites the set); HTTP via injectable `fetch_json` (tests need no network). Hardened per `kb/plans/2026-07-19-hn-phase1-review-fixes.md`: `_loop` has a catch-all guard (DB errors outside `poll_once`'s try must not kill the task); **null item ≠ dead** — refresh only marks dead on explicit `dead`/`deleted` (Firebase transiently nulls live items), while a *never-seen* front-page id that fetches null gets a dead placeholder row so it isn't re-pulled every round; `kick()` marshals via `call_soon_threadsafe` (no-op before startup / when source disabled). `routers/hn.py` = `/api/sources/hn/subscriptions*` + `/api/hn/status` (incl. `source_enabled`); POST = subscribe-and-enable (re-enables a paused row, `schedule_backfill` only on first create), POST/PATCH-enable → 503 when `CONDENSER_HN_ENABLED=false`. Multi-source plan Phase 1: `kb/plans/2026-07-19-multi-source-hn.md` |
 | `tg.py` | `TgManager`: lifecycle (C1), step-login→encrypted storage, realtime ingest, backfill scheduling, subscription orchestration |
@@ -249,8 +255,20 @@ SPA fallback; spec `kb/plans/2026-07-16-mobile-client-api-device-token.md`). Clo
 transient-null vs dead, pending-set race, re-subscribe re-enable, source-disabled 503 +
 `source_enabled` status, thread-safe kick, migration `DEFAULT 'telegram'`, `channel_id` int
 coercion) fixed via TDD — `kb/plans/2026-07-19-hn-phase1-review-fixes.md`. Deploy early so
-the archive accumulates; Phases 2-4
-(envelope API, federated timeline merge, web/iOS UI) are breaking and ship together — see
+the archive accumulates. **Phase 2 (API multi-source, breaking) is done** (2026-07-19):
+item envelopes + keys (`items.py`), `read_items`/`saved_items` v4 migration, federated
+timeline merge with composite cursors (`sources/`), `POST /api/read {keys}` /
+`/api/records {key}` / `DELETE /api/records/{key}`, `GET /api/sources` (batched names +
+per-sub unread), bulk-read covers HN, plus the web frontend mechanical adaptation
+(`TimelineItem` envelope types, key-based read/save hooks, source-dispatched cards with a
+minimal `HnCard`). Tests: `tests/test_multi_source.py` (31 scenarios) + all legacy tests
+migrated (126 backend + 17 frontend green). Phase 2 post-merge review fixes are complete
+(2026-07-20, TDD: invalid-cursor 422, merge floor for album-dense pages, synthetic poll
+anchors for empty sources, HN new-count buffer, half-mode ceil, aggregate header unread via
+`useSources`, records batch read-join — `kb/plans/2026-07-20-phase2-review-fixes.md`).
+**Do NOT deploy until Phases 3-4 ship** — the
+contract breaks the live web/iOS clients (deploy-order decision (b) in the plan). Phases
+3 (web UI) and 4 (iOS) remain — see
 `kb/plans/2026-07-19-multi-source-hn.md`. Still open: subscription
 "delete-with-messages" option (Q4 / `?purge=1`) and the backfill batch-interval sleep.
 Full checklist: `kb/sessions/2026-06-09-backend-remaining-work.md`.
