@@ -13,7 +13,7 @@ from telememo import db as tdb
 from telememo.utils import group_messages_to_display
 
 from . import db
-from .items import ItemKey, hn_envelope, iso_utc, tg_envelope
+from .items import ItemKey, hn_envelope, hn_payload, tg_envelope
 
 _MSG_COLS = """
     id, channel_id AS channel, text, date, sender_id, sender_name,
@@ -55,22 +55,11 @@ def build_snapshot(channel_id: int, message_id: int) -> Optional[dict]:
 
 
 def _hn_snapshot(story: db.HNStory) -> dict:
-    return {
-        'id': story.id,
-        'title': story.title,
-        'url': story.url,
-        'domain': story.domain,
-        'author': story.author,
-        'text': story.text,
-        'type': story.type,
-        'submitted_at': iso_utc(story.submitted_at),
-        'first_seen_at': iso_utc(story.first_seen_at),
-        'day': story.day,
-        'score': story.score,
-        'comments_count': story.comments_count,
-        'peak_rank': story.peak_rank,
-        'backfilled': bool(story.backfilled),
-    }
+    # Single source of truth for the field mapping: the snapshot is exactly the
+    # envelope payload (day_rank is query-time only, stored as None) plus `day`.
+    payload = hn_payload(story.__data__)
+    payload['day'] = story.day
+    return payload
 
 
 def save_item(key: ItemKey) -> bool:
@@ -111,9 +100,9 @@ def _render_tg_display(raw_data: str) -> Optional[dict]:
     return item
 
 
-def render_item(rec: db.SavedItem) -> Optional[dict]:
+def render_item(rec: db.SavedItem, read_triples: set[tuple[str, int, int]]) -> Optional[dict]:
     """Render one saved row into an item envelope (is_saved always True)."""
-    is_read = db.is_item_read(rec.source, rec.ref1, rec.ref2)
+    is_read = (rec.source, rec.ref1, rec.ref2) in read_triples
     if rec.source == 'telegram':
         display = _render_tg_display(rec.raw_data)
         if display is None:
@@ -122,11 +111,21 @@ def render_item(rec: db.SavedItem) -> Optional[dict]:
     return hn_envelope(json.loads(rec.raw_data), is_read, True)
 
 
+def _saved_read_triples() -> set[tuple[str, int, int]]:
+    """The saved items that are also read, in one batched query (no per-row EXISTS)."""
+    cur = tdb.db.execute_sql(
+        'SELECT s.source, s.ref1, s.ref2 FROM saved_items s '
+        'JOIN read_items r ON r.source = s.source AND r.ref1 = s.ref1 AND r.ref2 = s.ref2'
+    )
+    return set(cur.fetchall())
+
+
 def list_rendered_records() -> list[dict]:
     """All saved records rendered from their snapshots, newest first."""
+    read_triples = _saved_read_triples()
     out = []
     for rec in db.list_saved_items():
-        rendered = render_item(rec)
+        rendered = render_item(rec, read_triples)
         if rendered is not None:
             out.append(rendered)
     return out
