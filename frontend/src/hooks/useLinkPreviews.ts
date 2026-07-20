@@ -13,3 +13,13 @@ export function useLinkPreviews(ref: MsgRef | null) {
     staleTime: 5 * 60_000,
   });
 }
+
+/** Preview for a single URL (the HN pane); fetches only while the pane is open. */
+export function useUrlPreview(url: string | null) {
+  return useQuery({
+    queryKey: ['url-preview', url],
+    queryFn: () => api.urlPreview(url!),
+    enabled: !!url,
+    staleTime: 5 * 60_000,
+  });
+}

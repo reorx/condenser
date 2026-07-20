@@ -1,30 +1,36 @@
 import { useCallback, useMemo } from 'react';
-import { CheckCheck, Inbox, RefreshCw, Sparkles } from 'lucide-react';
-import { useParams, useSearchParams } from 'react-router-dom';
+import { CheckCheck, Inbox, RefreshCw, Send, Sparkles } from 'lucide-react';
+import { Navigate, useParams, useSearchParams } from 'react-router-dom';
 
 import { ChannelAvatar } from '@/components/ChannelAvatar';
 import { ChannelFilter } from '@/components/ChannelFilter';
 import { CalendarPopover } from '@/components/CalendarPopover';
+import { HnDisplayModeMenu } from '@/components/HnDisplayModeMenu';
+import { HnGlyph } from '@/components/HnGlyph';
 import { IconBadge, PageHeader } from '@/components/PageHeader';
 import { Timeline } from '@/components/timeline/Timeline';
 import { Button } from '@/components/ui/button';
 import { useBulkRead } from '@/hooks/useBulkRead';
 import { useChannelFilter } from '@/hooks/useChannelFilter';
+import { hnDisplayModeOf } from '@/hooks/useHnDisplayMode';
 import { useRefreshAll, useRefreshChannel } from '@/hooks/useRefresh';
 import { useSources } from '@/hooks/useSources';
 import { useChannelLabels, useSubscriptions } from '@/hooks/useSubscriptions';
 import { useTimeline } from '@/hooks/useTimeline';
 import { channelName } from '@/lib/format';
+import { isSource, sourceLabel } from '@/lib/sources';
 import type { TimelineItem } from '@/lib/types';
 import { cn } from '@/lib/utils';
 
 export function TimelineView() {
-  const { channelId } = useParams();
+  const { channelId, source: sourceParam } = useParams();
   const [sp, setSp] = useSearchParams();
   const cid = channelId ? Number(channelId) : undefined;
-  // Aggregate view defaults to Unread ("/" is the home view); "?all=1" shows everything.
-  // Channel views keep showing everything unless "?unread=1" narrows them.
-  const unreadOnly = cid != null ? sp.get('unread') === '1' : sp.get('all') !== '1';
+  const source = isSource(sourceParam) ? sourceParam : undefined;
+  // Channel + source views are "scoped": they show everything unless "?unread=1"
+  // narrows them. The aggregate view defaults to Unread ("/"); "?all=1" shows all.
+  const scoped = cid != null || source != null;
+  const unreadOnly = scoped ? sp.get('unread') === '1' : sp.get('all') !== '1';
   const date = sp.get('date');
   const { data: subs } = useSubscriptions();
   const { data: sources } = useSources();
@@ -34,18 +40,30 @@ export function TimelineView() {
   const refreshAll = useRefreshAll();
 
   const sub = cid != null ? subs?.find((s) => s.channel_id === cid) : undefined;
-  const title = cid != null ? (sub ? channelName(sub) : `Channel ${cid}`) : unreadOnly ? 'Unread' : 'All';
+  const title =
+    cid != null
+      ? sub
+        ? channelName(sub)
+        : `Channel ${cid}`
+      : source
+        ? sourceLabel(source)
+        : unreadOnly
+          ? 'Unread'
+          : 'All';
 
-  // Unread count for the header: the channel's own count, or the sum across every
-  // source's enabled subscriptions (HN included) for the All / Unread aggregate views.
+  // Unread count for the header: the channel's own count, one source group's sum
+  // (/s/:source), or the sum across every source for the All / Unread aggregate views.
   const unreadCount =
     cid != null
       ? (sub?.unread ?? 0)
-      : (sources ?? []).flatMap((g) => g.subscriptions).reduce((n, s) => n + (s.enabled ? s.unread : 0), 0);
+      : (sources ?? [])
+          .filter((g) => !source || g.source === source)
+          .flatMap((g) => g.subscriptions)
+          .reduce((n, s) => n + (s.enabled ? s.unread : 0), 0);
 
   // The timeline query lives here (not in <Timeline>) so the header can build the
   // channel-filter control from the loaded items.
-  const query = useTimeline({ channelId: cid, unreadOnly, date: date ?? undefined });
+  const query = useTimeline({ channelId: cid, unreadOnly, date: date ?? undefined, source });
   const items = useMemo(() => query.data?.pages.flatMap((p) => p.items) ?? [], [query.data]);
   const channelOf = useCallback((it: TimelineItem) => it.telegram?.channel_id ?? null, []);
   const nameOf = useCallback(
@@ -61,7 +79,9 @@ export function TimelineView() {
   const visible = showFilter ? filter.visible : items;
 
   // Per-channel view re-pulls that one channel synchronously; the All/Unread view fans the
-  // refresh out across every enabled channel in the background.
+  // refresh out across every enabled channel in the background. HN has no manual pull —
+  // the sampling loop is the only ingest — so the /s/hn view hides the button.
+  const showRefresh = source !== 'hn';
   const refreshing = cid != null ? refreshChannel.isPending : refreshAll.isPending;
   const onRefresh = () => (cid != null ? refreshChannel.mutate(cid) : refreshAll.mutate());
 
@@ -76,9 +96,16 @@ export function TimelineView() {
     );
   }
 
+  // A bad /s/:source segment has nothing to render — bounce home.
+  if (sourceParam && !source) return <Navigate to="/" replace />;
+
   const icon =
     cid != null ? (
       <ChannelAvatar channelId={cid} name={title} className="size-9 text-sm" />
+    ) : source === 'hn' ? (
+      <HnGlyph className="size-9 rounded-full text-base" />
+    ) : source === 'telegram' ? (
+      <IconBadge icon={<Send className="size-5" />} />
     ) : (
       <IconBadge icon={unreadOnly ? <Sparkles className="size-5" /> : <Inbox className="size-5" />} />
     );
@@ -91,26 +118,30 @@ export function TimelineView() {
         meta={unreadCount > 0 ? `${unreadCount.toLocaleString()} unread` : undefined}
         actions={
           <>
+            {source === 'hn' && <HnDisplayModeMenu mode={hnDisplayModeOf(sources)} />}
             <CalendarPopover
               channelId={cid ?? null}
+              source={source}
               date={date}
               onSelect={(d) => patchParams((p) => (d ? p.set('date', d) : p.delete('date')))}
             />
+            {showRefresh && (
+              <Button
+                size="icon"
+                variant="ghost"
+                className="size-8 text-muted-foreground"
+                onClick={onRefresh}
+                disabled={refreshing}
+                title={cid != null ? 'Fetch new posts for this channel' : 'Fetch new posts across all channels'}
+              >
+                <RefreshCw className={cn('size-4', refreshing && 'animate-spin')} />
+              </Button>
+            )}
             <Button
               size="icon"
               variant="ghost"
               className="size-8 text-muted-foreground"
-              onClick={onRefresh}
-              disabled={refreshing}
-              title={cid != null ? 'Fetch new posts for this channel' : 'Fetch new posts across all channels'}
-            >
-              <RefreshCw className={cn('size-4', refreshing && 'animate-spin')} />
-            </Button>
-            <Button
-              size="icon"
-              variant="ghost"
-              className="size-8 text-muted-foreground"
-              onClick={() => bulkRead.mutate({ channel_id: cid ?? null })}
+              onClick={() => bulkRead.mutate({ channel_id: cid ?? null, source: source ?? null })}
               disabled={bulkRead.isPending}
               title="Mark all read"
             >
@@ -131,7 +162,7 @@ export function TimelineView() {
               className={cn('size-8', !unreadOnly && 'text-muted-foreground')}
               onClick={() =>
                 patchParams((p) => {
-                  if (cid != null) {
+                  if (scoped) {
                     if (unreadOnly) p.delete('unread');
                     else p.set('unread', '1');
                   } else {
@@ -149,8 +180,9 @@ export function TimelineView() {
       />
       <Timeline
         query={query}
-        viewKey={`${cid ?? 'all'}:${unreadOnly ? 'unread' : 'all'}:${date ?? ''}`}
+        viewKey={`${source ?? ''}:${cid ?? 'all'}:${unreadOnly ? 'unread' : 'all'}:${date ?? ''}`}
         channelId={cid}
+        source={source}
         date={date ?? undefined}
         unreadOnly={unreadOnly}
         items={items}

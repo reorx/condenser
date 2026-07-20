@@ -3,15 +3,20 @@ import { Bookmark, Filter, Inbox, Radio, Search, Settings, Sparkles } from 'luci
 import { NavLink, useLocation } from 'react-router-dom';
 
 import { SettingsDialog } from '@/components/SettingsDialog';
-import { navLinkClass, SidebarChannelLink } from '@/components/SidebarChannelLink';
+import { navLinkClass } from '@/components/SidebarChannelLink';
+import { SidebarSourceGroup } from '@/components/SidebarSourceGroup';
 import { BrowseChannelsDialog } from '@/components/subscriptions/BrowseChannelsDialog';
 import { UnreadBadge } from '@/components/UnreadBadge';
 import { Button } from '@/components/ui/button';
-import { useSubscriptions } from '@/hooks/useSubscriptions';
+import { useCollapsedSources } from '@/hooks/useCollapsedSources';
+import { useSources } from '@/hooks/useSources';
 
 export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
-  const { data: subs } = useSubscriptions();
-  const totalUnread = (subs ?? []).reduce((n, s) => n + (s.enabled ? s.unread : 0), 0);
+  const { data: sources } = useSources();
+  const { collapsed, toggle } = useCollapsedSources();
+  const totalUnread = (sources ?? [])
+    .flatMap((g) => g.subscriptions)
+    .reduce((n, s) => n + (s.enabled ? s.unread : 0), 0);
 
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [browseOpen, setBrowseOpen] = useState(false);
@@ -19,8 +24,6 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   // "/" is the Unread home view; "?all=1" flips the aggregate view to All.
   const allActive = location.pathname === '/' && new URLSearchParams(location.search).get('all') === '1';
   const unreadActive = location.pathname === '/' && !allActive;
-
-  const enabledSubs = (subs ?? []).filter((s) => s.enabled);
 
   return (
     <div className="flex h-full flex-col gap-4 p-3">
@@ -49,20 +52,23 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
         </NavLink>
         <NavLink to="/subscriptions" className={navLinkClass} onClick={onNavigate}>
           <Radio className="size-4" />
-          Manage channels
+          Subscriptions
         </NavLink>
       </nav>
 
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="px-2.5 pb-1 text-[11px] font-medium tracking-wide text-muted-foreground/70 uppercase">
-          Channels
-        </div>
-        <div className="flex flex-col gap-0.5">
-          {enabledSubs.map((s) => (
-            <SidebarChannelLink key={s.channel_id} sub={s} onNavigate={onNavigate} />
-          ))}
-          {enabledSubs.length === 0 && <p className="px-2.5 py-1 text-xs text-muted-foreground/70">No channels yet.</p>}
-        </div>
+      <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto">
+        {(sources ?? []).map((g) => (
+          <SidebarSourceGroup
+            key={g.source}
+            group={g}
+            collapsed={collapsed.has(g.source)}
+            onToggleCollapsed={() => toggle(g.source)}
+            onNavigate={onNavigate}
+          />
+        ))}
+        {sources && sources.length === 0 && (
+          <p className="px-2.5 py-1 text-xs text-muted-foreground/70">No subscriptions yet.</p>
+        )}
       </div>
 
       <Button variant="outline" size="sm" className="w-full justify-start" onClick={() => setBrowseOpen(true)}>

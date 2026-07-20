@@ -46,6 +46,7 @@ export function BrowseChannelsDialog({ open, onOpenChange }: BrowseChannelsDialo
         (list ?? []).map((c) => (addedIds.has(c.channel_id) ? { ...c, subscribed: true } : c)),
       );
       qc.invalidateQueries({ queryKey: ['subscriptions'] });
+      qc.invalidateQueries({ queryKey: ['sources'] });
       qc.invalidateQueries({ queryKey: ['timeline'] });
       // Drop the added channels from the selection; keep any failures selected for retry.
       setSelected((prev) => new Set([...prev].filter((id) => !addedIds.has(id))));

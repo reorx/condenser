@@ -42,6 +42,7 @@ export default function App() {
       <Route element={<AppShell />}>
         <Route path="/" element={<TimelineView />} />
         <Route path="/c/:channelId" element={<TimelineView />} />
+        <Route path="/s/:source" element={<TimelineView />} />
         <Route path="/saved" element={<RecordsView />} />
         <Route path="/filters" element={<FiltersView />} />
         <Route path="/subscriptions" element={<SubscriptionsView />} />

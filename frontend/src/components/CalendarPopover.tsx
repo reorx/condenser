@@ -6,16 +6,19 @@ import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { useTimelineDays } from '@/hooks/useTimelineDays';
 import { dayKeyLabel, fromDayKey, toDayKey } from '@/lib/format';
+import type { Source } from '@/lib/types';
 import { cn } from '@/lib/utils';
 
 interface CalendarPopoverProps {
   channelId: number | null;
   date: string | null;
   onSelect: (date: string | null) => void;
+  /** Scope the day counts to one source (the /s/:source views). */
+  source?: Source | null;
 }
 
-export function CalendarPopover({ channelId, date, onSelect }: CalendarPopoverProps) {
-  const { data: days } = useTimelineDays(channelId);
+export function CalendarPopover({ channelId, date, onSelect, source }: CalendarPopoverProps) {
+  const { data: days } = useTimelineDays(channelId, true, source ?? null);
   const daySet = useMemo(() => new Set((days ?? []).map((d) => d.date)), [days]);
 
   const selected = date ? fromDayKey(date) : undefined;

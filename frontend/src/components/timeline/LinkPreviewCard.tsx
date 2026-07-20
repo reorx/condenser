@@ -20,13 +20,13 @@ function hostOf(url: string): string {
  * hotlink-proof); when our fetch found no image but Telegram had one, fall back to the
  * media proxy for that Telegram message (`tg_image_message_id`).
  */
-export function LinkPreviewCard({ channelId, preview }: { channelId: number; preview: LinkPreview }) {
+export function LinkPreviewCard({ channelId, preview }: { channelId?: number; preview: LinkPreview }) {
   const [imgFailed, setImgFailed] = useState(false);
   const [imgLoaded, setImgLoaded] = useState(false);
 
   const imageSrc = preview.image
     ? previewImageUrl(preview.image)
-    : preview.tg_image_message_id != null
+    : preview.tg_image_message_id != null && channelId != null
       ? mediaUrl(channelId, preview.tg_image_message_id, true)
       : null;
   const showImage = !!imageSrc && !imgFailed;

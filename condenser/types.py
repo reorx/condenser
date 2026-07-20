@@ -2,7 +2,7 @@
 
 from typing import Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class LoginBody(BaseModel):
@@ -67,6 +67,8 @@ class ReadBody(BaseModel):
 class ReadBulkBody(BaseModel):
     channel_id: Optional[int] = None
     before_date: Optional[str] = None
+    # narrow the sweep to one source ('telegram' / 'hn'); None = every source
+    source: Optional[str] = Field(default=None, pattern='^(telegram|hn)$')
 
 
 class RecordBody(BaseModel):

@@ -513,30 +513,33 @@ def mark_read(items: list[ItemKey]) -> int:
     return len(rows)
 
 
-def mark_read_bulk(channel_id: Optional[int], before_date: Optional[str]) -> None:
+def mark_read_bulk(channel_id: Optional[int], before_date: Optional[str], source: Optional[str] = None) -> None:
     """Mark every subscribed, unfiltered item before a date (optionally one TG channel) as read.
 
     The aggregate form (no channel_id) covers every source: HN stories are included
     when an enabled HN subscription exists (all archived rows — hidden ranks don't
     affect visible counts and marking them keeps a later display-mode widening quiet).
+    `source` narrows the sweep to one source (the source-scoped timeline views);
+    `channel_id` already implies telegram.
     """
-    where = ['m.is_filtered IS NOT 1']
-    params: list = []
-    if channel_id is not None:
-        where.append('m.channel_id = ?')
-        params.append(channel_id)
-    if before_date:
-        where.append('substr(m.date, 1, 10) < ?')
-        params.append(before_date)
-    sql = (
-        'INSERT OR IGNORE INTO read_items (source, ref1, ref2, read_at) '
-        "SELECT 'telegram', m.channel_id, m.id, ? FROM messages m "
-        "JOIN subscriptions s ON s.source = 'telegram' AND s.channel_id = m.channel_id AND s.enabled = 1 "
-        'WHERE ' + ' AND '.join(where)
-    )
-    tdb.db.execute_sql(sql, (_now().isoformat(sep=' '), *params))
+    if source is None or source == 'telegram':
+        where = ['m.is_filtered IS NOT 1']
+        params: list = []
+        if channel_id is not None:
+            where.append('m.channel_id = ?')
+            params.append(channel_id)
+        if before_date:
+            where.append('substr(m.date, 1, 10) < ?')
+            params.append(before_date)
+        sql = (
+            'INSERT OR IGNORE INTO read_items (source, ref1, ref2, read_at) '
+            "SELECT 'telegram', m.channel_id, m.id, ? FROM messages m "
+            "JOIN subscriptions s ON s.source = 'telegram' AND s.channel_id = m.channel_id AND s.enabled = 1 "
+            'WHERE ' + ' AND '.join(where)
+        )
+        tdb.db.execute_sql(sql, (_now().isoformat(sep=' '), *params))
 
-    if channel_id is None and hn_sampling_active():
+    if channel_id is None and source in (None, 'hn') and hn_sampling_active():
         hn_where = ['h.is_dead = 0']
         hn_params: list = []
         if before_date:

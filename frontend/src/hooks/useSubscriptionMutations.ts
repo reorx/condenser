@@ -28,6 +28,7 @@ export function useSetSubscriptionEnabled() {
     },
     onSettled: () => {
       qc.invalidateQueries({ queryKey: ['subscriptions'] });
+      qc.invalidateQueries({ queryKey: ['sources'] });
       qc.invalidateQueries({ queryKey: ['timeline'] });
     },
   });
@@ -51,6 +52,7 @@ export function useDeleteSubscription() {
     onSuccess: () => toast.success('Unsubscribed'),
     onSettled: () => {
       qc.invalidateQueries({ queryKey: ['subscriptions'] });
+      qc.invalidateQueries({ queryKey: ['sources'] });
       qc.invalidateQueries({ queryKey: ['timeline'] });
     },
   });

@@ -1,19 +1,21 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Flame, Plus, Trash2 } from 'lucide-react';
+import { Plus, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { HnDisplayModeMenu } from '@/components/HnDisplayModeMenu';
+import { HnGlyph } from '@/components/HnGlyph';
 import { Spinner } from '@/components/Spinner';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
+import { asHnDisplayMode } from '@/hooks/useHnDisplayMode';
 import { api, errorMessage } from '@/lib/api';
 import { fullDateLabel } from '@/lib/format';
 import type { HnStatus } from '@/lib/types';
 
-/** Phase-1 minimal Hacker News block on the Manage page: subscribe/unsubscribe the
- * Front Page feed + sampling/backfill status. Replaced by the full per-source
- * management page in Phase 3. */
+/** The Hacker News block on the Subscriptions page: Front Page subscribe/unsubscribe,
+ * sampling pause switch, display-mode (top N) config, and sampling/backfill status. */
 export function HackerNewsSection() {
   const qc = useQueryClient();
   const { data: status, isPending } = useQuery({
@@ -22,7 +24,12 @@ export function HackerNewsSection() {
     // sampling/backfill progress keeps moving server-side; keep the numbers fresh
     refetchInterval: 60_000,
   });
-  const invalidate = () => qc.invalidateQueries({ queryKey: ['hn-status'] });
+  const invalidate = () => {
+    qc.invalidateQueries({ queryKey: ['hn-status'] });
+    // the sidebar + /s/hn view render from these
+    qc.invalidateQueries({ queryKey: ['sources'] });
+    qc.invalidateQueries({ queryKey: ['timeline'] });
+  };
   const subscribe = useMutation({
     mutationFn: api.hnSubscribe,
     onSuccess: () => {
@@ -78,14 +85,13 @@ export function HackerNewsSection() {
         </div>
       ) : status?.subscribed ? (
         <div className="flex items-center gap-3 px-4 py-3 sm:px-5">
-          <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-orange-500/15 text-orange-500">
-            <Flame className="size-4" />
-          </span>
+          <HnGlyph className="size-9 shrink-0 rounded-full text-base" />
           <div className="min-w-0">
             <div className="truncate text-sm font-medium">Front Page</div>
             <HnStatusLine status={status} />
           </div>
           <div className="ml-auto flex items-center gap-2">
+            <HnDisplayModeMenu mode={asHnDisplayMode(status.config?.display_mode)} />
             <Switch
               checked={status.enabled}
               onCheckedChange={(enabled) => setEnabled.mutate(enabled)}

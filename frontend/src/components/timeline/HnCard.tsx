@@ -1,11 +1,16 @@
-// Minimal Hacker News card (Phase-2 mechanical adaptation): keeps the multi-source
-// timeline rendering + scroll-to-read + save working for hn items. The full card
-// (self-post text, day-rank badge, job styling, preview-pane entry) is Phase 3.
-import { memo, useCallback } from 'react';
+// A Hacker News story card: title as the main act (external link, or the comments
+// page for self-posts), score/comments/domain/day-rank meta, sanitized self-post
+// text behind a clamp toggle, muted job posts, and the shared details-pane entry
+// on the submitted time.
+import { memo, useCallback, useState } from 'react';
 import { Bookmark } from 'lucide-react';
 
+import { HnGlyph } from '@/components/HnGlyph';
 import { useSaveToggle } from '@/hooks/useSaveToggle';
-import { timeLabel } from '@/lib/format';
+import { fullDateLabel, timeLabel } from '@/lib/format';
+import { useLinkPreviewPane } from '@/lib/linkPreviewPane';
+import { sanitizeHtml } from '@/lib/sanitize';
+import { hnCommentsUrl } from '@/lib/sources';
 import { useUnreadIndicator } from '@/lib/unreadIndicator';
 import { cn } from '@/lib/utils';
 import type { ReadTarget, TimelineItem } from '@/lib/types';
@@ -17,10 +22,43 @@ interface Props {
   observe?: (el: Element | null, target: ReadTarget) => (() => void) | void;
 }
 
+/** Self-posts longer than this stay clamped behind a "more" toggle. */
+const CLAMP_THRESHOLD = 400;
+
+/** Sanitized self-post body with a deterministic clamp (no layout measuring). */
+function HnSelfText({ text }: { text: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const clampable = text.length > CLAMP_THRESHOLD;
+  return (
+    <div className="mt-1">
+      <div
+        className={cn(
+          'text-sm leading-relaxed break-words text-foreground/90',
+          '[&_a]:break-all [&_a]:underline [&_a]:underline-offset-2 [&_p]:mt-2 [&_p:first-child]:mt-0',
+          '[&_pre]:mt-2 [&_pre]:overflow-x-auto [&_pre]:rounded [&_pre]:bg-muted/50 [&_pre]:p-2 [&_pre]:text-xs',
+          clampable && !expanded && 'line-clamp-5',
+        )}
+        // eslint-disable-next-line react/no-danger
+        dangerouslySetInnerHTML={{ __html: sanitizeHtml(text) }}
+      />
+      {clampable && (
+        <button
+          type="button"
+          onClick={() => setExpanded((v) => !v)}
+          className="mt-1 text-xs font-medium text-sky-600 hover:underline dark:text-sky-400"
+        >
+          {expanded ? 'less' : 'more'}
+        </button>
+      )}
+    </div>
+  );
+}
+
 function HnCardImpl({ item, observe }: Props) {
   const hn = item.hn!;
   const save = useSaveToggle();
   const { mode } = useUnreadIndicator();
+  const { open, openPane } = useLinkPreviewPane();
 
   const attach = useCallback(
     (el: HTMLElement | null) => {
@@ -30,7 +68,10 @@ function HnCardImpl({ item, observe }: Props) {
     [observe, item.is_read, item.key],
   );
 
-  const commentsUrl = `https://news.ycombinator.com/item?id=${hn.id}`;
+  const commentsUrl = hnCommentsUrl(hn.id);
+  const isJob = hn.type === 'job';
+  const isActive = open?.source === 'hn' && open.story.id === hn.id;
+  const timeTitle = `${fullDateLabel(hn.submitted_at ?? item.datetime)} · on front page ${fullDateLabel(item.datetime)}`;
 
   return (
     <article
@@ -39,6 +80,7 @@ function HnCardImpl({ item, observe }: Props) {
       className={cn(
         'group relative border-b px-4 py-3 transition-colors duration-500 sm:px-5',
         mode === 'divider' && !item.is_read ? 'border-sky-500 dark:border-sky-400' : 'border-border/50',
+        isActive && 'bg-muted/40',
       )}
     >
       <header className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -52,13 +94,24 @@ function HnCardImpl({ item, observe }: Props) {
               )}
             />
           )}
-          <span className="flex size-5 items-center justify-center rounded bg-orange-500 text-[10px] font-bold text-white">
-            Y
-          </span>
+          <HnGlyph />
           <span className="font-medium text-foreground/80">Hacker News</span>
         </div>
         <span aria-hidden>·</span>
-        <time>{timeLabel(item.datetime)}</time>
+        {/* Details-pane entry, matching MessageCard: the visible time is the story's
+            submission time (the sort position is its front-page debut — see title). */}
+        <button
+          type="button"
+          onClick={() => openPane({ source: 'hn', story: hn })}
+          title={timeTitle}
+          aria-label="Open story details"
+          className="cursor-pointer rounded underline-offset-2 transition-colors hover:text-foreground hover:underline"
+        >
+          <time>{timeLabel(hn.submitted_at ?? item.datetime)}</time>
+        </button>
+        {isJob && (
+          <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium tracking-wide uppercase">Job</span>
+        )}
         <button
           type="button"
           onClick={() => save.mutate({ key: item.key, saved: !item.is_saved })}
@@ -77,19 +130,34 @@ function HnCardImpl({ item, observe }: Props) {
         href={hn.url ?? commentsUrl}
         target="_blank"
         rel="noreferrer"
-        className="mt-1 block text-sm leading-relaxed font-medium break-words hover:underline"
+        className={cn(
+          'mt-1 block text-sm leading-relaxed font-medium break-words hover:underline',
+          isJob && 'text-muted-foreground',
+        )}
       >
         {hn.title}
       </a>
-      <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
-        <span>{hn.score} points</span>
-        <span aria-hidden>·</span>
-        <a href={commentsUrl} target="_blank" rel="noreferrer" className="hover:underline">
-          {hn.comments_count} comments
-        </a>
+
+      {!hn.url && hn.text && <HnSelfText text={hn.text} />}
+
+      <div className={cn('mt-1 flex items-center gap-2 text-xs text-muted-foreground', isJob && 'opacity-70')}>
+        {hn.day_rank != null && (
+          <span title="Rank of its archive day, by points" className="font-medium text-orange-600 dark:text-orange-400">
+            #{hn.day_rank}
+          </span>
+        )}
+        {!isJob && (
+          <>
+            <span>{hn.score} points</span>
+            <span aria-hidden>·</span>
+            <a href={commentsUrl} target="_blank" rel="noreferrer" className="hover:underline">
+              {hn.comments_count} comments
+            </a>
+          </>
+        )}
         {hn.domain && (
           <>
-            <span aria-hidden>·</span>
+            {!isJob && <span aria-hidden>·</span>}
             <span className="truncate">{hn.domain}</span>
           </>
         )}

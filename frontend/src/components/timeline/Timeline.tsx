@@ -9,7 +9,7 @@ import { useNewContent } from '@/hooks/useNewContent';
 import { useScrollToRead } from '@/hooks/useScrollToRead';
 import { useChannelLabels, useSubscriptions } from '@/hooks/useSubscriptions';
 import { dayKey } from '@/lib/format';
-import type { TimelineItem } from '@/lib/types';
+import type { Source, TimelineItem } from '@/lib/types';
 import type { TimelineQuery } from '@/hooks/useTimeline';
 
 import { TimelineDayGroup } from './TimelineDayGroup';
@@ -39,6 +39,8 @@ interface TimelineProps {
   /** Identifies the current view; changing it resets scroll + re-gates mark-as-read. */
   viewKey: string;
   channelId?: number;
+  /** Mirrors the view's source scope into the new-content poll. */
+  source?: Source;
   date?: string;
   /** Mirrors the view's unread filter into the new-content poll. */
   unreadOnly?: boolean;
@@ -56,6 +58,7 @@ export function Timeline({
   query,
   viewKey,
   channelId,
+  source,
   date,
   unreadOnly,
   items,
@@ -72,7 +75,7 @@ export function Timeline({
 
   // New-content poll: anchored to the newest loaded item; disabled in date-filtered views.
   const headCursor = query.data?.pages[0]?.head_cursor ?? null;
-  const newContent = useNewContent({ channelId, headCursor, unreadOnly, active: !date });
+  const newContent = useNewContent({ channelId, headCursor, unreadOnly, active: !date, source });
   const newCount = newContent.data?.count ?? 0;
 
   function jumpToNewest() {

@@ -675,3 +675,28 @@ def test_bulk_read_covers_hn(env):
 
         assert client.post('/api/read/bulk', json={}).status_code == 200
         assert all(it['is_read'] for it in client.get('/api/timeline').json()['items'])
+
+
+def test_bulk_read_scoped_to_one_source(env):
+    """The source-scoped views' mark-all-read must not leak into other sources."""
+    with _client() as client:
+        _login(client)
+        seed_channel(1, 'C')
+        seed_messages([md(1, 10, 1)])
+        db.add_subscription(1)
+        subscribe_hn()
+        seed_hn(101, 2)
+
+        assert client.post('/api/read/bulk', json={'source': 'hn'}).status_code == 200
+        by_key = {it['key']: it['is_read'] for it in client.get('/api/timeline').json()['items']}
+        assert by_key['hn:101'] is True
+        assert by_key['tg:1:10'] is False
+
+        assert client.post('/api/read/bulk', json={'source': 'telegram'}).status_code == 200
+        assert all(it['is_read'] for it in client.get('/api/timeline').json()['items'])
+
+
+def test_bulk_read_rejects_unknown_source(env):
+    with _client() as client:
+        _login(client)
+        assert client.post('/api/read/bulk', json={'source': 'rss'}).status_code == 422

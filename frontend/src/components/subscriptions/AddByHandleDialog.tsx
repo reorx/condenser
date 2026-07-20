@@ -22,6 +22,7 @@ export function AddByHandleDialog({ open, onOpenChange }: AddByHandleDialogProps
     onSuccess: (res) => {
       setHandle('');
       qc.invalidateQueries({ queryKey: ['subscriptions'] });
+      qc.invalidateQueries({ queryKey: ['sources'] });
       qc.invalidateQueries({ queryKey: ['timeline'] });
       toast.success(`Subscribed to ${res.title ?? res.username ?? 'channel'} — backfilling…`);
       onOpenChange(false);

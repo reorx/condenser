@@ -222,7 +222,12 @@ export interface TimelineParams {
   channel_id?: number | null;
   date?: string | null;
   unread_only?: boolean;
+  /** Narrow the query to one source; channel_id already implies telegram. */
+  source?: Source | null;
 }
+
+/** HN front-feed display mode: how many of each day's top stories are visible. */
+export type HnDisplayMode = 'top10' | 'top20' | 'half' | 'all';
 
 /** A (channel_id, message_id) pair for Telegram-scoped endpoints (media, previews). */
 export interface MsgRef {

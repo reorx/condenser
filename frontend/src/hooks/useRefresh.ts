@@ -13,6 +13,7 @@ export function useRefreshChannel() {
       qc.invalidateQueries({ queryKey: ['timeline'] });
       qc.invalidateQueries({ queryKey: ['timeline-days'] });
       qc.invalidateQueries({ queryKey: ['subscriptions'] });
+      qc.invalidateQueries({ queryKey: ['sources'] });
     },
     onError: (e) => toast.error(errorMessage(e, 'Could not refresh channel')),
   });
@@ -32,6 +33,7 @@ export function useFetchOlder() {
       qc.invalidateQueries({ queryKey: ['timeline'] });
       qc.invalidateQueries({ queryKey: ['timeline-days'] });
       qc.invalidateQueries({ queryKey: ['subscriptions'] });
+      qc.invalidateQueries({ queryKey: ['sources'] });
     },
     onError: (e) => toast.error(errorMessage(e, 'Could not fetch older posts')),
   });
@@ -47,6 +49,7 @@ export function useResetChannel() {
       qc.invalidateQueries({ queryKey: ['timeline'] });
       qc.invalidateQueries({ queryKey: ['timeline-days'] });
       qc.invalidateQueries({ queryKey: ['subscriptions'] });
+      qc.invalidateQueries({ queryKey: ['sources'] });
     },
     onError: (e) => toast.error(errorMessage(e, 'Could not reset channel')),
   });

@@ -71,7 +71,7 @@ def post_read(body: ReadBody):
 
 @router.post('/read/bulk')
 def post_read_bulk(body: ReadBulkBody):
-    db.mark_read_bulk(body.channel_id, body.before_date)
+    db.mark_read_bulk(body.channel_id, body.before_date, body.source)
     return {'ok': True}
 
 

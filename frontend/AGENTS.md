@@ -30,17 +30,21 @@ Two conventions this list exists to protect:
 | Component | Purpose |
 |---|---|
 | `AppShell` *(in `pages/`)* | App layout: desktop sidebar + mobile drawer + content column |
-| `CalendarPopover` | Date-filter popover; calendar limited to days that have content, with a Clear action |
+| `CalendarPopover` | Date-filter popover; calendar limited to days that have content (channel- or source-scoped), with a Clear action |
 | `ChannelAvatar` | Channel avatar from `/api/channels/{id}/avatar`; falls back to a colored initial (`letterOnly` forces the initial) |
 | `ChannelFilter` + `AllChannelsHidden` | Dropdown to toggle per-channel visibility in multi-channel views; `AllChannelsHidden` is the all-filtered-out empty state |
 | `ChannelFilterOption` | One row inside the `ChannelFilter` dropdown (avatar + name + message count) |
 | `ConfirmDialog` | Generic confirm/cancel modal (destructive variant + pending state) |
 | `DeviceList` | Authorized devices (bearer-token clients) in `SettingsDialog`: list + revoke with confirm |
+| `HnDisplayModeMenu` | Top-N display-mode dropdown (top10/top20/half/all → PATCH the front feed's config); used by the `/s/hn` header + `HackerNewsSection` |
+| `HnGlyph` | The HN "Y" mark in its orange square (size via className); shared by `HnCard`, the sidebar feed row, the `/s/hn` header, `HackerNewsSection` |
 | `PageHeader` + `IconBadge` | Unified reading-view top bar (leading icon + title + meta + right-aligned actions); `IconBadge` wraps a lucide icon in a muted circle |
 | `SegmentedOption` | One icon-over-label button in a segmented control; shared by `SettingsDialog`'s theme + unread pickers |
 | `SettingsDialog` | Settings modal: Telegram account, theme, unread-indicator mode, devices, lock app |
-| `Sidebar` | Left navigation: nav links (Unread first, `/` = Unread, `/?all=1` = All), channel list, browse, settings |
-| `SidebarChannelLink` + `navLinkClass` | One channel link in the sidebar; also exports the shared nav-row className used by the top-level links |
+| `Sidebar` | Left navigation: nav links (Unread first, `/` = Unread, `/?all=1` = All), then one `SidebarSourceGroup` per source from `GET /api/sources`, browse, settings |
+| `SidebarSourceGroup` | One collapsible source section (collapse persisted via `useCollapsedSources`): header row = chevron toggle + label linking to `/s/:source` (+ unread badge when collapsed), rows = the source's enabled subscriptions |
+| `SidebarChannelLink` + `navLinkClass` | One Telegram channel link in a sidebar source group; also exports the shared nav-row className used by the top-level links |
+| `SidebarHnFeedLink` | One HN feed link in the sidebar's Hacker News group (routes to `/s/hn` — v1 has a single feed) |
 | `Spinner` + `FullScreenSpinner` | Loading spinner (inline + full-screen) |
 | `UnreadBadge` | Unread-count pill; renders nothing at 0, caps display at `999+` |
 
@@ -52,14 +56,14 @@ Two conventions this list exists to protect:
 | `TimelineDayGroup` | One calendar day's messages under a static date divider |
 | `TimelineSkeleton` | Loading placeholder rows for the timeline |
 | `MessageCard` | A single Telegram item (takes the `TimelineItem` envelope; payload in `item.telegram`): header (avatar/name/time/save), text, media, webpage preview, forward box. The time is a button (full-date `title` tooltip) that opens the `LinkPreviewPane` — the unified drawer entry on every message |
-| `HnCard` | Minimal Hacker News story card (Phase-2 mechanical adaptation): orange Y badge, title link, score/comments/domain meta, scroll-to-read + save. The full treatment (self-post text, day-rank, job styling) is Phase 3 |
+| `HnCard` | A Hacker News story card: title link (external URL, or comments page for self-posts), day-rank badge + score/comments/domain meta, sanitized self-post HTML behind a char-threshold "more" clamp, muted job posts, scroll-to-read + save; the submitted-time button opens the `LinkPreviewPane` (HN target) |
 | `MessageMedia` | Media layout (single image vs 2/3-col grid) + lightbox trigger |
 | `MediaThumb` | One media thumbnail: skeleton + aspect-ratio transition + file-chip fallback when no preview image |
 | `WebPagePreview` | Telegram-style inline link preview card (thumbnail + site/title/description) |
-| `LinkPreviewPane` | Right-side slide-out (shadcn `Sheet`) that fetches + shows previews for a message's links + a pinned "Open original in Telegram" footer link (`tgMessageUrl`: @username or `/c/` form); mounted once in `AppShell`, driven by the `linkPreviewPane` context |
-| `LinkPreviewCard` | One self-fetched link preview shown in the pane (proxied image / Telegram-image fallback + site/title/description) |
+| `LinkPreviewPane` | Right-side slide-out (shadcn `Sheet`) driven by the `linkPreviewPane` context's `PaneTarget` union: a TG message's link previews with an "Open original in Telegram" footer (`tgMessageUrl`), or an HN story's URL preview with an "Open comments on Hacker News" footer (self-posts show a placeholder); mounted once in `AppShell` |
+| `LinkPreviewCard` | One self-fetched link preview shown in the pane (proxied image / Telegram-image fallback + site/title/description; `channelId` optional — absent for HN targets) |
 | `Lightbox` | Fullscreen media viewer with prev/next navigation |
-| `SavedMessageItem` | One saved message in the Saved view (full date line + `MessageCard`) |
+| `SavedMessageItem` | One saved item in the Saved view: full date line + the source's card (`MessageCard` / `HnCard`) |
 
 ### `components/filters/`
 
@@ -83,7 +87,7 @@ Two conventions this list exists to protect:
 | `BrowseChannelsDialog` | "Browse my channels" modal: search + multi-select + batch add |
 | `BrowseChannelRow` | One selectable channel row in `BrowseChannelsDialog` |
 | `SubscriptionRow` | One channel row on the Manage channels page: enable switch + actions menu + confirm dialogs |
-| `HackerNewsSection` | Phase-1 minimal Hacker News block on the Manage page: Front Page subscribe/unsubscribe, sampling pause switch, status line (`/api/hn/status`); superseded by the per-source management page in Phase 3 |
+| `HackerNewsSection` | The Hacker News block on the Subscriptions page: Front Page subscribe/unsubscribe, sampling pause switch, display-mode menu, status line (`/api/hn/status`) |
 
 > `components/ui/` holds generated shadcn/ui (new-york) primitives — intentionally **excluded**
 > from this inventory. Don't list them here. Import `Button` from `@/components/ui/button`.
@@ -93,12 +97,17 @@ Two conventions this list exists to protect:
 - `pages/` — route screens (`TimelineView`, `RecordsView`, `FiltersView`, `SubscriptionsView`,
   `AppShell`, `AppLogin`, `TgLogin`, `AuthorizeView` — the device-authorization page cold-loaded
   by the iOS app; only needs the cookie session, so `App.tsx` renders it before the TG gate).
-- `hooks/` — data + behavior hooks (`useTimeline`, `useSubscriptions`, `useChannelFilter`,
-  `useScrollToRead`, `useNewContent`, `useRefresh`, mutations, …).
+- `hooks/` — data + behavior hooks (`useTimeline`, `useSources`, `useSubscriptions`,
+  `useChannelFilter`, `useScrollToRead`, `useNewContent`, `useRefresh`, `useCollapsedSources`
+  (sidebar collapse persistence), `useHnDisplayMode` (mode helpers + PATCH mutation),
+  mutations, …). `useTimeline` / `useTimelineDays` / `useNewContent` / `useBulkRead` accept a
+  `source` scope (the `/s/:source` views).
 - `lib/` — `api.ts` (typed fetch client), `types.ts` (backend JSON mirror), `format.ts`,
-  `linkify.tsx`, `extractUrls.ts` (shared URL regex/extraction for linkify + the preview pane),
-  `linkPreviewPane.tsx` (open-message context for `LinkPreviewPane`), `theme.tsx`,
-  `unreadIndicator.tsx`, `queryClient.ts`, `utils.ts`.
+  `sources.ts` (source labels, `hnCommentsUrl`, sub-row labels), `sanitize.ts` (DOMPurify
+  wrapper for HN self-post HTML), `linkify.tsx`, `extractUrls.ts` (shared URL
+  regex/extraction for linkify + the preview pane), `linkPreviewPane.tsx` (the pane's
+  `PaneTarget` context: TG message or HN story), `theme.tsx`, `unreadIndicator.tsx`,
+  `queryClient.ts`, `utils.ts`.
 
 ## Debugging
 

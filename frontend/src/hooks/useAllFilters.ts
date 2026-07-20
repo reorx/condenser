@@ -19,6 +19,7 @@ function useFilterInvalidation() {
     qc.invalidateQueries({ queryKey: ['filters-all'] });
     qc.invalidateQueries({ queryKey: ['timeline'] });
     qc.invalidateQueries({ queryKey: ['subscriptions'] });
+    qc.invalidateQueries({ queryKey: ['sources'] });
   };
 }
 

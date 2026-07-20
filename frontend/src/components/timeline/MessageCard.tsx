@@ -8,7 +8,7 @@ import { linkify } from '@/lib/linkify';
 import { useLinkPreviewPane } from '@/lib/linkPreviewPane';
 import { useUnreadIndicator } from '@/lib/unreadIndicator';
 import { cn } from '@/lib/utils';
-import type { DisplayMessage, MsgRef, ReadTarget, TimelineItem } from '@/lib/types';
+import type { DisplayMessage, ReadTarget, TimelineItem } from '@/lib/types';
 
 import { MessageMedia } from './MessageMedia';
 import { WebPagePreview } from './WebPagePreview';
@@ -32,10 +32,9 @@ function MessageCardImpl({ item, channelLabel, observe }: Props) {
   const save = useSaveToggle();
   const { mode } = useUnreadIndicator();
   const { open, openPane } = useLinkPreviewPane();
-  const ref: MsgRef = { channel_id: msg.channel_id, message_id: msg.id };
   const fwdName = forwardSourceName(msg);
 
-  const isActive = open?.channel_id === msg.channel_id && open?.message_id === msg.id;
+  const isActive = open?.source === 'telegram' && open.channel_id === msg.channel_id && open.message_id === msg.id;
 
   const attach = useCallback(
     (el: HTMLElement | null) => {
@@ -87,7 +86,7 @@ function MessageCardImpl({ item, channelLabel, observe }: Props) {
         {/* Unified pane entry: every message opens the link-preview drawer via its time. */}
         <button
           type="button"
-          onClick={() => openPane(ref)}
+          onClick={() => openPane({ source: 'telegram', channel_id: msg.channel_id, message_id: msg.id })}
           title={fullDateLabel(msg.date)}
           aria-label="Open message details"
           className="cursor-pointer rounded underline-offset-2 transition-colors hover:text-foreground hover:underline"

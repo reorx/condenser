@@ -9,6 +9,7 @@ import type {
   JoinedChannel,
   KeywordFilter,
   LinkPreview,
+  Source,
   SourceGroup,
   Subscription,
   TgStatus,
@@ -135,6 +136,12 @@ export const api = {
       body: JSON.stringify({ enabled }),
     }),
   hnUnsubscribe: () => del<{ ok: true }>('/api/sources/hn/subscriptions/front'),
+  // Front-feed display config (e.g. {display_mode: 'top10'}); merged server-side as the whole config.
+  hnSetConfig: (config: Record<string, unknown>) =>
+    request<{ ok: true }>('/api/sources/hn/subscriptions/front', {
+      method: 'PATCH',
+      body: JSON.stringify({ config }),
+    }),
 
   // ---- sources (two-level source -> subscriptions listing, Phase 2) ----
   listSources: () => request<SourceGroup[]>('/api/sources'),
@@ -159,17 +166,18 @@ export const api = {
           channel_id: params.channel_id,
           date: params.date,
           unread_only: params.unread_only,
+          source: params.source,
         }),
     ),
-  timelineDays: (channelId?: number | null) =>
-    request<DayCount[]>('/api/timeline/days' + qs({ channel_id: channelId })),
-  timelineNew: (after: string, channelId?: number | null, limit = 100, unreadOnly = false) =>
+  timelineDays: (channelId?: number | null, source?: Source | null) =>
+    request<DayCount[]>('/api/timeline/days' + qs({ channel_id: channelId, source })),
+  timelineNew: (after: string, channelId?: number | null, limit = 100, unreadOnly = false, source?: Source | null) =>
     request<TimelineNew>(
-      '/api/timeline/new' + qs({ after, channel_id: channelId, limit, unread_only: unreadOnly || undefined }),
+      '/api/timeline/new' + qs({ after, channel_id: channelId, limit, unread_only: unreadOnly || undefined, source }),
     ),
 
   markRead: (keys: string[]) => post<{ ok: true }>('/api/read', { keys }),
-  markReadBulk: (body: { channel_id?: number | null; before_date?: string | null }) =>
+  markReadBulk: (body: { channel_id?: number | null; before_date?: string | null; source?: Source | null }) =>
     post<{ ok: true }>('/api/read/bulk', body),
 
   // ---- link previews ----

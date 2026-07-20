@@ -1,6 +1,6 @@
 // Mock data for the component preview page (`/preview.html`, dev-only). Lets us render
 // real components with deterministic data and screenshot them to verify visual changes.
-import type { DisplayMessage, LinkPreview, TimelineItem } from '@/lib/types';
+import type { DisplayMessage, HnStory, LinkPreview, TimelineItem } from '@/lib/types';
 
 export const CHANNEL_ID = 1833253016;
 
@@ -43,6 +43,37 @@ export function makeItem(
     is_read: flags.is_read ?? false,
     is_saved: flags.is_saved ?? false,
     telegram: msg,
+  };
+}
+
+/** Wrap an HnStory in its item envelope; override only what a case cares about. */
+export function makeHnItem(
+  over: Partial<HnStory> & Pick<HnStory, 'id'>,
+  flags: { is_read?: boolean; is_saved?: boolean } = {},
+): TimelineItem {
+  const hn: HnStory = {
+    title: 'An HN story',
+    url: 'https://example.com/post',
+    domain: 'example.com',
+    author: 'alice',
+    type: 'story',
+    text: null,
+    submitted_at: '2026-06-23T01:00:00Z',
+    first_seen_at: '2026-06-23T03:09:00Z',
+    score: 100,
+    comments_count: 10,
+    day_rank: null,
+    peak_rank: null,
+    backfilled: false,
+    ...over,
+  };
+  return {
+    source: 'hn',
+    key: `hn:${hn.id}`,
+    datetime: hn.first_seen_at,
+    is_read: flags.is_read ?? false,
+    is_saved: flags.is_saved ?? false,
+    hn,
   };
 }
 
@@ -123,28 +154,46 @@ export const dayItems: TimelineItem[] = [
     },
     { is_saved: true },
   ),
-  // A Hacker News story rendered by the minimal HnCard (Phase 2).
-  {
-    source: 'hn',
-    key: 'hn:44001234',
-    datetime: '2026-06-23T03:09:00Z',
-    is_read: false,
-    is_saved: false,
-    hn: {
-      id: 44001234,
-      title: 'Show HN: A self-hosted Telegram + HN aggregating reader',
-      url: 'https://example.com/condenser',
-      domain: 'example.com',
-      author: 'reorx',
-      type: 'story',
-      text: null,
-      submitted_at: '2026-06-23T01:00:00Z',
-      first_seen_at: '2026-06-23T03:09:00Z',
-      score: 128,
-      comments_count: 42,
-      day_rank: 3,
-      peak_rank: 5,
-      backfilled: false,
+  // Hacker News cards: external story w/ day rank, long self-post (clamp toggle), job post.
+  makeHnItem({
+    id: 44001234,
+    title: 'Show HN: A self-hosted Telegram + HN aggregating reader',
+    url: 'https://example.com/condenser',
+    score: 128,
+    comments_count: 42,
+    day_rank: 3,
+    peak_rank: 5,
+  }),
+  makeHnItem(
+    {
+      id: 44001235,
+      title: 'Ask HN: How do you archive the front page?',
+      url: null,
+      domain: null,
+      text:
+        '<p>Every day the front page turns over and the good stuff is gone. ' +
+        'What do people use to keep a personal archive?</p><p>I have tried RSS, ' +
+        'bookmarking, and a cron job that scrapes the API, but nothing sticks. ' +
+        'Ideally I want per-day top-N with read state, like a Google Reader for HN. ' +
+        'Links like <a href="https://example.com/tool">this tool</a> get close. ' +
+        '<pre><code>curl https://hacker-news.firebaseio.com/v0/topstories.json</code></pre> ' +
+        'is where I started.</p>',
+      score: 87,
+      comments_count: 63,
+      day_rank: 7,
     },
-  },
+    { is_saved: true },
+  ),
+  makeHnItem(
+    {
+      id: 44001236,
+      title: 'Acme Corp (YC S26) is hiring founding engineers',
+      url: 'https://example.com/jobs',
+      type: 'job',
+      score: 1,
+      comments_count: 0,
+      day_rank: 28,
+    },
+    { is_read: true },
+  ),
 ];

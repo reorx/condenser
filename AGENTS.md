@@ -266,9 +266,23 @@ migrated (126 backend + 17 frontend green). Phase 2 post-merge review fixes are 
 (2026-07-20, TDD: invalid-cursor 422, merge floor for album-dense pages, synthetic poll
 anchors for empty sources, HN new-count buffer, half-mode ceil, aggregate header unread via
 `useSources`, records batch read-join — `kb/plans/2026-07-20-phase2-review-fixes.md`).
-**Do NOT deploy until Phases 3-4 ship** — the
-contract breaks the live web/iOS clients (deploy-order decision (b) in the plan). Phases
-3 (web UI) and 4 (iOS) remain — see
+**Phase 3 (web UI) is done** (2026-07-20): `/s/:source` source-scoped timeline route
+(`source` threaded through `useTimeline`/`useTimelineDays`/`useNewContent` + the backend
+already supported it; HN view header gets a top-N `HnDisplayModeMenu`, hides the TG-only
+refresh button), sidebar reworked to two-level source groups from `GET /api/sources`
+(`SidebarSourceGroup`, collapse persisted via `useCollapsedSources` localStorage), the
+Subscriptions page split into per-source sections (HN block gains the display-mode menu),
+full `HnCard` (day-rank badge, sanitized self-post HTML with a char-threshold "more"
+clamp via `lib/sanitize.ts`/DOMPurify, muted job posts, submitted-time shown), and
+`LinkPreviewPane` generalized to a `PaneTarget` union (HN story → URL preview +
+"Open comments on Hacker News" footer). One small non-breaking backend addition:
+`POST /api/read/bulk` accepts `source` so the `/s/:source` mark-all-read doesn't leak
+across sources (TDD'd in `tests/test_multi_source.py`; 128 backend + 31 frontend green;
+vitest setup now substitutes an in-memory localStorage — jsdom 29 delegates to Node's
+inert WebStorage under vitest).
+**Do NOT deploy until Phase 4 ships** — the
+contract breaks the live iOS client (deploy-order decision (b) in the plan). Phase
+4 (iOS) remains — see
 `kb/plans/2026-07-19-multi-source-hn.md`. Still open: subscription
 "delete-with-messages" option (Q4 / `?purge=1`) and the backfill batch-interval sleep.
 Full checklist: `kb/sessions/2026-06-09-backend-remaining-work.md`.

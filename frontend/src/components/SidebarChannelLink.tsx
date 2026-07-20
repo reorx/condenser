@@ -2,11 +2,9 @@ import { NavLink } from 'react-router-dom';
 
 import { ChannelAvatar } from '@/components/ChannelAvatar';
 import { UnreadBadge } from '@/components/UnreadBadge';
-import { channelName } from '@/lib/format';
-import type { Subscription } from '@/lib/types';
 import { cn } from '@/lib/utils';
 
-/** Shared className for every sidebar nav row (top-level links + channel links). */
+/** Shared className for every sidebar nav row (top-level links + subscription links). */
 export function navLinkClass({ isActive }: { isActive: boolean }) {
   return cn(
     'flex items-center gap-2 rounded-md px-2.5 py-1.5 text-sm transition-colors',
@@ -15,17 +13,19 @@ export function navLinkClass({ isActive }: { isActive: boolean }) {
 }
 
 interface SidebarChannelLinkProps {
-  sub: Subscription;
+  channelId: number;
+  label: string;
+  unread: number;
   onNavigate?: () => void;
 }
 
-/** A single subscribed-channel link in the sidebar's channel list. */
-export function SidebarChannelLink({ sub, onNavigate }: SidebarChannelLinkProps) {
+/** A single subscribed Telegram channel link inside the sidebar's Telegram group. */
+export function SidebarChannelLink({ channelId, label, unread, onNavigate }: SidebarChannelLinkProps) {
   return (
-    <NavLink to={`/c/${sub.channel_id}`} className={navLinkClass} onClick={onNavigate}>
-      <ChannelAvatar channelId={sub.channel_id} name={channelName(sub)} className="size-5 text-[10px]" />
-      <span className="truncate">{channelName(sub)}</span>
-      <UnreadBadge count={sub.unread} />
+    <NavLink to={`/c/${channelId}`} className={navLinkClass} onClick={onNavigate}>
+      <ChannelAvatar channelId={channelId} name={label} className="size-5 text-[10px]" />
+      <span className="truncate">{label}</span>
+      <UnreadBadge count={unread} />
     </NavLink>
   );
 }

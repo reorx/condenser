@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 
 import { api } from '@/lib/api';
+import type { Source } from '@/lib/types';
 
 const POLL_INTERVAL_MS = 30_000;
 
@@ -13,15 +14,21 @@ export function useNewContent({
   headCursor,
   unreadOnly,
   active,
+  source,
 }: {
   channelId?: number | null;
   headCursor: string | null;
   unreadOnly?: boolean;
   active: boolean;
+  /** Mirrors the view's source scope into the poll. */
+  source?: Source | null;
 }) {
   return useQuery({
-    queryKey: ['timeline-new', { channel_id: channelId ?? null, head: headCursor, unread_only: !!unreadOnly }],
-    queryFn: () => api.timelineNew(headCursor!, channelId ?? null, 1, !!unreadOnly),
+    queryKey: [
+      'timeline-new',
+      { channel_id: channelId ?? null, head: headCursor, unread_only: !!unreadOnly, source: source ?? null },
+    ],
+    queryFn: () => api.timelineNew(headCursor!, channelId ?? null, 1, !!unreadOnly, source ?? null),
     enabled: active && !!headCursor,
     refetchInterval: POLL_INTERVAL_MS,
     refetchIntervalInBackground: false,
