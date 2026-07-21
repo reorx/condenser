@@ -1,9 +1,11 @@
 import SwiftUI
 import CondenserKit
 
-/// 紧凑消息卡片：头像 + 频道名 + 相对时间 + 收藏星；正文预览 5 行（截断显示蓝色 more，
-/// 链接可直接点击）；媒体缩略图（点击直接开全屏查看器）；转发标记。
+/// 紧凑消息卡片（Telegram 条目）：头像 + 频道名 + 相对时间 + 收藏星；正文预览
+/// （截断显示蓝色 more，链接可直接点击）；媒体缩略图（点击直接开全屏查看器）；转发标记。
+/// 已读/收藏态在外层 TimelineItem envelope 上。
 struct MessageCard: View {
+    let item: TimelineItem
     let message: DisplayMessage
     /// 收藏列表不展示未读点（records 不携带已读态）
     var showsUnread = true
@@ -79,12 +81,12 @@ struct MessageCard: View {
         }
     }
 
-    private var isSaved: Bool { message.isSaved ?? false }
+    private var isSaved: Bool { item.isSaved }
 
     private var isUnread: Bool {
         showsUnread
-            && !(message.isRead ?? false)
-            && !reader.readReporter.readRefs.contains(message.ref)
+            && !item.isRead
+            && !reader.readReporter.readKeys.contains(item.key)
     }
 }
 

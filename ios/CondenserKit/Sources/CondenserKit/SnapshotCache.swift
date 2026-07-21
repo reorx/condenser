@@ -3,7 +3,12 @@ import Foundation
 /// 响应 JSON 的落盘快照（Caches 目录）：冷启动先渲染快照再后台刷新。
 /// 缓存是尽力而为的：save 失败静默丢弃，load 遇缺失/损坏返回 nil 不 crash
 /// （spec 明确要求容错，系统也可能随时清 Caches）。
+/// 目录带契约版本号：多信源 envelope 是 breaking change，v2 起换目录，
+/// 旧契约快照（或未来再升级时的旧文件）decode 失败一律按 miss 处理。
 public final class SnapshotCache: @unchecked Sendable {
+    /// 快照契约版本：API breaking change 时 +1（v2 = 多信源 envelope）
+    public static let contractVersion = 2
+
     private let directory: URL
     private let encoder = JSONEncoder.condenserAPI
     private let decoder = JSONDecoder.condenserAPI
@@ -11,7 +16,8 @@ public final class SnapshotCache: @unchecked Sendable {
     public init(directory: URL? = nil) {
         self.directory = directory ?? FileManager.default
             .urls(for: .cachesDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("condenser-snapshots", isDirectory: true)
+            .appendingPathComponent(
+                "condenser-snapshots-v\(Self.contractVersion)", isDirectory: true)
     }
 
     public func save<T: Encodable>(_ value: T, key: String) {

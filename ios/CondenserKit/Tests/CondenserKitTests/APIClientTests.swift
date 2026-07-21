@@ -26,6 +26,16 @@ struct APIClientTests {
         let names = Set(comps.queryItems!.map(\.name))
         #expect(names.contains("cursor") && names.contains("unread_only"))
         #expect(!names.contains("channel_id"))
+        #expect(!names.contains("source"))
+    }
+
+    @Test("timeline：source 参数透传")
+    func timelineSourceParam() async throws {
+        let captured = MockURLProtocol.respond(
+            status: 200, json: #"{"items": [], "next_cursor": null, "head_cursor": null}"#)
+        _ = try await makeClient().timeline(source: "hn")
+        let comps = URLComponents(url: captured.url!, resolvingAgainstBaseURL: false)!
+        #expect(comps.queryItems!.contains(URLQueryItem(name: "source", value: "hn")))
     }
 
     @Test("timelineNew：after/channel_id 传参")
@@ -39,21 +49,40 @@ struct APIClientTests {
         #expect(comps.queryItems!.contains(URLQueryItem(name: "channel_id", value: "42")))
     }
 
-    @Test("markRead：POST /api/read，body {items: [...]} snake_case")
+    @Test("markRead：POST /api/read，body {keys: [...]}")
     func markReadBody() async throws {
         let captured = MockURLProtocol.respond(status: 200, json: #"{"ok": true}"#)
-        try await makeClient().markRead([MsgRef(channelID: 7, messageID: 99)])
+        try await makeClient().markRead(keys: ["tg:7:99", "hn:123"])
         #expect(captured.method == "POST")
         #expect(captured.url?.path() == "/api/read")
-        let items = try #require(captured.bodyJSON?["items"] as? [[String: Int]])
-        #expect(items == [["channel_id": 7, "message_id": 99]])
+        let keys = try #require(captured.bodyJSON?["keys"] as? [String])
+        #expect(keys == ["tg:7:99", "hn:123"])
+    }
+
+    @Test("sources：GET /api/sources 解码分组")
+    func sourcesRequest() async throws {
+        let captured = MockURLProtocol.respond(status: 200, json: #"""
+        [{"source": "telegram",
+          "subscriptions": [{"channel_id": 42, "name": "Chan", "username": "c42",
+                             "enabled": true, "unread": 3, "config": null}]},
+         {"source": "hn",
+          "subscriptions": [{"channel_id": "front", "name": "Hacker News Front Page",
+                             "username": null, "enabled": true, "unread": 7,
+                             "config": {"display_mode": "top20"}}]}]
+        """#)
+        let groups = try await makeClient().sources()
+        #expect(captured.url?.path() == "/api/sources")
+        #expect(groups.count == 2)
+        #expect(groups[0].subscriptions[0].channelID.intValue == 42)
+        #expect(groups[1].subscriptions[0].channelID == .string("front"))
+        #expect(groups[1].subscriptions[0].unread == 7)
     }
 
     @Test("401 → APIError.unauthorized")
     func unauthorized() async throws {
         _ = MockURLProtocol.respond(status: 401, json: #"{"detail": "unauthorized"}"#)
         await #expect(throws: APIError.unauthorized) {
-            _ = try await makeClient().subscriptions()
+            _ = try await makeClient().sources()
         }
     }
 
@@ -61,7 +90,7 @@ struct APIClientTests {
     func httpErrorDetail() async throws {
         _ = MockURLProtocol.respond(status: 503, json: #"{"detail": "telegram not connected"}"#)
         await #expect(throws: APIError.http(status: 503, detail: "telegram not connected")) {
-            _ = try await makeClient().subscriptions()
+            _ = try await makeClient().sources()
         }
     }
 
@@ -77,17 +106,18 @@ struct APIClientTests {
         #expect(comps.queryItems!.contains(URLQueryItem(name: "count", value: "200")))
     }
 
-    @Test("records 的 save/delete：方法与路径")
+    @Test("records 的 save/delete：item key 出入参")
     func recordEndpoints() async throws {
         var captured = MockURLProtocol.respond(status: 200, json: #"{"ok": true}"#)
-        try await makeClient().saveRecord(MsgRef(channelID: 1, messageID: 2))
+        try await makeClient().saveRecord(key: "hn:123")
         #expect(captured.method == "POST")
         #expect(captured.url?.path() == "/api/records")
+        #expect(captured.bodyJSON?["key"] as? String == "hn:123")
 
         captured = MockURLProtocol.respond(status: 200, json: #"{"ok": true}"#)
-        try await makeClient().deleteRecord(MsgRef(channelID: 1, messageID: 2))
+        try await makeClient().deleteRecord(key: "tg:1:2")
         #expect(captured.method == "DELETE")
-        #expect(captured.url?.path() == "/api/records/1/2")
+        #expect(captured.url?.path() == "/api/records/tg:1:2")
     }
 
     @Test("媒体与头像 URL builder")

@@ -18,7 +18,7 @@ private func forwardedMsg(
             fromUserID: fromUserID, fromUserName: fromUserName,
             fromMessageID: nil, originalDate: nil, postAuthor: postAuthor) : nil,
         views: nil, forwardsCount: nil, repliesCount: nil, rawMessageIDs: [1],
-        isRead: nil, isSaved: nil, channel: nil)
+        channel: nil)
 }
 
 @Suite("DisplayMessage.forwardSource")

@@ -216,9 +216,22 @@ refresh). Aggregate All/Unread views don't get the gesture (no per-channel seman
 name from Kit's `DisplayMessage.forwardSource`: channel → user → post_author cascade) as the
 header subject, with "Forwarded by <subscribed channel> · time" as the caption line; hidden
 sources (no name) degrade to the old plain "转发" tag. `ChannelAvatarView.channelID` is now
-optional (nil → letter avatar, no request). v1 spec complete;
-remaining polish: end-to-end `ASWebAuthenticationSession` verify on device, video playback
-(non-goal).
+optional (nil → letter avatar, no request). **Multi-source Phase 4 (2026-07-21)**: Kit
+models are envelope-based (`TimelineItem` + `HnStory`/`LinkPreview`; `DisplayMessage` lost
+its read/saved flags), `CondenserAPI` speaks item keys (`markRead(keys:)`,
+`saveRecord(key:)`, `DELETE /api/records/{key}`) + `sources()` (`SourceGroup`/`SourceSub`
+with int-or-string `SubChannelID`; `/api/subscriptions` dropped), `TimelineStore`/
+`NewContentPoller` take a `source` param, `ReadReporter` queues keys, `SnapshotCache`
+dir carries a contract version (`condenser-snapshots-v2`, old snapshots = miss),
+`hnPlainText` converts HN self-post HTML in Kit. App: source-switcher Menu top-left of
+Timeline (All + added sources from `/api/sources`), tab 2 频道→订阅 (source→subs two-level
+list; TG row → channel timeline, HN row → `HnFeedTimelineScreen` = source-scoped store),
+`HnCard`/`HnDetailSheet` (title → Safari original / comments for self-posts, meta line,
+day-rank, prefetched preview box), Saved/detail dispatch by source, debug routes gained
+`hn` + `tab/subs`. 114 Kit tests; fixtures regenerated as envelopes
+(`tmp/make_ios_fixtures.py`: mixed/tg/hn pages, hn_shapes, sources, records incl. a
+temp-saved HN record). v1 spec complete; remaining polish: end-to-end
+`ASWebAuthenticationSession` verify on device, video playback (non-goal).
 
 ## Dev
 
@@ -288,10 +301,11 @@ preview prefetched at ingest (`HNManager._fill_previews`) and persisted in
 `hn_stories.preview` (SCHEMA_VERSION 5); the envelope's `hn.preview` renders as an inline
 `LinkPreviewCard` in `HnCard` and makes the pane open instantly. Purely additive —
 doesn't affect the Phase 4 deploy-order constraint (138 backend + 34 frontend green).
-**Do NOT deploy until Phase 4 ships** — the
-contract breaks the live iOS client (deploy-order decision (b) in the plan). Phase
-4 (iOS) remains — see
-`kb/plans/2026-07-19-multi-source-hn.md`. Still open: subscription
+**Phase 4 (iOS) is done** (2026-07-21, see the iOS section above): the whole
+multi-source plan (`kb/plans/2026-07-19-multi-source-hn.md`) is complete and the
+**deploy-order constraint is lifted** — backend + web + iOS all speak the envelope
+contract, deploy whenever (rebuild + reinstall the iOS app alongside, deploy-order
+decision (b)). Still open: subscription
 "delete-with-messages" option (Q4 / `?purge=1`) and the backfill batch-interval sleep.
 Full checklist: `kb/sessions/2026-06-09-backend-remaining-work.md`.
 

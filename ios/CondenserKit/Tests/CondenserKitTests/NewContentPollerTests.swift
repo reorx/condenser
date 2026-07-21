@@ -7,7 +7,7 @@ import Testing
 @MainActor
 @Suite("NewContentPoller")
 struct NewContentPollerTests {
-    @Test("checkNow：after/channel_id/unread_only 传参正确并发布计数")
+    @Test("checkNow：after/channel_id/unread_only/source 传参正确并发布计数")
     func checkPublishesCount() async {
         let api = StubAPI()
         api.newResults = [.success(TimelineNew(count: 5, items: []))]
@@ -20,6 +20,17 @@ struct NewContentPollerTests {
         #expect(api.newCalls[0].after == "h1")
         #expect(api.newCalls[0].channelID == 42)
         #expect(api.newCalls[0].unreadOnly == true)
+        #expect(api.newCalls[0].source == nil)
+    }
+
+    @Test("单信源视图：source 透传到 /timeline/new")
+    func sourceScoped() async {
+        let api = StubAPI()
+        api.newResults = [.success(TimelineNew(count: 1, items: []))]
+        let poller = NewContentPoller(
+            api: api, source: SourceID.hn, interval: .seconds(60), headCursor: { "h1" })
+        await poller.checkNow()
+        #expect(api.newCalls[0].source == SourceID.hn)
     }
 
     @Test("head_cursor 为 nil 时不请求")

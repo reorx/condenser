@@ -4,10 +4,10 @@ import CondenserKit
 
 /// 登录后的组合根：持有 APIClient + TimelineStore / RecordsStore / ReadReporter /
 /// NewContentPoller + SnapshotCache，统一把 401 接到 AuthSession.handleUnauthorized。
-/// unreadOnly 切换时重建 timeline + poller（两者的过滤参数必须一致，见
-/// timeline.py:query_new 注释）。主 timeline 默认只看未读；All/未读两个视图各落一份
-/// 冷启动快照（未读快照可能含此后已读的条目，网络刷新整页替换即自愈）；
-/// 频道视图是临时态，不落快照。
+/// unreadOnly / selectedSource 切换时重建 timeline + poller（两者的过滤参数必须一致，
+/// 见 timeline.py:query_new 注释）。主 timeline 默认只看未读；每个 (source, unread)
+/// 组合各落一份冷启动快照；频道/单 feed 视图是临时态，不落快照。
+/// 订阅数据源是 GET /api/sources（信源菜单、订阅 tab、频道名 join 的唯一来源）。
 @MainActor
 @Observable
 final class ReaderSession {
@@ -16,66 +16,87 @@ final class ReaderSession {
     private(set) var records: RecordsStore
     private(set) var readReporter: ReadReporter
     private(set) var poller: NewContentPoller!
-    private(set) var subscriptions: [Subscription] = []
+    /// 已添加的信源分组（GET /api/sources）
+    private(set) var sources: [SourceGroup] = []
     private(set) var unreadOnly = true
+    /// nil = 全部信源；"telegram" / "hn" = 单信源视图
+    private(set) var selectedSource: String?
 
     private let snapshots = SnapshotCache()
     private let onUnauthorized: @MainActor () -> Void
-
-    private enum SnapshotKeys {
-        static let timelineAll = "timeline-all"
-        static let timelineUnread = "timeline-unread"
-        static let subscriptions = "subscriptions"
-    }
 
     init(server: URL, token: String, onUnauthorized: @escaping @MainActor () -> Void) {
         let api = APIClient(baseURL: server, token: token)
         self.api = api
         self.onUnauthorized = onUnauthorized
         timeline = TimelineStore(
-            api: api, unreadOnly: true, cache: snapshots, cacheKey: SnapshotKeys.timelineUnread)
+            api: api, unreadOnly: true, cache: snapshots,
+            cacheKey: Self.timelineKey(source: nil, unreadOnly: true))
         records = RecordsStore(api: api)
         readReporter = ReadReporter(api: api)
         timeline.onUnauthorized = onUnauthorized
         records.onUnauthorized = onUnauthorized
         readReporter.onUnauthorized = onUnauthorized
-        subscriptions = snapshots.load([Subscription].self, key: SnapshotKeys.subscriptions) ?? []
+        sources = snapshots.load([SourceGroup].self, key: "sources") ?? []
         poller = makePoller()
     }
 
     func setUnreadOnly(_ value: Bool) {
         guard value != unreadOnly else { return }
         unreadOnly = value
+        rebuildTimeline()
+    }
+
+    /// 信源切换器（Timeline 顶部左侧 Menu）
+    func setSource(_ source: String?) {
+        guard source != selectedSource else { return }
+        selectedSource = source
+        rebuildTimeline()
+    }
+
+    private func rebuildTimeline() {
         poller.stop()
         timeline = TimelineStore(
-            api: api, unreadOnly: value, cache: snapshots,
-            cacheKey: value ? SnapshotKeys.timelineUnread : SnapshotKeys.timelineAll)
+            api: api, unreadOnly: unreadOnly, source: selectedSource, cache: snapshots,
+            cacheKey: Self.timelineKey(source: selectedSource, unreadOnly: unreadOnly))
         timeline.onUnauthorized = onUnauthorized
         poller = makePoller()
         poller.start()
     }
 
-    /// 频道 tab push 进来的单频道 timeline（无快照、无轮询）
-    func makeChannelStore(channelID: Int) -> TimelineStore {
-        let store = TimelineStore(api: api, channelID: channelID)
-        store.onUnauthorized = onUnauthorized
-        return store
+    private static func timelineKey(source: String?, unreadOnly: Bool) -> String {
+        "timeline-\(source ?? "all")-\(unreadOnly ? "unread" : "all")"
     }
 
     private func makePoller() -> NewContentPoller {
-        let poller = NewContentPoller(api: api, unreadOnly: unreadOnly) { [weak self] in
+        let poller = NewContentPoller(
+            api: api, unreadOnly: unreadOnly, source: selectedSource
+        ) { [weak self] in
             self?.timeline.headCursor
         }
         poller.onUnauthorized = onUnauthorized
         return poller
     }
 
-    /// 频道名/username join 数据源（timeline item 只带 channel_id）；
-    /// 成功后落快照，冷启动先用快照渲染
-    func loadSubscriptions() async {
+    /// 订阅 tab push 进来的单频道 timeline（无快照、无轮询）
+    func makeChannelStore(channelID: Int) -> TimelineStore {
+        let store = TimelineStore(api: api, channelID: channelID)
+        store.onUnauthorized = onUnauthorized
+        return store
+    }
+
+    /// 订阅 tab push 进来的 HN feed timeline（v1 单 feed = source 全量视图）
+    func makeHnStore() -> TimelineStore {
+        let store = TimelineStore(api: api, source: SourceID.hn)
+        store.onUnauthorized = onUnauthorized
+        return store
+    }
+
+    /// 信源/订阅数据源；成功后落快照，冷启动先用快照渲染
+    func loadSources() async {
         do {
-            subscriptions = try await api.subscriptions()
-            snapshots.save(subscriptions, key: SnapshotKeys.subscriptions)
+            sources = try await api.sources()
+            snapshots.save(sources, key: "sources")
         } catch APIError.unauthorized {
             onUnauthorized()
         } catch {
@@ -83,20 +104,28 @@ final class ReaderSession {
         }
     }
 
-    func subscription(for channelID: Int) -> Subscription? {
-        subscriptions.first { $0.channelID == channelID }
+    var telegramSubs: [SourceSub] {
+        sources.first { $0.source == SourceID.telegram }?.subscriptions ?? []
+    }
+
+    var hnSubs: [SourceSub] {
+        sources.first { $0.source == SourceID.hn }?.subscriptions ?? []
+    }
+
+    func telegramSub(for channelID: Int) -> SourceSub? {
+        telegramSubs.first { $0.channelID.intValue == channelID }
     }
 
     func channelTitle(for channelID: Int) -> String {
-        subscription(for: channelID)?.title ?? "频道 \(channelID)"
+        telegramSub(for: channelID)?.name ?? "频道 \(channelID)"
     }
 
-    /// records 条目自包含 channel 快照，优先于 subscriptions join
+    /// records 条目自包含 channel 快照，优先于 sources join
     func channelTitle(for message: DisplayMessage) -> String {
         message.channel?.title ?? channelTitle(for: message.channelID)
     }
 
     func channelUsername(for message: DisplayMessage) -> String? {
-        message.channel?.username ?? subscription(for: message.channelID)?.username
+        message.channel?.username ?? telegramSub(for: message.channelID)?.username
     }
 }

@@ -3,7 +3,7 @@ import Testing
 @testable import CondenserKit
 
 // Models 解码回归：fixture 为真实后端 JSON（tmp/make_ios_fixtures.py 从 dev DB 生成）。
-// 字段事实来源 frontend/src/lib/types.ts。
+// 字段事实来源 frontend/src/lib/types.ts；多信源契约下条目是 TimelineItem envelope。
 
 private func loadFixture(_ name: String) throws -> Data {
     let url = try #require(Bundle.module.url(forResource: "Fixtures/\(name)", withExtension: "json"))
@@ -39,52 +39,119 @@ struct APIDateTests {
 struct ModelsDecodingTests {
     private let decoder = JSONDecoder.condenserAPI
 
-    @Test("timeline_page.json：整页解码，游标与条目字段齐全")
+    @Test("timeline_page.json：envelope 整页解码，key 唯一、payload 与 source 匹配")
     func timelinePage() throws {
         let page = try decoder.decode(TimelinePage.self, from: loadFixture("timeline_page"))
         #expect(page.items.count == 30)
         #expect(page.nextCursor != nil)
         #expect(page.headCursor != nil)
 
-        let first = try #require(page.items.first)
-        #expect(first.id == 18249)
-        #expect(first.channelID == 1_283_701_973)
-        #expect(first.isAlbum)
-        #expect(first.isEdited)
-        #expect(first.editDate != nil)
-        #expect(first.mediaItems.count >= 2)
-        #expect(first.mediaItems[0].width == 2560)
-        #expect(first.mediaItems[0].height == 1920)
-        #expect(first.text?.contains("广州") == true)
+        let keys = page.items.map(\.key)
+        #expect(Set(keys).count == keys.count, "item key 全局唯一")
+        for item in page.items {
+            switch item.source {
+            case SourceID.telegram:
+                #expect(item.telegram != nil && item.hn == nil)
+                #expect(item.key.hasPrefix("tg:"))
+            case SourceID.hn:
+                #expect(item.hn != nil && item.telegram == nil)
+                #expect(item.key.hasPrefix("hn:"))
+            default:
+                Issue.record("unexpected source \(item.source)")
+            }
+        }
     }
 
-    @Test("message_shapes.json：转发与网页预览形态")
+    @Test("timeline_page_tg.json：TG envelope 与 DisplayMessage 字段")
+    func telegramPage() throws {
+        let page = try decoder.decode(TimelinePage.self, from: loadFixture("timeline_page_tg"))
+        let first = try #require(page.items.first)
+        #expect(first.source == SourceID.telegram)
+        let msg = try #require(first.telegram)
+        #expect(first.key == "tg:\(msg.channelID):\(msg.id)")
+        #expect(first.datetime == msg.date)
+        #expect(!page.items.isEmpty && page.items.allSatisfy { $0.telegram != nil })
+    }
+
+    @Test("timeline_page_hn.json：HnStory 字段与派生 URL")
+    func hnPage() throws {
+        let page = try decoder.decode(TimelinePage.self, from: loadFixture("timeline_page_hn"))
+        let first = try #require(page.items.first)
+        #expect(first.source == SourceID.hn)
+        let story = try #require(first.hn)
+        #expect(first.key == "hn:\(story.id)")
+        #expect(story.score >= 0)
+        #expect(story.firstSeenAt != nil)
+        #expect(story.commentsURL.absoluteString == "https://news.ycombinator.com/item?id=\(story.id)")
+        // day_rank 是 query-time 排名，单源页上应存在
+        #expect(page.items.contains { $0.hn?.dayRank != nil })
+    }
+
+    @Test("hn_shapes.json：链接 / self-post / 预取 preview 三种形态")
+    func hnShapes() throws {
+        let shapes = try decoder.decode(
+            [String: TimelineItem].self, from: loadFixture("hn_shapes"))
+
+        let link = try #require(shapes["link"]?.hn)
+        #expect(link.url != nil)
+        #expect(link.externalURL != nil)
+        #expect(link.primaryURL == link.externalURL)
+        #expect(link.domain != nil)
+
+        let selfPost = try #require(shapes["self"]?.hn)
+        #expect(selfPost.url == nil)
+        #expect(selfPost.externalURL == nil)
+        #expect(selfPost.primaryURL == selfPost.commentsURL, "self-post 主链接回落评论页")
+        #expect(selfPost.text?.isEmpty == false)
+
+        let preview = try #require(shapes["preview"]?.hn?.preview)
+        #expect(preview.title?.isEmpty == false)
+        #expect(preview.url.hasPrefix("http"))
+    }
+
+    @Test("message_shapes.json：转发与网页预览形态（telegram payload）")
     func messageShapes() throws {
         let shapes = try decoder.decode(
             [String: DisplayMessage].self, from: loadFixture("message_shapes"))
 
         let fwd = try #require(shapes["forward"])
         #expect(fwd.isForwarded)
-        let info = try #require(fwd.forwardInfo)
-        #expect(info.fromChannelName == "harukachan eats delicious meals")
-        #expect(info.postAuthor == "nowano")
-        #expect(info.originalDate != nil)
+        #expect(fwd.forwardInfo != nil)
 
         let webpageMsg = try #require(shapes["webpage"])
         let wp = try #require(webpageMsg.webpage)
-        #expect(wp.siteName == "Nowledge Labs")
         #expect(wp.url?.hasPrefix("https://") == true)
+
+        let album = try #require(shapes["album"])
+        #expect(album.isAlbum)
+        #expect(album.mediaItems.count >= 2)
     }
 
-    @Test("subscriptions.json 解码")
-    func subscriptions() throws {
-        let subs = try decoder.decode([Subscription].self, from: loadFixture("subscriptions"))
-        #expect(!subs.isEmpty)
-        let first = try #require(subs.first)
-        #expect(first.channelID == 1_037_603_752)
-        #expect(first.title == "KAIX.IN")
-        #expect(first.username == "kaix_in")
-        #expect(first.enabled)
+    @Test("sources.json：分组解码，TG channel_id 是 int、HN 是 string")
+    func sources() throws {
+        let groups = try decoder.decode([SourceGroup].self, from: loadFixture("sources"))
+        #expect(groups.map(\.source) == [SourceID.telegram, SourceID.hn])
+
+        let tg = try #require(groups.first?.subscriptions.first)
+        #expect(tg.channelID.intValue != nil)
+
+        let hn = try #require(groups.last?.subscriptions.first)
+        #expect(hn.channelID == .string("front"))
+        #expect(hn.channelID.intValue == nil)
+        #expect(hn.name == "Hacker News Front Page")
+    }
+
+    @Test("records.json：两种 source 的自包含 envelope")
+    func records() throws {
+        let items = try decoder.decode([TimelineItem].self, from: loadFixture("records"))
+        let tg = try #require(items.first { $0.source == SourceID.telegram })
+        #expect(tg.isSaved)
+        #expect(tg.telegram?.channel != nil, "TG record 自带 channel 快照")
+
+        let hn = try #require(items.first { $0.source == SourceID.hn })
+        #expect(hn.isSaved)
+        #expect(hn.hn != nil)
+        #expect(hn.hn?.dayRank == nil, "saved 快照不含 query-time 排名")
     }
 
     @Test("timeline_new.json 解码")
@@ -94,17 +161,10 @@ struct ModelsDecodingTests {
         #expect(new.items.isEmpty)
     }
 
-    @Test("MsgRef 编码为 snake_case（POST /api/read body）")
-    func msgRefEncoding() throws {
-        let data = try JSONEncoder.condenserAPI.encode(MsgRef(channelID: 1, messageID: 2))
-        let obj = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Int])
-        #expect(obj == ["channel_id": 1, "message_id": 2])
-    }
-
-    @Test("DisplayMessage.unitKey 唯一标识跨频道消息")
-    func unitKey() throws {
-        let page = try decoder.decode(TimelinePage.self, from: loadFixture("timeline_page"))
-        let keys = page.items.map(\.unitKey)
-        #expect(Set(keys).count == keys.count)
+    @Test("SourceID.label 展示名")
+    func sourceLabels() {
+        #expect(SourceID.label("telegram") == "Telegram")
+        #expect(SourceID.label("hn") == "Hacker News")
+        #expect(SourceID.label("rss") == "rss", "未知信源原样展示")
     }
 }

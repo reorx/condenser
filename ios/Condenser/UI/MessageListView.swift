@@ -1,22 +1,22 @@
 import SwiftUI
 import CondenserKit
 
-/// TimelineStore 驱动的消息列表核心：无限滚动 + 下拉刷新 + 滚动即已读 + 详情 sheet。
-/// 主 timeline 传 poller 时渲染新消息胶囊（点击瞬时回顶 + 刷新）；
-/// 频道 timeline 不传 poller，纯列表复用。
+/// TimelineStore 驱动的多信源列表核心：无限滚动 + 下拉刷新 + 滚动即已读 + 详情 sheet。
+/// 按 item.source 分发卡片（MessageCard / HnCard）。主 timeline 传 poller 时渲染
+/// 新消息胶囊（点击瞬时回顶 + 刷新）；频道/feed timeline 不传 poller，纯列表复用。
 struct MessageListView: View {
     let store: TimelineStore
     var poller: NewContentPoller?
     var emptyLabel = "暂无内容"
 
     @Environment(ReaderSession.self) private var reader
-    @State private var selectedMessage: DisplayMessage?
+    @State private var selectedItem: TimelineItem?
     @State private var safariItem: SafariItem?
     @State private var viewerItem: ImageViewerItem?
     @State private var pullOlderModel = PullToLoadOlderModel()
     @State private var isUserDragging = false
 
-    /// 底部上拉触发 fetch-older 只对单频道视图开放（后端接口按频道拉取）
+    /// 底部上拉触发 fetch-older 只对单频道视图开放（后端接口按频道拉取，TG 专属）
     private var supportsFetchOlder: Bool { store.channelID != nil }
 
     var body: some View {
@@ -58,10 +58,8 @@ struct MessageListView: View {
             safariItem = SafariItem(url: url)
             return .handled
         })
-        .sheet(item: $selectedMessage) { message in
-            MessageDetailSheet(
-                message: currentVersion(of: message),
-                onToggleSaved: { toggleSaved(message) })
+        .sheet(item: $selectedItem) { item in
+            detailSheet(currentVersion(of: item))
         }
         .sheet(item: $safariItem) { item in
             SafariView(url: item.url)
@@ -82,20 +80,17 @@ struct MessageListView: View {
             } else if store.items.isEmpty {
                 emptyState
             }
-            ForEach(Array(store.items.enumerated()), id: \.element.unitKey) { index, message in
+            ForEach(Array(store.items.enumerated()), id: \.element.key) { index, item in
                 VStack(spacing: 0) {
-                    MessageCard(
-                        message: message,
-                        onToggleSaved: { toggleSaved(message) },
-                        onOpenPhoto: { openViewer(for: message, at: $0) })
-                        .onTapGesture { selectedMessage = message }
+                    card(item)
+                        .onTapGesture { selectedItem = item }
                     Divider().padding(.leading, 16)
                 }
                 .onGeometryChange(for: Bool.self) { geo in
                     geo.frame(in: .scrollView).maxY < 0
                 } action: { passedTop in
-                    if passedTop, message.isRead != true {
-                        reader.readReporter.enqueue(message.ref)
+                    if passedTop, !item.isRead {
+                        reader.readReporter.enqueue(item.key)
                     }
                 }
                 .onAppear {
@@ -116,6 +111,30 @@ struct MessageListView: View {
             if supportsFetchOlder, !store.hasMore, !store.items.isEmpty {
                 fetchOlderFooter
             }
+        }
+    }
+
+    /// 按 source 分发卡片；未知信源（升级前的旧 app 撞上新后端）静默跳过
+    @ViewBuilder
+    private func card(_ item: TimelineItem) -> some View {
+        if let message = item.telegram {
+            MessageCard(
+                item: item, message: message,
+                onToggleSaved: { toggleSaved(item) },
+                onOpenPhoto: { openViewer(for: message, at: $0) })
+        } else if let story = item.hn {
+            HnCard(item: item, story: story, onToggleSaved: { toggleSaved(item) })
+        }
+    }
+
+    @ViewBuilder
+    private func detailSheet(_ item: TimelineItem) -> some View {
+        if let message = item.telegram {
+            MessageDetailSheet(
+                item: item, message: message,
+                onToggleSaved: { toggleSaved(item) })
+        } else if let story = item.hn {
+            HnDetailSheet(item: item, story: story, onToggleSaved: { toggleSaved(item) })
         }
     }
 
@@ -203,11 +222,11 @@ struct MessageListView: View {
     }
 
     /// sheet 打开期间收藏态变化要跟随 store（乐观更新可见）
-    private func currentVersion(of message: DisplayMessage) -> DisplayMessage {
-        store.items.first { $0.unitKey == message.unitKey } ?? message
+    private func currentVersion(of item: TimelineItem) -> TimelineItem {
+        store.items.first { $0.key == item.key } ?? item
     }
 
-    private func toggleSaved(_ message: DisplayMessage) {
-        Task { await store.toggleSaved(message) }
+    private func toggleSaved(_ item: TimelineItem) {
+        Task { await store.toggleSaved(item) }
     }
 }

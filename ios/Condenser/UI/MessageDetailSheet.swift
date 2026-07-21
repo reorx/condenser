@@ -2,9 +2,10 @@ import SwiftUI
 import SafariServices
 import CondenserKit
 
-/// 详情 bottom sheet：全文（链接可点 → SFSafariViewController）、原图、
-/// 转发来源、本地时区时间、收藏、在 Telegram 打开。
+/// 详情 bottom sheet（Telegram 条目）：全文（链接可点 → SFSafariViewController）、
+/// 原图、转发来源、本地时区时间、收藏、在 Telegram 打开。
 struct MessageDetailSheet: View {
+    let item: TimelineItem
     let message: DisplayMessage
     var onToggleSaved: () -> Void
 
@@ -71,8 +72,8 @@ struct MessageDetailSheet: View {
             }
             Spacer()
             Button(action: onToggleSaved) {
-                Image(systemName: (message.isSaved ?? false) ? "star.fill" : "star")
-                    .foregroundStyle((message.isSaved ?? false) ? .orange : .secondary)
+                Image(systemName: item.isSaved ? "star.fill" : "star")
+                    .foregroundStyle(item.isSaved ? .orange : .secondary)
             }
             .buttonStyle(.plain)
         }

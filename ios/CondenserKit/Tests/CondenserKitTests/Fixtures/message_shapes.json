@@ -1,4 +1,34 @@
 {
+  "media": {
+    "id": 18261,
+    "channel_id": 1283701973,
+    "date": "2026-07-16T13:43:14Z",
+    "is_edited": true,
+    "edit_date": "2026-07-16T14:12:12Z",
+    "sender_id": -1001283701973,
+    "sender_name": "厘米碎碎念",
+    "text": "人才啊，给 ChatGPT 换肤。\nhttps://github.com/Fei-Away/Codex-Dream-Skin",
+    "is_album": true,
+    "grouped_id": 14273675158002629,
+    "media_items": [
+      {
+        "message_id": 18261,
+        "media_type": "photo",
+        "has_media": true,
+        "width": 1400,
+        "height": 787
+      }
+    ],
+    "webpage": null,
+    "is_forwarded": false,
+    "forward_info": null,
+    "views": 109,
+    "forwards_count": 3,
+    "replies_count": 3,
+    "raw_message_ids": [
+      18261
+    ]
+  },
   "album": {
     "id": 18249,
     "channel_id": 1283701973,
@@ -59,9 +89,7 @@
       18250,
       18251,
       18252
-    ],
-    "is_read": false,
-    "is_saved": false
+    ]
   },
   "forward": {
     "id": 18249,
@@ -123,73 +151,7 @@
       18250,
       18251,
       18252
-    ],
-    "is_read": false,
-    "is_saved": false
-  },
-  "media": {
-    "id": 18249,
-    "channel_id": 1283701973,
-    "date": "2026-07-16T09:26:05Z",
-    "is_edited": true,
-    "edit_date": "2026-07-16T09:26:13Z",
-    "sender_id": -1001283701973,
-    "sender_name": "厘米碎碎念",
-    "text": "广州 自家糖水\n\n群友推荐的店面，小小角落一间但味道很不错。糖水我最热爱的就是香芋西米露，这家做得还可以，芋头很香，椰奶也浓厚，我觉得稍微有一点点太甜但是无伤大雅。鱼蛋也好吃，配番茄酱超棒。",
-    "is_album": true,
-    "grouped_id": 14273551723252437,
-    "media_items": [
-      {
-        "message_id": 18249,
-        "media_type": "photo",
-        "has_media": true,
-        "width": 2560,
-        "height": 1920
-      },
-      {
-        "message_id": 18250,
-        "media_type": "photo",
-        "has_media": true,
-        "width": 2560,
-        "height": 1920
-      },
-      {
-        "message_id": 18251,
-        "media_type": "photo",
-        "has_media": true,
-        "width": 2560,
-        "height": 1920
-      },
-      {
-        "message_id": 18252,
-        "media_type": "photo",
-        "has_media": true,
-        "width": 2560,
-        "height": 1920
-      }
-    ],
-    "webpage": null,
-    "is_forwarded": true,
-    "forward_info": {
-      "from_channel_id": 1785911732,
-      "from_channel_name": "harukachan eats delicious meals",
-      "from_user_id": null,
-      "from_user_name": null,
-      "from_message_id": 1846,
-      "original_date": "2026-07-16T08:30:50Z",
-      "post_author": "nowano"
-    },
-    "views": 3,
-    "forwards_count": null,
-    "replies_count": null,
-    "raw_message_ids": [
-      18249,
-      18250,
-      18251,
-      18252
-    ],
-    "is_read": false,
-    "is_saved": false
+    ]
   },
   "webpage": {
     "id": 13700,
@@ -236,8 +198,6 @@
     "replies_count": 0,
     "raw_message_ids": [
       13700
-    ],
-    "is_read": false,
-    "is_saved": false
+    ]
   }
 }

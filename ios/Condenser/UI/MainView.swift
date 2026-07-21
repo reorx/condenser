@@ -1,18 +1,18 @@
 import SwiftUI
 import CondenserKit
 
-/// 登录后的主界面：四 tab（Timeline / 频道 / 收藏 / 设置），各自持有独立 NavigationStack。
+/// 登录后的主界面：四 tab（Timeline / 订阅 / 收藏 / 设置），各自持有独立 NavigationStack。
 struct MainView: View {
     enum MainTab: Hashable {
-        case timeline, channels, saved, settings
+        case timeline, subscriptions, saved, settings
     }
 
     @Environment(AuthSession.self) private var auth
     @State private var reader: ReaderSession?
     @State private var selectedTab: MainTab = .timeline
-    @State private var channelsPath = NavigationPath()
+    @State private var subscriptionsPath = NavigationPath()
     #if DEBUG
-    @State private var debugDetail: DisplayMessage?
+    @State private var debugDetail: TimelineItem?
     @State private var debugViewer: ImageViewerItem?
     #endif
 
@@ -40,9 +40,9 @@ struct MainView: View {
                     TimelineScreen()
                 }
             }
-            Tab("频道", systemImage: "megaphone", value: MainTab.channels) {
-                NavigationStack(path: $channelsPath) {
-                    ChannelsScreen()
+            Tab("订阅", systemImage: "square.stack", value: MainTab.subscriptions) {
+                NavigationStack(path: $subscriptionsPath) {
+                    SubscriptionsScreen()
                 }
             }
             Tab("收藏", systemImage: "star", value: MainTab.saved) {
@@ -58,8 +58,12 @@ struct MainView: View {
         }
         #if DEBUG
         .onOpenURL { handleDebugURL($0, reader: reader) }
-        .sheet(item: $debugDetail) { message in
-            MessageDetailSheet(message: message, onToggleSaved: {})
+        .sheet(item: $debugDetail) { item in
+            if let message = item.telegram {
+                MessageDetailSheet(item: item, message: message, onToggleSaved: {})
+            } else if let story = item.hn {
+                HnDetailSheet(item: item, story: story, onToggleSaved: {})
+            }
         }
         .fullScreenCover(item: $debugViewer) { item in
             ImageViewerScreen(item: item)
@@ -81,9 +85,10 @@ struct MainView: View {
         handleDebugURL(url, reader: reader)
     }
 
-    /// 路由：tab/{timeline|channels|saved} 切 tab；channel/{id} push 频道 timeline；
-    /// settings 切设置 tab；detail/{cid}/{mid}、viewer/{cid}/{mid} 弹详情 sheet / 全屏图
-    /// （消息须已在 timeline 首页中）。也可 `simctl openurl booted "condenser://debug/<route>"`
+    /// 路由：tab/{timeline|subs|channels|saved} 切 tab；channel/{id} push 频道 timeline；
+    /// hn 直接 push HN feed timeline；settings 切设置 tab；detail/{cid}/{mid}、
+    /// viewer/{cid}/{mid} 弹详情 sheet / 全屏图（消息须已在 timeline 首页中）。
+    /// 也可 `simctl openurl booted "condenser://debug/<route>"`
     /// （需在模拟器里手动点一次 Open 确认）。
     private func handleDebugURL(_ url: URL, reader: ReaderSession) {
         guard url.scheme == "condenser", url.host() == "debug" else { return }
@@ -91,22 +96,27 @@ struct MainView: View {
         switch parts.first {
         case "tab":
             switch parts.dropFirst().first {
-            case "channels": selectedTab = .channels
+            case "channels", "subs", "subscriptions": selectedTab = .subscriptions
             case "saved": selectedTab = .saved
             default: selectedTab = .timeline
             }
         case "channel":
             if let id = parts.dropFirst().first.flatMap(Int.init),
-               let sub = reader.subscription(for: id) {
-                selectedTab = .channels
-                channelsPath.append(sub)
+               let sub = reader.telegramSub(for: id) {
+                selectedTab = .subscriptions
+                subscriptionsPath.append(SubDestination.telegramChannel(sub))
+            }
+        case "hn":
+            if let sub = reader.hnSubs.first {
+                selectedTab = .subscriptions
+                subscriptionsPath.append(SubDestination.hnFeed(sub))
             }
         case "settings":
             selectedTab = .settings
         case "detail":
-            debugDetail = debugMessage(parts, reader: reader)
+            debugDetail = debugItem(parts, reader: reader)
         case "viewer":
-            if let message = debugMessage(parts, reader: reader) {
+            if let message = debugItem(parts, reader: reader)?.telegram {
                 let photos = message.mediaItems.filter { $0.mediaType == "photo" && $0.hasMedia }
                 if !photos.isEmpty {
                     debugViewer = ImageViewerItem(
@@ -118,10 +128,10 @@ struct MainView: View {
         }
     }
 
-    private func debugMessage(_ parts: [String], reader: ReaderSession) -> DisplayMessage? {
+    private func debugItem(_ parts: [String], reader: ReaderSession) -> TimelineItem? {
         let ids = Array(parts.dropFirst())
         guard ids.count == 2, let cid = Int(ids[0]), let mid = Int(ids[1]) else { return nil }
-        return reader.timeline.items.first { $0.channelID == cid && $0.id == mid }
+        return reader.timeline.items.first { $0.key == "tg:\(cid):\(mid)" }
     }
     #endif
 }

@@ -2,7 +2,15 @@
 
 condenser 的原生 iOS 阅读客户端（SwiftUI）：Twitter 式简化阅读 timeline，只读不管。
 完整设计见 `../kb/plans/2026-07-16-ios-reader-app.md`；后端 device-token 认证 spec 见
-`../kb/plans/2026-07-16-mobile-client-api-device-token.md`。
+`../kb/plans/2026-07-16-mobile-client-api-device-token.md`。**多信源（Phase 4，2026-07-21）**：
+条目是 `TimelineItem` envelope（source/key/datetime/is_read/is_saved + `telegram?`/`hn?`），
+read/save 按 item key（`tg:{cid}:{mid}` / `hn:{sid}`）上报；订阅数据源是 `GET /api/sources`
+（`SourceGroup`/`SourceSub`，`/api/subscriptions` 不再使用）；Timeline 左上角信源切换 Menu
+（All + 已添加信源，驱动 `TimelineStore.source`）；tab 2「频道」→「订阅」（信源 → 订阅两级，
+TG 行进频道 timeline，HN 行进 `HnFeedTimelineScreen`）；HN 卡片/详情（`HnCard`/`HnDetailSheet`，
+self-post HTML 经 Kit 的 `hnPlainText` 转纯文本）；`SnapshotCache` 目录带契约版本号
+（`condenser-snapshots-v2`，旧快照 decode 失败按 miss）。多信源计划见
+`../kb/plans/2026-07-19-multi-source-hn.md`。
 
 ## 技术栈
 
@@ -82,8 +90,9 @@ Info.plist 已配 `NSAllowsLocalNetworking`（http://localhost 放行）。
 SIMCTL_CHILD_CONDENSER_DEBUG_ROUTE=<route> xcrun simctl launch "iPhone 17" com.reorx.condenser
 ```
 
-route 取值：`tab/{timeline|channels|saved}` 切 tab；`channel/<id>` push 单频道
-timeline；`settings` 切设置 tab；`detail/<cid>/<mid>` / `viewer/<cid>/<mid>` 弹详情
+route 取值：`tab/{timeline|subs|channels|saved}` 切 tab（channels 是订阅 tab 的旧别名）；
+`channel/<id>` push 单频道 timeline；`hn` push HN feed timeline；`settings` 切设置 tab；
+`detail/<cid>/<mid>` / `viewer/<cid>/<mid>` 弹详情
 sheet / 全屏图片浏览器（消息须在 timeline 首页内，路由会等首屏加载完才应用）。
 每换一个界面 terminate + 重新 launch 一次即可。也支持
 `xcrun simctl openurl booted "condenser://debug/<route>"`，但系统会弹

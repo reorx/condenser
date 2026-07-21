@@ -14,6 +14,7 @@ public final class NewContentPoller {
     private let api: CondenserAPI
     private let channelID: Int?
     private let unreadOnly: Bool
+    private let source: String?
     private let interval: Duration
     private let headCursor: @MainActor () -> String?
     private var loopTask: Task<Void, Never>?
@@ -22,12 +23,14 @@ public final class NewContentPoller {
         api: CondenserAPI,
         channelID: Int? = nil,
         unreadOnly: Bool = false,
+        source: String? = nil,
         interval: Duration = .seconds(30),
         headCursor: @escaping @MainActor () -> String?
     ) {
         self.api = api
         self.channelID = channelID
         self.unreadOnly = unreadOnly
+        self.source = source
         self.interval = interval
         self.headCursor = headCursor
     }
@@ -56,7 +59,8 @@ public final class NewContentPoller {
         guard let after = headCursor() else { return }
         do {
             let new = try await api.timelineNew(
-                after: after, channelID: channelID, limit: 100, unreadOnly: unreadOnly)
+                after: after, channelID: channelID, limit: 100, unreadOnly: unreadOnly,
+                source: source)
             count = new.count
         } catch APIError.unauthorized {
             onUnauthorized?()

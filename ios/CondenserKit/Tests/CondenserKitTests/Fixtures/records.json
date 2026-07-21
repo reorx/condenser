@@ -1,0 +1,68 @@
+[
+  {
+    "source": "hn",
+    "key": "hn:48986091",
+    "datetime": "2026-07-21T14:16:12Z",
+    "is_read": false,
+    "is_saved": true,
+    "hn": {
+      "id": 48986091,
+      "title": "Jellyfin founder Andrew leaves team",
+      "url": "https://forum.jellyfin.org/t-project-leadership-changes",
+      "domain": "forum.jellyfin.org",
+      "author": "swat535",
+      "type": "story",
+      "text": null,
+      "submitted_at": "2026-07-20T23:15:41Z",
+      "first_seen_at": "2026-07-21T14:16:12Z",
+      "score": 314,
+      "comments_count": 280,
+      "day_rank": null,
+      "peak_rank": 30,
+      "backfilled": false,
+      "preview": null
+    }
+  },
+  {
+    "source": "telegram",
+    "key": "tg:1283701973:17737",
+    "datetime": "2026-06-16T11:16:09Z",
+    "is_read": true,
+    "is_saved": true,
+    "telegram": {
+      "id": 17737,
+      "channel_id": 1283701973,
+      "date": "2026-06-16T11:16:09Z",
+      "is_edited": true,
+      "edit_date": "2026-06-16T12:09:08Z",
+      "sender_id": -1001283701973,
+      "sender_name": "厘米碎碎念",
+      "text": "苦于卖不动自己产品的 builder，其实可以找找有没有靠谱的 marketer，一起搭档试试。不一定要死磕 SaaS 产品，可以一起看看什么能立刻产生现金流的项目，看做起来。\n\n我搭档和我两个人，去年十月底敲定方向做一个很具体的 SaaS 产品。三个月写得差不多了，但是发现 onboarding 流程特别长，很不好卖。\n\n当然这三个月也见了不少客户，其中一家是做线上课程的，聊下来之后，发现我们可以帮他们开发一套课程。\n\n当然条件也比较有挑战，不光要有 pptx，还要提供 scorm 文件。scorm 是什么呢？就是线上课程届的 pdf，只能用专用软件开发，调试，部署。客户用的是 Articulate Rise，这东西特别变态，只能在里面手动编辑，无法导入制作好的 scorm 文件，也不开放 api。所以批量制作课程的可能性几乎为零。\n\n最后找到的方案是，我们自己制作 pptx + scorm 文件，然后提供内容和部署两套审核方案。\n\n当然所有这些都离不开和 Claude + Codex 的深入探讨。如果没有这些工具，以前是万万不敢接这种项目的。",
+      "is_album": false,
+      "grouped_id": null,
+      "media_items": [],
+      "webpage": null,
+      "is_forwarded": true,
+      "forward_info": {
+        "from_channel_id": 1773536366,
+        "from_channel_name": null,
+        "from_user_id": null,
+        "from_user_name": null,
+        "from_message_id": 677,
+        "original_date": "2026-06-16T11:09:53Z",
+        "post_author": null
+      },
+      "views": 437,
+      "forwards_count": 9,
+      "replies_count": 0,
+      "raw_message_ids": [
+        17737
+      ],
+      "channel": {
+        "id": 1283701973,
+        "title": "厘米碎碎念",
+        "username": "limisay"
+      }
+    }
+  }
+]

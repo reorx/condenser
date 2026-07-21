@@ -33,7 +33,8 @@ public final class APIClient: @unchecked Sendable {
         limit: Int? = nil,
         channelID: Int? = nil,
         date: String? = nil,
-        unreadOnly: Bool = false
+        unreadOnly: Bool = false,
+        source: String? = nil
     ) async throws -> TimelinePage {
         try await get("/api/timeline", query: [
             "cursor": cursor,
@@ -41,6 +42,7 @@ public final class APIClient: @unchecked Sendable {
             "channel_id": channelID.map(String.init),
             "date": date,
             "unread_only": unreadOnly ? "true" : nil,
+            "source": source,
         ])
     }
 
@@ -48,36 +50,38 @@ public final class APIClient: @unchecked Sendable {
         after: String,
         channelID: Int? = nil,
         limit: Int = 100,
-        unreadOnly: Bool = false
+        unreadOnly: Bool = false,
+        source: String? = nil
     ) async throws -> TimelineNew {
         try await get("/api/timeline/new", query: [
             "after": after,
             "channel_id": channelID.map(String.init),
             "limit": String(limit),
             "unread_only": unreadOnly ? "true" : nil,
+            "source": source,
         ])
     }
 
-    public func subscriptions() async throws -> [Subscription] {
-        try await get("/api/subscriptions")
+    public func sources() async throws -> [SourceGroup] {
+        try await get("/api/sources")
     }
 
-    public func markRead(_ items: [MsgRef]) async throws {
-        struct Body: Encodable { let items: [MsgRef] }
-        try await send(request(path: "/api/read", method: "POST", body: Body(items: items)))
+    public func markRead(keys: [String]) async throws {
+        struct Body: Encodable { let keys: [String] }
+        try await send(request(path: "/api/read", method: "POST", body: Body(keys: keys)))
     }
 
-    public func records() async throws -> [DisplayMessage] {
+    public func records() async throws -> [TimelineItem] {
         try await get("/api/records")
     }
 
-    public func saveRecord(_ ref: MsgRef) async throws {
-        try await send(request(path: "/api/records", method: "POST", body: ref))
+    public func saveRecord(key: String) async throws {
+        struct Body: Encodable { let key: String }
+        try await send(request(path: "/api/records", method: "POST", body: Body(key: key)))
     }
 
-    public func deleteRecord(_ ref: MsgRef) async throws {
-        try await send(request(
-            path: "/api/records/\(ref.channelID)/\(ref.messageID)", method: "DELETE"))
+    public func deleteRecord(key: String) async throws {
+        try await send(request(path: "/api/records/\(key)", method: "DELETE"))
     }
 
     public func fetchOlder(channelID: Int, count: Int = 200) async throws -> Int {
@@ -122,7 +126,7 @@ public final class APIClient: @unchecked Sendable {
         path: String,
         method: String = "GET",
         query: [String: String?] = [:],
-        body: (some Encodable)? = nil as MsgRef?
+        body: (some Encodable)? = nil as String?
     ) -> URLRequest {
         var req = authedRequest(url(path: path, query: query))
         req.httpMethod = method

@@ -1,11 +1,11 @@
 import SwiftUI
 import CondenserKit
 
-/// 收藏 tab：GET /api/records 快照列表（条目自包含 channel），
-/// 星标 = 取消收藏（乐观移除 + 失败回滚），点开同一详情 sheet。
+/// 收藏 tab：GET /api/records 快照列表（条目为自包含 envelope——TG 带 channel、
+/// HN 带 story 快照），星标 = 取消收藏（乐观移除 + 失败回滚），点开对应详情 sheet。
 struct SavedScreen: View {
     @Environment(ReaderSession.self) private var reader
-    @State private var selectedMessage: DisplayMessage?
+    @State private var selectedItem: TimelineItem?
     @State private var safariItem: SafariItem?
     @State private var viewerItem: ImageViewerItem?
 
@@ -17,14 +17,10 @@ struct SavedScreen: View {
                 } else if reader.records.items.isEmpty {
                     emptyState
                 }
-                ForEach(reader.records.items, id: \.unitKey) { message in
+                ForEach(reader.records.items) { item in
                     VStack(spacing: 0) {
-                        MessageCard(
-                            message: message,
-                            showsUnread: false,
-                            onToggleSaved: { unsave(message) },
-                            onOpenPhoto: { openViewer(for: message, at: $0) })
-                            .onTapGesture { selectedMessage = message }
+                        card(item)
+                            .onTapGesture { selectedItem = item }
                         Divider().padding(.leading, 16)
                     }
                 }
@@ -45,10 +41,8 @@ struct SavedScreen: View {
             safariItem = SafariItem(url: url)
             return .handled
         })
-        .sheet(item: $selectedMessage) { message in
-            MessageDetailSheet(
-                message: message,
-                onToggleSaved: { unsave(message) })
+        .sheet(item: $selectedItem) { item in
+            detailSheet(item)
         }
         .sheet(item: $safariItem) { item in
             SafariView(url: item.url)
@@ -58,6 +52,31 @@ struct SavedScreen: View {
             ImageViewerScreen(item: item)
         }
         .task { await reader.records.refresh() }
+    }
+
+    /// 按 source 分发卡片（未读点在收藏列表无意义，一律隐藏）
+    @ViewBuilder
+    private func card(_ item: TimelineItem) -> some View {
+        if let message = item.telegram {
+            MessageCard(
+                item: item, message: message,
+                showsUnread: false,
+                onToggleSaved: { unsave(item) },
+                onOpenPhoto: { openViewer(for: message, at: $0) })
+        } else if let story = item.hn {
+            HnCard(item: item, story: story, showsUnread: false, onToggleSaved: { unsave(item) })
+        }
+    }
+
+    @ViewBuilder
+    private func detailSheet(_ item: TimelineItem) -> some View {
+        if let message = item.telegram {
+            MessageDetailSheet(
+                item: item, message: message,
+                onToggleSaved: { unsave(item) })
+        } else if let story = item.hn {
+            HnDetailSheet(item: item, story: story, onToggleSaved: { unsave(item) })
+        }
     }
 
     private func openViewer(for message: DisplayMessage, at index: Int) {
@@ -80,7 +99,7 @@ struct SavedScreen: View {
         .padding(.top, 120)
     }
 
-    private func unsave(_ message: DisplayMessage) {
-        Task { await reader.records.unsave(message) }
+    private func unsave(_ item: TimelineItem) {
+        Task { await reader.records.unsave(item) }
     }
 }

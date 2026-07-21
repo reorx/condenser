@@ -1,13 +1,13 @@
 import Foundation
 import Observation
 
-/// 收藏（records）列表状态机：全量加载（后端不分页、条目自包含 channel 快照）、
-/// unsave 乐观移除 + 失败按原位放回。错误收敛同 TimelineStore：
-/// 401 走 onUnauthorized，其余进 error 文案且保留内容。
+/// 收藏（records）列表状态机：全量加载（后端不分页、条目为自包含 envelope——
+/// TG 带 channel 快照，HN 带 story 快照）、unsave 乐观移除 + 失败按原位放回。
+/// 错误收敛同 TimelineStore：401 走 onUnauthorized，其余进 error 文案且保留内容。
 @MainActor
 @Observable
 public final class RecordsStore {
-    public private(set) var items: [DisplayMessage] = []
+    public private(set) var items: [TimelineItem] = []
     public private(set) var isLoading = false
     public var error: String?
 
@@ -41,11 +41,11 @@ public final class RecordsStore {
     }
 
     /// 取消收藏：乐观移除；失败按原位置放回（错误文案交给调用方展示）
-    public func unsave(_ message: DisplayMessage) async {
-        guard let index = items.firstIndex(where: { $0.unitKey == message.unitKey }) else { return }
+    public func unsave(_ item: TimelineItem) async {
+        guard let index = items.firstIndex(where: { $0.key == item.key }) else { return }
         let removed = items.remove(at: index)
         do {
-            try await api.deleteRecord(message.ref)
+            try await api.deleteRecord(key: item.key)
         } catch {
             items.insert(removed, at: min(index, items.count))
             handle(error)

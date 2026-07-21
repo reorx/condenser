@@ -1,13 +1,13 @@
 import Foundation
 import Observation
 
-/// Timeline 游标分页状态机（date-desc）。同一个类型服务 All/Unread/单频道视图
-/// （channelID/unreadOnly 定死在实例上）。错误在此层收敛：401 走 onUnauthorized，
-/// 其余进 error 文案且保留已有内容。
+/// Timeline 游标分页状态机（date-desc，多信源 envelope）。同一个类型服务
+/// All/单信源/单频道视图（channelID/unreadOnly/source 定死在实例上）。
+/// 错误在此层收敛：401 走 onUnauthorized，其余进 error 文案且保留已有内容。
 @MainActor
 @Observable
 public final class TimelineStore {
-    public private(set) var items: [DisplayMessage] = []
+    public private(set) var items: [TimelineItem] = []
     public private(set) var isLoading = false
     public private(set) var isLoadingMore = false
     public private(set) var hasMore = true
@@ -24,6 +24,8 @@ public final class TimelineStore {
 
     public let channelID: Int?
     public let unreadOnly: Bool
+    /// nil = 全部启用的信源；"telegram" / "hn" = 单信源视图
+    public let source: String?
     private let api: CondenserAPI
     private let pageSize: Int
     private let cache: SnapshotCache?
@@ -34,12 +36,14 @@ public final class TimelineStore {
     private var loadedOnce = false
 
     public init(
-        api: CondenserAPI, channelID: Int? = nil, unreadOnly: Bool = false, pageSize: Int = 30,
+        api: CondenserAPI, channelID: Int? = nil, unreadOnly: Bool = false,
+        source: String? = nil, pageSize: Int = 30,
         cache: SnapshotCache? = nil, cacheKey: String? = nil
     ) {
         self.api = api
         self.channelID = channelID
         self.unreadOnly = unreadOnly
+        self.source = source
         self.pageSize = pageSize
         self.cache = cache
         self.cacheKey = cacheKey
@@ -68,7 +72,7 @@ public final class TimelineStore {
         do {
             let page = try await api.timeline(
                 cursor: nil, limit: pageSize, channelID: channelID, date: nil,
-                unreadOnly: unreadOnly)
+                unreadOnly: unreadOnly, source: source)
             apply(page: page)
             loadedOnce = true
             if let cache, let cacheKey {
@@ -95,7 +99,7 @@ public final class TimelineStore {
         do {
             let page = try await api.timeline(
                 cursor: cursor, limit: pageSize, channelID: channelID, date: nil,
-                unreadOnly: unreadOnly)
+                unreadOnly: unreadOnly, source: source)
             append(page: page)
         } catch {
             handle(error)
@@ -104,8 +108,8 @@ public final class TimelineStore {
     }
 
     private func append(page: TimelinePage) {
-        let seen = Set(items.map(\.unitKey))
-        items.append(contentsOf: page.items.filter { !seen.contains($0.unitKey) })
+        let seen = Set(items.map(\.key))
+        items.append(contentsOf: page.items.filter { !seen.contains($0.key) })
         nextCursor = page.nextCursor
         hasMore = page.nextCursor != nil
         if let cursor = page.endCursor {
@@ -127,7 +131,7 @@ public final class TimelineStore {
             } else {
                 let page = try await api.timeline(
                     cursor: endCursor, limit: pageSize, channelID: channelID, date: nil,
-                    unreadOnly: unreadOnly)
+                    unreadOnly: unreadOnly, source: source)
                 if endCursor == nil {
                     // 此前列表为空（无锚点）：当作第一页整页替换
                     apply(page: page)
@@ -142,18 +146,18 @@ public final class TimelineStore {
     }
 
     /// 收藏乐观切换；失败回滚（错误文案交给调用方 toast）
-    public func toggleSaved(_ message: DisplayMessage) async {
-        guard let index = items.firstIndex(where: { $0.unitKey == message.unitKey }) else { return }
-        let wasSaved = items[index].isSaved ?? false
+    public func toggleSaved(_ item: TimelineItem) async {
+        guard let index = items.firstIndex(where: { $0.key == item.key }) else { return }
+        let wasSaved = items[index].isSaved
         items[index].isSaved = !wasSaved
         do {
             if wasSaved {
-                try await api.deleteRecord(message.ref)
+                try await api.deleteRecord(key: item.key)
             } else {
-                try await api.saveRecord(message.ref)
+                try await api.saveRecord(key: item.key)
             }
         } catch {
-            if let rollback = items.firstIndex(where: { $0.unitKey == message.unitKey }) {
+            if let rollback = items.firstIndex(where: { $0.key == item.key }) {
                 items[rollback].isSaved = wasSaved
             }
             handle(error)
@@ -161,8 +165,8 @@ public final class TimelineStore {
     }
 
     /// 本地已读标记（ReadReporter 乐观置位用，不发请求）
-    public func markLocallyRead(_ refs: Set<MsgRef>) {
-        for index in items.indices where refs.contains(items[index].ref) {
+    public func markLocallyRead(_ keys: Set<String>) {
+        for index in items.indices where keys.contains(items[index].key) {
             items[index].isRead = true
         }
     }

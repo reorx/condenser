@@ -1,0 +1,102 @@
+[
+  {
+    "source": "telegram",
+    "subscriptions": [
+      {
+        "channel_id": 1356252119,
+        "name": "codedump的电报频道",
+        "username": "codedump_notes",
+        "enabled": true,
+        "unread": 12,
+        "config": null
+      },
+      {
+        "channel_id": 1353468148,
+        "name": "卡卡大声喵喵",
+        "username": "mmmmmmeowwwww",
+        "enabled": true,
+        "unread": 12,
+        "config": null
+      },
+      {
+        "channel_id": 1523576473,
+        "name": "走来走去 Roam around",
+        "username": "roam_around",
+        "enabled": true,
+        "unread": 8,
+        "config": null
+      },
+      {
+        "channel_id": 2107300983,
+        "name": "查询精神状态",
+        "username": "laike9m_ch",
+        "enabled": true,
+        "unread": 14,
+        "config": null
+      },
+      {
+        "channel_id": 1427900053,
+        "name": "地心引力",
+        "username": "bigwalnut",
+        "enabled": true,
+        "unread": 212,
+        "config": null
+      },
+      {
+        "channel_id": 1155666729,
+        "name": "Laoself 🫈",
+        "username": "Laoself",
+        "enabled": true,
+        "unread": 30,
+        "config": null
+      },
+      {
+        "channel_id": 1853633861,
+        "name": "橘橘橘子汁 & 🍊",
+        "username": "microblock_pub",
+        "enabled": true,
+        "unread": 23,
+        "config": null
+      },
+      {
+        "channel_id": 1037603752,
+        "name": "KAIX.IN",
+        "username": "kaix_in",
+        "enabled": true,
+        "unread": 31,
+        "config": null
+      },
+      {
+        "channel_id": 1833253016,
+        "name": "yihong0618 和朋友们的频道",
+        "username": "hyi0618",
+        "enabled": true,
+        "unread": 240,
+        "config": null
+      },
+      {
+        "channel_id": 1283701973,
+        "name": "厘米碎碎念",
+        "username": "limisay",
+        "enabled": true,
+        "unread": 498,
+        "config": null
+      }
+    ]
+  },
+  {
+    "source": "hn",
+    "subscriptions": [
+      {
+        "channel_id": "front",
+        "name": "Hacker News Front Page",
+        "username": null,
+        "enabled": true,
+        "unread": 180,
+        "config": {
+          "display_mode": "top20"
+        }
+      }
+    ]
+  }
+]

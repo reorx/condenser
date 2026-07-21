@@ -17,7 +17,7 @@ struct SnapshotCacheTests {
     func roundTrip() {
         let (cache, dir) = makeCache()
         defer { try? FileManager.default.removeItem(at: dir) }
-        let page = makePage([makeMsg(id: 1), makeMsg(id: 2)], next: "c2", head: "h1")
+        let page = makePage([makeItem(id: 1), makeItem(id: 2)], next: "c2", head: "h1")
         cache.save(page, key: "timeline-all")
         #expect(cache.load(TimelinePage.self, key: "timeline-all") == page)
     }
@@ -33,7 +33,7 @@ struct SnapshotCacheTests {
     func corruptFile() throws {
         let (cache, dir) = makeCache()
         defer { try? FileManager.default.removeItem(at: dir) }
-        cache.save(makePage([makeMsg(id: 1)]), key: "timeline-all")
+        cache.save(makePage([makeItem(id: 1)]), key: "timeline-all")
         try Data("not json{{{".utf8).write(to: cache.fileURL(for: "timeline-all"))
         #expect(cache.load(TimelinePage.self, key: "timeline-all") == nil)
     }
@@ -42,18 +42,38 @@ struct SnapshotCacheTests {
     func overwrite() {
         let (cache, dir) = makeCache()
         defer { try? FileManager.default.removeItem(at: dir) }
-        cache.save(makePage([makeMsg(id: 1)]), key: "k")
-        cache.save(makePage([makeMsg(id: 9)]), key: "k")
-        #expect(cache.load(TimelinePage.self, key: "k")?.items.map(\.id) == [9])
+        cache.save(makePage([makeItem(id: 1)]), key: "k")
+        cache.save(makePage([makeItem(id: 9)]), key: "k")
+        #expect(cache.load(TimelinePage.self, key: "k")?.items.tgIDs == [9])
     }
 
     @Test("remove 后读不到")
     func removeKey() {
         let (cache, dir) = makeCache()
         defer { try? FileManager.default.removeItem(at: dir) }
-        cache.save(makePage([makeMsg(id: 1)]), key: "k")
+        cache.save(makePage([makeItem(id: 1)]), key: "k")
         cache.remove(key: "k")
         #expect(cache.load(TimelinePage.self, key: "k") == nil)
+    }
+
+    @Test("旧契约（envelope 之前的扁平 items）快照 → decode 失败按 miss 处理")
+    func preEnvelopeSnapshotIsMiss() throws {
+        let (cache, dir) = makeCache()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        // Phase 4 之前的 TimelinePage：items 直接是 DisplayMessage 数组
+        let legacy = #"""
+        {"items": [{"id": 1, "channel_id": 5, "date": "2026-07-16T09:26:05Z",
+                    "is_edited": false, "edit_date": null, "sender_id": null,
+                    "sender_name": null, "text": "old", "is_album": false,
+                    "grouped_id": null, "media_items": [], "webpage": null,
+                    "is_forwarded": false, "forward_info": null, "views": null,
+                    "forwards_count": null, "replies_count": null,
+                    "raw_message_ids": [1], "is_read": false, "is_saved": false}],
+         "next_cursor": null, "end_cursor": null, "head_cursor": "h1"}
+        """#
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try Data(legacy.utf8).write(to: cache.fileURL(for: "timeline-all"))
+        #expect(cache.load(TimelinePage.self, key: "timeline-all") == nil, "旧快照当 miss，不 crash")
     }
 }
 
@@ -70,13 +90,13 @@ struct TimelineSnapshotTests {
     func snapshotRendersWhenNetworkFails() async {
         let (cache, dir) = makeCache()
         defer { try? FileManager.default.removeItem(at: dir) }
-        cache.save(makePage([makeMsg(id: 5)], next: "c-snap", head: "h-snap"), key: "timeline-all")
+        cache.save(makePage([makeItem(id: 5)], next: "c-snap", head: "h-snap"), key: "timeline-all")
 
         let api = StubAPI()
         api.timelinePages = [.failure(APIError.http(status: 500, detail: "boom"))]
         let store = TimelineStore(api: api, cache: cache, cacheKey: "timeline-all")
         await store.loadInitial()
-        #expect(store.items.map(\.id) == [5], "网络失败也能读快照")
+        #expect(store.items.tgIDs == [5], "网络失败也能读快照")
         #expect(store.headCursor == "h-snap")
         #expect(store.error != nil)
     }
@@ -85,14 +105,14 @@ struct TimelineSnapshotTests {
     func networkReplacesSnapshotAndSaves() async {
         let (cache, dir) = makeCache()
         defer { try? FileManager.default.removeItem(at: dir) }
-        cache.save(makePage([makeMsg(id: 5)]), key: "timeline-all")
+        cache.save(makePage([makeItem(id: 5)]), key: "timeline-all")
 
         let api = StubAPI()
-        api.timelinePages = [.success(makePage([makeMsg(id: 9), makeMsg(id: 8)], next: "c2", head: "h2"))]
+        api.timelinePages = [.success(makePage([makeItem(id: 9), makeItem(id: 8)], next: "c2", head: "h2"))]
         let store = TimelineStore(api: api, cache: cache, cacheKey: "timeline-all")
         await store.loadInitial()
-        #expect(store.items.map(\.id) == [9, 8])
-        #expect(cache.load(TimelinePage.self, key: "timeline-all")?.items.map(\.id) == [9, 8],
+        #expect(store.items.tgIDs == [9, 8])
+        #expect(cache.load(TimelinePage.self, key: "timeline-all")?.items.tgIDs == [9, 8],
                 "新首页回写快照")
     }
 
@@ -101,19 +121,19 @@ struct TimelineSnapshotTests {
         let (cache, dir) = makeCache()
         defer { try? FileManager.default.removeItem(at: dir) }
         let api = StubAPI()
-        api.timelinePages = [.success(makePage([makeMsg(id: 3)], head: "h1"))]
+        api.timelinePages = [.success(makePage([makeItem(id: 3)], head: "h1"))]
         let store = TimelineStore(api: api, cache: cache, cacheKey: "timeline-all")
         await store.loadInitial()
-        #expect(store.items.map(\.id) == [3])
-        #expect(cache.load(TimelinePage.self, key: "timeline-all")?.items.map(\.id) == [3])
+        #expect(store.items.tgIDs == [3])
+        #expect(cache.load(TimelinePage.self, key: "timeline-all")?.items.tgIDs == [3])
     }
 
     @Test("不配 cache 的 store 不受影响")
     func withoutCache() async {
         let api = StubAPI()
-        api.timelinePages = [.success(makePage([makeMsg(id: 3)]))]
+        api.timelinePages = [.success(makePage([makeItem(id: 3)]))]
         let store = TimelineStore(api: api)
         await store.loadInitial()
-        #expect(store.items.map(\.id) == [3])
+        #expect(store.items.tgIDs == [3])
     }
 }
