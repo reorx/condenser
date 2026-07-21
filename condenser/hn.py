@@ -21,7 +21,7 @@ from urllib.parse import urlsplit
 
 import httpx
 
-from . import db
+from . import db, preview
 from .config import Settings
 
 log = logging.getLogger('condenser.hn')
@@ -32,6 +32,10 @@ HCKRNEWS_URL = 'https://hckrnews.com/data/{yyyymmdd}.js'
 
 # A day's hckrnews archive is only complete/available once it is this many days old.
 BACKFILL_ELIGIBLE_AGE_DAYS = 2
+
+# Give up prefetching a story's link preview after this many real fetch attempts
+# (fresh negative-cache hits don't count — see _fill_previews).
+PREVIEW_MAX_ATTEMPTS = 3
 
 PENDING_META_KEY = 'hn_backfill_pending'
 
@@ -58,9 +62,12 @@ class HNManager:
     backfill_day_interval = 4.0  # between hckrnews day requests (rate-limit courtesy)
     refresh_concurrency = 10
 
-    def __init__(self, settings: Settings, fetch_json: Optional[Callable] = None):
+    def __init__(
+        self, settings: Settings, fetch_json: Optional[Callable] = None, fetch_preview: Optional[Callable] = None
+    ):
         self.settings = settings
         self._fetch_json = fetch_json or self._http_fetch_json
+        self._fetch_preview = fetch_preview or preview.get_preview
         self._client: Optional[httpx.AsyncClient] = None
         self._tasks: set[asyncio.Task] = set()
         self._wake = asyncio.Event()
@@ -135,6 +142,7 @@ class HNManager:
             sampled = await self._sample_front()
             await self._refresh_snapshots(exclude=sampled)
             await self._backfill_eligible_days()
+            await self._fill_previews()
         except Exception as e:  # noqa: BLE001 — top-level loop guard (spec: log + skip round)
             log.exception('hn poll round failed')
             db.set_meta('hn_last_error', str(e))
@@ -220,6 +228,39 @@ class HNManager:
                 db.update_hn_snapshot(story.id, item.get('score') or 0, item.get('descendants') or 0, self._now())
 
         await asyncio.gather(*(refresh_one(s) for s in stories))
+
+    # ---- link preview prefetch ----
+    async def _fill_previews(self) -> None:
+        """Prefetch link previews into ``hn_stories.preview`` (batch per round, newest first).
+
+        One mechanism covers freshly sampled stories, backfilled history, and rows
+        from before the feature existed. Fetching goes through ``preview.get_preview``
+        so the shared ``link_previews`` cache is warmed for the pane too. An attempt
+        is only counted when a real fetch happened: a still-fresh negative cache entry
+        (its TTL < the poll interval would otherwise eat every retry) skips the story
+        without bumping, so the retries spread out to one per cache expiry.
+        """
+        batch = self.settings.condenser_hn_preview_batch
+        if batch <= 0:
+            return
+        stories = db.hn_stories_needing_preview(batch, PREVIEW_MAX_ATTEMPTS)
+        if not stories:
+            return
+        sem = asyncio.Semaphore(self.settings.condenser_preview_max_concurrency)
+
+        async def fill_one(story) -> None:
+            cached = db.get_cached_preview(preview.normalize_url(story.url))
+            if cached is not None and not cached.ok and preview._cache_fresh(cached, self.settings):
+                return
+            async with sem:
+                result = await self._fetch_preview(story.url)
+            if result.error:
+                db.bump_hn_preview_attempts(story.id)
+                return
+            # Success is terminal even with empty fields — the URL just has no metadata.
+            db.set_hn_preview(story.id, result.model_dump_json())
+
+        await asyncio.gather(*(fill_one(s) for s in stories))
 
     # ---- hckrnews historical backfill ----
     def schedule_backfill(self) -> None:

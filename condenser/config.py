@@ -37,6 +37,8 @@ class Settings(BaseSettings):
     condenser_hn_refresh_hours: int = 48
     # hckrnews history window backfilled on subscribe (0 = no backfill).
     condenser_hn_backfill_days: int = 7
+    # Max story URLs link-previewed per sampling round (0 = disable prefetching).
+    condenser_hn_preview_batch: int = 30
 
     # --- link preview fetching (condenser/preview.py) ---
     # Total per-request timeout (seconds) for fetching a URL/its image.

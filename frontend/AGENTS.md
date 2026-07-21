@@ -56,12 +56,12 @@ Two conventions this list exists to protect:
 | `TimelineDayGroup` | One calendar day's messages under a static date divider |
 | `TimelineSkeleton` | Loading placeholder rows for the timeline |
 | `MessageCard` | A single Telegram item (takes the `TimelineItem` envelope; payload in `item.telegram`): header (avatar/name/time/save), text, media, webpage preview, forward box. The time is a button (full-date `title` tooltip) that opens the `LinkPreviewPane` — the unified drawer entry on every message |
-| `HnCard` | A Hacker News story card: title link (external URL, or comments page for self-posts), day-rank badge + score/comments/domain meta, sanitized self-post HTML behind a char-threshold "more" clamp, muted job posts, scroll-to-read + save; the submitted-time button opens the `LinkPreviewPane` (HN target) |
+| `HnCard` | A Hacker News story card: title link (external URL, or comments page for self-posts), day-rank badge + score/comments/domain meta, an embedded `LinkPreviewCard` when the story carries an ingest-prefetched `hn.preview` with content, sanitized self-post HTML behind a char-threshold "more" clamp, muted job posts, scroll-to-read + save; the submitted-time button opens the `LinkPreviewPane` (HN target) |
 | `MessageMedia` | Media layout (single image vs 2/3-col grid) + lightbox trigger |
 | `MediaThumb` | One media thumbnail: skeleton + aspect-ratio transition + file-chip fallback when no preview image |
 | `WebPagePreview` | Telegram-style inline link preview card (thumbnail + site/title/description) |
-| `LinkPreviewPane` | Right-side slide-out (shadcn `Sheet`) driven by the `linkPreviewPane` context's `PaneTarget` union: a TG message's link previews with an "Open original in Telegram" footer (`tgMessageUrl`), or an HN story's URL preview with an "Open comments on Hacker News" footer (self-posts show a placeholder); mounted once in `AppShell` |
-| `LinkPreviewCard` | One self-fetched link preview shown in the pane (proxied image / Telegram-image fallback + site/title/description; `channelId` optional — absent for HN targets) |
+| `LinkPreviewPane` | Right-side slide-out (shadcn `Sheet`) driven by the `linkPreviewPane` context's `PaneTarget` union: a TG message's link previews with an "Open original in Telegram" footer (`tgMessageUrl`), or an HN story's URL preview — the envelope's prefetched `story.preview` renders instantly, live `useUrlPreview` fetch only when it's absent — with an "Open comments on Hacker News" footer (self-posts show a placeholder); mounted once in `AppShell` |
+| `LinkPreviewCard` | One self-fetched link preview (proxied image / Telegram-image fallback + site/title/description; `channelId` optional — absent for HN targets); shared by the pane and `HnCard`'s embedded preview |
 | `Lightbox` | Fullscreen media viewer with prev/next navigation |
 | `SavedMessageItem` | One saved item in the Saved view: full date line + the source's card (`MessageCard` / `HnCard`) |
 

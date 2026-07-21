@@ -65,6 +65,7 @@ export function makeHnItem(
     day_rank: null,
     peak_rank: null,
     backfilled: false,
+    preview: null,
     ...over,
   };
   return {

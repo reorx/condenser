@@ -13,6 +13,7 @@ from fastapi.testclient import TestClient
 
 from condenser import db
 from condenser.app import create_app
+from condenser.preview import LinkPreview, normalize_url
 from telememo import db as tdb
 
 TOPSTORIES = 'https://hacker-news.firebaseio.com/v0/topstories.json'
@@ -72,12 +73,44 @@ class FakeFetch:
         return self.calls.count(url)
 
 
-def make_manager(fetch, now=NOW):
+class FakePreview:
+    """URL -> LinkPreview result (or Exception to raise). Records every call.
+
+    Unknown URLs get a deterministic stub preview, so any test that ingests
+    stories works without wiring preview data explicitly.
+    """
+
+    def __init__(self):
+        self.results = {}
+        self.calls = []
+
+    def set(self, url, result):
+        self.results[url] = result
+
+    async def __call__(self, url):
+        self.calls.append(url)
+        r = self.results.get(url)
+        if isinstance(r, Exception):
+            raise r
+        if r is None:
+            return LinkPreview(url=url, title=f'Title {url}', description='Desc', site_name='Example')
+        return r
+
+
+_UNSET = object()
+
+
+def make_manager(fetch, now=NOW, fetch_preview=_UNSET):
+    """Build a network-free manager. ``fetch_preview`` defaults to a FakePreview
+    (the canned story URLs are real domains — the real ``get_preview`` would hit
+    the network); pass ``None`` explicitly to exercise the real cached path."""
     from condenser.config import get_settings
     from condenser.hn import HNManager
 
     db.init_db(os.environ['CONDENSER_DB_PATH'])
-    mgr = HNManager(get_settings(), fetch_json=fetch)
+    if fetch_preview is _UNSET:
+        fetch_preview = FakePreview()
+    mgr = HNManager(get_settings(), fetch_json=fetch, fetch_preview=fetch_preview)
     mgr.item_throttle = 0
     mgr.backfill_day_interval = 0
     mgr._now = lambda: now
@@ -160,7 +193,37 @@ def test_add_subscription_coerces_str_channel_id(env):
 def test_fresh_db_records_schema_version(env):
     db.init_db(os.environ['CONDENSER_DB_PATH'])
     assert db.get_meta('schema_version') == str(db.SCHEMA_VERSION)
-    assert db.SCHEMA_VERSION == 4
+    assert db.SCHEMA_VERSION == 5
+
+
+def test_hn_stories_table_migrates_to_v5(env):
+    """A pre-v5 hn_stories table gains the preview columns in place, data intact."""
+    path = os.environ['CONDENSER_DB_PATH']
+    conn = sqlite3.connect(path)
+    conn.execute(
+        'CREATE TABLE hn_stories ('
+        'id INTEGER NOT NULL PRIMARY KEY, title TEXT, url TEXT, domain TEXT, author TEXT, text TEXT, '
+        'type VARCHAR(255) NOT NULL, submitted_at DATETIME, first_seen_at DATETIME NOT NULL, '
+        'day VARCHAR(255) NOT NULL, score INTEGER NOT NULL, comments_count INTEGER NOT NULL, '
+        'score_updated_at DATETIME, peak_rank INTEGER, is_dead INTEGER NOT NULL, backfilled INTEGER NOT NULL)'
+    )
+    conn.execute(
+        'INSERT INTO hn_stories (id, title, url, type, first_seen_at, day, score, comments_count, is_dead, backfilled) '
+        "VALUES (1, 'old', 'https://example.com/1', 'story', '2026-07-01 10:00:00', '2026-07-01', 5, 0, 0, 0)"
+    )
+    conn.commit()
+    conn.close()
+
+    db.init_db(path)
+    s = db.get_hn_story(1)
+    assert s.title == 'old'
+    assert s.preview is None and s.preview_attempts == 0
+    # the legacy row becomes a preview candidate
+    assert [c.id for c in db.hn_stories_needing_preview(10, 3)] == [1]
+
+    # idempotent: init again on the migrated file
+    db.init_db(path)
+    assert db.get_hn_story(1) is not None
 
 
 # --- sampling: subscription-driven --------------------------------------------
@@ -565,6 +628,148 @@ def test_backfill_disabled_by_config(env, monkeypatch):
     assert db.get_meta('hn_backfill_pending') in (None, '[]')
     asyncio.run(mgr.poll_once())
     assert not any('hckrnews.com' in u for u in fetch.calls)
+
+
+# --- link preview prefetch (embedded HnCard previews) --------------------------
+
+
+def test_new_story_preview_prefetched_and_persisted(env):
+    fetch = FakeFetch()
+    fp = FakePreview()
+    mgr = make_manager(fetch, fetch_preview=fp)
+    subscribe_front()
+
+    fetch.set(TOPSTORIES, [101, 102])
+    fetch.set(item_url(101), story(101))
+    fetch.set(item_url(102), story(102, url=None, text='<p>Ask HN body</p>'))
+    asyncio.run(mgr.poll_once())
+
+    p = json.loads(db.get_hn_story(101).preview)
+    assert p['title'] == 'Title https://example.com/101'
+    assert p['description'] == 'Desc'
+    # self-post: never a candidate, no attempt burned
+    ask = db.get_hn_story(102)
+    assert ask.preview is None and ask.preview_attempts == 0
+    assert fp.calls == ['https://example.com/101']
+
+    # a filled story is not refetched on later rounds
+    asyncio.run(mgr.poll_once())
+    assert fp.calls == ['https://example.com/101']
+
+
+def test_empty_preview_result_is_terminal(env):
+    """A successful fetch with no metadata is still a final state — no refetch loop."""
+    fetch = FakeFetch()
+    fp = FakePreview()
+    fp.set('https://example.com/101', LinkPreview(url='https://example.com/101'))
+    mgr = make_manager(fetch, fetch_preview=fp)
+    subscribe_front()
+    fetch.set(TOPSTORIES, [101])
+    fetch.set(item_url(101), story(101))
+
+    asyncio.run(mgr.poll_once())
+    p = json.loads(db.get_hn_story(101).preview)
+    assert p['title'] is None and p['error'] is None
+    asyncio.run(mgr.poll_once())
+    assert fp.calls == ['https://example.com/101']
+
+
+def test_preview_backlog_filled_newest_first_within_batch(env, monkeypatch):
+    """Backfilled + pre-feature rows are swept newest-first, capped per round; dead rows excluded."""
+    monkeypatch.setenv('CONDENSER_HN_PREVIEW_BATCH', '2')
+    from condenser.config import get_settings
+
+    get_settings.cache_clear()
+    fetch = FakeFetch()
+    fp = FakePreview()
+    mgr = make_manager(fetch, fetch_preview=fp)
+    subscribe_front()
+    fetch.set(TOPSTORIES, [])
+
+    for sid, hours in ((1, 30), (2, 20), (3, 10)):
+        seen = NOW - timedelta(hours=hours)
+        db.insert_hn_story(
+            id=sid, title=f'S{sid}', url=f'https://example.com/{sid}', first_seen_at=seen, day=str(seen.date())
+        )
+    db.insert_hn_story(id=4, url='https://example.com/4', first_seen_at=NOW, day=str(TODAY), is_dead=True)
+
+    asyncio.run(mgr.poll_once())
+    assert fp.calls == ['https://example.com/3', 'https://example.com/2']
+
+    asyncio.run(mgr.poll_once())
+    assert fp.calls[2:] == ['https://example.com/1']
+    assert db.get_hn_story(4).preview is None  # dead placeholder: never a candidate
+
+
+def test_failed_preview_retries_up_to_three_real_attempts(env):
+    fetch = FakeFetch()
+    fp = FakePreview()
+    fp.set('https://example.com/101', LinkPreview(url='https://example.com/101', error='HTTP 500'))
+    mgr = make_manager(fetch, fetch_preview=fp)
+    subscribe_front()
+    fetch.set(TOPSTORIES, [101])
+    fetch.set(item_url(101), story(101))
+
+    for expected in (1, 2, 3):
+        asyncio.run(mgr.poll_once())
+        assert db.get_hn_story(101).preview_attempts == expected
+    # attempts exhausted: the seam is never called again
+    asyncio.run(mgr.poll_once())
+    assert len(fp.calls) == 3
+    assert db.get_hn_story(101).preview is None
+
+
+def test_fresh_negative_cache_skips_without_burning_attempts(env):
+    """A fresh cached failure must not consume a retry (each bump = one real network attempt)."""
+    fetch = FakeFetch()
+    fp = FakePreview()
+    mgr = make_manager(fetch, fetch_preview=fp)
+    subscribe_front()
+    fetch.set(TOPSTORIES, [101])
+    fetch.set(item_url(101), story(101))
+
+    db.upsert_preview(normalize_url('https://example.com/101'), ok=False, error='HTTP 500')
+    asyncio.run(mgr.poll_once())
+    assert fp.calls == []
+    assert db.get_hn_story(101).preview_attempts == 0
+
+    # once the negative entry ages past its TTL, the next round really retries
+    stale = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=2)
+    db.LinkPreviewCache.update(fetched_at=stale).execute()
+    asyncio.run(mgr.poll_once())
+    assert fp.calls == ['https://example.com/101']
+    assert db.get_hn_story(101).preview is not None
+
+
+def test_fresh_positive_cache_fills_preview_with_zero_network(env):
+    """With a fresh ok cache row, even the real get_preview path stays offline."""
+    fetch = FakeFetch()
+    mgr = make_manager(fetch, fetch_preview=None)  # the real preview.get_preview
+    subscribe_front()
+    fetch.set(TOPSTORIES, [101])
+    fetch.set(item_url(101), story(101))
+
+    db.upsert_preview(normalize_url('https://example.com/101'), ok=True, title='Cached title', site_name='Example')
+    asyncio.run(mgr.poll_once())
+    p = json.loads(db.get_hn_story(101).preview)
+    assert p['title'] == 'Cached title'
+
+
+def test_preview_prefetch_disabled_by_config(env, monkeypatch):
+    monkeypatch.setenv('CONDENSER_HN_PREVIEW_BATCH', '0')
+    from condenser.config import get_settings
+
+    get_settings.cache_clear()
+    fetch = FakeFetch()
+    fp = FakePreview()
+    mgr = make_manager(fetch, fetch_preview=fp)
+    subscribe_front()
+    fetch.set(TOPSTORIES, [101])
+    fetch.set(item_url(101), story(101))
+
+    asyncio.run(mgr.poll_once())
+    assert fp.calls == []
+    assert db.get_hn_story(101).preview is None
 
 
 # --- endpoints ----------------------------------------------------------------

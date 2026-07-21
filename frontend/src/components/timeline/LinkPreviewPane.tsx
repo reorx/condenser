@@ -36,11 +36,18 @@ export function LinkPreviewPane() {
   const story = open?.source === 'hn' ? open.story : null;
 
   const messageQuery = useLinkPreviews(msgRef);
-  const urlQuery = useUrlPreview(story?.url ?? null);
+  // The story's ingest-prefetched preview renders instantly; fetch live only without one.
+  const urlQuery = useUrlPreview(story && !story.preview ? story.url : null);
   const query = story ? urlQuery : messageQuery;
-  const previews = story ? (urlQuery.data ? [urlQuery.data] : []) : (messageQuery.data ?? []);
-  // A self-post has no URL to preview; don't show the fetch skeleton forever.
-  const pending = query.isPending && !(story && !story.url);
+  const previews = story
+    ? story.preview
+      ? [story.preview]
+      : urlQuery.data
+        ? [urlQuery.data]
+        : []
+    : (messageQuery.data ?? []);
+  // Self-posts (no URL) and prefetched stories never fetch; don't show their skeleton forever.
+  const pending = query.isPending && !(story && (!story.url || story.preview));
 
   const subs = useSubscriptions();
   const username = msgRef ? subs.data?.find((s) => s.channel_id === msgRef.channel_id)?.username : null;

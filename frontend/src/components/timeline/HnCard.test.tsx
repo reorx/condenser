@@ -5,7 +5,7 @@ import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 
 import { UnreadIndicatorProvider } from '@/lib/unreadIndicator';
-import type { HnStory, TimelineItem } from '@/lib/types';
+import type { HnStory, LinkPreview, TimelineItem } from '@/lib/types';
 
 import { HnCard } from './HnCard';
 
@@ -25,6 +25,21 @@ function makeStory(over: Partial<HnStory> = {}): HnStory {
     day_rank: 3,
     peak_rank: 1,
     backfilled: false,
+    preview: null,
+    ...over,
+  };
+}
+
+function makePreview(over: Partial<LinkPreview> = {}): LinkPreview {
+  return {
+    url: 'https://example.com/post',
+    title: 'Og title',
+    description: 'Og description',
+    image: null,
+    site_name: 'Example Site',
+    source: 'fetched',
+    tg_image_message_id: null,
+    error: null,
     ...over,
   };
 }
@@ -96,5 +111,22 @@ describe('HnCard', () => {
   it('shows the submitted time and opens story details from it', () => {
     wrap(<HnCard item={makeItem()} />);
     expect(screen.getByRole('button', { name: 'Open story details' })).toBeInTheDocument();
+  });
+
+  it('embeds the prefetched link preview card', () => {
+    wrap(<HnCard item={makeItem({ preview: makePreview() })} />);
+    expect(screen.getByText('Og title')).toBeInTheDocument();
+    expect(screen.getByText('Og description')).toBeInTheDocument();
+    expect(screen.getByText('Example Site')).toBeInTheDocument();
+  });
+
+  it('renders no preview card when the preview is missing', () => {
+    wrap(<HnCard item={makeItem()} />);
+    expect(screen.queryByText('Og title')).toBeNull();
+  });
+
+  it('renders no preview card when the preview has no content', () => {
+    wrap(<HnCard item={makeItem({ preview: makePreview({ title: null, description: null, image: null }) })} />);
+    expect(screen.queryByText('Example Site')).toBeNull();
   });
 });

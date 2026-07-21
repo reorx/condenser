@@ -84,6 +84,8 @@ export interface HnStory {
   day_rank: number | null;
   peak_rank: number | null;
   backfilled: boolean;
+  /** Ingest-prefetched preview for `url`; null while unfetched / failed / self-post. */
+  preview: LinkPreview | null;
 }
 
 /** Multi-source item envelope: exactly one of `telegram` / `hn` is present. */

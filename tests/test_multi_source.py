@@ -6,6 +6,7 @@ Telegram is mocked (DB-seeded); HN stories are seeded directly into hn_stories.
 """
 
 import base64
+import json
 import os
 import sqlite3
 from datetime import datetime, timedelta, timezone
@@ -160,6 +161,73 @@ def test_timeline_hn_envelope_payload(env):
         assert hn['first_seen_at'].startswith('2026-06-01T12:05')
         assert it['datetime'] == hn['first_seen_at']
         assert 'telegram' not in it
+
+
+def _preview_json(**over):
+    fields = {
+        'url': 'https://ex.com/101',
+        'title': 'Og title',
+        'description': 'Og desc',
+        'image': 'https://ex.com/img.png',
+        'site_name': 'Ex',
+        'source': 'fetched',
+        'tg_image_message_id': None,
+        'error': None,
+    }
+    fields.update(over)
+    return json.dumps(fields)
+
+
+def test_timeline_hn_envelope_includes_preview(env):
+    with _client() as client:
+        _login(client)
+        subscribe_hn()
+        seed_hn(101, 5, preview=_preview_json())
+        seed_hn(102, 6)
+
+        by_key = {it['key']: it for it in client.get('/api/timeline').json()['items']}
+        p = by_key['hn:101']['hn']['preview']
+        assert p['title'] == 'Og title' and p['image'] == 'https://ex.com/img.png'
+        assert by_key['hn:102']['hn']['preview'] is None
+
+
+def test_hn_record_snapshot_carries_preview_and_tolerates_legacy(env):
+    with _client() as client:
+        _login(client)
+        subscribe_hn()
+        seed_hn(101, 5, preview=_preview_json())
+        assert client.post('/api/records', json={'key': 'hn:101'}).status_code == 200
+
+        # wipe the source table: the snapshot alone must still render the preview
+        db.HNStory.delete().execute()
+        recs = client.get('/api/records').json()
+        assert recs[0]['hn']['preview']['title'] == 'Og title'
+
+        # a pre-feature snapshot (raw_data without the preview key) renders with preview=None
+        db.add_saved_item(
+            'hn',
+            999,
+            0,
+            {
+                'id': 999,
+                'title': 'old snapshot',
+                'url': 'https://ex.com/999',
+                'domain': 'ex.com',
+                'author': 'alice',
+                'type': 'story',
+                'text': None,
+                'submitted_at': None,
+                'first_seen_at': '2026-06-01T10:00:00Z',
+                'score': 1,
+                'comments_count': 0,
+                'day_rank': None,
+                'peak_rank': None,
+                'backfilled': False,
+                'day': '2026-06-01',
+            },
+        )
+        legacy = next(r for r in client.get('/api/records').json() if r['key'] == 'hn:999')
+        assert legacy['hn']['preview'] is None
 
 
 # --- read by key (2.2/2.4) ---------------------------------------------------

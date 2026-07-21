@@ -15,6 +15,8 @@ import { useUnreadIndicator } from '@/lib/unreadIndicator';
 import { cn } from '@/lib/utils';
 import type { ReadTarget, TimelineItem } from '@/lib/types';
 
+import { LinkPreviewCard } from './LinkPreviewCard';
+
 interface Props {
   /** Envelope with `hn` present. */
   item: TimelineItem;
@@ -162,6 +164,12 @@ function HnCardImpl({ item, observe }: Props) {
           </>
         )}
       </div>
+
+      {hn.url && hn.preview && (hn.preview.title || hn.preview.description || hn.preview.image) && (
+        <div className="mt-2">
+          <LinkPreviewCard preview={hn.preview} />
+        </div>
+      )}
     </article>
   );
 }

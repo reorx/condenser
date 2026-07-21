@@ -7,6 +7,7 @@ this module owns the string<->triple mapping and the envelope assembly shared by
 the timeline and records renderers.
 """
 
+import json
 from datetime import datetime
 from typing import Optional, Union
 
@@ -86,6 +87,17 @@ def tg_envelope(display: dict, is_read: bool, is_saved: bool) -> dict:
     }
 
 
+def _parse_preview(value: Union[str, dict, None]) -> Optional[dict]:
+    """``hn_stories.preview`` in its three shapes: absent/None, JSON str (timeline
+    query rows / model ``__data__``), or an already-parsed dict (saved-record replay)."""
+    if value is None or isinstance(value, dict):
+        return value
+    try:
+        return json.loads(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def hn_payload(row: dict) -> dict:
     """The `hn` payload from an hn_stories row dict (day_rank present query-time only)."""
     return {
@@ -103,6 +115,7 @@ def hn_payload(row: dict) -> dict:
         'day_rank': row.get('day_rank'),
         'peak_rank': row.get('peak_rank'),
         'backfilled': bool(row.get('backfilled')),
+        'preview': _parse_preview(row.get('preview')),
     }
 
 

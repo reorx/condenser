@@ -36,7 +36,7 @@ MESSAGES_OPTIONAL_FIELDS = {
 # Bumped when condenser's own table shapes change; recorded in app_meta on init so a
 # future startup can detect an upgrade and run a migration. Telememo manages its own
 # table migrations separately (init_db optional_fields / ALTER TABLE).
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 
 class CondenserBaseModel(Model):
@@ -186,6 +186,11 @@ class HNStory(CondenserBaseModel):
     peak_rank = IntegerField(null=True)  # best observed front-page position
     is_dead = BooleanField(default=False)
     backfilled = BooleanField(default=False)  # from hckrnews history (first_seen_at approximate)
+    # Prefetched LinkPreview JSON for the story URL — denormalized into the archive
+    # so it outlives the TTL'd link_previews cache. NULL until fetched (or forever,
+    # for self-posts / URLs that failed preview_attempts real fetches).
+    preview = TextField(null=True)
+    preview_attempts = IntegerField(default=0)
 
     class Meta:
         table_name = 'hn_stories'
@@ -211,6 +216,7 @@ def init_db(db_path: str) -> None:
     _migrate_subscriptions_v3()
     tdb.db.create_tables(CONDENSER_TABLES)
     _migrate_read_saved_v4()
+    _migrate_hn_previews_v5()
     _enable_wal(db_path)
     set_meta('schema_version', str(SCHEMA_VERSION))
 
@@ -265,6 +271,21 @@ def _migrate_read_saved_v4() -> None:
             )
             tdb.db.execute_sql('DROP TABLE IF EXISTS telegram_records_legacy')
             tdb.db.execute_sql('ALTER TABLE telegram_records RENAME TO telegram_records_legacy')
+
+
+def _migrate_hn_previews_v5() -> None:
+    """Add the preview columns to a pre-v5 ``hn_stories`` table.
+
+    Shape-based (missing ``preview`` column) and idempotent; plain ADD COLUMNs, so
+    unlike the v3/v4 table rebuilds no copy is needed. Runs after ``create_tables``
+    (a fresh table already has the columns and is skipped by the pragma check).
+    """
+    cols = [r[1] for r in tdb.db.execute_sql('PRAGMA table_info(hn_stories)').fetchall()]
+    if not cols or 'preview' in cols:
+        return
+    with tdb.db.atomic():
+        tdb.db.execute_sql('ALTER TABLE hn_stories ADD COLUMN preview TEXT')
+        tdb.db.execute_sql('ALTER TABLE hn_stories ADD COLUMN preview_attempts INTEGER NOT NULL DEFAULT 0')
 
 
 def _enable_wal(db_path: str) -> None:
@@ -684,6 +705,29 @@ def hn_stories_to_refresh(first_seen_after: datetime) -> list[HNStory]:
             (HNStory.first_seen_at >= first_seen_after) & (HNStory.is_dead == False)  # noqa: E712
         )
     )
+
+
+def hn_stories_needing_preview(limit: int, max_attempts: int) -> list[HNStory]:
+    """Linkable live stories without a stored preview, newest first (the prefetch queue)."""
+    return list(
+        HNStory.select()
+        .where(
+            HNStory.url.is_null(False)
+            & (HNStory.is_dead == False)  # noqa: E712
+            & HNStory.preview.is_null()
+            & (HNStory.preview_attempts < max_attempts)
+        )
+        .order_by(HNStory.first_seen_at.desc())
+        .limit(limit)
+    )
+
+
+def set_hn_preview(story_id: int, preview_json: str) -> None:
+    HNStory.update(preview=preview_json).where(HNStory.id == story_id).execute()
+
+
+def bump_hn_preview_attempts(story_id: int) -> None:
+    HNStory.update(preview_attempts=HNStory.preview_attempts + 1).where(HNStory.id == story_id).execute()
 
 
 def hn_story_counts(today: str) -> tuple[int, int]:
