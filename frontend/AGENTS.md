@@ -37,12 +37,13 @@ Two conventions this list exists to protect:
 | `ConfirmDialog` | Generic confirm/cancel modal (destructive variant + pending state) |
 | `DeviceList` | Authorized devices (bearer-token clients) in `SettingsDialog`: list + revoke with confirm |
 | `HnDisplayModeMenu` | Top-N display-mode dropdown (top10/top20/half/all → PATCH the front feed's config); used by the `/s/hn` header + `HackerNewsSection` |
-| `HnGlyph` | The HN "Y" mark in its orange square (size via className); shared by `HnCard`, the sidebar feed row, the `/s/hn` header, `HackerNewsSection` |
+| `HnGlyph` | The HN "Y" mark in its orange square (size via className); shared by `HnCard`, the sidebar feed row, the `/s/hn` header, `HackerNewsSection`, the Subscriptions tab bar |
+| `TgGlyph` | The Telegram paper-plane mark in its blue square, HnGlyph's size-pair; used by the Subscriptions tab bar |
 | `PageHeader` + `IconBadge` | Unified reading-view top bar (leading icon + title + meta + right-aligned actions); `IconBadge` wraps a lucide icon in a muted circle |
 | `SegmentedOption` | One icon-over-label button in a segmented control; shared by `SettingsDialog`'s theme + unread pickers |
 | `SettingsDialog` | Settings modal: Telegram account, theme, unread-indicator mode, devices, lock app |
-| `Sidebar` | Left navigation: nav links (Unread first, `/` = Unread, `/?all=1` = All), then one `SidebarSourceGroup` per source from `GET /api/sources`, browse, settings |
-| `SidebarSourceGroup` | One collapsible source section (collapse persisted via `useCollapsedSources`): header row = chevron toggle + label linking to `/s/:source` (+ unread badge when collapsed), rows = the source's enabled subscriptions |
+| `Sidebar` | Left navigation: nav links (Unread first, `/` = Unread, `/?all=1` = All), then one `SidebarSourceGroup` per source from `GET /api/sources`, settings |
+| `SidebarSourceGroup` | One collapsible source section (collapse persisted via `useCollapsedSources`): the full-width header row links to `/s/:source` (+ unread badge when collapsed) with the collapse chevron as its own right-edge target, rows = the source's enabled subscriptions |
 | `SidebarChannelLink` + `navLinkClass` | One Telegram channel link in a sidebar source group; also exports the shared nav-row className used by the top-level links |
 | `SidebarHnFeedLink` | One HN feed link in the sidebar's Hacker News group (routes to `/s/hn` — v1 has a single feed) |
 | `Spinner` + `FullScreenSpinner` | Loading spinner (inline + full-screen) |
@@ -87,7 +88,8 @@ Two conventions this list exists to protect:
 | `BrowseChannelsDialog` | "Browse my channels" modal: search + multi-select + batch add |
 | `BrowseChannelRow` | One selectable channel row in `BrowseChannelsDialog` |
 | `SubscriptionRow` | One channel row on the Manage channels page: enable switch + actions menu + confirm dialogs |
-| `HackerNewsSection` | The Hacker News block on the Subscriptions page: Front Page subscribe/unsubscribe, sampling pause switch, display-mode menu, status line (`/api/hn/status`) |
+| `TelegramSection` | The Telegram tab on the Subscriptions page: browse/add-by-handle actions + the `SubscriptionRow` channel list |
+| `HackerNewsSection` | The Hacker News tab on the Subscriptions page: Front Page subscribe/unsubscribe, sampling pause switch, display-mode menu, status line (`/api/hn/status`) |
 
 > `components/ui/` holds generated shadcn/ui (new-york) primitives — intentionally **excluded**
 > from this inventory. Don't list them here. Import `Button` from `@/components/ui/button`.

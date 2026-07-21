@@ -1,11 +1,10 @@
 import { useState } from 'react';
-import { Bookmark, Filter, Inbox, Radio, Search, Settings, Sparkles } from 'lucide-react';
+import { Bookmark, Filter, Inbox, Radio, Settings, Sparkles } from 'lucide-react';
 import { NavLink, useLocation } from 'react-router-dom';
 
 import { SettingsDialog } from '@/components/SettingsDialog';
 import { navLinkClass } from '@/components/SidebarChannelLink';
 import { SidebarSourceGroup } from '@/components/SidebarSourceGroup';
-import { BrowseChannelsDialog } from '@/components/subscriptions/BrowseChannelsDialog';
 import { UnreadBadge } from '@/components/UnreadBadge';
 import { Button } from '@/components/ui/button';
 import { useCollapsedSources } from '@/hooks/useCollapsedSources';
@@ -19,7 +18,6 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
     .reduce((n, s) => n + (s.enabled ? s.unread : 0), 0);
 
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [browseOpen, setBrowseOpen] = useState(false);
   const location = useLocation();
   // "/" is the Unread home view; "?all=1" flips the aggregate view to All.
   const allActive = location.pathname === '/' && new URLSearchParams(location.search).get('all') === '1';
@@ -71,11 +69,6 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
         )}
       </div>
 
-      <Button variant="outline" size="sm" className="w-full justify-start" onClick={() => setBrowseOpen(true)}>
-        <Search className="size-4" />
-        Browse my channels
-      </Button>
-
       <Button
         variant="ghost"
         size="sm"
@@ -87,7 +80,6 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
       </Button>
 
       <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
-      <BrowseChannelsDialog open={browseOpen} onOpenChange={setBrowseOpen} />
     </div>
   );
 }

@@ -15,37 +15,37 @@ interface SidebarSourceGroupProps {
   onNavigate?: () => void;
 }
 
-/** One collapsible source section in the sidebar: a header row (chevron toggle +
- *  label linking to the /s/:source view) over the source's enabled subscriptions. */
+/** One collapsible source section in the sidebar: a full-width header row linking to the
+ *  /s/:source view, with the collapse chevron pinned to the right edge as its own target. */
 export function SidebarSourceGroup({ group, collapsed, onToggleCollapsed, onNavigate }: SidebarSourceGroupProps) {
   const enabled = group.subscriptions.filter((s) => s.enabled);
   const unread = enabled.reduce((n, s) => n + s.unread, 0);
 
   return (
     <div>
-      <div className="flex items-center gap-0.5 px-1 pb-1">
-        <button
-          type="button"
-          onClick={onToggleCollapsed}
-          aria-expanded={!collapsed}
-          aria-label={`${collapsed ? 'Expand' : 'Collapse'} ${sourceLabel(group.source)}`}
-          className="rounded p-0.5 text-muted-foreground/70 transition-colors hover:bg-accent/60 hover:text-foreground"
-        >
-          <ChevronDown className={cn('size-3.5 transition-transform', collapsed && '-rotate-90')} />
-        </button>
+      <div className="flex items-center gap-0.5 pb-1">
         <NavLink
           to={`/s/${group.source}`}
           onClick={onNavigate}
           className={({ isActive }) =>
             cn(
-              'rounded px-1 text-[11px] font-medium tracking-wide uppercase transition-colors hover:text-foreground',
+              'flex min-w-0 flex-1 items-center gap-2 rounded-md px-2.5 py-1.5 text-[11px] font-medium tracking-wide uppercase transition-colors hover:bg-accent/60 hover:text-foreground',
               isActive ? 'text-foreground' : 'text-muted-foreground/70',
             )
           }
         >
-          {sourceLabel(group.source)}
+          <span className="truncate">{sourceLabel(group.source)}</span>
+          {collapsed && <UnreadBadge count={unread} />}
         </NavLink>
-        {collapsed && <UnreadBadge count={unread} />}
+        <button
+          type="button"
+          onClick={onToggleCollapsed}
+          aria-expanded={!collapsed}
+          aria-label={`${collapsed ? 'Expand' : 'Collapse'} ${sourceLabel(group.source)}`}
+          className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground/70 transition-colors hover:bg-accent hover:text-foreground"
+        >
+          <ChevronDown className={cn('size-4 transition-transform', collapsed && '-rotate-90')} />
+        </button>
       </div>
       {!collapsed && (
         <div className="flex flex-col gap-0.5">

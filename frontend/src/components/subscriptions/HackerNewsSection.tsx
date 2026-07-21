@@ -52,11 +52,10 @@ export function HackerNewsSection() {
   const [confirmOpen, setConfirmOpen] = useState(false);
 
   return (
-    <section className="border-t">
+    <section>
       <div className="flex items-start justify-between gap-3 px-4 py-3 sm:px-5">
         <div>
-          <h2 className="text-base font-semibold tracking-tight">Hacker News</h2>
-          <p className="mt-0.5 text-xs text-muted-foreground">
+          <p className="text-xs text-muted-foreground">
             每日首页 story 采样存档 —— 订阅后才开始采集，官方 API 无历史，订阅一天才有一天的数据。
           </p>
           {status && !status.source_enabled && (

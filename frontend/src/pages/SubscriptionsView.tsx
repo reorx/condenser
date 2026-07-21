@@ -1,19 +1,10 @@
-import { useState } from 'react';
-import { AtSign, Search } from 'lucide-react';
-
-import { Spinner } from '@/components/Spinner';
-import { AddByHandleDialog } from '@/components/subscriptions/AddByHandleDialog';
-import { BrowseChannelsDialog } from '@/components/subscriptions/BrowseChannelsDialog';
+import { HnGlyph } from '@/components/HnGlyph';
 import { HackerNewsSection } from '@/components/subscriptions/HackerNewsSection';
-import { SubscriptionRow } from '@/components/subscriptions/SubscriptionRow';
-import { Button } from '@/components/ui/button';
-import { useSubscriptions } from '@/hooks/useSubscriptions';
+import { TelegramSection } from '@/components/subscriptions/TelegramSection';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { TgGlyph } from '@/components/TgGlyph';
 
 export function SubscriptionsView() {
-  const { data: subs, isPending } = useSubscriptions();
-  const [browseOpen, setBrowseOpen] = useState(false);
-  const [addOpen, setAddOpen] = useState(false);
-
   return (
     <>
       <div className="border-b px-4 py-3 sm:px-5">
@@ -23,46 +14,26 @@ export function SubscriptionsView() {
         </p>
       </div>
 
-      <section>
-        <div className="flex items-start justify-between gap-3 px-4 py-3 sm:px-5">
-          <div>
-            <h2 className="text-base font-semibold tracking-tight">Telegram</h2>
-            <p className="mt-0.5 text-xs text-muted-foreground">
-              Toggle to pause syncing, fetch older messages, or unsubscribe.
-            </p>
-          </div>
-          <div className="flex shrink-0 gap-2">
-            <Button variant="outline" size="sm" onClick={() => setBrowseOpen(true)}>
-              <Search className="size-4" />
-              Browse channels
-            </Button>
-            <Button variant="outline" size="sm" onClick={() => setAddOpen(true)}>
-              <AtSign className="size-4" />
-              Add by handle
-            </Button>
-          </div>
+      <Tabs defaultValue="telegram" className="gap-0">
+        <div className="border-b px-4 py-2 sm:px-5">
+          <TabsList>
+            <TabsTrigger value="telegram" className="px-3">
+              <TgGlyph className="size-4" />
+              Telegram
+            </TabsTrigger>
+            <TabsTrigger value="hn" className="px-3">
+              <HnGlyph className="size-4 rounded-[4px] text-[10px]" />
+              Hacker News
+            </TabsTrigger>
+          </TabsList>
         </div>
-
-        <BrowseChannelsDialog open={browseOpen} onOpenChange={setBrowseOpen} />
-        <AddByHandleDialog open={addOpen} onOpenChange={setAddOpen} />
-
-        {isPending ? (
-          <div className="flex justify-center py-16">
-            <Spinner className="size-5 text-muted-foreground" />
-          </div>
-        ) : (
-          <ul className="divide-y divide-border/50">
-            {(subs ?? []).map((s) => (
-              <SubscriptionRow key={s.channel_id} sub={s} />
-            ))}
-            {(subs ?? []).length === 0 && (
-              <li className="px-4 py-16 text-center text-sm text-muted-foreground">No channels yet.</li>
-            )}
-          </ul>
-        )}
-      </section>
-
-      <HackerNewsSection />
+        <TabsContent value="telegram">
+          <TelegramSection />
+        </TabsContent>
+        <TabsContent value="hn">
+          <HackerNewsSection />
+        </TabsContent>
+      </Tabs>
     </>
   );
 }
