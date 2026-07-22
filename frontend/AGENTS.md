@@ -61,7 +61,10 @@ Two conventions this list exists to protect:
 | `MessageMedia` | Media layout (single image vs 2/3-col grid) + lightbox trigger |
 | `MediaThumb` | One media thumbnail: skeleton + aspect-ratio transition + file-chip fallback when no preview image |
 | `WebPagePreview` | Telegram-style inline link preview card (thumbnail + site/title/description) |
-| `LinkPreviewPane` | Right-side slide-out (shadcn `Sheet`) driven by the `linkPreviewPane` context's `PaneTarget` union: a TG message's link previews with an "Open original in Telegram" footer (`tgMessageUrl`), or an HN story's URL preview — the envelope's prefetched `story.preview` renders instantly, live `useUrlPreview` fetch only when it's absent — with an "Open comments on Hacker News" footer (self-posts show a placeholder); mounted once in `AppShell` |
+| `LinkPreviewPane` | Right-side slide-out (shadcn `Sheet`) driven by the `linkPreviewPane` context's `PaneTarget` union: a TG message's link previews with an "Open original in Telegram" footer (`tgMessageUrl`), or an HN story's URL preview — the envelope's prefetched `story.preview` renders instantly, live `useUrlPreview` fetch only when it's absent — with an "Open comments on Hacker News" footer (self-posts show a placeholder); TG targets also get a `MessageStatsRow` + Forward-button row under the header (no configured `forward_channel` → toast pointing to Settings, else opens `ForwardDialog`); mounted once in `AppShell` |
+| `MessageStatsRow` | Live views (Eye) / forwards (Repeat2) / `ReactionChip` list for the pane's TG message via `useMessageStats` (fetched fresh on every pane open, never stored); renders nothing while pending, on error, or when the channel exposes no stats |
+| `ReactionChip` | One reaction bucket pill: emoji glyph ('custom'/'other' kinds degrade to a generic icon) + count; `chosen` (own reaction) highlights |
+| `ForwardDialog` | "转发到我的频道" modal (deliberately Chinese copy): comment textarea → non-empty = quote message (text + t.me link), empty = native forward via `POST /api/messages/{cid}/{mid}/forward`; success toast carries an「打开」action opening the landed message |
 | `LinkPreviewCard` | One self-fetched link preview (proxied image / Telegram-image fallback + site/title/description; `channelId` optional — absent for HN targets); shared by the pane and `HnCard`'s embedded preview |
 | `Lightbox` | Fullscreen media viewer with prev/next navigation |
 | `SavedMessageItem` | One saved item in the Saved view: full date line + the source's card (`MessageCard` / `HnCard`) |
@@ -102,6 +105,8 @@ Two conventions this list exists to protect:
 - `hooks/` — data + behavior hooks (`useTimeline`, `useSources`, `useSubscriptions`,
   `useChannelFilter`, `useScrollToRead`, `useNewContent`, `useRefresh`, `useCollapsedSources`
   (sidebar collapse persistence), `useHnDisplayMode` (mode helpers + PATCH mutation),
+  `useMessageStats` (live pane stats, staleTime 0), `useAppMeta` + `useSetForwardChannel`
+  (runtime app settings incl. the forward target channel),
   mutations, …). `useTimeline` / `useTimelineDays` / `useNewContent` / `useBulkRead` accept a
   `source` scope (the `/s/:source` views).
 - `lib/` — `api.ts` (typed fetch client), `types.ts` (backend JSON mirror), `format.ts`,

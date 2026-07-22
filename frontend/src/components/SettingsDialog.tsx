@@ -1,12 +1,15 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { Circle, Lock, LogOut, Minus, Monitor, Moon, Phone, Sun } from 'lucide-react';
+import { toast } from 'sonner';
 
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { DeviceList } from '@/components/DeviceList';
 import { SegmentedOption } from '@/components/SegmentedOption';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { useAppMeta, useSetForwardChannel } from '@/hooks/useAppMeta';
 import { useTgStatus } from '@/hooks/useTgStatus';
 import { api } from '@/lib/api';
 import { queryClient, TG_STATUS_KEY } from '@/lib/queryClient';
@@ -33,6 +36,15 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
   const { theme, setTheme } = useTheme();
   const { mode: unreadMode, setMode: setUnreadMode } = useUnreadIndicator();
   const [confirmTgLogout, setConfirmTgLogout] = useState(false);
+
+  const meta = useAppMeta();
+  const setForward = useSetForwardChannel();
+  const [forwardChannel, setForwardChannel] = useState('');
+  // Sync the input from the server value on load and on every reopen (drops unsaved edits).
+  useEffect(() => {
+    setForwardChannel(meta.data?.forward_channel ?? '');
+  }, [meta.data?.forward_channel, open]);
+  const forwardDirty = forwardChannel.trim() !== (meta.data?.forward_channel ?? '');
 
   const tgLogout = useMutation({
     mutationFn: () => api.tgLogout(),
@@ -104,6 +116,29 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
               />
             ))}
           </div>
+        </div>
+
+        <div className="space-y-2">
+          <SectionLabel>Forward</SectionLabel>
+          <form
+            className="flex gap-2"
+            onSubmit={(e) => {
+              e.preventDefault();
+              setForward.mutate(forwardChannel.trim(), {
+                onSuccess: () => toast.success('Forward channel saved'),
+              });
+            }}
+          >
+            <Input
+              value={forwardChannel}
+              onChange={(e) => setForwardChannel(e.target.value)}
+              placeholder="@channel or t.me/… (empty to clear)"
+            />
+            <Button type="submit" variant="outline" disabled={!forwardDirty || setForward.isPending}>
+              Save
+            </Button>
+          </form>
+          <p className="text-xs text-muted-foreground">Target channel for "forward to my channel".</p>
         </div>
 
         <div className="space-y-2">

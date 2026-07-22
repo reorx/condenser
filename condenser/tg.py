@@ -12,8 +12,10 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Optional
 
-from telethon.errors import FloodWaitError, UnauthorizedError
+from pydantic import BaseModel
+from telethon.errors import FloodWaitError, MessageIdInvalidError, UnauthorizedError
 from telethon.tl.functions.channels import GetFullChannelRequest
+from telethon.tl.types import ReactionCustomEmoji, ReactionEmoji
 
 from telememo import db as tdb
 from telememo.entity_cache import EntityNameCache
@@ -38,6 +40,98 @@ class JoinedChannel:
     info: ChannelInfo
     last_message_date: Optional[datetime]
     unread_count: int
+
+
+class TelegramMessageNotFound(Exception):
+    """A message id no longer resolves on Telegram (deleted, or a bad id)."""
+
+
+class ReactionCount(BaseModel):
+    """One reaction bucket on a message.
+
+    ``kind`` is the discriminator: ``emoji`` carries a unicode ``emoji``, ``custom`` carries a
+    ``document_id`` (resolving its glyph needs an extra RPC — clients degrade to a generic
+    icon), and ``other`` is the forward-compatible bucket for TL types we don't model
+    (``ReactionPaid`` and whatever Telegram adds next), so a new type never 500s.
+    """
+
+    kind: str  # 'emoji' | 'custom' | 'other'
+    emoji: Optional[str] = None
+    document_id: Optional[int] = None
+    count: int
+    chosen: bool = False
+
+
+class MessageStats(BaseModel):
+    """Live engagement numbers for one message. ``None`` = the channel doesn't carry it."""
+
+    views: Optional[int] = None
+    forwards: Optional[int] = None
+    reactions: list[ReactionCount] = []
+
+
+def _normalize_target(target: str) -> str | int:
+    """Coerce a configured forward target into something Telethon can resolve.
+
+    A bare numeric string is an id (int); ``@handle`` / ``t.me/...`` links pass through
+    untouched — Telethon resolves both.
+    """
+    target = target.strip()
+    if target.lstrip('-').isdigit():
+        return int(target)
+    return target
+
+
+def _target_username(target: str | int) -> Optional[str]:
+    """The public username of a forward target, or None for a bare-id (private) target."""
+    if isinstance(target, int):
+        return None
+    handle = target.strip().rstrip('/')
+    if handle.startswith('@'):
+        return handle[1:] or None
+    if 't.me/' in handle:
+        tail = handle.rsplit('t.me/', 1)[1]
+        return tail or None
+    return handle or None
+
+
+def channel_message_url(channel_id: int, message_id: int) -> str:
+    """Original t.me link for a stored message — public via @username, else the /c/ form.
+
+    Mirrors the frontend's ``tgMessageUrl``; built server-side so a client can never
+    inject the URL that gets published to the forward target.
+    """
+    channel = tdb.get_channel(channel_id)
+    if channel is not None and channel.username:
+        return f'https://t.me/{channel.username}/{message_id}'
+    return f'https://t.me/c/{channel_id}/{message_id}'
+
+
+def _sent_message_url(target: str | int, message_id: int) -> str:
+    """t.me link for a message that just landed in the forward target channel."""
+    username = _target_username(target)
+    if username:
+        return f'https://t.me/{username}/{message_id}'
+    return f'https://t.me/c/{target}/{message_id}'
+
+
+def _convert_reactions(reactions) -> list[ReactionCount]:
+    """Flatten Telethon's ``MessageReactions`` into our transport model (unknown kinds degrade)."""
+    if reactions is None:
+        return []
+    out: list[ReactionCount] = []
+    for result in reactions.results or []:
+        reaction = result.reaction
+        chosen = result.chosen_order is not None
+        if isinstance(reaction, ReactionEmoji):
+            out.append(ReactionCount(kind='emoji', emoji=reaction.emoticon, count=result.count, chosen=chosen))
+        elif isinstance(reaction, ReactionCustomEmoji):
+            out.append(
+                ReactionCount(kind='custom', document_id=reaction.document_id, count=result.count, chosen=chosen)
+            )
+        else:
+            out.append(ReactionCount(kind='other', count=result.count, chosen=chosen))
+    return out
 
 
 class TgManager:
@@ -330,6 +424,55 @@ class TgManager:
         db.set_backfill_done(channel_id, False)
         fetched = await self._backfill_channel(channel_id)
         return {'deleted': deleted, 'fetched': fetched}
+
+    # ---- message actions (live Telegram reads/writes, used by routers) ----
+    async def get_message_stats(self, channel_id: int, message_id: int) -> MessageStats:
+        """Fetch a message's live views/forwards/reactions. Nothing is persisted."""
+        service = self._require_service()
+        try:
+            message = await service.client.get_messages(self._channel_handle(channel_id), ids=message_id)
+        except UnauthorizedError:  # session died mid-call — demote, then surface as 503
+            await self._demote_session()
+            raise
+        if message is None:
+            raise TelegramMessageNotFound(f'message {channel_id}/{message_id} not found')
+        return MessageStats(
+            views=getattr(message, 'views', None),
+            forwards=getattr(message, 'forwards', None),
+            reactions=_convert_reactions(getattr(message, 'reactions', None)),
+        )
+
+    async def forward_message(self, channel_id: int, message_id: int, comment: Optional[str] = None) -> dict:
+        """Republish a message to the configured target channel.
+
+        With a comment: a *new* message ``comment\\n\\n<t.me link>`` (Telegram renders the link
+        as a quote card). Without one: a native ``forward_messages`` keeping the "Forwarded
+        from" header. Returns the mode plus the t.me link of the message that just landed.
+        """
+        service = self._require_service()
+        configured = db.get_meta('forward_channel')
+        if not configured:
+            raise LookupError('forward target channel not configured')
+        target = _normalize_target(configured)
+        comment = (comment or '').strip()
+        try:
+            if comment:
+                text = f'{comment}\n\n{channel_message_url(channel_id, message_id)}'
+                sent = await service.client.send_message(target, text)
+                mode = 'quote'
+            else:
+                sent = await service.client.forward_messages(
+                    target, message_id, from_peer=self._channel_handle(channel_id)
+                )
+                mode = 'forward'
+        except MessageIdInvalidError:  # the source message is gone
+            raise TelegramMessageNotFound(f'message {channel_id}/{message_id} not found')
+        except UnauthorizedError:
+            await self._demote_session()
+            raise
+        # forward_messages may hand back a list when Telethon batches; the id we want is the first
+        sent_id = sent[0].id if isinstance(sent, list) else sent.id
+        return {'status': 'ok', 'mode': mode, 'link': _sent_message_url(target, sent_id)}
 
     # ---- subscription orchestration (used by routers) ----
     def _register_subscription(self, info: ChannelInfo) -> ChannelInfo:

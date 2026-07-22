@@ -237,6 +237,42 @@ export interface MsgRef {
   message_id: number;
 }
 
+/** One reaction bucket on a message (GET /api/messages/{cid}/{mid}/stats). `kind` is the
+ *  discriminator: 'emoji' carries a unicode `emoji`, 'custom' a `document_id` (glyph not
+ *  resolved — UI degrades to a generic icon), 'other' is the forward-compatible bucket. */
+export interface ReactionCount {
+  kind: 'emoji' | 'custom' | 'other';
+  emoji: string | null;
+  document_id: number | null;
+  count: number;
+  /** The logged-in account reacted with this itself. */
+  chosen: boolean;
+}
+
+/** Live engagement numbers for one message; null = the channel doesn't carry it. */
+export interface MessageStats {
+  views: number | null;
+  forwards: number | null;
+  reactions: ReactionCount[];
+}
+
+/** POST /api/messages/{cid}/{mid}/forward — `mode` tells which path ran:
+ *  'quote' = new message with comment + t.me link, 'forward' = native forward. */
+export interface ForwardResult {
+  status: 'ok';
+  mode: 'quote' | 'forward';
+  /** t.me link of the message that just landed in the target channel. */
+  link: string;
+}
+
+/** GET /api/app/meta — runtime app settings. */
+export interface AppMeta {
+  schema_version: number;
+  backfill_days: number;
+  /** Target channel for "forward to my channel" (@handle / t.me link); null = unset. */
+  forward_channel: string | null;
+}
+
 /** An authorized client device (bearer token holder); the token itself is never listed. */
 export interface Device {
   id: number;

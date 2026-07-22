@@ -305,7 +305,21 @@ doesn't affect the Phase 4 deploy-order constraint (138 backend + 34 frontend gr
 multi-source plan (`kb/plans/2026-07-19-multi-source-hn.md`) is complete and the
 **deploy-order constraint is lifted** — backend + web + iOS all speak the envelope
 contract, deploy whenever (rebuild + reinstall the iOS app alongside, deploy-order
-decision (b)). Still open: subscription
+decision (b)).
+**TG message stats + forward-to-my-channel** (2026-07-22, BDD, plan
+`kb/plans/2026-07-21-tg-message-stats-forward.md`): `GET /api/messages/{cid}/{mid}/stats`
+reads live views/forwards/reactions via Telethon (never stored; reaction kinds
+emoji/custom/other with forward-compatible degradation, `chosen` = own reaction) and
+`POST .../forward` republishes into `app_meta.forward_channel` — empty comment = native
+`forward_messages`, non-empty = new message `comment\n\n<t.me link>` (server-built URL;
+returns the landed message's link). New `routers/messages.py` (same `/api/messages`
+prefix as preview.py, split because it needs TgManager) translates
+`TelegramMessageNotFound`→404, `LookupError`(no target)→422, FloodWait→429+Retry-After,
+`UnauthorizedError`→503. Web: `MessageStatsRow` + Forward button in the pane (TG targets),
+`ForwardDialog` (deliberately Chinese copy), Settings "Forward" section. 150 backend +
+42 frontend green; accepted live against @telememo_test
+(`tmp/2026-07-21-tg-stats-forward/`). iOS UI is the deferred next batch.
+Still open: subscription
 "delete-with-messages" option (Q4 / `?purge=1`) and the backfill batch-interval sleep.
 Full checklist: `kb/sessions/2026-06-09-backend-remaining-work.md`.
 

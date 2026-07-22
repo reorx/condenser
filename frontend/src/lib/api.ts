@@ -2,13 +2,16 @@
 // issued by /api/auth/login; the dev Vite proxy keeps it same-origin.
 
 import type {
+  AppMeta,
   DayCount,
   Device,
   FilterPreviewResult,
+  ForwardResult,
   HnStatus,
   JoinedChannel,
   KeywordFilter,
   LinkPreview,
+  MessageStats,
   Source,
   SourceGroup,
   Subscription,
@@ -179,6 +182,19 @@ export const api = {
   markRead: (keys: string[]) => post<{ ok: true }>('/api/read', { keys }),
   markReadBulk: (body: { channel_id?: number | null; before_date?: string | null; source?: Source | null }) =>
     post<{ ok: true }>('/api/read/bulk', body),
+
+  // ---- message actions (live Telegram reads/writes) ----
+  // Views/forwards/reactions, read live from Telegram each time (never cached server-side).
+  messageStats: (channelId: number, messageId: number) =>
+    request<MessageStats>(`/api/messages/${channelId}/${messageId}/stats`),
+  // Republish into the configured forward channel: comment → quote message, empty → native forward.
+  forwardMessage: (channelId: number, messageId: number, comment?: string) =>
+    post<ForwardResult>(`/api/messages/${channelId}/${messageId}/forward`, { comment: comment ?? null }),
+
+  // ---- app meta (runtime settings) ----
+  getAppMeta: () => request<AppMeta>('/api/app/meta'),
+  patchAppMeta: (patch: Partial<Pick<AppMeta, 'backfill_days' | 'forward_channel'>>) =>
+    request<AppMeta>('/api/app/meta', { method: 'PATCH', body: JSON.stringify(patch) }),
 
   // ---- link previews ----
   // Previews for every URL in a message (album-aware; Telegram's preview folded in as a bonus).

@@ -75,7 +75,15 @@ class RecordBody(BaseModel):
     key: str
 
 
+class ForwardMessageBody(BaseModel):
+    """Optional comment; empty/whitespace (or absent) means a native forward."""
+
+    comment: Optional[str] = None
+
+
 class AppMetaPatch(BaseModel):
     """Runtime app settings backed by app_meta. None = leave unchanged."""
 
     backfill_days: Optional[int] = None
+    # target for "forward to my channel" (@handle / t.me link / id); '' clears it
+    forward_channel: Optional[str] = None

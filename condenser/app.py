@@ -17,6 +17,7 @@ from .routers import (
     channels,
     hn,
     media,
+    messages,
     preview,
     reading,
     settings as settings_router,
@@ -76,6 +77,7 @@ def create_app() -> FastAPI:
     app.include_router(subscriptions.router)
     app.include_router(reading.router)
     app.include_router(media.router)
+    app.include_router(messages.router)
     app.include_router(channels.router)
     app.include_router(preview.router)
     app.include_router(settings_router.router)

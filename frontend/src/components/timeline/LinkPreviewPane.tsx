@@ -1,8 +1,11 @@
-import { ExternalLink, Link2 } from 'lucide-react';
+import { useState } from 'react';
+import { ExternalLink, Forward, Link2 } from 'lucide-react';
+import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useAppMeta } from '@/hooks/useAppMeta';
 import { useLinkPreviews, useUrlPreview } from '@/hooks/useLinkPreviews';
 import { useSubscriptions } from '@/hooks/useSubscriptions';
 import { errorMessage } from '@/lib/api';
@@ -10,7 +13,9 @@ import { tgMessageUrl } from '@/lib/format';
 import { hnCommentsUrl } from '@/lib/sources';
 import { useLinkPreviewPane } from '@/lib/linkPreviewPane';
 
+import { ForwardDialog } from './ForwardDialog';
 import { LinkPreviewCard } from './LinkPreviewCard';
+import { MessageStatsRow } from './MessageStatsRow';
 
 function CardSkeleton() {
   return (
@@ -52,11 +57,17 @@ export function LinkPreviewPane() {
   const subs = useSubscriptions();
   const username = msgRef ? subs.data?.find((s) => s.channel_id === msgRef.channel_id)?.username : null;
 
+  const meta = useAppMeta();
+  const [forwardOpen, setForwardOpen] = useState(false);
+
   return (
     <Sheet
       open={!!open}
       onOpenChange={(next) => {
-        if (!next) close();
+        if (!next) {
+          close();
+          setForwardOpen(false);
+        }
       }}
     >
       <SheetContent side="right" className="gap-0 p-0">
@@ -68,6 +79,29 @@ export function LinkPreviewPane() {
             {story ? 'Preview of the story link.' : 'Previews for the links in this message.'}
           </SheetDescription>
         </SheetHeader>
+
+        {msgRef && (
+          <div className="flex items-center gap-3 border-b px-4 py-3">
+            <div className="min-w-0 flex-1">
+              <MessageStatsRow msgRef={msgRef} />
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              className="shrink-0"
+              onClick={() => {
+                if (!meta.data?.forward_channel) {
+                  toast.info('Set a forward target channel in Settings first.');
+                  return;
+                }
+                setForwardOpen(true);
+              }}
+            >
+              <Forward className="size-4" />
+              Forward
+            </Button>
+          </div>
+        )}
 
         <div className="flex-1 space-y-3 overflow-y-auto p-4">
           {pending ? (
@@ -104,6 +138,8 @@ export function LinkPreviewPane() {
             </a>
           </div>
         )}
+
+        {msgRef && <ForwardDialog open={forwardOpen} onOpenChange={setForwardOpen} msgRef={msgRef} />}
       </SheetContent>
     </Sheet>
   );
