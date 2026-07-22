@@ -51,13 +51,19 @@ public final class TimelineStore {
 
     /// 首次加载；已加载过则无操作（refresh 负责重载）。
     /// 配了 cache 时冷启动先渲染快照，网络成功后整页替换。
-    public func loadInitial() async {
-        guard !loadedOnce, !isLoading else { return }
+    /// 返回相对快照的新条目数（无快照/网络失败为 0），供冷启动灰 toast 提示。
+    @discardableResult
+    public func loadInitial() async -> Int {
+        guard !loadedOnce, !isLoading else { return 0 }
+        var baseline: Set<String>?
         if items.isEmpty, let cache, let cacheKey,
            let snapshot = cache.load(TimelinePage.self, key: cacheKey) {
             apply(page: snapshot)
+            baseline = Set(snapshot.items.map(\.key))
         }
         await loadFirstPage()
+        guard let baseline, error == nil else { return 0 }
+        return items.filter { !baseline.contains($0.key) }.count
     }
 
     /// 重载第一页并替换内容、重置分页（下拉刷新 / 新消息胶囊点击）

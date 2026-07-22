@@ -136,4 +136,62 @@ struct TimelineSnapshotTests {
         await store.loadInitial()
         #expect(store.items.tgIDs == [3])
     }
+
+    // 冷启动「N 条新消息」灰 toast 依赖：loadInitial 返回相对快照的新条目数
+
+    @Test("loadInitial 返回相对快照的新条目数")
+    func loadInitialReportsNewCount() async {
+        let (cache, dir) = makeCache()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        cache.save(makePage([makeItem(id: 3), makeItem(id: 2)], head: "h1"), key: "k")
+
+        let api = StubAPI()
+        api.timelinePages = [.success(makePage(
+            [makeItem(id: 5), makeItem(id: 4), makeItem(id: 3)], next: "c2", head: "h2"))]
+        let store = TimelineStore(api: api, cache: cache, cacheKey: "k")
+        let count = await store.loadInitial()
+        #expect(count == 2, "id 5/4 是快照里没有的")
+        #expect(store.items.tgIDs == [5, 4, 3])
+    }
+
+    @Test("无快照的冷启动 → 新条目数为 0（没有基准不提示）")
+    func loadInitialNoSnapshotNoCount() async {
+        let (cache, dir) = makeCache()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let api = StubAPI()
+        api.timelinePages = [.success(makePage([makeItem(id: 3)]))]
+        let store = TimelineStore(api: api, cache: cache, cacheKey: "k")
+        #expect(await store.loadInitial() == 0)
+
+        let bare = StubAPI()
+        bare.timelinePages = [.success(makePage([makeItem(id: 3)]))]
+        let bareStore = TimelineStore(api: bare)
+        #expect(await bareStore.loadInitial() == 0, "不配 cache 同样为 0")
+    }
+
+    @Test("网络失败 → 新条目数为 0（内容没变，不提示）")
+    func loadInitialFailureNoCount() async {
+        let (cache, dir) = makeCache()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        cache.save(makePage([makeItem(id: 3)], head: "h1"), key: "k")
+
+        let api = StubAPI()
+        api.timelinePages = [.failure(APIError.http(status: 500, detail: "boom"))]
+        let store = TimelineStore(api: api, cache: cache, cacheKey: "k")
+        #expect(await store.loadInitial() == 0)
+    }
+
+    @Test("重复 loadInitial 是 no-op，返回 0")
+    func loadInitialTwice() async {
+        let (cache, dir) = makeCache()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        cache.save(makePage([makeItem(id: 2)], head: "h1"), key: "k")
+
+        let api = StubAPI()
+        api.timelinePages = [.success(makePage([makeItem(id: 3), makeItem(id: 2)]))]
+        let store = TimelineStore(api: api, cache: cache, cacheKey: "k")
+        #expect(await store.loadInitial() == 1)
+        #expect(await store.loadInitial() == 0)
+        #expect(api.timelineCalls.count == 1)
+    }
 }

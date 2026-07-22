@@ -60,8 +60,8 @@ final class ReaderSession {
             api: api, unreadOnly: unreadOnly, source: selectedSource, cache: snapshots,
             cacheKey: Self.timelineKey(source: selectedSource, unreadOnly: unreadOnly))
         timeline.onUnauthorized = onUnauthorized
+        // 新 poller 由 MessageListView 在首屏加载完成后启动（游标就绪才有意义）
         poller = makePoller()
-        poller.start()
     }
 
     private static func timelineKey(source: String?, unreadOnly: Bool) -> String {

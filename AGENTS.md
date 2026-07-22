@@ -250,7 +250,20 @@ presentational `MessageStatsRow`), `ForwardDialog` sheet (preflights
 error mapping per routers/messages.py), Settings 转发 section
 (read/save `forward_channel`), debug route `forward/<cid>/<mid>[/<comment>]`
 (auto-submit, real network — walkthrough `tmp/2026-07-22-ios-stats-forward/`).
-124 Kit tests. v1 spec complete; remaining polish: end-to-end
+**Silent refresh + gray toast (2026-07-22)**: cold start and
+returning-to-foreground after ≥5 min background auto-update the timeline and show a
+non-interactive gray "N 条新消息" toast (auto-dismiss 4s, tap = dismiss); the blue
+tappable capsule is reserved for mid-session poller hits. Kit:
+`TimelineStore.loadInitial` returns the new-item count vs the rendered snapshot
+(`@discardableResult`), new `ForegroundRefreshPolicy` (first-leave timestamp, threshold
+check clears state). App: `MessageListView` now owns the poller lifecycle (start after
+initial load so the fresh cursor never re-flags just-loaded content; scenePhase +
+onDisappear stop) — `TimelineScreen` only flushes reads on background,
+`ReaderSession.rebuildTimeline` no longer starts the poller. Foreground return only
+disturbs scroll when `/timeline/new` reports count > 0 (scroll-to-top before refresh,
+same scroll-to-read guard as the capsule); walkthrough
+`tmp/2026-07-22-ios-foreground-toast/`.
+133 Kit tests. v1 spec complete; remaining polish: end-to-end
 `ASWebAuthenticationSession` verify on device, video playback (non-goal).
 
 ## Dev
