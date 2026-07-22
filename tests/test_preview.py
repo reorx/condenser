@@ -54,6 +54,17 @@ def test_normalize_url_canonicalizes_for_cache_key():
     assert preview.normalize_url('https://example.com') == 'https://example.com/'
 
 
+def test_normalize_url_strips_tracking_params():
+    # utm_* and click-id params don't change the page -> same cache/dedupe key.
+    assert preview.normalize_url('https://a.com/post/?utm_source=tldrai') == preview.normalize_url('https://a.com/post')
+    assert (
+        preview.normalize_url('https://a.com/p?id=3&utm_campaign=x&fbclid=abc&gclid=1&igshid=2')
+        == 'https://a.com/p?id=3'
+    )
+    # Non-tracking params survive untouched.
+    assert preview.normalize_url('https://a.com/p?ref=main&id=3') == 'https://a.com/p?id=3&ref=main'
+
+
 def test_parse_metadata_prefers_opengraph_and_resolves_image():
     meta = preview._parse_metadata('https://example.com/page', SAMPLE_HTML)
     assert meta['title'] == 'OG Title'
@@ -149,6 +160,41 @@ def test_message_previews_dedupe_and_telegram_image_bonus(env, monkeypatch):
         assert items[0]['tg_image_message_id'] == 10  # bonus: offer Telegram's image
 
 
+def test_message_previews_dedupe_ignores_tracking_params(env, monkeypatch):
+    """Production repro (t.me/limisay/18335): the text URL was edited to drop a
+    ``utm_source`` that Telegram's webpage preview URL still carries — the pane
+    must show one preview, not two."""
+    from telememo.types import WebPagePreview
+
+    html = '<html><head><meta property="og:title" content="Fetched"></head></html>'
+    monkeypatch.setattr(preview, '_fetch_capped', _capped(html.encode()))
+    with _client() as client:
+        _login(client)
+        seed_channel(1, 'Tech', 'tech')
+        seed_messages(
+            [
+                md(
+                    1,
+                    12,
+                    3,
+                    text='https://example.com/blog/post/',
+                    media_type='webpage',
+                    has_media=True,
+                    webpage=WebPagePreview(
+                        url='https://example.com/blog/post/?utm_source=tldrai',
+                        title='TG',
+                        description='tgdesc',
+                        has_photo=True,
+                    ),
+                ),
+            ]
+        )
+        items = client.get('/api/messages/1/12/previews').json()
+        assert len(items) == 1
+        # The Telegram bonus still applies through the tracking-param mismatch.
+        assert items[0]['tg_image_message_id'] == 12
+
+
 def test_message_previews_telegram_fallback_when_fetch_fails(env, monkeypatch):
     from telememo.types import WebPagePreview
 
@@ -212,8 +258,6 @@ def test_image_proxy_disabled_redirects_to_origin(env, monkeypatch):
     get_settings.cache_clear()
     with _client() as client:
         _login(client)
-        r = client.get(
-            '/api/preview/image', params={'url': 'https://cdn.example.com/x.png'}, follow_redirects=False
-        )
+        r = client.get('/api/preview/image', params={'url': 'https://cdn.example.com/x.png'}, follow_redirects=False)
         assert r.status_code == 307
         assert r.headers['location'] == 'https://cdn.example.com/x.png'

@@ -72,16 +72,26 @@ class PreviewError(Exception):
 # --- URL helpers ------------------------------------------------------------
 
 
+# Params that only tag the click, never the content. Kept to an explicit safelist —
+# stripping unknown params risks conflating genuinely different pages.
+_TRACKING_PARAMS = frozenset(('fbclid', 'gclid', 'igshid'))
+
+
 def normalize_url(url: str) -> str:
     """Canonicalize for use as a stable cache key (lowercase scheme/host, sorted
-    query, no fragment, no trailing slash except root)."""
+    query minus tracking params, no fragment, no trailing slash except root)."""
     parts = urlsplit(url.strip())
     scheme = (parts.scheme or 'https').lower()
     netloc = parts.netloc.lower()
     path = parts.path or '/'
     if path != '/' and path.endswith('/'):
         path = path.rstrip('/')
-    query = urlencode(sorted(parse_qsl(parts.query, keep_blank_values=True)))
+    pairs = [
+        (k, v)
+        for k, v in parse_qsl(parts.query, keep_blank_values=True)
+        if not (k.lower().startswith('utm_') or k.lower() in _TRACKING_PARAMS)
+    ]
+    query = urlencode(sorted(pairs))
     return urlunsplit((scheme, netloc, path, query, ''))
 
 
