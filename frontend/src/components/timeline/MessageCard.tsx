@@ -5,7 +5,7 @@ import { ChannelAvatar } from '@/components/ChannelAvatar';
 import { useSaveToggle } from '@/hooks/useSaveToggle';
 import { fullDateLabel, timeLabel } from '@/lib/format';
 import { linkify } from '@/lib/linkify';
-import { useLinkPreviewPane } from '@/lib/linkPreviewPane';
+import { useItemDetailPane } from '@/lib/itemDetailPane';
 import { useUnreadIndicator } from '@/lib/unreadIndicator';
 import { cn } from '@/lib/utils';
 import type { DisplayMessage, ReadTarget, TimelineItem } from '@/lib/types';
@@ -31,10 +31,10 @@ function MessageCardImpl({ item, channelLabel, observe }: Props) {
   const msg = item.telegram!;
   const save = useSaveToggle();
   const { mode } = useUnreadIndicator();
-  const { open, openPane } = useLinkPreviewPane();
+  const { open, openPane } = useItemDetailPane();
   const fwdName = forwardSourceName(msg);
 
-  const isActive = open?.source === 'telegram' && open.channel_id === msg.channel_id && open.message_id === msg.id;
+  const isActive = open?.key === item.key;
 
   const attach = useCallback(
     (el: HTMLElement | null) => {
@@ -83,10 +83,10 @@ function MessageCardImpl({ item, channelLabel, observe }: Props) {
           <span className="font-medium text-foreground/80">{channelLabel}</span>
         </div>
         <span aria-hidden>·</span>
-        {/* Unified pane entry: every message opens the link-preview drawer via its time. */}
+        {/* Unified pane entry: every message opens the item-detail drawer via its time. */}
         <button
           type="button"
-          onClick={() => openPane({ source: 'telegram', channel_id: msg.channel_id, message_id: msg.id })}
+          onClick={() => openPane(item)}
           title={fullDateLabel(msg.date)}
           aria-label="Open message details"
           className="cursor-pointer rounded underline-offset-2 transition-colors hover:text-foreground hover:underline"

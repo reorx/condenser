@@ -75,6 +75,12 @@ class RecordBody(BaseModel):
     key: str
 
 
+class HideBody(BaseModel):
+    """Item key to hide from every timeline surface."""
+
+    key: str
+
+
 class ForwardMessageBody(BaseModel):
     """Optional comment; empty/whitespace (or absent) means a native forward."""
 

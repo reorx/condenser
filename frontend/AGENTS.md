@@ -56,12 +56,13 @@ Two conventions this list exists to protect:
 | `Timeline` | Presentational timeline list: day groups + infinite scroll + new-content banner + loading/error/empty states |
 | `TimelineDayGroup` | One calendar day's messages under a static date divider |
 | `TimelineSkeleton` | Loading placeholder rows for the timeline |
-| `MessageCard` | A single Telegram item (takes the `TimelineItem` envelope; payload in `item.telegram`): header (avatar/name/time/save), text, media, webpage preview, forward box. The time is a button (full-date `title` tooltip) that opens the `LinkPreviewPane` — the unified drawer entry on every message |
-| `HnCard` | A Hacker News story card: title link (external URL, or comments page for self-posts), day-rank badge + score/comments/domain meta, an embedded `LinkPreviewCard` when the story carries an ingest-prefetched `hn.preview` with content, sanitized self-post HTML behind a char-threshold "more" clamp, muted job posts, scroll-to-read + save; the submitted-time button opens the `LinkPreviewPane` (HN target) |
+| `MessageCard` | A single Telegram item (takes the `TimelineItem` envelope; payload in `item.telegram`): header (avatar/name/time/save), text, media, webpage preview, forward box. The time is a button (full-date `title` tooltip) that opens the `ItemDetailPane` — the unified drawer entry on every message |
+| `HnCard` | A Hacker News story card: title link (external URL, or comments page for self-posts), day-rank badge + score/comments/domain meta, an embedded `LinkPreviewCard` when the story carries an ingest-prefetched `hn.preview` with content, sanitized self-post HTML behind a char-threshold "more" clamp, muted job posts, scroll-to-read + save; the submitted-time button opens the `ItemDetailPane` |
 | `MessageMedia` | Media layout (single image vs 2/3-col grid) + lightbox trigger |
 | `MediaThumb` | One media thumbnail: skeleton + aspect-ratio transition + file-chip fallback when no preview image |
 | `WebPagePreview` | Telegram-style inline link preview card (thumbnail + site/title/description) |
-| `LinkPreviewPane` | Right-side slide-out (shadcn `Sheet`) driven by the `linkPreviewPane` context's `PaneTarget` union: a TG message's link previews with an "Open original in Telegram" footer (`tgMessageUrl`), or an HN story's URL preview — the envelope's prefetched `story.preview` renders instantly, live `useUrlPreview` fetch only when it's absent — with an "Open comments on Hacker News" footer (self-posts show a placeholder); TG targets also get a `MessageStatsRow` + Forward-button row under the header (no configured `forward_channel` → toast pointing to Settings, else opens `ForwardDialog`); mounted once in `AppShell` |
+| `ItemDetailPane` | The 条目详情 right-side slide-out (shadcn `Sheet`, Chinese copy) driven by the `itemDetailPane` context, which holds the open `TimelineItem` envelope. Top → bottom: `ItemDetailInfo` full-info block, TG-only `MessageStatsRow` + Forward-button row (no configured `forward_channel` → toast pointing to Settings, else opens `ForwardDialog`), the 链接预览 section (TG message links, or the HN story URL — the envelope's prefetched `story.preview` renders instantly, live `useUrlPreview` fetch only when it's absent), and a footer with the original link (`tgMessageUrl` / HN comments) + the 隐藏 button (`useHideItem` → optimistic timeline removal, close, toast with 撤销 undo). Mounted once in `AppShell` |
+| `ItemDetailInfo` | The pane's top full-info label/value list, source-dispatched: TG = channel (avatar/name/@username), author, publish/edit times, forward origin, media count, item key; HN = source/type, author, submitted + front-page times, score/comments, day + peak rank, domain, item key |
 | `MessageStatsRow` | Live views (Eye) / forwards (Repeat2) / `ReactionChip` list for the pane's TG message via `useMessageStats` (fetched fresh on every pane open, never stored); renders nothing while pending, on error, or when the channel exposes no stats |
 | `ReactionChip` | One reaction bucket pill: emoji glyph ('custom'/'other' kinds degrade to a generic icon) + count; `chosen` (own reaction) highlights |
 | `ForwardDialog` | "转发到我的频道" modal (deliberately Chinese copy): comment textarea → non-empty = quote message (text + t.me link), empty = native forward via `POST /api/messages/{cid}/{mid}/forward`; success toast carries an「打开」action opening the landed message |
@@ -106,14 +107,15 @@ Two conventions this list exists to protect:
   `useChannelFilter`, `useScrollToRead`, `useNewContent`, `useRefresh`, `useCollapsedSources`
   (sidebar collapse persistence), `useHnDisplayMode` (mode helpers + PATCH mutation),
   `useMessageStats` (live pane stats, staleTime 0), `useAppMeta` + `useSetForwardChannel`
-  (runtime app settings incl. the forward target channel),
+  (runtime app settings incl. the forward target channel), `useHideItem` + `useUnhideItem`
+  (hide an item from every timeline via `POST /api/hidden`; optimistic removal + undo),
   mutations, …). `useTimeline` / `useTimelineDays` / `useNewContent` / `useBulkRead` accept a
   `source` scope (the `/s/:source` views).
 - `lib/` — `api.ts` (typed fetch client), `types.ts` (backend JSON mirror), `format.ts`,
   `sources.ts` (source labels, `hnCommentsUrl`, sub-row labels), `sanitize.ts` (DOMPurify
   wrapper for HN self-post HTML), `linkify.tsx`, `extractUrls.ts` (shared URL
-  regex/extraction for linkify + the preview pane), `linkPreviewPane.tsx` (the pane's
-  `PaneTarget` context: TG message or HN story), `theme.tsx`, `unreadIndicator.tsx`,
+  regex/extraction for linkify + the detail pane), `itemDetailPane.tsx` (the detail pane's
+  context: the open `TimelineItem` envelope), `theme.tsx`, `unreadIndicator.tsx`,
   `queryClient.ts`, `utils.ts`.
 
 ## Debugging

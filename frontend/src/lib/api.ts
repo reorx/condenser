@@ -180,6 +180,11 @@ export const api = {
     ),
 
   markRead: (keys: string[]) => post<{ ok: true }>('/api/read', { keys }),
+
+  // ---- hidden items (never show in any timeline again; server-enforced for all clients) ----
+  hideItem: (key: string) => post<{ ok: true }>('/api/hidden', { key }),
+  unhideItem: (key: string) => del<{ ok: true }>(`/api/hidden/${encodeURIComponent(key)}`),
+
   markReadBulk: (body: { channel_id?: number | null; before_date?: string | null; source?: Source | null }) =>
     post<{ ok: true }>('/api/read/bulk', body),
 

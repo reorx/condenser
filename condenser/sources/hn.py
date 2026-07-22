@@ -51,6 +51,11 @@ def _mode_where(mode: str) -> tuple[str, list]:
     return 'r.day_rank <= ?', [_MODE_TOP.get(mode, 20)]
 
 
+# Hidden stories are excluded after ranking (outer anti-join), so hiding a
+# top-N story leaves a gap instead of promoting a below-cut story into view.
+_HIDDEN_JOIN = "LEFT JOIN hidden_items hd ON hd.source = 'hn' AND hd.ref1 = r.id"
+
+
 def _fetch(where: list[str], params: list, descending: bool, limit: int) -> list[dict]:
     order = 'DESC' if descending else 'ASC'
     sql = (
@@ -59,6 +64,7 @@ def _fetch(where: list[str], params: list, descending: bool, limit: int) -> list
         f'FROM ({_RANKED}) r '
         "LEFT JOIN read_items ri ON ri.source = 'hn' AND ri.ref1 = r.id "
         "LEFT JOIN saved_items si ON si.source = 'hn' AND si.ref1 = r.id "
+        f'{_HIDDEN_JOIN} '
         'WHERE ' + ' AND '.join(where) + f' ORDER BY r.first_seen_at {order}, r.id {order} LIMIT ?'
     )
     cur = tdb.db.execute_sql(sql, (*params, limit))
@@ -68,7 +74,7 @@ def _fetch(where: list[str], params: list, descending: bool, limit: int) -> list
 
 def _base_where(mode: str, date: Optional[str], unread_only: bool) -> tuple[list[str], list]:
     mode_sql, mode_params = _mode_where(mode)
-    where = [mode_sql]
+    where = [mode_sql, 'hd.ref1 IS NULL']
     params = list(mode_params)
     if date:
         where.append('r.day = ?')
@@ -126,7 +132,9 @@ def days() -> dict[str, int]:
     if mode is None:
         return {}
     mode_sql, mode_params = _mode_where(mode)
-    sql = f'SELECT r.day, COUNT(*) FROM ({_RANKED}) r WHERE {mode_sql} GROUP BY r.day'
+    sql = (
+        f'SELECT r.day, COUNT(*) FROM ({_RANKED}) r {_HIDDEN_JOIN} WHERE {mode_sql} AND hd.ref1 IS NULL GROUP BY r.day'
+    )
     cur = tdb.db.execute_sql(sql, tuple(mode_params))
     return {row[0]: row[1] for row in cur.fetchall()}
 
@@ -140,6 +148,7 @@ def unread_count() -> int:
     sql = (
         f'SELECT COUNT(*) FROM ({_RANKED}) r '
         "LEFT JOIN read_items ri ON ri.source = 'hn' AND ri.ref1 = r.id "
-        f'WHERE {mode_sql} AND ri.ref1 IS NULL'
+        f'{_HIDDEN_JOIN} '
+        f'WHERE {mode_sql} AND ri.ref1 IS NULL AND hd.ref1 IS NULL'
     )
     return tdb.db.execute_sql(sql, tuple(mode_params)).fetchone()[0]

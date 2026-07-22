@@ -36,7 +36,7 @@ MESSAGES_OPTIONAL_FIELDS = {
 # Bumped when condenser's own table shapes change; recorded in app_meta on init so a
 # future startup can detect an upgrade and run a migration. Telememo manages its own
 # table migrations separately (init_db optional_fields / ALTER TABLE).
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 
 class CondenserBaseModel(Model):
@@ -91,6 +91,25 @@ class ReadItem(CondenserBaseModel):
 
     class Meta:
         table_name = 'read_items'
+        primary_key = CompositeKey('source', 'ref1', 'ref2')
+
+
+class HiddenItem(CondenserBaseModel):
+    """Per-item "never show this again" marker, triple-keyed like read_items.
+
+    Every timeline surface (pages, new-content poll, day counts, unread counts)
+    anti-joins this table, so hiding is enforced server-side for every client.
+    Telegram rows are stored album-expanded (one row per raw sibling id) so the
+    per-row anti-join removes the whole display unit.
+    """
+
+    source = CharField()
+    ref1 = IntegerField()
+    ref2 = IntegerField(default=0)
+    hidden_at = DateTimeField(default=datetime.now)
+
+    class Meta:
+        table_name = 'hidden_items'
         primary_key = CompositeKey('source', 'ref1', 'ref2')
 
 
@@ -201,6 +220,7 @@ CONDENSER_TABLES = [
     Subscription,
     KeywordFilter,
     ReadItem,
+    HiddenItem,
     SavedItem,
     TgSession,
     AppMeta,
@@ -579,6 +599,32 @@ def is_item_read(source: str, ref1: int, ref2: int = 0) -> bool:
         .where((ReadItem.source == source) & (ReadItem.ref1 == ref1) & (ReadItem.ref2 == ref2))
         .exists()
     )
+
+
+# --- hidden items -------------------------------------------------------------
+
+
+def _hide_triples(k: ItemKey) -> list[tuple[str, int, int]]:
+    """A key's stored triples: Telegram expands to the album's raw sibling rows so
+    hide/unhide always cover the whole display unit (mirrors mark_read)."""
+    if k.source == 'telegram':
+        return [('telegram', k.ref1, sib) for sib in _expand_album_siblings(k.ref1, k.ref2)]
+    return [k.triple]
+
+
+def hide_item(k: ItemKey) -> int:
+    """Hide one item from every timeline surface; idempotent. Returns rows written."""
+    rows = [{'source': s, 'ref1': r1, 'ref2': r2, 'hidden_at': _now()} for s, r1, r2 in _hide_triples(k)]
+    with tdb.db.atomic():
+        HiddenItem.insert_many(rows).on_conflict_ignore().execute()
+    return len(rows)
+
+
+def unhide_item(k: ItemKey) -> None:
+    for s, r1, r2 in _hide_triples(k):
+        HiddenItem.delete().where(
+            (HiddenItem.source == s) & (HiddenItem.ref1 == r1) & (HiddenItem.ref2 == r2)
+        ).execute()
 
 
 # --- saved items (user assets, source-decoupled) -----------------------------

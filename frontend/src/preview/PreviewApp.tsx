@@ -1,9 +1,9 @@
 // Dev-only component preview / playbook. Renders real components with mock data so we can
 // screenshot and verify visual changes without a logged-in backend. Add cases as needed.
+import { ItemDetailPane } from '@/components/timeline/ItemDetailPane';
 import { LinkPreviewCard } from '@/components/timeline/LinkPreviewCard';
-import { LinkPreviewPane } from '@/components/timeline/LinkPreviewPane';
 import { TimelineDayGroup } from '@/components/timeline/TimelineDayGroup';
-import { LinkPreviewPaneProvider } from '@/lib/linkPreviewPane';
+import { ItemDetailPaneProvider } from '@/lib/itemDetailPane';
 import { useTheme } from '@/lib/theme';
 import { useUnreadIndicator } from '@/lib/unreadIndicator';
 
@@ -36,22 +36,22 @@ function Toolbar() {
 
 export function PreviewApp() {
   return (
-    <LinkPreviewPaneProvider>
+    <ItemDetailPaneProvider>
       <div className="min-h-dvh bg-background text-foreground">
         <Toolbar />
-      <div className="mx-auto max-w-2xl md:border-x md:border-border">
-        <TimelineDayGroup items={dayItems} labels={channelLabels} />
-      </div>
+        <div className="mx-auto max-w-2xl md:border-x md:border-border">
+          <TimelineDayGroup items={dayItems} labels={channelLabels} />
+        </div>
 
-      {/* LinkPreviewCard gallery — the content shown inside the slide-out pane. */}
-      <div className="mx-auto mt-6 max-w-md space-y-3 border-t px-4 py-4">
-        <p className="text-xs font-semibold text-muted-foreground">LinkPreviewCard (pane content)</p>
-        {samplePreviews.map((p, i) => (
-          <LinkPreviewCard key={i} channelId={CHANNEL_ID} preview={p} />
-        ))}
+        {/* LinkPreviewCard gallery — the content shown inside the slide-out pane. */}
+        <div className="mx-auto mt-6 max-w-md space-y-3 border-t px-4 py-4">
+          <p className="text-xs font-semibold text-muted-foreground">LinkPreviewCard (pane content)</p>
+          {samplePreviews.map((p, i) => (
+            <LinkPreviewCard key={i} channelId={CHANNEL_ID} preview={p} />
+          ))}
+        </div>
       </div>
-      </div>
-      <LinkPreviewPane />
-    </LinkPreviewPaneProvider>
+      <ItemDetailPane />
+    </ItemDetailPaneProvider>
   );
 }

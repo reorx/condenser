@@ -8,7 +8,7 @@ import { Bookmark } from 'lucide-react';
 import { HnGlyph } from '@/components/HnGlyph';
 import { useSaveToggle } from '@/hooks/useSaveToggle';
 import { fullDateLabel, timeLabel } from '@/lib/format';
-import { useLinkPreviewPane } from '@/lib/linkPreviewPane';
+import { useItemDetailPane } from '@/lib/itemDetailPane';
 import { sanitizeHtml } from '@/lib/sanitize';
 import { hnCommentsUrl } from '@/lib/sources';
 import { useUnreadIndicator } from '@/lib/unreadIndicator';
@@ -60,7 +60,7 @@ function HnCardImpl({ item, observe }: Props) {
   const hn = item.hn!;
   const save = useSaveToggle();
   const { mode } = useUnreadIndicator();
-  const { open, openPane } = useLinkPreviewPane();
+  const { open, openPane } = useItemDetailPane();
 
   const attach = useCallback(
     (el: HTMLElement | null) => {
@@ -72,7 +72,7 @@ function HnCardImpl({ item, observe }: Props) {
 
   const commentsUrl = hnCommentsUrl(hn.id);
   const isJob = hn.type === 'job';
-  const isActive = open?.source === 'hn' && open.story.id === hn.id;
+  const isActive = open?.key === item.key;
   const timeTitle = `${fullDateLabel(hn.submitted_at ?? item.datetime)} · on front page ${fullDateLabel(item.datetime)}`;
 
   return (
@@ -104,7 +104,7 @@ function HnCardImpl({ item, observe }: Props) {
             submission time (the sort position is its front-page debut — see title). */}
         <button
           type="button"
-          onClick={() => openPane({ source: 'hn', story: hn })}
+          onClick={() => openPane(item)}
           title={timeTitle}
           aria-label="Open story details"
           className="cursor-pointer rounded underline-offset-2 transition-colors hover:text-foreground hover:underline"

@@ -1,19 +1,21 @@
 import { useState } from 'react';
-import { ExternalLink, Forward, Link2 } from 'lucide-react';
+import { ExternalLink, EyeOff, Forward, Info } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAppMeta } from '@/hooks/useAppMeta';
+import { useHideItem, useUnhideItem } from '@/hooks/useHideItem';
 import { useLinkPreviews, useUrlPreview } from '@/hooks/useLinkPreviews';
 import { useSubscriptions } from '@/hooks/useSubscriptions';
 import { errorMessage } from '@/lib/api';
 import { tgMessageUrl } from '@/lib/format';
+import { useItemDetailPane } from '@/lib/itemDetailPane';
 import { hnCommentsUrl } from '@/lib/sources';
-import { useLinkPreviewPane } from '@/lib/linkPreviewPane';
 
 import { ForwardDialog } from './ForwardDialog';
+import { ItemDetailInfo } from './ItemDetailInfo';
 import { LinkPreviewCard } from './LinkPreviewCard';
 import { MessageStatsRow } from './MessageStatsRow';
 
@@ -31,14 +33,15 @@ function CardSkeleton() {
 }
 
 /**
- * Right-side slide-out pane showing link previews for the open item — a Telegram
- * message's links or an HN story's URL. Mounted once (in AppShell) and driven by
- * the LinkPreviewPane context, so it works across views.
+ * Right-side item detail pane: full info block on top, link previews in the middle,
+ * actions (original link + hide) at the bottom. Mounted once (in AppShell) and driven
+ * by the ItemDetailPane context, so it works across views.
  */
-export function LinkPreviewPane() {
-  const { open, close } = useLinkPreviewPane();
-  const msgRef = open?.source === 'telegram' ? { channel_id: open.channel_id, message_id: open.message_id } : null;
-  const story = open?.source === 'hn' ? open.story : null;
+export function ItemDetailPane() {
+  const { open, close } = useItemDetailPane();
+  const msg = open?.telegram ?? null;
+  const story = open?.hn ?? null;
+  const msgRef = msg ? { channel_id: msg.channel_id, message_id: msg.id } : null;
 
   const messageQuery = useLinkPreviews(msgRef);
   // The story's ingest-prefetched preview renders instantly; fetch live only without one.
@@ -55,10 +58,27 @@ export function LinkPreviewPane() {
   const pending = query.isPending && !(story && (!story.url || story.preview));
 
   const subs = useSubscriptions();
-  const username = msgRef ? subs.data?.find((s) => s.channel_id === msgRef.channel_id)?.username : null;
+  const sub = msgRef ? subs.data?.find((s) => s.channel_id === msgRef.channel_id) : null;
 
   const meta = useAppMeta();
   const [forwardOpen, setForwardOpen] = useState(false);
+
+  const hide = useHideItem();
+  const unhide = useUnhideItem();
+
+  const hideOpenItem = () => {
+    if (!open) return;
+    const key = open.key;
+    hide.mutate(key, {
+      onError: (e) => toast.error(errorMessage(e, '隐藏失败')),
+    });
+    close();
+    setForwardOpen(false);
+    toast('已隐藏', {
+      description: '该条目不会再出现在时间线中。',
+      action: { label: '撤销', onClick: () => unhide.mutate(key) },
+    });
+  };
 
   return (
     <Sheet
@@ -73,12 +93,16 @@ export function LinkPreviewPane() {
       <SheetContent side="right" className="gap-0 p-0">
         <SheetHeader className="border-b">
           <SheetTitle className="flex items-center gap-2">
-            <Link2 className="size-4" /> Link previews
+            <Info className="size-4" /> 条目详情
           </SheetTitle>
-          <SheetDescription>
-            {story ? 'Preview of the story link.' : 'Previews for the links in this message.'}
-          </SheetDescription>
+          <SheetDescription>{story ? '该 Hacker News 条目的完整信息。' : '该消息的完整信息。'}</SheetDescription>
         </SheetHeader>
+
+        {open && (
+          <div className="border-b px-4 py-3">
+            <ItemDetailInfo item={open} sub={sub} />
+          </div>
+        )}
 
         {msgRef && (
           <div className="flex items-center gap-3 border-b px-4 py-3">
@@ -104,21 +128,22 @@ export function LinkPreviewPane() {
         )}
 
         <div className="flex-1 space-y-3 overflow-y-auto p-4">
+          <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">链接预览</p>
           {pending ? (
             <>
               <CardSkeleton />
               {!story && <CardSkeleton />}
             </>
           ) : query.isError ? (
-            <div className="flex flex-col items-center gap-3 py-12 text-center text-sm text-muted-foreground">
-              <p>{errorMessage(query.error, 'Failed to load previews.')}</p>
+            <div className="flex flex-col items-center gap-3 py-8 text-center text-sm text-muted-foreground">
+              <p>{errorMessage(query.error, '链接预览加载失败。')}</p>
               <Button variant="outline" size="sm" onClick={() => query.refetch()}>
-                Retry
+                重试
               </Button>
             </div>
           ) : previews.length === 0 ? (
-            <p className="py-12 text-center text-sm text-muted-foreground">
-              {story ? 'A self-post — the discussion is the content.' : 'No links found in this message.'}
+            <p className="py-8 text-center text-sm text-muted-foreground">
+              {story ? '自荐帖，无外部链接 — 讨论即内容。' : '消息中没有链接。'}
             </p>
           ) : (
             previews.map((p, i) => <LinkPreviewCard key={`${p.url}-${i}`} channelId={msgRef?.channel_id} preview={p} />)
@@ -126,9 +151,11 @@ export function LinkPreviewPane() {
         </div>
 
         {open && (
-          <div className="border-t p-4">
+          <div className="flex items-center justify-between gap-3 border-t p-4">
             <a
-              href={story ? hnCommentsUrl(story.id) : tgMessageUrl(msgRef!.channel_id, msgRef!.message_id, username)}
+              href={
+                story ? hnCommentsUrl(story.id) : tgMessageUrl(msgRef!.channel_id, msgRef!.message_id, sub?.username)
+              }
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center gap-2 text-sm text-muted-foreground transition-colors hover:text-foreground"
@@ -136,6 +163,16 @@ export function LinkPreviewPane() {
               <ExternalLink className="size-4" />
               {story ? 'Open comments on Hacker News' : 'Open original in Telegram'}
             </a>
+            <Button
+              variant="outline"
+              size="sm"
+              className="shrink-0 text-muted-foreground hover:text-destructive"
+              title="从时间线中永久隐藏该条目（所有客户端生效）"
+              onClick={hideOpenItem}
+            >
+              <EyeOff className="size-4" />
+              隐藏
+            </Button>
           </div>
         )}
 

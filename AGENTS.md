@@ -25,7 +25,7 @@ loop. Shares **one SQLite file** with [telememo](https://pypi.org/project/teleme
   (filled on ingest via `message.file.width/height`, used by the frontend to reserve image
   placeholder space; NULL on historical rows pre-2026-06-18).
 - condenser owns `subscriptions` / `keyword_filters` / `read_items` / `saved_items`
-  / `tg_session` / `app_meta` / `hn_stories` (the user's assets + app state).
+  / `hidden_items` / `tg_session` / `app_meta` / `hn_stories` (the user's assets + app state).
   `read_items` / `saved_items` are **source-generic since SCHEMA_VERSION 4** (2026-07-19,
   multi-source Phase 2): triple PK `(source, ref1, ref2)` — TG `(channel_id, message_id)`,
   HN `(story_id, 0)`; a shape-based migration copies `read_messages` / `telegram_records`
@@ -38,6 +38,14 @@ loop. Shares **one SQLite file** with [telememo](https://pypi.org/project/teleme
   **SCHEMA_VERSION 5** (2026-07-20) adds `hn_stories.preview` / `preview_attempts`
   (shape-based `ALTER TABLE ADD COLUMN` migration): the story URL's `LinkPreview` JSON,
   denormalized into the archive so it outlives the TTL'd `link_previews` cache.
+  **SCHEMA_VERSION 6** (2026-07-22) adds `hidden_items` (new table, no migration needed):
+  triple-keyed per-item "never show again" markers; TG rows are stored **album-expanded**
+  (one row per raw sibling id, mirroring `mark_read`) so per-row anti-joins remove whole
+  display units. Every timeline surface (pages, `/timeline/new`, day counts, unread counts —
+  both sources) anti-joins it, so hiding is server-enforced for web *and* iOS; HN exclusion
+  happens **after** day-ranking, so hiding a top-N story never promotes a below-cut one.
+  API: `POST /api/hidden {key}` / `DELETE /api/hidden/{key}` (undo). Saved records keep
+  hidden items (user assets).
 
 condenser's peewee models bind to telememo's `db` instance, so everything is one connection.
 `condenser/db.py:init_db()` initializes telememo tables (+ `is_filtered`) then condenser tables.
@@ -228,9 +236,21 @@ Timeline (All + added sources from `/api/sources`), tab 2 频道→订阅 (sourc
 list; TG row → channel timeline, HN row → `HnFeedTimelineScreen` = source-scoped store),
 `HnCard`/`HnDetailSheet` (title → Safari original / comments for self-posts, meta line,
 day-rank, prefetched preview box), Saved/detail dispatch by source, debug routes gained
-`hn` + `tab/subs`. 114 Kit tests; fixtures regenerated as envelopes
+`hn` + `tab/subs`. Fixtures regenerated as envelopes
 (`tmp/make_ios_fixtures.py`: mixed/tg/hn pages, hn_shapes, sources, records incl. a
-temp-saved HN record). v1 spec complete; remaining polish: end-to-end
+temp-saved HN record). **Message stats + forward (2026-07-22)**: Kit gains
+`ReactionCount` (unknown kind → `.other` forward-compat) / `MessageStats` /
+`ForwardResult` / `AppMeta` models and off-protocol `APIClient` methods
+(`messageStats`, `forwardMessage` — trims the comment, empty → body without
+`comment` = native forward, `appMeta`, `setForwardChannel`); app: stats row in
+`MessageDetailSheet` (views/forwards/reaction chips, fetched in the sheet's
+`.task` — a `Group { if … }.task` never fires when empty, hence the
+presentational `MessageStatsRow`), `ForwardDialog` sheet (preflights
+`appMeta` → not-configured guidance / composer / success-with-link states,
+error mapping per routers/messages.py), Settings 转发 section
+(read/save `forward_channel`), debug route `forward/<cid>/<mid>[/<comment>]`
+(auto-submit, real network — walkthrough `tmp/2026-07-22-ios-stats-forward/`).
+124 Kit tests. v1 spec complete; remaining polish: end-to-end
 `ASWebAuthenticationSession` verify on device, video playback (non-goal).
 
 ## Dev
@@ -318,7 +338,17 @@ prefix as preview.py, split because it needs TgManager) translates
 `UnauthorizedError`→503. Web: `MessageStatsRow` + Forward button in the pane (TG targets),
 `ForwardDialog` (deliberately Chinese copy), Settings "Forward" section. 150 backend +
 42 frontend green; accepted live against @telememo_test
-(`tmp/2026-07-21-tg-stats-forward/`). iOS UI is the deferred next batch.
+(`tmp/2026-07-21-tg-stats-forward/`). iOS UI shipped 2026-07-22 (see the iOS
+section above; walkthrough `tmp/2026-07-22-ios-stats-forward/`) — the plan is
+fully closed.
+**Item detail pane + hidden items** (2026-07-22, BDD): the web pane opened from a card's
+time is now `ItemDetailPane` (条目详情) — `ItemDetailInfo` full-info block on top, link
+previews as a section, and a 隐藏 action (toast with 撤销 undo) backed by the new
+`hidden_items` table / `POST /api/hidden` (SCHEMA_VERSION 6, see Architecture). Hiding is
+excluded server-side from every timeline query, so iOS needs no change to stop showing
+hidden items. `lib/linkPreviewPane.tsx` → `lib/itemDetailPane.tsx` (context now carries the
+whole `TimelineItem` envelope). 161 backend + 45 frontend green; screenshots
+`tmp/2026-07-22-item-detail-pane/`.
 Still open: subscription
 "delete-with-messages" option (Q4 / `?purge=1`) and the backfill batch-interval sleep.
 Full checklist: `kb/sessions/2026-06-09-backend-remaining-work.md`.

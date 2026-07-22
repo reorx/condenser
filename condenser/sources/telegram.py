@@ -38,14 +38,19 @@ _FROM = """
     JOIN subscriptions s ON s.source = 'telegram' AND s.channel_id = m.channel_id AND s.enabled = 1
     LEFT JOIN read_items rm ON rm.source = 'telegram' AND rm.ref1 = m.channel_id AND rm.ref2 = m.id
     LEFT JOIN saved_items sv ON sv.source = 'telegram' AND sv.ref1 = m.channel_id AND sv.ref2 = m.id
+    LEFT JOIN hidden_items hd ON hd.source = 'telegram' AND hd.ref1 = m.channel_id AND hd.ref2 = m.id
 """
+
+# Rows hidden by the user are stored album-expanded, so a per-row anti-join
+# removes the whole display unit.
+_HIDDEN_JOIN = "LEFT JOIN hidden_items hd ON hd.source = 'telegram' AND hd.ref1 = m.channel_id AND hd.ref2 = m.id"
 
 # Buffer extra rows past `limit` so adjacent album items don't split a page.
 _ALBUM_BUFFER = 20
 
 
 def _base_where(channel_id: Optional[int], date: Optional[str], unread_only: bool) -> tuple[list[str], list]:
-    where = ['(m.is_filtered IS NOT 1)']
+    where = ['(m.is_filtered IS NOT 1)', 'hd.ref1 IS NULL']
     params: list = []
     if channel_id is not None:
         where.append('m.channel_id = ?')
@@ -154,7 +159,7 @@ def fetch_new(
 
 def days(channel_id: Optional[int] = None) -> dict[str, int]:
     """Per-day display-unit counts for the calendar component."""
-    where = ['(m.is_filtered IS NOT 1)']
+    where = ['(m.is_filtered IS NOT 1)', 'hd.ref1 IS NULL']
     params: list = []
     if channel_id is not None:
         where.append('m.channel_id = ?')
@@ -162,6 +167,7 @@ def days(channel_id: Optional[int] = None) -> dict[str, int]:
     sql = (
         'SELECT substr(m.date, 1, 10) AS day, COUNT(DISTINCT COALESCE(m.grouped_id, m.id)) AS cnt '
         "FROM messages m JOIN subscriptions s ON s.source = 'telegram' AND s.channel_id = m.channel_id AND s.enabled = 1 "
+        f'{_HIDDEN_JOIN} '
         'WHERE ' + ' AND '.join(where) + ' GROUP BY day'
     )
     cur = tdb.db.execute_sql(sql, tuple(params))
@@ -175,7 +181,8 @@ def unread_counts() -> dict[int, int]:
         'FROM messages m '
         "JOIN subscriptions s ON s.source = 'telegram' AND s.channel_id = m.channel_id AND s.enabled = 1 "
         "LEFT JOIN read_items rm ON rm.source = 'telegram' AND rm.ref1 = m.channel_id AND rm.ref2 = m.id "
-        'WHERE m.is_filtered IS NOT 1 AND rm.ref1 IS NULL '
+        f'{_HIDDEN_JOIN} '
+        'WHERE m.is_filtered IS NOT 1 AND rm.ref1 IS NULL AND hd.ref1 IS NULL '
         'GROUP BY m.channel_id'
     )
     cur = tdb.db.execute_sql(sql)
