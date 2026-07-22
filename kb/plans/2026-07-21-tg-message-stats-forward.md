@@ -3,6 +3,17 @@
 日期：2026-07-21 ｜ 状态：✅ 完成（2026-07-22 验收通过：150 后端 + 42 前端用例全绿，真实会话走查 stats/两种转发模式均落地 @telememo_test，截图 `tmp/2026-07-21-tg-stats-forward/`）
 范围：**后端 + web 前端**（iOS 下一批，API 契约按可被 CondenserKit 直接镜像设计）
 
+> **iOS 批次也已完成**（2026-07-22，BDD）：Kit 新增 `ReactionCount`（未知 kind → `.other`
+> 前向兼容）/`MessageStats`/`ForwardResult`/`AppMeta` 模型 + `APIClient` 四个方法
+> （`messageStats` / `forwardMessage`（trim，空评论 body 不带 comment）/ `appMeta` /
+> `setForwardChannel`，协议外方法，与 `mediaURL` 同级）；app 侧 `MessageDetailSheet`
+> 加实时 stats 行（纯展示 `MessageStatsRow` + reaction chips，数据在 sheet 的 `.task`
+> 拉取——`Group{if}.task` 空分支不触发的坑）、`ForwardDialog` sheet（预检 app_meta →
+> 未配置引导/编辑/成功三态 + 错误映射）、设置页「转发」区块；debug 路由新增
+> `forward/<cid>/<mid>[/<comment>]`（自动提交，真实网络）。124 Kit 测试全绿；
+> 模拟器真实会话走查：stats 行、dialog、两种转发模式均真实落地 @telememo_test
+> （t.me/s 页面验证），截图 `tmp/2026-07-22-ios-stats-forward/`。
+
 ## 1. 需求与已定决策
 
 在 web 端消息侧边栏（`LinkPreviewPane`）中：

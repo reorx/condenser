@@ -400,3 +400,66 @@ public struct SourceGroup: Codable, Equatable, Sendable, Identifiable {
 
     public var id: String { source }
 }
+
+// MARK: - Message stats + 转发（GET .../stats、POST .../forward、/api/app/meta）
+
+/// 一条消息上的一个 reaction 汇总桶（实时拉取，不入库）。kind 是判别字段：
+/// emoji → unicode 字符；custom → document_id（不解析 glyph，UI 降级通用图标）；
+/// other → 前向兼容兜底（未知 kind 字符串也解到这里，不炸解码）。
+public struct ReactionCount: Codable, Equatable, Sendable {
+    public enum Kind: String, Codable, Sendable {
+        case emoji, custom, other
+
+        public init(from decoder: Decoder) throws {
+            let raw = try decoder.singleValueContainer().decode(String.self)
+            self = Kind(rawValue: raw) ?? .other
+        }
+    }
+
+    public let kind: Kind
+    public let emoji: String?
+    public let documentID: Int?
+    public let count: Int
+    /// 登录账号自己点过的 reaction（高亮）
+    public let chosen: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case kind, emoji, count, chosen
+        case documentID = "document_id"
+    }
+}
+
+/// GET /api/messages/{cid}/{mid}/stats —— nil = 频道不带该数据
+public struct MessageStats: Codable, Equatable, Sendable {
+    public let views: Int?
+    public let forwards: Int?
+    public let reactions: [ReactionCount]
+
+    public var isEmpty: Bool { views == nil && forwards == nil && reactions.isEmpty }
+}
+
+/// POST /api/messages/{cid}/{mid}/forward —— mode 指示走了哪条路径：
+/// quote = 评论 + t.me 链接的新消息，forward = 原生转发
+public struct ForwardResult: Codable, Equatable, Sendable {
+    public enum Mode: String, Codable, Sendable {
+        case quote, forward
+    }
+
+    public let mode: Mode
+    /// 目标频道里新落地消息的 t.me 链接
+    public let link: String
+}
+
+/// GET/PATCH /api/app/meta —— 运行时应用设置
+public struct AppMeta: Codable, Equatable, Sendable {
+    public let schemaVersion: Int
+    public let backfillDays: Int
+    /// 「转发至本频道」目标（@handle / t.me 链接）；nil = 未配置
+    public let forwardChannel: String?
+
+    enum CodingKeys: String, CodingKey {
+        case schemaVersion = "schema_version"
+        case backfillDays = "backfill_days"
+        case forwardChannel = "forward_channel"
+    }
+}

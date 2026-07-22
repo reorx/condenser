@@ -10,6 +10,10 @@ struct SettingsScreen: View {
 
     @State private var confirmSignOut = false
     @AppStorage(FontScale.storageKey) private var fontScaleRaw = FontScale.default.rawValue
+    @State private var forwardChannel = ""
+    @State private var forwardSaving = false
+    @State private var forwardSaved = false
+    @State private var forwardError: String?
 
     private var fontScale: FontScale { FontScale(storedValue: fontScaleRaw) }
 
@@ -33,6 +37,22 @@ struct SettingsScreen: View {
                 Text("调整消息列表与详情页的文字大小。")
             }
             Section {
+                TextField("@channel 或 t.me 链接", text: $forwardChannel)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .onSubmit { saveForwardChannel() }
+                Button(forwardSaved ? "已保存" : "保存") {
+                    saveForwardChannel()
+                }
+                .disabled(forwardSaving)
+                .foregroundStyle(forwardSaved ? .green : Color.accentColor)
+            } header: {
+                Text("转发")
+            } footer: {
+                Text(forwardError ?? "「转发到我的频道」的目标频道；清空后保存即取消配置。")
+                    .foregroundStyle(forwardError == nil ? Color.secondary : .red)
+            }
+            Section {
                 Button("登出", role: .destructive) {
                     confirmSignOut = true
                 }
@@ -46,6 +66,12 @@ struct SettingsScreen: View {
         }
         .navigationTitle("设置")
         .navigationBarTitleDisplayMode(.inline)
+        .task {
+            // 回填已配置的目标频道；拉不到就留空（保存路径会报错兜底）
+            if let meta = try? await reader.api.appMeta() {
+                forwardChannel = meta.forwardChannel ?? ""
+            }
+        }
         .confirmationDialog("确定登出？", isPresented: $confirmSignOut, titleVisibility: .visible) {
             Button("登出", role: .destructive) {
                 Task {
@@ -53,6 +79,24 @@ struct SettingsScreen: View {
                     auth.signOut()
                 }
             }
+        }
+    }
+
+    private func saveForwardChannel() {
+        forwardError = nil
+        forwardSaving = true
+        Task {
+            do {
+                let meta = try await reader.api.setForwardChannel(
+                    forwardChannel.trimmingCharacters(in: .whitespacesAndNewlines))
+                forwardChannel = meta.forwardChannel ?? ""
+                forwardSaved = true
+                try? await Task.sleep(for: .seconds(1.5))
+                forwardSaved = false
+            } catch {
+                forwardError = "保存失败，请稍后再试"
+            }
+            forwardSaving = false
         }
     }
 

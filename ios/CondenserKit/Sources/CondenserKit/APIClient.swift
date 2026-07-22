@@ -92,6 +92,37 @@ public final class APIClient: @unchecked Sendable {
         return try decoder.decode(Reply.self, from: data).fetched
     }
 
+    public func messageStats(channelID: Int, messageID: Int) async throws -> MessageStats {
+        try await get("/api/messages/\(channelID)/\(messageID)/stats")
+    }
+
+    /// 空/纯空白评论 → body 不带 comment（后端走原生 forward）；有评论 → trim 后随 body
+    public func forwardMessage(
+        channelID: Int, messageID: Int, comment: String?
+    ) async throws -> ForwardResult {
+        struct Body: Encodable { let comment: String? }
+        let trimmed = comment?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let data = try await send(request(
+            path: "/api/messages/\(channelID)/\(messageID)/forward", method: "POST",
+            body: Body(comment: (trimmed?.isEmpty ?? true) ? nil : trimmed)))
+        return try decoder.decode(ForwardResult.self, from: data)
+    }
+
+    public func appMeta() async throws -> AppMeta {
+        try await get("/api/app/meta")
+    }
+
+    /// 传 "" 清除（后端读回 null）
+    public func setForwardChannel(_ value: String) async throws -> AppMeta {
+        struct Body: Encodable {
+            let forwardChannel: String
+            enum CodingKeys: String, CodingKey { case forwardChannel = "forward_channel" }
+        }
+        let data = try await send(request(
+            path: "/api/app/meta", method: "PATCH", body: Body(forwardChannel: value)))
+        return try decoder.decode(AppMeta.self, from: data)
+    }
+
     // MARK: - Authed resource URLs（AuthedAsyncImage 加载时仍需带 Bearer header）
 
     public func mediaURL(channelID: Int, messageID: Int, thumb: Bool = false) -> URL {

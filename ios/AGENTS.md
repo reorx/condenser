@@ -93,7 +93,10 @@ SIMCTL_CHILD_CONDENSER_DEBUG_ROUTE=<route> xcrun simctl launch "iPhone 17" com.r
 route 取值：`tab/{timeline|subs|channels|saved}` 切 tab（channels 是订阅 tab 的旧别名）；
 `channel/<id>` push 单频道 timeline；`hn` push HN feed timeline；`settings` 切设置 tab；
 `detail/<cid>/<mid>` / `viewer/<cid>/<mid>` 弹详情
-sheet / 全屏图片浏览器（消息须在 timeline 首页内，路由会等首屏加载完才应用）。
+sheet / 全屏图片浏览器（消息须在 timeline 首页内，路由会等首屏加载完才应用）；
+`forward/<cid>/<mid>[/<comment>]` 直接弹转发 dialog（消息不必在首页内；带第 4 段
+则 1s 后自动提交——**真实转发落地目标频道**，`-` 表示空评论原生转发，中文评论需
+percent-encode）。
 每换一个界面 terminate + 重新 launch 一次即可。也支持
 `xcrun simctl openurl booted "condenser://debug/<route>"`，但系统会弹
 "Open in Condenser?" 确认框（且该框跨 app 重启存活，误触发后要

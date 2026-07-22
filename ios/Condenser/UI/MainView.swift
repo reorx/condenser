@@ -14,6 +14,7 @@ struct MainView: View {
     #if DEBUG
     @State private var debugDetail: TimelineItem?
     @State private var debugViewer: ImageViewerItem?
+    @State private var debugForward: DebugForwardRoute?
     #endif
 
     var body: some View {
@@ -68,6 +69,11 @@ struct MainView: View {
         .fullScreenCover(item: $debugViewer) { item in
             ImageViewerScreen(item: item)
         }
+        .sheet(item: $debugForward) { route in
+            ForwardDialog(
+                channelID: route.channelID, messageID: route.messageID,
+                debugAutoComment: route.autoComment)
+        }
         .task { await applyDebugRouteIfNeeded(reader) }
         #endif
     }
@@ -115,6 +121,16 @@ struct MainView: View {
             selectedTab = .settings
         case "detail":
             debugDetail = debugItem(parts, reader: reader)
+        case "forward":
+            // forward/<cid>/<mid>[/<comment>]：直接弹转发 dialog；带第 4 段则自动提交
+            // （"-" = 空评论原生转发；消息不必在 timeline 首页内）
+            if let cid = parts.dropFirst().first.flatMap(Int.init),
+               let mid = parts.dropFirst(2).first.flatMap(Int.init) {
+                let raw = parts.dropFirst(3).first
+                debugForward = DebugForwardRoute(
+                    channelID: cid, messageID: mid,
+                    autoComment: raw.map { $0 == "-" ? "" : $0 })
+            }
         case "viewer":
             if let message = debugItem(parts, reader: reader)?.telegram {
                 let photos = message.mediaItems.filter { $0.mediaType == "photo" && $0.hasMedia }
@@ -132,6 +148,13 @@ struct MainView: View {
         let ids = Array(parts.dropFirst())
         guard ids.count == 2, let cid = Int(ids[0]), let mid = Int(ids[1]) else { return nil }
         return reader.timeline.items.first { $0.key == "tg:\(cid):\(mid)" }
+    }
+
+    private struct DebugForwardRoute: Identifiable {
+        let channelID: Int
+        let messageID: Int
+        let autoComment: String?
+        var id: String { "\(channelID)/\(messageID)" }
     }
     #endif
 }

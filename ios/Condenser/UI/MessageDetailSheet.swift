@@ -13,11 +13,16 @@ struct MessageDetailSheet: View {
     @State private var safariItem: SafariItem?
     @State private var viewerItem: ImageViewerItem?
     @State private var copied = false
+    @State private var showForward = false
+    @State private var stats: MessageStats?
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
                 header
+                if let stats, !stats.isEmpty {
+                    MessageStatsRow(stats: stats)
+                }
                 if message.isForwarded, message.forwardSource == nil {
                     forwardBox
                 }
@@ -36,6 +41,11 @@ struct MessageDetailSheet: View {
             .padding(16)
         }
         .readingFontScale()
+        .task {
+            // 实时 stats 拉不到（掉线/限流/消息已删）就不显示，不打断阅读
+            stats = try? await reader.api.messageStats(
+                channelID: message.channelID, messageID: message.id)
+        }
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
         .environment(\.openURL, OpenURLAction { url in
@@ -135,9 +145,19 @@ struct MessageDetailSheet: View {
                 }
                 .buttonStyle(.bordered)
             }
+            Button {
+                showForward = true
+            } label: {
+                Label("转发", systemImage: "arrowshape.turn.up.forward")
+                    .font(.footnote)
+            }
+            .buttonStyle(.bordered)
             Spacer()
         }
         .sensoryFeedback(.success, trigger: copied) { _, new in new }
+        .sheet(isPresented: $showForward) {
+            ForwardDialog(channelID: message.channelID, messageID: message.id)
+        }
     }
 
     private func aspectRatio(_ item: MediaItem) -> CGFloat {
