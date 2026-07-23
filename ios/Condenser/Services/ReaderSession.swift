@@ -3,8 +3,8 @@ import Observation
 import CondenserKit
 
 /// 登录后的组合根：持有 APIClient + TimelineStore / RecordsStore / ReadReporter /
-/// NewContentPoller + SnapshotCache，统一把 401 接到 AuthSession.handleUnauthorized。
-/// unreadOnly / selectedSource 切换时重建 timeline + poller（两者的过滤参数必须一致，
+/// NewContentChecker + SnapshotCache，统一把 401 接到 AuthSession.handleUnauthorized。
+/// unreadOnly / selectedSource 切换时重建 timeline + checker（两者的过滤参数必须一致，
 /// 见 timeline.py:query_new 注释）。主 timeline 默认只看未读；每个 (source, unread)
 /// 组合各落一份冷启动快照；频道/单 feed 视图是临时态，不落快照。
 /// 订阅数据源是 GET /api/sources（信源菜单、订阅 tab、频道名 join 的唯一来源）。
@@ -15,7 +15,7 @@ final class ReaderSession {
     private(set) var timeline: TimelineStore
     private(set) var records: RecordsStore
     private(set) var readReporter: ReadReporter
-    private(set) var poller: NewContentPoller!
+    private(set) var newContentChecker: NewContentChecker!
     /// 已添加的信源分组（GET /api/sources）
     private(set) var sources: [SourceGroup] = []
     private(set) var unreadOnly = true
@@ -38,7 +38,7 @@ final class ReaderSession {
         records.onUnauthorized = onUnauthorized
         readReporter.onUnauthorized = onUnauthorized
         sources = snapshots.load([SourceGroup].self, key: "sources") ?? []
-        poller = makePoller()
+        newContentChecker = makeChecker()
     }
 
     func setUnreadOnly(_ value: Bool) {
@@ -55,27 +55,25 @@ final class ReaderSession {
     }
 
     private func rebuildTimeline() {
-        poller.stop()
         timeline = TimelineStore(
             api: api, unreadOnly: unreadOnly, source: selectedSource, cache: snapshots,
             cacheKey: Self.timelineKey(source: selectedSource, unreadOnly: unreadOnly))
         timeline.onUnauthorized = onUnauthorized
-        // 新 poller 由 MessageListView 在首屏加载完成后启动（游标就绪才有意义）
-        poller = makePoller()
+        newContentChecker = makeChecker()
     }
 
     private static func timelineKey(source: String?, unreadOnly: Bool) -> String {
         "timeline-\(source ?? "all")-\(unreadOnly ? "unread" : "all")"
     }
 
-    private func makePoller() -> NewContentPoller {
-        let poller = NewContentPoller(
+    private func makeChecker() -> NewContentChecker {
+        let checker = NewContentChecker(
             api: api, unreadOnly: unreadOnly, source: selectedSource
         ) { [weak self] in
             self?.timeline.headCursor
         }
-        poller.onUnauthorized = onUnauthorized
-        return poller
+        checker.onUnauthorized = onUnauthorized
+        return checker
     }
 
     /// 订阅 tab push 进来的单频道 timeline（无快照、无轮询）

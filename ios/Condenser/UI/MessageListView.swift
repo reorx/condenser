@@ -2,13 +2,13 @@ import SwiftUI
 import CondenserKit
 
 /// TimelineStore 驱动的多信源列表核心：无限滚动 + 下拉刷新 + 滚动即已读 + 详情 sheet。
-/// 按 item.source 分发卡片（MessageCard / HnCard）。主 timeline 传 poller 时由本视图
-/// 管理其生命周期并渲染新消息提示：前台轮询到新内容 → 可点胶囊（回顶 + 刷新）；
-/// 冷启动 / 长时间后台回前台的自动更新 → 灰色不可点 toast（自动消失，点击即关）。
-/// 频道/feed timeline 不传 poller，纯列表复用。
+/// 按 item.source 分发卡片（MessageCard / HnCard）。刷新只有两条路径：用户下拉，
+/// 以及冷启动 / 长时间后台回前台的静默自动更新（传了 checker 的主 timeline 才有），
+/// 后者用灰色不可点 toast 事后告知条数。前台阅读期间不做任何轮询、不弹可点提示。
+/// 频道/feed timeline 不传 checker，纯列表复用。
 struct MessageListView: View {
     let store: TimelineStore
-    var poller: NewContentPoller?
+    var checker: NewContentChecker?
     var emptyLabel = "暂无内容"
 
     @Environment(ReaderSession.self) private var reader
@@ -23,8 +23,6 @@ struct MessageListView: View {
     /// 冷启动 toast 只在 app 本次运行的首次加载弹（信源/未读切换重建 store 时不弹）
     @State private var didHandleLaunch = false
     @State private var foregroundPolicy = ForegroundRefreshPolicy()
-    /// 回前台静默刷新期间抑制蓝色胶囊（checkNow 会先把 count 顶起来）
-    @State private var isAutoRefreshing = false
 
     /// 底部上拉触发 fetch-older 只对单频道视图开放（后端接口按频道拉取，TG 专属）
     private var supportsFetchOlder: Bool { store.channelID != nil }
@@ -60,17 +58,14 @@ struct MessageListView: View {
             .overlay(alignment: .top) {
                 if let count = toastCount {
                     newContentToast(count: count)
-                } else if let poller, poller.count > 0, !isAutoRefreshing {
-                    newContentCapsule(count: poller.count, proxy: proxy)
                 }
             }
             .onChange(of: scenePhase) { _, phase in
-                guard poller != nil else { return }
+                guard checker != nil else { return }
                 if phase == .active {
                     Task { await resumeFromBackground(proxy) }
                 } else {
                     foregroundPolicy.noteBackground()
-                    poller?.stop()
                 }
             }
         }
@@ -91,16 +86,12 @@ struct MessageListView: View {
         }
         .task(id: ObjectIdentifier(store)) {
             let newCount = await store.loadInitial()
-            // 冷启动：快照先渲染、网络静默换新，有新内容只弹灰 toast 提示
-            if poller != nil, !didHandleLaunch, newCount > 0 {
+            // 冷启动：快照先渲染、网络静默换新，有新内容只弹灰 toast 事后告知
+            if checker != nil, !didHandleLaunch, newCount > 0 {
                 toastCount = newCount
             }
             didHandleLaunch = true
-            // poller 在首屏加载完成后才启动，游标已是最新，不会对刚更新过的
-            // 内容再弹一次可点胶囊
-            poller?.start()
         }
-        .onDisappear { poller?.stop() }
     }
 
     private var listBody: some View {
@@ -218,24 +209,6 @@ struct MessageListView: View {
         .padding(.top, 120)
     }
 
-    private func newContentCapsule(count: Int, proxy: ScrollViewProxy) -> some View {
-        Button {
-            // 必须先瞬时回顶再刷新：refresh 替换 items 时若滚动位置还很深，
-            // 新首屏的卡片会落在视口上方（maxY < 0）被 scroll-to-read 误判为已读
-            proxy.scrollTo("timeline-top", anchor: .top)
-            Task { await refresh() }
-        } label: {
-            Label("\(count) 条新消息", systemImage: "arrow.up")
-                .font(.footnote.weight(.medium))
-                .padding(.horizontal, 14)
-                .padding(.vertical, 8)
-                .background(.tint, in: Capsule())
-                .foregroundStyle(.white)
-                .shadow(radius: 4, y: 2)
-        }
-        .padding(.top, 8)
-    }
-
     /// 灰色不可点提示：内容已自动更新，仅告知；一会自动消失，点一下也消失
     private func newContentToast(count: Int) -> some View {
         Text("\(count) 条新消息")
@@ -254,29 +227,22 @@ struct MessageListView: View {
     }
 
     /// 回前台：后台够久且确有新内容才回顶 + 静默刷新 + 灰 toast；
-    /// 否则保持阅读位置不动，只恢复轮询
+    /// 否则保持阅读位置分毫不动
     private func resumeFromBackground(_ proxy: ScrollViewProxy) async {
-        guard let poller else { return }
-        if foregroundPolicy.shouldRefreshOnForeground() {
-            isAutoRefreshing = true
-            await poller.checkNow()
-            let count = poller.count
-            if count > 0 {
-                // 与胶囊点击同理：先回顶再刷新，避免新首屏落在视口上方被误标已读
-                proxy.scrollTo("timeline-top", anchor: .top)
-                await refresh()
-                toastCount = count
-            }
-            isAutoRefreshing = false
-        }
-        poller.start()
+        guard let checker, foregroundPolicy.shouldRefreshOnForeground() else { return }
+        let count = await checker.check()
+        guard count > 0 else { return }
+        // 必须先瞬时回顶再刷新：refresh 替换 items 时若滚动位置还很深，
+        // 新首屏的卡片会落在视口上方（maxY < 0）被 scroll-to-read 误判为已读
+        proxy.scrollTo("timeline-top", anchor: .top)
+        await refresh()
+        toastCount = count
     }
 
     private func refresh() async {
         // 先冲刷已读队列（debounce 可能还没发出去），未读视图重载才会真正剔除已读项
         await reader.readReporter.flushNow()
         await store.refresh()
-        poller?.reset()
     }
 
     private func openViewer(for message: DisplayMessage, at index: Int) {

@@ -250,20 +250,23 @@ presentational `MessageStatsRow`), `ForwardDialog` sheet (preflights
 error mapping per routers/messages.py), Settings 转发 section
 (read/save `forward_channel`), debug route `forward/<cid>/<mid>[/<comment>]`
 (auto-submit, real network — walkthrough `tmp/2026-07-22-ios-stats-forward/`).
-**Silent refresh + gray toast (2026-07-22)**: cold start and
-returning-to-foreground after ≥5 min background auto-update the timeline and show a
-non-interactive gray "N 条新消息" toast (auto-dismiss 4s, tap = dismiss); the blue
-tappable capsule is reserved for mid-session poller hits. Kit:
+**Silent refresh + gray toast, no polling (2026-07-22)**: the timeline refreshes by
+exactly two paths — the user's pull-to-refresh, and a silent auto-update on cold start /
+return-to-foreground after ≥5 min background, which reports itself afterwards via a
+**non-interactive gray "N 条新消息" toast** (auto-dismiss 4s, tap = dismiss). The 30s
+`/timeline/new` poll loop and its blue tappable capsule were **removed** (user feedback:
+interrupting mid-read is annoying) — nothing pops while you read. Kit:
 `TimelineStore.loadInitial` returns the new-item count vs the rendered snapshot
-(`@discardableResult`), new `ForegroundRefreshPolicy` (first-leave timestamp, threshold
-check clears state). App: `MessageListView` now owns the poller lifecycle (start after
-initial load so the fresh cursor never re-flags just-loaded content; scenePhase +
-onDisappear stop) — `TimelineScreen` only flushes reads on background,
-`ReaderSession.rebuildTimeline` no longer starts the poller. Foreground return only
-disturbs scroll when `/timeline/new` reports count > 0 (scroll-to-top before refresh,
-same scroll-to-read guard as the capsule); walkthrough
+(`@discardableResult`) for the cold-start toast; `ForegroundRefreshPolicy` (first-leave
+timestamp, threshold check clears state) gates the foreground path; `NewContentPoller`
+→ **`NewContentChecker`** (one-shot `check() async -> Int`, no count/reset/start/stop —
+failures and missing cursor are 0). App: `MessageListView` owns the whole flow
+(`checker:` param, nil for channel/feed views); `TimelineScreen` only flushes reads on
+background. Foreground return calls `check()` **first** and only disturbs scroll when
+count > 0 (scroll-to-top before refresh, else the new first screen lands above the
+viewport and scroll-to-read false-marks it); 0 = reading position untouched. Walkthrough
 `tmp/2026-07-22-ios-foreground-toast/`.
-133 Kit tests. v1 spec complete; remaining polish: end-to-end
+132 Kit tests. v1 spec complete; remaining polish: end-to-end
 `ASWebAuthenticationSession` verify on device, video playback (non-goal).
 
 ## Dev

@@ -3,7 +3,7 @@ import CondenserKit
 
 /// Timeline 主屏（tab 1）：MessageListView + 未读过滤（默认只看未读）
 /// + 信源切换（顶部左侧 Menu，选项 = All + 已添加的信源，来自 GET /api/sources）；
-/// poller 生命周期与新消息提示都在 MessageListView 内；这里只负责
+/// 自动更新与灰 toast 都在 MessageListView 内；这里只负责
 /// scenePhase 离开前台时的已读冲刷。设置入口在底部 tab 栏。
 struct TimelineScreen: View {
     @Environment(ReaderSession.self) private var reader
@@ -12,7 +12,7 @@ struct TimelineScreen: View {
     var body: some View {
         MessageListView(
             store: reader.timeline,
-            poller: reader.poller,
+            checker: reader.newContentChecker,
             emptyLabel: reader.unreadOnly ? "没有未读消息" : "暂无内容")
             .navigationTitle(navTitle)
             .navigationBarTitleDisplayMode(.inline)

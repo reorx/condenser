@@ -1,6 +1,6 @@
 import Foundation
 
-/// APIClient 的可注入抽象：Store/Reporter/Poller 依赖它，测试用 stub。
+/// APIClient 的可注入抽象：Store/Reporter/Checker 依赖它，测试用 stub。
 /// 多信源契约：timeline 条目是 envelope，read/save 以 item key 出入参，
 /// source 参数把查询收窄到单一信源（channel_id 隐含 telegram）。
 public protocol CondenserAPI: Sendable {
