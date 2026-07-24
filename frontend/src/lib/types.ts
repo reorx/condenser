@@ -166,6 +166,46 @@ export interface HnStatus {
   backfill_pending_days: string[];
 }
 
+/** One X subscription, from GET /api/sources/x/subscriptions.
+ *  `channel_id` is 'foryou' (the algorithmic feed) or a followed account's lowercased handle;
+ *  `user_id` is the rename-stable numeric id, learned from the first probe push. */
+export interface XSubscription {
+  source: 'x';
+  channel_id: string;
+  kind: 'home' | 'user';
+  handle: string | null;
+  user_id: string | null;
+  name: string | null;
+  enabled: boolean;
+  /** Per-feed fetch-count override handed to the probe; null = the server default. */
+  n: number | null;
+  added_at: string | null;
+  /** Archived appearances of tweets in this feed. */
+  tweets: number;
+}
+
+/** Per-feed summary of the last probe push (GET /api/x/status → last_push_counts). */
+export interface XPushCount {
+  at: string;
+  received: number;
+  stored: number;
+  new_tweets: number;
+  new_items: number;
+  parse_errors: number;
+}
+
+export interface XStatus {
+  /** Server-side master switch (CONDENSER_X_ENABLED); false = subscribe/ingest are refused. */
+  source_enabled: boolean;
+  subscribed: boolean;
+  tweets_total: number;
+  feed_items_total: number;
+  /** Null until the local probe has pushed at least once. */
+  last_push_at: string | null;
+  last_push_counts: Record<string, XPushCount>;
+  parse_errors: number;
+}
+
 /** A broadcast channel the logged-in account follows, from GET /api/tg/dialogs. */
 export interface JoinedChannel {
   channel_id: number;

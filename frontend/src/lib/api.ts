@@ -20,6 +20,8 @@ import type {
   TimelineNew,
   TimelinePage,
   TimelineParams,
+  XStatus,
+  XSubscription,
 } from './types';
 
 /** Result of a batch subscribe (POST /api/subscriptions/batch). */
@@ -145,6 +147,18 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify({ config }),
     }),
+
+  // ---- x source (Phase 1 management; the data itself is pushed by the local probe) ----
+  xStatus: () => request<XStatus>('/api/x/status'),
+  listXSubscriptions: () => request<XSubscription[]>('/api/sources/x/subscriptions'),
+  // channel_id: 'foryou' or a handle ('@name' / 'name'); the server normalizes it.
+  xSubscribe: (channelId: string) => post<XSubscription>('/api/sources/x/subscriptions', { channel_id: channelId }),
+  xSetEnabled: (channelId: string, enabled: boolean) =>
+    request<XSubscription>(`/api/sources/x/subscriptions/${channelId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ enabled }),
+    }),
+  xUnsubscribe: (channelId: string) => del<{ ok: true }>(`/api/sources/x/subscriptions/${channelId}`),
 
   // ---- sources (two-level source -> subscriptions listing, Phase 2) ----
   listSources: () => request<SourceGroup[]>('/api/sources'),

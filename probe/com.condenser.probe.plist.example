@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  launchd agent for condenser-probe: one round every 30 minutes.
+
+  Copy to ~/Library/LaunchAgents/com.condenser.probe.plist, replace the two
+  /PATH/TO paths (and the uv location if it is not in /opt/homebrew/bin), then:
+    launchctl load ~/Library/LaunchAgents/com.condenser.probe.plist
+
+  RunAtLoad fires a round on login; StartInterval only counts wall-clock time
+  while the Mac is awake, so a sleeping laptop simply misses rounds — the probe
+  is stateless, the next round catches up.
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.condenser.probe</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/opt/homebrew/bin/uv</string>
+        <string>run</string>
+        <string>condenser-probe</string>
+        <string>run</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/PATH/TO/condenser/probe</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <!-- bird needs a PATH that contains node/bird -->
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    </dict>
+
+    <key>StartInterval</key>
+    <integer>1800</integer>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>/PATH/TO/Library/Logs/condenser-probe.log</string>
+    <key>StandardErrorPath</key>
+    <string>/PATH/TO/Library/Logs/condenser-probe.log</string>
+</dict>
+</plist>

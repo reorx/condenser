@@ -1,6 +1,6 @@
 """API request/response models."""
 
-from typing import Optional
+from typing import Any, Optional
 
 from pydantic import BaseModel, Field
 
@@ -56,6 +56,33 @@ class HNSubscriptionPatch(BaseModel):
 
     enabled: Optional[bool] = None
     config: Optional[dict] = None
+
+
+class XSubscribeBody(BaseModel):
+    """``'foryou'`` or a followed account's handle ('@name' / 'name', case-insensitive)."""
+
+    channel_id: str
+    name: Optional[str] = None
+    n: Optional[int] = Field(default=None, ge=1, le=200)  # per-feed fetch count override
+
+
+class XSubscriptionPatch(BaseModel):
+    """Partial update; None = leave unchanged. ``config`` is merged, not replaced."""
+
+    enabled: Optional[bool] = None
+    config: Optional[dict] = None
+
+
+class XIngestBody(BaseModel):
+    """One probe push: bird's raw JSON entries, untouched.
+
+    ``tweets`` is deliberately untyped — bird's output shape follows X's internal
+    API, so validation happens in the tolerant parser (which archives raw), never
+    at the door where one drifted field would reject the whole batch.
+    """
+
+    channel_id: str
+    tweets: list[Any]
 
 
 class ReadBody(BaseModel):

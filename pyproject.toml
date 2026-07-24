@@ -38,3 +38,6 @@ packages = ["condenser"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+# probe/ is a separate uv package with its own venv and test run (cd probe && uv run pytest);
+# collecting it from here would import condenser_probe, which this env doesn't have.
+testpaths = ["tests"]

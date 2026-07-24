@@ -40,6 +40,14 @@ class Settings(BaseSettings):
     # Max story URLs link-previewed per sampling round (0 = disable prefetching).
     condenser_hn_preview_batch: int = 30
 
+    # --- x (twitter) source (condenser/x.py) ---
+    # Master switch: with it off, subscribe/ingest are refused and probe-config is
+    # empty, so the local probe idles instead of archiving.
+    condenser_x_enabled: bool = True
+    # Default per-round fetch counts handed to the probe (per-feed config overrides).
+    condenser_x_home_count: int = 50
+    condenser_x_user_count: int = 10
+
     # --- link preview fetching (condenser/preview.py) ---
     # Total per-request timeout (seconds) for fetching a URL/its image.
     condenser_preview_fetch_timeout: float = 8.0

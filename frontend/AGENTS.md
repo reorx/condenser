@@ -39,6 +39,7 @@ Two conventions this list exists to protect:
 | `HnDisplayModeMenu` | Top-N display-mode dropdown (top10/top20/half/all → PATCH the front feed's config); used by the `/s/hn` header + `HackerNewsSection` |
 | `HnGlyph` | The HN "Y" mark in its orange square (size via className); shared by `HnCard`, the sidebar feed row, the `/s/hn` header, `HackerNewsSection`, the Subscriptions tab bar |
 | `TgGlyph` | The Telegram paper-plane mark in its blue square, HnGlyph's size-pair; used by the Subscriptions tab bar |
+| `XGlyph` | The X mark in its foreground-colored square (inverts with the theme), HnGlyph/TgGlyph's size-pair; used by the Subscriptions tab bar + X subscription rows |
 | `PageHeader` + `IconBadge` | Unified reading-view top bar (leading icon + title + meta + right-aligned actions); `IconBadge` wraps a lucide icon in a muted circle |
 | `SegmentedOption` | One icon-over-label button in a segmented control; shared by `SettingsDialog`'s theme + unread pickers |
 | `SettingsDialog` | Settings modal: Telegram account, theme, unread-indicator mode, devices, lock app |
@@ -94,6 +95,8 @@ Two conventions this list exists to protect:
 | `SubscriptionRow` | One channel row on the Manage channels page: enable switch + actions menu + confirm dialogs |
 | `TelegramSection` | The Telegram tab on the Subscriptions page: browse/add-by-handle actions + the `SubscriptionRow` channel list |
 | `HackerNewsSection` | The Hacker News tab on the Subscriptions page: Front Page subscribe/unsubscribe, sampling pause switch, display-mode menu, status line (`/api/hn/status`) |
+| `XSection` | The X tab on the Subscriptions page: add For You / an account by handle, the `XSubscriptionRow` list, and a `/api/x/status` line (archive size + last probe push + parse errors) — the data itself is pushed by the local probe, so this is where you find out the probe went quiet |
+| `XSubscriptionRow` | One X feed row: For You or a followed account (handle chip only once a real display name has been learned), archive size + last push, pause switch, unsubscribe |
 
 > `components/ui/` holds generated shadcn/ui (new-york) primitives — intentionally **excluded**
 > from this inventory. Don't list them here. Import `Button` from `@/components/ui/button`.

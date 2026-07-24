@@ -1,8 +1,10 @@
 import { HnGlyph } from '@/components/HnGlyph';
 import { HackerNewsSection } from '@/components/subscriptions/HackerNewsSection';
 import { TelegramSection } from '@/components/subscriptions/TelegramSection';
+import { XSection } from '@/components/subscriptions/XSection';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { TgGlyph } from '@/components/TgGlyph';
+import { XGlyph } from '@/components/XGlyph';
 
 export function SubscriptionsView() {
   return (
@@ -25,6 +27,9 @@ export function SubscriptionsView() {
               <HnGlyph className="size-4 rounded-[4px] text-[10px]" />
               Hacker News
             </TabsTrigger>
+            <TabsTrigger value="x" className="px-3">
+              <XGlyph className="size-4 rounded-[4px]" />X
+            </TabsTrigger>
           </TabsList>
         </div>
         <TabsContent value="telegram">
@@ -32,6 +37,9 @@ export function SubscriptionsView() {
         </TabsContent>
         <TabsContent value="hn">
           <HackerNewsSection />
+        </TabsContent>
+        <TabsContent value="x">
+          <XSection />
         </TabsContent>
       </Tabs>
     </>

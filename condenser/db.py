@@ -14,6 +14,7 @@ from peewee import (
     SQL,
     AutoField,
     BareField,
+    BigIntegerField,
     BlobField,
     BooleanField,
     CharField,
@@ -36,7 +37,7 @@ MESSAGES_OPTIONAL_FIELDS = {
 # Bumped when condenser's own table shapes change; recorded in app_meta on init so a
 # future startup can detect an upgrade and run a migration. Telememo manages its own
 # table migrations separately (init_db optional_fields / ALTER TABLE).
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 
 
 class CondenserBaseModel(Model):
@@ -216,6 +217,76 @@ class HNStory(CondenserBaseModel):
         indexes = ((('day', 'score'), False),)
 
 
+class XTweet(CondenserBaseModel):
+    """One archived tweet (v7). The bird CLI's output tracks X's internal API and is
+    not a stable contract, so ``raw`` keeps the entry verbatim: a format drift can be
+    re-parsed from the archive instead of being lost.
+
+    Quoted tweets get their own row here (self-referential via ``quote_of``) but no
+    ``x_feed_items`` row — they were never in a feed, they came embedded.
+    """
+
+    id = BigIntegerField(primary_key=True)  # snowflake tweet id
+    author_id = BigIntegerField(null=True, index=True)
+    author_handle = TextField(null=True)
+    author_name = TextField(null=True)
+    text = TextField(null=True)
+    created_at = DateTimeField(null=True)  # naive UTC; NULL = unparseable timestamp
+    media = TextField(null=True)  # JSON list (bird shape: type/url/width/height/...)
+    metrics = TextField(null=True)  # JSON dict, refreshed on every re-push
+    quote_of = BigIntegerField(null=True)
+    # bird flattens retweets into an 'RT @orig: ...' text prefix with no structured
+    # field, so the original author is only recoverable as a handle (may be NULL).
+    rt_of_handle = TextField(null=True)
+    reply_to_id = BigIntegerField(null=True)
+    article = TextField(null=True)  # JSON dict: X long-form title + truncated preview
+    raw = TextField(null=True)
+    fetched_at = DateTimeField()
+
+    class Meta:
+        table_name = 'x_tweets'
+
+
+class XFeedItem(CondenserBaseModel):
+    """A tweet's appearance in one subscribed feed (v7).
+
+    Split from the tweet body because the same tweet can show up in For You *and*
+    in a followed account's feed, while ``verdict`` (the feedback-driven judgement)
+    only ever belongs to the For You appearance. ``first_seen_at`` is when the probe
+    first pushed it — the For You timeline sort key, and sticky across re-pushes.
+    """
+
+    channel_id = CharField()  # the x subscription key: 'foryou' | a followed handle
+    tweet_id = BigIntegerField()
+    first_seen_at = DateTimeField()
+    verdict = CharField(null=True)  # positive | neutral | negative (Phase 4)
+    verdict_meta = TextField(null=True)  # JSON: score, neighbours, algo version
+
+    class Meta:
+        table_name = 'x_feed_items'
+        primary_key = CompositeKey('channel_id', 'tweet_id')
+        indexes = ((('channel_id', 'first_seen_at'), False),)
+
+
+class ItemFeedback(CondenserBaseModel):
+    """Explicit up/down feedback on any source's item, triple-keyed like read_items.
+
+    Source-generic on purpose (X in v1, HN later needs no migration). Written by
+    Phase 3's feedback endpoints; the table exists from v7 so the data can start
+    accumulating as soon as the UI lands.
+    """
+
+    source = CharField()
+    ref1 = IntegerField()  # X: tweet id
+    ref2 = IntegerField(default=0)
+    verdict = CharField()  # 'up' | 'down'
+    created_at = DateTimeField(default=datetime.now)
+
+    class Meta:
+        table_name = 'item_feedback'
+        primary_key = CompositeKey('source', 'ref1', 'ref2')
+
+
 CONDENSER_TABLES = [
     Subscription,
     KeywordFilter,
@@ -227,6 +298,9 @@ CONDENSER_TABLES = [
     LinkPreviewCache,
     Device,
     HNStory,
+    XTweet,
+    XFeedItem,
+    ItemFeedback,
 ]
 
 
@@ -781,6 +855,124 @@ def hn_story_counts(today: str) -> tuple[int, int]:
     total = HNStory.select().count()
     today_count = HNStory.select().where(HNStory.day == today).count()
     return total, today_count
+
+
+# --- subscriptions (x / twitter) ---------------------------------------------
+
+_X = Subscription.source == 'x'
+
+
+def list_x_subscriptions() -> list[Subscription]:
+    return list(Subscription.select().where(_X).order_by(Subscription.added_at.desc()))
+
+
+def get_x_subscription(channel_id: str) -> Optional[Subscription]:
+    return Subscription.get_or_none(_X & (Subscription.channel_id == channel_id))
+
+
+def add_x_subscription(channel_id: str, name: Optional[str], config: dict) -> tuple[Subscription, bool]:
+    """Subscribe-and-enable; a paused row is re-enabled (POST semantics, same as HN).
+    Returns ``(sub, created)``."""
+    sub, created = Subscription.get_or_create(
+        source='x',
+        channel_id=channel_id,
+        defaults={
+            'enabled': True,
+            'backfill_done': False,
+            'added_at': _now(),
+            'name': name,
+            'config': json.dumps(config),
+        },
+    )
+    if not created and not sub.enabled:
+        Subscription.update(enabled=True).where(_X & (Subscription.channel_id == channel_id)).execute()
+        sub.enabled = True
+    return sub, created
+
+
+def update_x_subscription(
+    channel_id: str,
+    enabled: Optional[bool] = None,
+    config: Optional[dict] = None,
+    name: Optional[str] = None,
+) -> None:
+    fields = {}
+    if enabled is not None:
+        fields[Subscription.enabled] = enabled
+    if config is not None:
+        fields[Subscription.config] = json.dumps(config)
+    if name is not None:
+        fields[Subscription.name] = name
+    if fields:
+        Subscription.update(fields).where(_X & (Subscription.channel_id == channel_id)).execute()
+
+
+def delete_x_subscription(channel_id: str) -> None:
+    Subscription.delete().where(_X & (Subscription.channel_id == channel_id)).execute()
+
+
+def enabled_x_subscriptions() -> list[Subscription]:
+    return list(
+        Subscription.select().where(_X & (Subscription.enabled == True)).order_by(Subscription.added_at)  # noqa: E712
+    )
+
+
+# --- x tweets + feed items ----------------------------------------------------
+
+
+def get_x_tweet(tweet_id: int) -> Optional[XTweet]:
+    return XTweet.get_or_none(XTweet.id == tweet_id)
+
+
+def existing_x_tweet_ids(tweet_ids: list[int]) -> set[int]:
+    if not tweet_ids:
+        return set()
+    return {t.id for t in XTweet.select(XTweet.id).where(XTweet.id.in_(tweet_ids))}
+
+
+def upsert_x_tweet(fields: dict) -> None:
+    """Store a tweet from a full feed entry, refreshing an existing row (metrics move)."""
+    XTweet.insert(**fields).on_conflict(
+        conflict_target=[XTweet.id],
+        update={getattr(XTweet, k): v for k, v in fields.items() if k != 'id'},
+    ).execute()
+
+
+def insert_x_tweet_if_absent(fields: dict) -> None:
+    """Store a tweet seen only as an embedded payload (a quoted tweet).
+
+    Embedded copies are depth-limited and can be poorer than a row we already have
+    from the feed itself, so an existing row is never overwritten.
+    """
+    XTweet.insert(**fields).on_conflict_ignore().execute()
+
+
+def existing_x_feed_item_ids(channel_id: str, tweet_ids: list[int]) -> set[int]:
+    if not tweet_ids:
+        return set()
+    return {
+        i.tweet_id
+        for i in XFeedItem.select(XFeedItem.tweet_id).where(
+            (XFeedItem.channel_id == channel_id) & (XFeedItem.tweet_id.in_(tweet_ids))
+        )
+    }
+
+
+def insert_x_feed_items(rows: list[dict]) -> None:
+    """Register tweets in a feed; existing rows keep their (sticky) first_seen_at."""
+    if not rows:
+        return
+    with tdb.db.atomic():
+        XFeedItem.insert_many(rows).on_conflict_ignore().execute()
+
+
+def x_counts() -> tuple[int, int]:
+    """(archived tweets, feed appearances)."""
+    return XTweet.select().count(), XFeedItem.select().count()
+
+
+def x_feed_item_count(channel_id: str) -> int:
+    return XFeedItem.select().where(XFeedItem.channel_id == channel_id).count()
 
 
 # --- link preview cache -----------------------------------------------------

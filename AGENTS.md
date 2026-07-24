@@ -46,6 +46,16 @@ loop. Shares **one SQLite file** with [telememo](https://pypi.org/project/teleme
   happens **after** day-ranking, so hiding a top-N story never promotes a below-cut one.
   API: `POST /api/hidden {key}` / `DELETE /api/hidden/{key}` (undo). Saved records keep
   hidden items (user assets).
+  **SCHEMA_VERSION 7** (2026-07-24, X source Phase 1) adds three tables, all new (the
+  upgrade is plain `create_tables`, no data migration): `x_tweets` (the tweet archive —
+  author, text, `created_at`, media/metrics/article JSON, `quote_of` self-reference,
+  `rt_of_handle`, and `raw` = bird's entry verbatim, because bird's output tracks X's
+  internal API and is not a stable contract), `x_feed_items` (`(channel_id, tweet_id)` PK
+  — a tweet's appearance in one feed, with the sticky `first_seen_at` sort key and the
+  Phase-4 `verdict` / `verdict_meta` columns; split from the body because one tweet can
+  appear in both For You and a followed account's feed while a verdict only belongs to the
+  For You appearance), and `item_feedback` (source-generic up/down, triple-keyed like
+  `hidden_items`; written from Phase 3 on, created now so data can accumulate).
 
 condenser's peewee models bind to telememo's `db` instance, so everything is one connection.
 `condenser/db.py:init_db()` initializes telememo tables (+ `is_filtered`) then condenser tables.
@@ -62,6 +72,7 @@ condenser's peewee models bind to telememo's `db` instance, so everything is one
 | `records.py` | source-decoupled snapshots into `saved_items.raw_data` keyed by item key: TG = album rows + channel info, HN = story JSON; rendered back into envelopes without source tables |
 | `preview.py` | source-agnostic link previews: fetch a URL (async httpx) + extract metadata (`metadata_parser`), `link_previews` cache, per-message batch w/ Telegram-bonus fill, image fetch for the proxy |
 | `hn.py` | `HNManager` (on `app.state.hn`, peer of `TgManager`): subscription-driven HN front-page sampling loop (`topstories` diff → `hn_stories`, sticky `first_seen_at`, peak_rank, 48h snapshot refresh) + serial rate-limited hckrnews history backfill w/ pending-day set in `app_meta` (`threading.Lock` + per-day read-modify-write — `schedule_backfill` runs on the threadpool while the loop rewrites the set); HTTP via injectable `fetch_json` (tests need no network). Hardened per `kb/plans/2026-07-19-hn-phase1-review-fixes.md`: `_loop` has a catch-all guard (DB errors outside `poll_once`'s try must not kill the task); **null item ≠ dead** — refresh only marks dead on explicit `dead`/`deleted` (Firebase transiently nulls live items), while a *never-seen* front-page id that fetches null gets a dead placeholder row so it isn't re-pulled every round; `kick()` marshals via `call_soon_threadsafe` (no-op before startup / when source disabled). **Link-preview prefetch** (2026-07-20): `_fill_previews` at the tail of `poll_once` sweeps linkable stories without a stored preview newest-first (`CONDENSER_HN_PREVIEW_BATCH`/round, 0=off; covers fresh, backfilled *and* pre-feature rows) through `preview.get_preview` (warming the shared pane cache) into `hn_stories.preview`; ≤3 real attempts per story (`PREVIEW_MAX_ATTEMPTS`) — a still-fresh negative cache entry skips *without* bumping (the 1h neg-TTL < poll interval would otherwise eat every retry), empty-but-ok results are terminal; injectable `fetch_preview` for tests. `routers/hn.py` = `/api/sources/hn/subscriptions*` + `/api/hn/status` (incl. `source_enabled`); POST = subscribe-and-enable (re-enables a paused row, `schedule_backfill` only on first create), POST/PATCH-enable → 503 when `CONDENSER_HN_ENABLED=false`. Multi-source plan Phase 1: `kb/plans/2026-07-19-multi-source-hn.md` |
+| `x.py` | X (Twitter) source, **push model** — the server never talks to X; a local probe (`probe/`) reads the user's logged-in session through the bird CLI and pushes raw JSON. Owns tolerant `parse_tweet` (string ids → int64, legacy `'%a %b %d %H:%M:%S %z %Y'` timestamps, media/metrics/article passthrough, `quotedTweet` → a self-referential archive row, retweets only recoverable as `rt_of_handle` from bird's `RT @x:` text prefix), `ingest_tweets` (idempotent by tweet id: tweet rows refresh so metrics move, feed rows are insert-only so `first_seen_at` stays sticky; embedded quotes use insert-if-absent so a depth-limited copy can't downgrade a richer row; unkeyable entries are counted and dropped, a drifted field is counted *and* stored since `raw` is archived), `probe_config` (subscription-driven, like HN sampling), `_learn_user_identity` (a followed account's numeric `user_id` + display `name` come from its first push — the handle is the subscription key because that is what bird takes, the numeric id is what survives a rename), and `status` (push activity from `app_meta` `x_*` keys). `routers/x.py` = `/api/sources/x/subscriptions*` + `probe-config` + `ingest` (Bearer or cookie — the probe is just a device) + `/api/x/status`; 503 when `CONDENSER_X_ENABLED=false`, 404 on a push to an unknown/paused feed. Plan: `kb/plans/2026-07-24-x-source-local-probe.md` |
 | `tg.py` | `TgManager`: lifecycle (C1), step-login→encrypted storage, realtime ingest, backfill scheduling, subscription orchestration |
 | `auth.py` + `routers/*` | C2 endpoints behind `require_auth` = app-password cookie **or** device Bearer token (`devices` table, sha256 hash only, issued via the web `/authorize` page for the iOS app; management endpoints are cookie-only — see `kb/plans/2026-07-16-mobile-client-api-device-token.md`); `routers/channels.py` = avatar proxy, `routers/preview.py` = link-preview + image proxy; `/api/tg/status` carries `phone` |
 | `app.py` / `__main__.py` | FastAPI factory + lifespan; uvicorn entry; serves a static frontend dir if present via `SPAStaticFiles` (index.html fallback for client routes — `/authorize` cold-load depends on it; unknown `/api/*` still 404) |
@@ -170,6 +181,26 @@ React Router v7, **pnpm**. Backend `app.py` auto-serves `frontend/dist` at `/` i
   back to the media proxy for Telegram-bonus images.
 
 Remaining: Docker multi-stage frontend build + README (spec step 9).
+
+The **X block** on the Subscriptions page (`components/subscriptions/XSection.tsx` +
+`XSubscriptionRow.tsx`, `XGlyph.tsx`) is the source's whole UI in Phase 1: add For You /
+an account by handle, pause, unsubscribe, plus a status line whose job is to reveal that a
+silent feed is the *probe's* fault, not the server's (`last push` / `parse errors`). A user
+feed's `name` stays NULL until the first push teaches it the real display name, so the row
+falls back to `@handle` instead of rendering a placeholder next to the same handle.
+
+## Local probe (`probe/`, monorepo)
+
+Independent uv package (`condenser-probe`) that runs on the user's own machine — the X
+source's fetch half, since X data only exists inside a logged-in browser session. Each
+round: `GET /api/sources/x/probe-config` → `bird home -n N --json` / `bird user-tweets
+<handle> -n N --json` per feed → `POST /api/sources/x/ingest`. **Stateless and
+configless** beyond a server URL + device token (env or
+`~/.config/condenser-probe/config.json`): the feed list lives on the server, and the
+server dedupes by tweet id, so a probe that crashed or slept has nothing to recover. One
+feed's failure never sinks the others (`runner.FeedOutcome`). CLI: `condenser-probe
+check | run | watch --interval`; scheduling is external (launchd example in the package,
+`run` = one round). Tests stub bird + the server, so `uv run pytest` needs no X account.
 
 ## iOS app (`ios/`, monorepo)
 
@@ -365,6 +396,24 @@ excluded server-side from every timeline query, so iOS needs no change to stop s
 hidden items. `lib/linkPreviewPane.tsx` → `lib/itemDetailPane.tsx` (context now carries the
 whole `TimelineItem` envelope). 161 backend + 45 frontend green; screenshots
 `tmp/2026-07-22-item-detail-pane/`.
+**X source Phase 1** (2026-07-24, BDD, plan `kb/plans/2026-07-24-x-source-local-probe.md`):
+schema v7 + `condenser/x.py` + `routers/x.py` + the `probe/` package + the web X block —
+i.e. subscriptions, probe contract, ingest and archive. **Not** in Phase 1: the timeline
+(Phase 2), feedback (3), verdicts (4), iOS (5) — nothing X-shaped reaches a reader surface
+yet, which is the point: deploy now so the archive and the future training data start
+accumulating. Tests use real bird output (`tests/fixtures/x/`, curated by
+`tmp/make_x_fixtures.py` from `tmp/2026-07-24-bird-samples/`); 27 X + 188 backend + 11
+probe + 45 frontend green, plus a live end-to-end run (real bird → probe → ingest) and UI
+screenshots in `tmp/2026-07-24-x-source-phase1/`.
+⚠️ **Measured, and it changes the plan's capacity math: `bird home` re-samples on every
+call.** Three consecutive calls returned 60 distinct tweets with **zero** overlap, so For
+You is a firehose sample, not a stable window — every round ingests ~N brand-new tweets
+(n=50 every 30 min ≈ 2400/day, not the plan's assumed ~500). Consequences to settle before
+Phase 2/4: probe cadence, the reading volume a For You timeline dumps on you, and the
+embedding storage estimate. It also re-validates the `first_seen_at` sort decision (a
+`created_at` sort would splice these into timeline history) and means the *For You* leg of
+ingest idempotency is unobservable in practice (a followed account's feed does repeat and
+correctly reports 0 new).
 Still open: subscription
 "delete-with-messages" option (Q4 / `?purge=1`) and the backfill batch-interval sleep.
 Full checklist: `kb/sessions/2026-06-09-backend-remaining-work.md`.

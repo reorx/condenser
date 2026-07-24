@@ -24,6 +24,7 @@ from .routers import (
     sources,
     subscriptions,
     tg,
+    x,
 )
 from .tg import TgManager
 
@@ -82,6 +83,7 @@ def create_app() -> FastAPI:
     app.include_router(preview.router)
     app.include_router(settings_router.router)
     app.include_router(hn.router)
+    app.include_router(x.router)
     app.include_router(sources.router)
 
     # 4. serve the React build (if present) as static assets at '/'

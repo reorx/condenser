@@ -1,0 +1,145 @@
+[
+  {
+    "id": "2080215574957928545",
+    "text": "这两天在主线工作上的进展给我带来了非常大的成就感。我发现我的语音输入法的效果，虽然原始转录结果已符合标准，但经过 LLM 润色后反而不尽如人意。我判断，问题出在模型与提示词的搭配上。但我并不擅长提示词工程，不想像无头苍蝇一样没有目标地乱试。我寻思，应当把样本数据收集起来，建立一套标准化的评估和迭代体系。只有这样，才可能量化每次改动的效果，把模糊变为确定。\n\n于是我把这个想法和 fable 沟通，让他帮我开发了一个 evaluation 系统(我告诉 fable 要做成 agent native，cli + api 调用，eat your own dogfood)，并把我过往语音转录的 2000 多条音频都收集起来导入进去。随后，我从中挑选了几十条音频人工标注，建立了一个数据集。然后让 fable 基于现在的 prompt 自己开始迭代。让我惊喜的是，只一个上午的时间，达标率（评分大于8）就从一开始的 33% 提高到 67%。当然，最让我高兴的是这套方法的行之有效。我发现，提供一套方法和工具，给定评判的标准，agent 就能持续地循环、迭代，把结果变得越来越好。虽然这和真正的 LLM 训练不能比，但也让我侧面感受到「炼丹」的魅力，好家伙真的有点上瘾的。\n\n现在我在做的，是把数据集细化，分短音频和长音频两种，用两套提示词针对性地迭代，这可以改进只用一个提示词泛用型强而针对性弱的缺点。再之后，准备把 STT 模型的评估也纳入进来，方便我选出最适合产品需求的语音转录模型。",
+    "createdAt": "Thu Jul 23 08:56:56 +0000 2026",
+    "replyCount": 2,
+    "retweetCount": 0,
+    "likeCount": 17,
+    "conversationId": "2080215574957928545",
+    "author": {
+      "username": "novoreorx",
+      "name": "Reorx"
+    },
+    "authorId": "132736859",
+    "media": [
+      {
+        "type": "photo",
+        "url": "https://pbs.twimg.com/media/HN5mJdXakAAaovq.jpg",
+        "width": 2048,
+        "height": 1444,
+        "previewUrl": "https://pbs.twimg.com/media/HN5mJdXakAAaovq.jpg:small"
+      },
+      {
+        "type": "photo",
+        "url": "https://pbs.twimg.com/media/HN5mXU5agAAl6VN.jpg",
+        "width": 2048,
+        "height": 1444,
+        "previewUrl": "https://pbs.twimg.com/media/HN5mXU5agAAl6VN.jpg:small"
+      }
+    ]
+  },
+  {
+    "id": "2079962007248482343",
+    "text": "这是我为自己的运维工作流所量身打造的部署工具 hookploy 的 web UI。最近看到很多人推荐 Openship, 忍不住来说下我的看法。一句话，如果 Openship 早2年出现，那我会毫不犹豫地从 Dokploy, Coolify 等一众竞品中选择它。但现在，时代已经变了，我需要的是 agent-native 的部署体系，GUI 再如何方便、精致，已经跟我没关系了，因为我是给 Agent 下达指令去完成部署、监控、验收的闭环。我唯一需要看的，最多是个只读的 dashboard，这也是 hookploy 已经稳定运行一段时间了，我在闲暇时才给它做 web UI 的原因。\n\n说回正题，我是如何设计自己的部署工作流并开发出 hookploy 这个工具的呢？我在一开始目标就很明确，我要用一个 repo 作为我所有运维体系的 SSOT，也就是 Infrastructure as Code。因为我感觉这种以文本为载体的工具是最适合和 agent 协同工作的方式。我选择了最为熟悉和 boring 的 ansible, 让它接管了新机器 provisioning 和定期维护, nginx/caddy 的路由配置, 和所有服务的 docker compose 配置。没有花很多精力，我就发现 claude code 已经玩转了这套方案，无论是新服务发布，还是老服务的数据迁移、线上 debug，都能精准快速地完成，几乎没有出现需要我人工排查的情况。\n\n至此其实我已经很满足了，但还有最后一步想要优化的地方，那就是当代码 push 后，我不想等着镜像在 CI 构建完成，然后告诉 agent 去发布最新版本，我想让这件事自动发生。最初我用了 adnanh/webhook 一段时间，但它功能太单一了，无法很好地支持多节点服务的触发。另外，我仍然需要为每个服务写触发 webhook 后执行的部署脚本，而它们大多都是重复的。\n\n于是需求就很明确了，我需要一个组件提供中心化的 webhook 入口，用配置文件定义其所管辖的所有服务，每个服务所在的一个或多个服务器上，运行着该组件的边缘节点。当中心节点收到镜像构建完成的通知，会向对应的边缘节点发出指令，让其执行配置文件中所定义的一系列指令，完成服务的更新。\n\n这就是 hookploy 的核心需求，我用 claude code 开发了一个晚上就用它成功迁移了一个简单的线上服务，三天后它已接管我的所有服务成为我的线上运维中心。过段时间我会将其开源，并更新一篇更为详细的使用说明和实战过程。如果你对这种部署方式有兴趣的话请转发或回复，一起探讨 vibe coding 时代独立开发者 devops 最佳实践。",
+    "createdAt": "Wed Jul 22 16:09:21 +0000 2026",
+    "replyCount": 6,
+    "retweetCount": 1,
+    "likeCount": 33,
+    "conversationId": "2079962007248482343",
+    "author": {
+      "username": "novoreorx",
+      "name": "Reorx"
+    },
+    "authorId": "132736859",
+    "media": [
+      {
+        "type": "photo",
+        "url": "https://pbs.twimg.com/media/HN2CIPsaEAAmNSp.jpg",
+        "width": 2048,
+        "height": 1504,
+        "previewUrl": "https://pbs.twimg.com/media/HN2CIPsaEAAmNSp.jpg:small"
+      },
+      {
+        "type": "photo",
+        "url": "https://pbs.twimg.com/media/HN2CKH-bcAANn3-.jpg",
+        "width": 2048,
+        "height": 1539,
+        "previewUrl": "https://pbs.twimg.com/media/HN2CKH-bcAANn3-.jpg:small"
+      },
+      {
+        "type": "photo",
+        "url": "https://pbs.twimg.com/media/HN2CKsyacAAorbe.jpg",
+        "width": 2048,
+        "height": 1539,
+        "previewUrl": "https://pbs.twimg.com/media/HN2CKsyacAAorbe.jpg:small"
+      }
+    ]
+  },
+  {
+    "id": "2079882156525158402",
+    "text": "继续分享最近开发时做的一些周边产出，今天给大家推荐我写的一个工具 + skill: envops\n\nhttps://t.co/0F0h5lpyvI\n\n如果你会使用 agent 来做运维，那么强烈建议你安装 envops, 它会强制 agent 在处理与 env 文件相关的工作时，全部通过 envops cli 进行，使得重要的 secret, key, password 等数据不会暴露给 agent，降低泄露的风险。截图是我从近期的对话中搜索出的对 envops 命令的调用，可以看出 claude code 用得很不错。\n\n在当下开发者越来越多地使用 AI 辅助编程的环境下，env 文件不可避免地需要被读取、修改、复制。即便只是本地开发，也很容易依赖一些线上服务的凭据。Agent 如果仍然使用传统的读写方式，势必造成重要凭据被留在会话记录中，不断增殖，产生更多泄露点。\n\nenvops 实现了一套判断和清洗 secret string 的算法，在向外展示 env 文件内容时，确保凭据主体始终被遮盖。\n\nenvops 提供了下面几个操作指令:\n• show: 打印 env 键值对，如果是凭据类数据，值会被自动清洗并遮盖\n• list-keys: 列出 env 中的 keys, 提供这种低权限细粒度操作会减少 agent 对 show 的依赖\n• copy: 将一个 env 中的特定 键值对复制到另一个 env, 必须显示声明 keys, 或者完整拷贝。支持 ssh 的路径声明语法，把对远端服务器的 env 读取/更新操作封装成一个整体\n• set: 设置 env 中的一个键值对，支持通过管道将其他命令的输出传递过去，这能让 secret 来自其他命令输出时，无须暴露给 agent 或其他进程直接落地到 env 文件\n\n我看到过一些面向 agent 的 secret vault 方案，但总觉得都还是太重了，且它们也无法消除 env 文件的存在，所以探索出了 envops 这种改变 agent 对 env 的根本行为的方式，希望能对各位 vibe coders 开发的安全性起到一些帮助。",
+    "createdAt": "Wed Jul 22 10:52:03 +0000 2026",
+    "replyCount": 4,
+    "retweetCount": 3,
+    "likeCount": 28,
+    "conversationId": "2079882156525158402",
+    "author": {
+      "username": "novoreorx",
+      "name": "Reorx"
+    },
+    "authorId": "132736859",
+    "media": [
+      {
+        "type": "photo",
+        "url": "https://pbs.twimg.com/media/HN05d0EbcAEQeik.jpg",
+        "width": 1464,
+        "height": 868,
+        "previewUrl": "https://pbs.twimg.com/media/HN05d0EbcAEQeik.jpg:small"
+      }
+    ]
+  },
+  {
+    "id": "2079732304914862528",
+    "text": "新增了 HackerNews Top 20 信息源 https://t.co/ONypPaqZBF",
+    "createdAt": "Wed Jul 22 00:56:35 +0000 2026",
+    "replyCount": 2,
+    "retweetCount": 0,
+    "likeCount": 0,
+    "conversationId": "2079732304914862528",
+    "author": {
+      "username": "novoreorx",
+      "name": "Reorx"
+    },
+    "authorId": "132736859",
+    "quotedTweet": {
+      "id": "2077963033142530148",
+      "text": "我做了一个自部署的阅读器，叫 Condenser，可以用 Twitter 的方式刷 Telegram 上关注的频道。刚刚测了下 iOS 版也可以用了。repo 还没有修整，但是非常的 agent native，因此如果你有兴趣的话，直接 clone 下来让你的 agent 来安装部署，应该是完全没问题的\n\nhttps://t.co/OBH3uSbLPS https://t.co/Y1BIvLoNjI",
+      "createdAt": "Fri Jul 17 03:46:08 +0000 2026",
+      "replyCount": 2,
+      "retweetCount": 1,
+      "likeCount": 11,
+      "conversationId": "2077963033142530148",
+      "author": {
+        "username": "novoreorx",
+        "name": "Reorx"
+      },
+      "authorId": "132736859",
+      "media": [
+        {
+          "type": "photo",
+          "url": "https://pbs.twimg.com/media/HNZm5EwaUAEiU5d.jpg",
+          "width": 2048,
+          "height": 1441,
+          "previewUrl": "https://pbs.twimg.com/media/HNZm5EwaUAEiU5d.jpg:small"
+        },
+        {
+          "type": "photo",
+          "url": "https://pbs.twimg.com/media/HNZm6Jdb0AAXPrV.jpg",
+          "width": 942,
+          "height": 2048,
+          "previewUrl": "https://pbs.twimg.com/media/HNZm6Jdb0AAXPrV.jpg:small"
+        }
+      ]
+    },
+    "media": [
+      {
+        "type": "photo",
+        "url": "https://pbs.twimg.com/media/HNyxgDya8AAO0kC.jpg",
+        "width": 945,
+        "height": 2048,
+        "previewUrl": "https://pbs.twimg.com/media/HNyxgDya8AAO0kC.jpg:small"
+      }
+    ]
+  }
+]

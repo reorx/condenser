@@ -6,6 +6,9 @@ timeline where the information source is Telegram channels instead of RSS. See
 
 The repository contains the **backend** (spec Parts A/B/C, FastAPI + Telethon) and the
 **React SPA** (Part D, in `frontend/`). In production a single Docker image serves both.
+Two further sources have since joined Telegram: **Hacker News** (server-side sampling) and
+**X/Twitter**, whose data is pushed in by a local probe — see [`probe/`](./probe/README.md),
+which runs on your own machine because X is only readable from a logged-in session.
 
 ## Architecture
 
