@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from .. import db, records, timeline
 from ..auth import require_auth
 from ..items import ItemKey, parse_key
-from ..types import HideBody, ReadBody, ReadBulkBody, RecordBody
+from ..types import FeedbackBody, HideBody, ReadBody, ReadBulkBody, RecordBody
 
 router = APIRouter(prefix='/api', tags=['reading'], dependencies=[Depends(require_auth)])
 
@@ -91,6 +91,20 @@ def post_hidden(body: HideBody):
 @router.delete('/hidden/{key}')
 def delete_hidden(key: str):
     db.unhide_item(_parse_key_or_422(key))
+    return {'ok': True}
+
+
+@router.post('/feedback')
+def post_feedback(body: FeedbackBody):
+    """Label an item up/down (plan Phase 3). Nothing else happens to it — no verdict,
+    no hiding, no read marker; the label is training data for Phase 4."""
+    db.set_feedback(_parse_key_or_422(body.key), body.verdict)
+    return {'ok': True}
+
+
+@router.delete('/feedback/{key}')
+def delete_feedback(key: str):
+    db.clear_feedback(_parse_key_or_422(key))
     return {'ok': True}
 
 

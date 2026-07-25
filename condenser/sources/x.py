@@ -90,7 +90,8 @@ _COLS = """
     q.id AS q_id, q.author_handle AS q_author_handle, q.author_name AS q_author_name,
     q.text AS q_text, q.created_at AS q_created_at, q.media AS q_media, q.metrics AS q_metrics,
     CASE WHEN ri.ref1 IS NOT NULL THEN 1 ELSE 0 END AS is_read,
-    CASE WHEN si.ref1 IS NOT NULL THEN 1 ELSE 0 END AS is_saved
+    CASE WHEN si.ref1 IS NOT NULL THEN 1 ELSE 0 END AS is_saved,
+    fb.verdict AS feedback
 """
 
 _JOINS = """
@@ -99,6 +100,7 @@ _JOINS = """
     LEFT JOIN read_items ri ON ri.source = 'x' AND ri.ref1 = v.tweet_id
     LEFT JOIN saved_items si ON si.source = 'x' AND si.ref1 = v.tweet_id
     LEFT JOIN hidden_items hd ON hd.source = 'x' AND hd.ref1 = v.tweet_id
+    LEFT JOIN item_feedback fb ON fb.source = 'x' AND fb.ref1 = v.tweet_id
 """
 
 
@@ -163,9 +165,7 @@ def _fetch(
     sort_at: str = SORT_AT_SQL,
 ) -> list[dict]:
     order = 'DESC' if descending else 'ASC'
-    sql = _select(
-        _COLS, scope_where, where, f' ORDER BY v.sort_at {order}, v.tweet_id {order} LIMIT ?', dedup, sort_at
-    )
+    sql = _select(_COLS, scope_where, where, f' ORDER BY v.sort_at {order}, v.tweet_id {order} LIMIT ?', dedup, sort_at)
     cur = tdb.db.execute_sql(sql, (*scope_params, *params, limit))
     columns = [c[0] for c in cur.description]
     return [dict(zip(columns, row)) for row in cur.fetchall()]
@@ -175,7 +175,7 @@ def _to_unit(row: dict) -> SourceUnit:
     pos = pack_pos(row['sort_at'], row['id'])
     return SourceUnit(
         sort_ts=norm_ts(row['sort_at']),
-        envelope=x_envelope(row, bool(row['is_read']), bool(row['is_saved'])),
+        envelope=x_envelope(row, bool(row['is_read']), bool(row['is_saved']), row['feedback']),
         boundary=pos,
         head=pos,
     )
@@ -262,7 +262,9 @@ def unread_counts() -> dict[str, int]:
         return {}
     scope_where, scope_params = _scope_where(channels)
     where, params = _base_where(None, unread_only=True)
-    sql = _select('v.feed, COUNT(*)', scope_where, where, ' GROUP BY v.feed', _dedup_needed(channels), _sort_at(channels))
+    sql = _select(
+        'v.feed, COUNT(*)', scope_where, where, ' GROUP BY v.feed', _dedup_needed(channels), _sort_at(channels)
+    )
     cur = tdb.db.execute_sql(sql, (*scope_params, *params))
     return {row[0]: row[1] for row in cur.fetchall()}
 

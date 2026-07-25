@@ -8,6 +8,7 @@ import type {
   FilterPreviewResult,
   ForwardResult,
   HnStatus,
+  ItemFeedback,
   JoinedChannel,
   KeywordFilter,
   LinkPreview,
@@ -207,6 +208,10 @@ export const api = {
   // ---- hidden items (never show in any timeline again; server-enforced for all clients) ----
   hideItem: (key: string) => post<{ ok: true }>('/api/hidden', { key }),
   unhideItem: (key: string) => del<{ ok: true }>(`/api/hidden/${encodeURIComponent(key)}`),
+
+  // ---- feedback (up/down labels; only recorded, nothing is filtered by them yet) ----
+  setFeedback: (key: string, verdict: ItemFeedback) => post<{ ok: true }>('/api/feedback', { key, verdict }),
+  clearFeedback: (key: string) => del<{ ok: true }>(`/api/feedback/${encodeURIComponent(key)}`),
 
   markReadBulk: (body: {
     channel_id?: number | null;

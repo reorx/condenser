@@ -109,16 +109,21 @@ def _render_tg_display(raw_data: str) -> Optional[dict]:
     return item
 
 
-def render_item(rec: db.SavedItem, read_triples: set[tuple[str, int, int]]) -> Optional[dict]:
+def render_item(
+    rec: db.SavedItem,
+    read_triples: set[tuple[str, int, int]],
+    feedback: Optional[dict[tuple[str, int, int], str]] = None,
+) -> Optional[dict]:
     """Render one saved row into an item envelope (is_saved always True)."""
-    is_read = (rec.source, rec.ref1, rec.ref2) in read_triples
+    triple = (rec.source, rec.ref1, rec.ref2)
+    is_read = triple in read_triples
     if rec.source == 'telegram':
         display = _render_tg_display(rec.raw_data)
         if display is None:
             return None
         return tg_envelope(display, is_read, True)
     if rec.source == 'x':
-        return x_envelope(json.loads(rec.raw_data), is_read, True)
+        return x_envelope(json.loads(rec.raw_data), is_read, True, (feedback or {}).get(triple))
     return hn_envelope(json.loads(rec.raw_data), is_read, True)
 
 
@@ -131,12 +136,26 @@ def _saved_read_triples() -> set[tuple[str, int, int]]:
     return set(cur.fetchall())
 
 
+def _saved_feedback() -> dict[tuple[str, int, int], str]:
+    """Labels for the saved items that have one, batched like the read markers.
+
+    Feedback deliberately stays out of the snapshot: it is live state the user
+    keeps editing, so a record replays the tweet but joins its current label.
+    """
+    cur = tdb.db.execute_sql(
+        'SELECT s.source, s.ref1, s.ref2, f.verdict FROM saved_items s '
+        'JOIN item_feedback f ON f.source = s.source AND f.ref1 = s.ref1 AND f.ref2 = s.ref2'
+    )
+    return {(source, ref1, ref2): verdict for source, ref1, ref2, verdict in cur.fetchall()}
+
+
 def list_rendered_records() -> list[dict]:
     """All saved records rendered from their snapshots, newest first."""
     read_triples = _saved_read_triples()
+    feedback = _saved_feedback()
     out = []
     for rec in db.list_saved_items():
-        rendered = render_item(rec, read_triples)
+        rendered = render_item(rec, read_triples, feedback)
         if rendered is not None:
             out.append(rendered)
     return out

@@ -55,7 +55,9 @@ loop. Shares **one SQLite file** with [telememo](https://pypi.org/project/teleme
   Phase-4 `verdict` / `verdict_meta` columns; split from the body because one tweet can
   appear in both For You and a followed account's feed while a verdict only belongs to the
   For You appearance), and `item_feedback` (source-generic up/down, triple-keyed like
-  `hidden_items`; written from Phase 3 on, created now so data can accumulate).
+  `hidden_items`; **written since Phase 3**, 2026-07-25 — one row per item, so switching
+  sides is a correction and the undo click deletes it. NOT album-expanded, unlike
+  read/hide markers: a label belongs to the display unit the reader judged).
 
 condenser's peewee models bind to telememo's `db` instance, so everything is one connection.
 `condenser/db.py:init_db()` initializes telememo tables (+ `is_filtered`) then condenser tables.
@@ -67,7 +69,7 @@ condenser's peewee models bind to telememo's `db` instance, so everything is one
 | `config.py` / `crypto.py` | env settings; Fernet session encryption + signed cookie from `CONDENSER_SECRET_KEY` |
 | `db.py` | condenser tables (peewee, bound to telememo's db) + CRUD + shared `init_db` |
 | `filters.py` | keyword-filter **materialization** into `messages.is_filtered` (on ingest + rule change) |
-| `items.py` | item keys (`tg:{cid}:{mid}` / `hn:{sid}` / `x:{tweet_id}` ↔ `(source, ref1, ref2)` triple) + the item **envelope** (`{source, key, datetime, is_read, is_saved, telegram\|hn\|x}`) shared by timeline + records; the hn payload carries `preview`; `_json_field` accepts a stored JSON str, an already-parsed value from saved-record replay, or None. The x payload renders snowflake ids as **strings** (int64 exceeds JS's safe range) and nests the quoted tweet; `x_envelope`'s `datetime` is feed-dependent — For You = `first_seen_at`, a followed account = `created_at` |
+| `items.py` | item keys (`tg:{cid}:{mid}` / `hn:{sid}` / `x:{tweet_id}` ↔ `(source, ref1, ref2)` triple) + the item **envelope** (`{source, key, datetime, is_read, is_saved, telegram\|hn\|x}`, plus `feedback` — the reader's own up/down label — on X envelopes, whose join the other sources grow when their UI does) shared by timeline + records; the hn payload carries `preview`; `_json_field` accepts a stored JSON str, an already-parsed value from saved-record replay, or None. The x payload renders snowflake ids as **strings** (int64 exceeds JS's safe range) and nests the quoted tweet; `x_envelope`'s `datetime` is feed-dependent — For You = `first_seen_at`, a followed account = `created_at` |
 | `timeline.py` + `sources/` | **federated timeline merge** (Phase 2): `sources/telegram.py` (the old query — album buffer, unit cursors — unchanged in substance), `sources/x.py` (see the X block below) and `sources/hn.py` (query-time `ROW_NUMBER()` day-rank, display_mode top10/top20/half/all from sub config) each return `SourceUnit` pages; `timeline.py` k-way merges by timestamp with a **composite cursor** `base64(json {source: "ts\x1fid"})` — a source absent from the map = not yet consumed, restarts from its top. `head_cursor`/`end_cursor` are composite too; `query_new` polls per-source anchors (an active source with zero units on page 1 gets a synthetic "now" anchor so its future items still poll). Merge keeps a per-source **floor**: a source drained below `limit` units with `has_more` ends the page early rather than letting older units from other sources jump ahead (album-dense TG pages). Bad/legacy cursors raise `InvalidCursor` → 422. HN unread counts respect the display mode (else the badge never clears) |
 | `records.py` | source-decoupled snapshots into `saved_items.raw_data` keyed by item key: TG = album rows + channel info, HN = story JSON, X = the envelope payload itself (quote already nested); rendered back into envelopes without source tables |
 | `preview.py` | source-agnostic link previews: fetch a URL (async httpx) + extract metadata (`metadata_parser`), `link_previews` cache, per-message batch w/ Telegram-bonus fill, image fetch for the proxy |
@@ -196,6 +198,19 @@ route so each X feed has its own view, and `SidebarXFeedLink` rows. `feed` threa
 endpoints. **For You is not in the aggregate timeline** (capacity decision — see the `x.py`
 row above); its sidebar row is the only way in. Tweet media and author avatars both route
 through backend proxies, so reading a tweet never contacts X from the browser.
+
+**X feedback (Phase 3, 2026-07-25)**: `POST /api/feedback {key, verdict}` /
+`DELETE /api/feedback/{key}` (`routers/reading.py`, next to hide — same triple-keyed
+family) write `item_feedback`; the envelope carries the current label back as
+`feedback`, joined live in `sources/x.py` and, for saved records, batched in
+`records._saved_feedback` (deliberately NOT snapshotted — the label keeps changing
+after the save). Web: `XFeedbackButtons` on the card footer + `useFeedback`. The
+endpoints are source-generic like the table, but only X joins the field today.
+Phase 3 **only records the label** — nothing is hidden, ranked or filtered by it;
+that is Phase 4's verdict, trained on exactly these labels (plus saved items as
+strong positives), which is why followed-account tweets are markable even though
+they will never get a verdict. iOS gets the buttons in Phase 5 with the rest of
+the X surfaces.
 
 ## Local probe (`probe/`, monorepo)
 
@@ -437,6 +452,15 @@ proxied tweet media) with screenshots in `tmp/2026-07-25-x-phase2-timeline/`.
 payloads are optional) but `MessageListView.card(_:)` only dispatches telegram/hn, so a
 followed-account tweet renders as a **blank row**. For You is unaffected (it is never in
 the aggregate). Subscribe to For You only until Phase 5, or accept the blank rows.
+**X source Phase 3 — feedback loop** (2026-07-25, BDD): `/api/feedback` POST/DELETE +
+`db.set_feedback`/`clear_feedback`, the envelope's `feedback` field (X provider join +
+batched records join), `XFeedbackButtons` + `useFeedback` on the web card, and the
+pane's 反馈 row. Deliberately inert: labels are recorded and nothing else changes —
+no verdict, no hiding, no read side effect — so Phase 4 has training data waiting when
+it lands. 11 X-feedback + 223 backend + 58 frontend green, plus a live browser
+walkthrough against the dev backend (label → reload → server state → undo, saved
+view, detail pane, dark mode) in `tmp/2026-07-25-x-phase3-feedback/`. iOS deferred
+to Phase 5 (it can't render X cards yet, so there is nothing to attach buttons to).
 Still open: subscription
 "delete-with-messages" option (Q4 / `?purge=1`) and the backfill batch-interval sleep.
 Full checklist: `kb/sessions/2026-06-09-backend-remaining-work.md`.

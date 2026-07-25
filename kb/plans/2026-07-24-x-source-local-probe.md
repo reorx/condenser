@@ -20,9 +20,9 @@ tags:
 |---|---|---|
 | 1 — probe + ingest + 存档 | ✅ **完成 2026-07-24** | schema v7、`condenser/x.py`、`routers/x.py`、`probe/` 包、web 订阅区块。188 backend（含 27 X）+ 11 probe + 45 frontend 绿；真机端到端 + UI 截图 `tmp/2026-07-24-x-source-phase1/`。会话记录：`kb/sessions/2026-07-24-x-source-phase1-probe-ingest.md` |
 | 2 — timeline 接入 | ✅ **完成 2026-07-25** | `sources/x.py` provider、`items.py` 的 `x_key`/`x_envelope`、`feed` 作用域、`/api/sources` 的 X 分组、X 收藏快照、`/api/x/avatar/{handle}`、web 卡片 + `/s/:source/:feed` 路由。容量策略已定（见下）。211 backend（含 23 X timeline）+ 51 frontend 绿；对本地 dev 后端做了真实端到端（fixture 推送 → 真实 UI），截图 `tmp/2026-07-25-x-phase2-timeline/` |
-| 3 — 反馈闭环 | ⬜ 未开始 | `item_feedback` 表已在 v7 建好，等 API + UI |
-| 4 — Embedding 判定 | ⬜ 未开始 | `x_embeddings` / `x_vec_labeled` 届时才建（SCHEMA_VERSION 8）；存储估算需按新容量重算（见下方修正） |
-| 5 — iOS 适配 | ⬜ 未开始 | Kit 的 `XTweet` payload + envelope 分发 + `XCard`；注意 iOS 也要遵守「For You 不进聚合流」 |
+| 3 — 反馈闭环 | ✅ **完成 2026-07-25**（web；iOS 顺延到 Phase 5） | `/api/feedback` POST/DELETE、envelope 的 `feedback` 字段（timeline provider join + 收藏批量 join）、`XFeedbackButtons` + `useFeedback`、详情面板「反馈」行。11 反馈场景 + 223 backend / 58 frontend 绿 |
+| 4 — Embedding 判定 | ⬜ 未开始 | `x_embeddings` / `x_vec_labeled` 届时才建（SCHEMA_VERSION 8）；存储估算需按新容量重算（见下方修正）。训练数据从 Phase 3 上线起开始积累 |
+| 5 — iOS 适配 | ⬜ 未开始 | Kit 的 `XTweet` payload + envelope 分发 + `XCard` + up/down 按钮（Phase 3 的 iOS 半边并进来）；注意 iOS 也要遵守「For You 不进聚合流」 |
 
 未决问题：
 
@@ -30,6 +30,9 @@ tags:
 2. ~~**作者头像**~~ —— 已定案：unavatar.io 代理（`/api/x/avatar/{handle}`，`fallback=false`），失败回落字母头像。
 3. **旧 raw 的重 parse 回填工具** —— 目前只保证 raw 留底，还没有「格式漂移后按新解析器重刷」的脚本。
 4. **verdict 徽标的 UI 位置**（Phase 4 才需要）—— `XCard` 已经把 `verdict` 透到前端类型里，卡片上还没有呈现位。
+   反馈按钮已占住底栏右侧，徽标大概率落在底栏左侧或作者行末尾，届时一起定。
+5. **标注量什么时候够**（Phase 4 前置）—— Phase 3 已开始攒 `item_feedback`，冷启动闸门的 P/N
+   阈值要等真实标注分布出来才好定；届时先跑一次留一法回测再决定上不上判定。
 
 ## 决策记录
 
@@ -216,11 +219,34 @@ feed 作用域与 handle 归一化、两种排序键、跨 feed 去重、envelop
 被引推不单独成条、read/save/hide 复用通用管道、删档后收藏仍可渲染、聚合「全部已读」
 不动 For You、days/new 的作用域。
 
-## Phase 3 — 反馈闭环（web + iOS）⬜ —— `item_feedback` 表已在 v7 就位
+## Phase 3 — 反馈闭环 ✅ 已完成 2026-07-25（web；iOS 顺延到 Phase 5）
 
-- `POST /api/feedback {key, verdict: "up"|"down"}` / `DELETE /api/feedback/{key}`（撤销）。
-- web：X 卡片上 thumb up/down（**所有 X 推文均可标注**，高亮已选态，可撤销）；iOS 同步。
-- 反馈只是写 `item_feedback`，本 phase 不做任何判定。
+- ✓ `POST /api/feedback {key, verdict: "up"|"down"}` / `DELETE /api/feedback/{key}`（撤销）。
+  落在 `routers/reading.py`（与 hidden 同一族：都是三元组标记），`verdict` 用 `Literal` 卡
+  在入口（非法值 422）。**一条目一行**：up→down 是改正不是第二个标签，撤销即删行。
+- ✓ web：X 卡片底部的 thumb up/down（**所有 X 推文均可标注**，高亮已选态，再点一次撤销），
+  即使 bird 没给 metrics 也照常出现（底栏改为常驻）。详情面板加「反馈」行。
+- ✓ 反馈只写 `item_feedback`，本 phase 不做任何判定：不隐藏、不改已读、不影响排序——
+  有一条专门的测试盯着这件事，因为 Phase 4 之前任何「自动动作」都是在没有信任基础时越权。
+- △ **状态要能回到读者眼前**，所以 envelope 加了 `feedback` 字段：timeline 走 provider 的
+  `LEFT JOIN item_feedback`，收藏走 `records._saved_feedback` 的批量 join。
+  **反馈刻意不进快照**——它是用户随时会改的活状态，快照只冻结推文本体。
+- △ 端点是源通用的（表本来就是），但**只有 X 的 envelope 暴露 `feedback`**：别的源等它们
+  自己的 UI 长出按钮时再加 join。字段「缺席」不等于「谎报 null」。
+- △ 与 `hidden_items` / `read_items` 不同，反馈**不做相册展开**：标签属于用户实际判断的那个
+  展示单元，而且今天只有无相册概念的 X 在写。
+- △ iOS 顺延：`MessageListView.card(_:)` 还不认 X 条目（见 Phase 2 的空窗说明），没有卡片可
+  挂按钮，所以 Phase 3 的 iOS 半边并进 Phase 5 一起做。
+
+测试：`tests/test_x_feedback.py`（11 场景）+ `XFeedbackButtons.test.tsx`（5）+ `XCard.test.tsx`
+新增 2 条。223 backend / 58 frontend 绿。关键场景：envelope 回传标签、切换只留一行、重复提交
+幂等、撤销、关注人 feed 也可标注（聚合流里同样带标签）、**反馈不隐藏/不标已读/不产生 verdict**、
+收藏项带标签且删档后仍在、非法 key/verdict 422、无凭据 401。
+
+真机走查（本地 dev 后端 + 真实 bird 数据）：点赞 → 刷新 → 服务端状态 → 撤销、收藏视图、
+详情面板、暗色 + 关注人 feed，截图与说明见 `tmp/2026-07-25-x-phase3-feedback/`。
+走查中发现并修掉一个视觉 bug：`hover:text-accent-foreground` 会盖掉选中色，悬停已选中的
+拇指会变黑——hover 文字色改成「仅未选中时生效」。
 
 ## Phase 4 — Embedding 判定 ⬜
 

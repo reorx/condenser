@@ -94,6 +94,8 @@ export function ItemDetailInfo({ item, sub }: Props) {
         {tweet.quote && <DetailRow label="引用">@{tweet.quote.author_handle ?? '未知'}</DetailRow>}
         {tweet.reply_to_id && <DetailRow label="回复">该推文是一条回复</DetailRow>}
         {tweet.media && tweet.media.length > 0 && <DetailRow label="媒体">{tweet.media.length} 项</DetailRow>}
+        {/* The reader's own label (Phase 3) — shown as a fact here; the card owns the buttons. */}
+        {item.feedback && <DetailRow label="反馈">{item.feedback === 'up' ? '赞' : '踩'}</DetailRow>}
         {tweet.verdict && <DetailRow label="判定">{tweet.verdict}</DetailRow>}
         <DetailRow label="条目 ID">{item.key}</DetailRow>
       </dl>

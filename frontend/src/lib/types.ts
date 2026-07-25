@@ -150,6 +150,11 @@ export interface XTweet {
   verdict_meta: Record<string, unknown> | null;
 }
 
+/** The reader's own up/down label on an item (plan Phase 3) — the training signal
+ *  Phase 4's verdict classifier learns from. Stored source-generically, exposed on
+ *  X envelopes only until another source grows the buttons. */
+export type ItemFeedback = 'up' | 'down';
+
 /** Multi-source item envelope: exactly one of `telegram` / `hn` / `x` is present. */
 export interface TimelineItem {
   source: Source;
@@ -160,6 +165,8 @@ export interface TimelineItem {
   datetime: string;
   is_read: boolean;
   is_saved: boolean;
+  /** Absent on sources that don't expose feedback yet; null = unlabeled. */
+  feedback?: ItemFeedback | null;
   telegram?: DisplayMessage;
   hn?: HnStory;
   x?: XTweet;

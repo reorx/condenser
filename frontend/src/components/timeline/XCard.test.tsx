@@ -101,6 +101,20 @@ describe('XCard', () => {
     expect(screen.getByText('quoted words')).toBeInTheDocument();
   });
 
+  it('offers up/down feedback on every tweet, highlighting the chosen side', () => {
+    const item = makeItem();
+    wrap(<XCard item={{ ...item, feedback: 'up' }} />);
+
+    expect(screen.getByLabelText('More like this')).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByLabelText('Less like this')).toHaveAttribute('aria-pressed', 'false');
+  });
+
+  it('keeps the feedback buttons when bird sent no metrics', () => {
+    wrap(<XCard item={makeItem({ metrics: null })} />);
+
+    expect(screen.getByLabelText('More like this')).toBeInTheDocument();
+  });
+
   it('renders an X article as a titled card (bird only exposes title + preview text)', () => {
     wrap(
       <XCard

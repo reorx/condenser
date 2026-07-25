@@ -732,6 +732,40 @@ def unhide_item(k: ItemKey) -> None:
         ).execute()
 
 
+# --- item feedback (explicit up/down; Phase 4's training signal) --------------
+
+FEEDBACK_VERDICTS = ('up', 'down')
+
+
+def set_feedback(k: ItemKey, verdict: str) -> None:
+    """Label an item up or down; one row per item, so switching sides is a correction.
+
+    Source-generic by table design (X in v1, HN whenever its UI grows buttons).
+    Unlike read/hide markers this is NOT album-expanded: a label belongs to the
+    display unit the user actually judged, and only X — which has no albums —
+    writes it today.
+    """
+    now = _now()
+    ItemFeedback.insert(source=k.source, ref1=k.ref1, ref2=k.ref2, verdict=verdict, created_at=now).on_conflict(
+        conflict_target=[ItemFeedback.source, ItemFeedback.ref1, ItemFeedback.ref2],
+        update={ItemFeedback.verdict: verdict, ItemFeedback.created_at: now},
+    ).execute()
+
+
+def clear_feedback(k: ItemKey) -> None:
+    """Remove an item's label (the undo click); idempotent."""
+    ItemFeedback.delete().where(
+        (ItemFeedback.source == k.source) & (ItemFeedback.ref1 == k.ref1) & (ItemFeedback.ref2 == k.ref2)
+    ).execute()
+
+
+def get_feedback(source: str, ref1: int, ref2: int = 0) -> Optional[str]:
+    row = ItemFeedback.get_or_none(
+        (ItemFeedback.source == source) & (ItemFeedback.ref1 == ref1) & (ItemFeedback.ref2 == ref2)
+    )
+    return row.verdict if row else None
+
+
 # --- saved items (user assets, source-decoupled) -----------------------------
 
 

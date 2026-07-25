@@ -195,12 +195,17 @@ def x_payload(row: dict) -> dict:
     }
 
 
-def x_envelope(row: dict, is_read: bool, is_saved: bool) -> dict:
+def x_envelope(row: dict, is_read: bool, is_saved: bool, feedback: Optional[str] = None) -> dict:
     """Wrap a tweet row/payload into the item envelope.
 
     The sort timestamp is feed-dependent: For You uses ``first_seen_at`` (the
     algorithm resurfaces days-old tweets, and ``created_at`` would splice those
     into timeline history), a followed account uses the tweet's own time.
+
+    ``feedback`` ('up' / 'down' / None) is the reader's own label from
+    ``item_feedback``. It sits at the envelope level, not inside the payload,
+    because the table is source-generic like read/saved/hidden — the field
+    appears on the other sources' envelopes when their UI grows the buttons.
     """
     payload = x_payload(row)
     if payload['feed_kind'] == 'home':
@@ -213,5 +218,6 @@ def x_envelope(row: dict, is_read: bool, is_saved: bool) -> dict:
         'datetime': dt,
         'is_read': is_read,
         'is_saved': is_saved,
+        'feedback': feedback,
         'x': payload,
     }

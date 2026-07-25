@@ -1,6 +1,6 @@
 """API request/response models."""
 
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -108,6 +108,13 @@ class HideBody(BaseModel):
     """Item key to hide from every timeline surface."""
 
     key: str
+
+
+class FeedbackBody(BaseModel):
+    """Explicit up/down on an item — the label Phase 4's classifier trains on."""
+
+    key: str
+    verdict: Literal['up', 'down']
 
 
 class ForwardMessageBody(BaseModel):

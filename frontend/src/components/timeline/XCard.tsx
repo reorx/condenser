@@ -15,6 +15,7 @@ import { useUnreadIndicator } from '@/lib/unreadIndicator';
 import { cn } from '@/lib/utils';
 import type { ReadTarget, TimelineItem, XTweet } from '@/lib/types';
 
+import { XFeedbackButtons } from './XFeedbackButtons';
 import { XMedia } from './XMedia';
 import { XQuoteCard } from './XQuoteCard';
 
@@ -156,13 +157,18 @@ function XCardImpl({ item, observe }: Props) {
       {tweet.media && tweet.media.length > 0 && <XMedia items={tweet.media} />}
       {tweet.quote && <XQuoteCard quote={tweet.quote} />}
 
-      {metrics && (
-        <div className="mt-2 flex items-center gap-4 text-xs text-muted-foreground">
-          <MetricChip icon={<Heart className="size-3.5" />} value={metrics.like_count} />
-          <MetricChip icon={<Repeat2 className="size-3.5" />} value={metrics.retweet_count} />
-          <MetricChip icon={<MessageCircle className="size-3.5" />} value={metrics.reply_count} />
-        </div>
-      )}
+      {/* The tweet's own numbers on the left, the reader's verdict on the right —
+          feedback is always offered, even when bird sent no metrics. */}
+      <div className="mt-2 flex items-center gap-4 text-xs text-muted-foreground">
+        {metrics && (
+          <>
+            <MetricChip icon={<Heart className="size-3.5" />} value={metrics.like_count} />
+            <MetricChip icon={<Repeat2 className="size-3.5" />} value={metrics.retweet_count} />
+            <MetricChip icon={<MessageCircle className="size-3.5" />} value={metrics.reply_count} />
+          </>
+        )}
+        <XFeedbackButtons itemKey={item.key} feedback={item.feedback} className="ml-auto" />
+      </div>
     </article>
   );
 }
