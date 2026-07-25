@@ -90,6 +90,14 @@ final class ReaderSession {
         return store
     }
 
+    /// 订阅 tab push 进来的单个 X feed（For You 或某个关注人）；
+    /// For You 只能从这里进——它不在聚合流里
+    func makeXStore(feed: String) -> TimelineStore {
+        let store = TimelineStore(api: api, source: SourceID.x, feed: feed)
+        store.onUnauthorized = onUnauthorized
+        return store
+    }
+
     /// 信源/订阅数据源；成功后落快照，冷启动先用快照渲染
     func loadSources() async {
         do {
@@ -108,6 +116,10 @@ final class ReaderSession {
 
     var hnSubs: [SourceSub] {
         sources.first { $0.source == SourceID.hn }?.subscriptions ?? []
+    }
+
+    var xSubs: [SourceSub] {
+        sources.first { $0.source == SourceID.x }?.subscriptions ?? []
     }
 
     func telegramSub(for channelID: Int) -> SourceSub? {

@@ -22,7 +22,7 @@ tags:
 | 2 — timeline 接入 | ✅ **完成 2026-07-25** | `sources/x.py` provider、`items.py` 的 `x_key`/`x_envelope`、`feed` 作用域、`/api/sources` 的 X 分组、X 收藏快照、`/api/x/avatar/{handle}`、web 卡片 + `/s/:source/:feed` 路由。容量策略已定（见下）。211 backend（含 23 X timeline）+ 51 frontend 绿；对本地 dev 后端做了真实端到端（fixture 推送 → 真实 UI），截图 `tmp/2026-07-25-x-phase2-timeline/` |
 | 3 — 反馈闭环 | ✅ **完成 2026-07-25**（web；iOS 顺延到 Phase 5） | `/api/feedback` POST/DELETE、envelope 的 `feedback` 字段（timeline provider join + 收藏批量 join）、`XFeedbackButtons` + `useFeedback`、详情面板「反馈」行。11 反馈场景 + 223 backend / 58 frontend 绿 |
 | 4 — Embedding 判定 | ✅ **完成 2026-07-25**（管线；准确率待回测） | schema v8（`x_embeddings` + `x_vec_labeled`）、`vectors.py` / `embedding.py` / `verdict.py`、`XVerdictBadge` + `XVerdictDetail` + 订阅页判定状态行、`scripts/x_verdict_backtest.py`。32 判定场景 + 254 backend / 64 frontend 绿；真实 DashScope 端到端 + 截图 `tmp/2026-07-25-x-phase4-verdict/`。⚠️ **分类质量未验证**：Phase 3 当天才上线，真实标注量 ≈ 0，生产闸门（20/20）会让所有 verdict 保持 null，直到你标够为止 |
-| 5 — iOS 适配 | ⬜ 未开始 | Kit 的 `XTweet` payload + envelope 分发 + `XCard` + up/down 按钮（Phase 3 的 iOS 半边并进来）；注意 iOS 也要遵守「For You 不进聚合流」 |
+| 5 — iOS 适配 | ✅ **完成 2026-07-25** | Kit 的 `XTweet` payload 家族 + envelope 的 `feedback` + `feed` 作用域 + 反馈 API；App 的 `XCard` / `XDetailSheet` / `XFeedTimelineScreen`（For You 唯一入口）/ 判定徽标与证据。41 个新 Kit 场景（共 161）+ 256 backend 绿；模拟器走查（真实 bird 数据 + 真实判定）截图 `tmp/2026-07-25-x-phase5-ios/` |
 
 未决问题：
 
@@ -36,7 +36,10 @@ tags:
    在那之前所有常量都是占位值。
 6. **判定文案的语言**（实现期出现的小分歧）—— 卡片徽标用英文（"Recommended" / "Likely not for
    you"，与 `XCard` 其余文案一致），详情面板用中文（与 `ItemDetailPane` 一致）。如果觉得徽标也该
-   中文化，改 `XVerdictBadge` 的 `STYLES` 即可。
+   中文化，改 `XVerdictBadge` 的 `STYLES` 即可。**iOS 沿用了同一分工**（`XCard` 的
+   `XVerdictBadge` 英文、`XDetailSheet` 中文），所以要改就两端一起改。
+7. **iOS 的 X 只读**（Phase 5 实现期确认）—— 订阅的增删改仍然只在 web；iOS 只读这条
+   既有约定没有为 X 破例，probe 状态 / 判定闸门倒计时也只在 web 的订阅页有。
 
 ## 决策记录
 
@@ -492,17 +495,57 @@ async def embed_texts(texts: list[str]) -> list[list[float]]:
 - UI：**verdict 徽标 only**（决策：先打标不隐藏）。negative 折叠/服务端过滤、positive 高亮/置顶，作为观察准确率之后的后续迭代，届时的纠错动作（对误判推文点 up/down）天然反哺标注集。
 - 回测脚本：拿 Phase 1-3 攒下的标注做留一验证，上线前先看准确率数字。
 
-## Phase 5 — iOS 完整适配 ⬜
+## Phase 5 — iOS 完整适配 ✅ 已完成 2026-07-25
 
-- Kit：`XTweet` payload model + fixture、envelope 分发、feedback API。
-- App：`XCard` / detail sheet、up/down 按钮、源切换菜单与订阅页出现 X、verdict 徽标。
-- App 也要遵守「For You 不进聚合流」：源切换菜单里 X 的两级（源 / 各 feed）才是 For You 的入口。
+Phase 2 留下的空窗（X 条目在 iOS 聚合流里渲染成**空白行**）随本 phase 关闭。
 
-⚠️ **Phase 2 部署后、Phase 5 之前的空窗**：iOS 的 `TimelineItem.source` 是普通 String、
-payload 字段可选，所以 X 条目**不会炸解码**；但 `MessageListView.card(_:)` 的分发只认
-`telegram` / `hn`，X 条目会渲染成**空白行**。影响范围仅限「关注人 feed」——For You 本来
-就不进聚合流。规避办法：Phase 5 之前先只订阅 For You（web 上照常读 `/s/x/foryou`），
-或者接受 iOS 上的空白行。要提前消掉，最小改动是在 iOS 侧过滤掉 payload 全空的条目。
+### Kit（✓ = 与计划一致，△ = 实现期调整）
+
+- ✓ `XTweet` payload 家族（`XMediaItem` / `XMetrics` / `XArticle` / `XQuote` /
+  `XVerdict` + `XVerdictMeta` + `XVerdictNeighbor`）+ envelope 的 `x`；fixture 由
+  `tmp/make_ios_fixtures.py x` 从 dev DB 生成真实 JSON（`timeline_page_x` /
+  `x_shapes` 每种形态一份 / `x_record` 收藏快照）。
+- △ **`feedback` 是 envelope 级字段**（`ItemFeedback`），不是 X payload 里的——表是源通用的，
+  别的源长出按钮时直接接上。
+- △ **`feed` 作用域贯穿 Kit**：`TimelineStore` / `NewContentChecker` / `timeline` /
+  `timeline/new` 都多一个参数。计划里没预见到 iOS 也需要它——X 是第一个「一个信源多个
+  feed」的源，HN 只有 `front`、TG 用 channel_id。
+- △ **卡片的纯文本逻辑放在 Kit 而不是 View**（`XTweet.bodyText` 剥 RT 前缀 / 丢掉与长文
+  标题重复的正文、`displayName`、`tweetURL` / `profileURL`、`photos`），这样它们进得了
+  单测——分层规则本来就是「纯逻辑归 Kit」。
+- △ **未知值降级而不是解码失败**：`XVerdict` / `ItemFeedback` 都有 `other`
+  兜底（沿用 `ReactionCount.Kind` 的先例）。后端先长出新判定值时，旧 app 少画一个徽标，
+  而不是整页 timeline 炸掉。
+- ✓ `setFeedback` / `clearFeedback` + 两个 store 的乐观切换（点亮着的那一侧 = 撤销），
+  失败回滚到点击前的标签。
+
+### App
+
+- ✓ `XCard`（+ `XQuoteCard` / `XMediaView` / `XMediaThumb` / `XAvatarView` / `XGlyph` /
+  `XVerdictBadge` / `XFeedbackButtons`）与 `XDetailSheet`。
+- △ **判定证据在详情里用中文展开**（打分、近邻的 handle + 距离、`model@dims`），卡片徽标
+  沿用 web 的英文——与未决问题 6 的分工一致。neutral 卡片上不画、详情里写「未表态」：
+  你专门点进来问「它怎么看这条」时，「没表态」本身就是答案。
+- ✓ 订阅 tab 的 X 分组 → `XFeedTimelineScreen`（feed 作用域 store）。**For You 不进聚合流**
+  这条在 iOS 上是服务端保证的，客户端只是没有别的入口。
+- △ `ImageViewerItem` 泛化成 `ViewerPhoto`（`.telegram(cid,mid)` / `.proxied(url)`）——
+  TG 媒体按消息寻址，推文媒体是原始 URL 走 `/api/preview/image`；两者都带 Bearer，
+  客户端从不直连 X。
+- △ `TruncatableText` 从 `MessageCard` 里解除 private，TG / X 共用同一套 8 行截断 + more。
+
+### 测试与走查
+
+`XSourceTests`（模型解码 12 + 卡片文本 8 + 资源 URL 2 + feed/反馈 5）+ `APIClientTests`
+新增 2，共 161 Kit 场景绿，256 backend 绿。模拟器走查连本地 dev 后端（真实 bird 数据 +
+真实 DashScope 判定）：For You / 关注人 feed / 订阅页 X 分组 / 判定证据 / 反馈读回 /
+收藏 / 暗色，截图与说明 `tmp/2026-07-25-x-phase5-ios/`。
+
+△ **走查手段的限制值得记下来**：本机模拟器窗口拿不到 `System Events` 句柄，合成点击
+无从下手，所以「点拇指」这一下没法真点。写入路径拆成两段验证——按钮→store→API 由 Kit
+行为测试盯，API→服务端→读回渲染用 app 同一个 device token curl 打标后重启 app 看渲染。
+为此给 debug 深链补了 `x[/<feed>]`、`detail/x/<feed>[/<id>]`（X 条目要单独查一次网络，
+因为 For You 根本不在 `reader.timeline.items` 里）和 `tab/subs/<source>`（订阅列表已经
+一屏放不下）。
 
 ## 风险
 

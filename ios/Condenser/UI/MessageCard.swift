@@ -91,8 +91,8 @@ struct MessageCard: View {
 }
 
 /// 8 行截断正文：隐藏的不限行副本测高判断是否截断，截断时末尾追加蓝色 more；
-/// 链接高亮、可直接点击（由列表层的 openURL 环境接管）。
-private struct TruncatableText: View {
+/// 链接高亮、可直接点击（由列表层的 openURL 环境接管）。TG 与 X 卡片共用。
+struct TruncatableText: View {
     let text: String
 
     @State private var limitedHeight: CGFloat = 0

@@ -1,0 +1,612 @@
+{
+  "foryou": {
+    "source": "x",
+    "key": "x:2080557548659441713",
+    "datetime": "2026-07-24T16:50:33Z",
+    "is_read": true,
+    "is_saved": false,
+    "feedback": null,
+    "x": {
+      "id": "2080557548659441713",
+      "author_id": "6611142",
+      "author_handle": "JacyL4",
+      "author_name": "飞斯",
+      "text": "但是搞agent工程不得不拥抱混乱，这种一边疯狂扩展，一边秩序落成的工作方法非常折磨也非常有趣。某种意义上，这是一种本该在年轻阶段自然形成的探索韧性，只是 AI 时代又迫使已经建立方法论的人，重新学习如何在混乱中成长。",
+      "created_at": "2026-07-24T07:35:49Z",
+      "first_seen_at": "2026-07-24T16:50:33Z",
+      "media": null,
+      "metrics": {
+        "reply_count": 0,
+        "retweet_count": 0,
+        "like_count": 0
+      },
+      "quote": null,
+      "rt_of_handle": null,
+      "reply_to_id": null,
+      "article": null,
+      "feed": "foryou",
+      "feed_kind": "home",
+      "verdict": "negative",
+      "verdict_meta": {
+        "score": -1.0,
+        "neighbors": [
+          {
+            "tweet_id": "2080526422410752155",
+            "distance": 0.5819,
+            "label": "down",
+            "handle": "NiallxYoung"
+          }
+        ],
+        "model": "text-embedding-v4@256",
+        "algo": "knn-v1"
+      }
+    }
+  },
+  "verdict": {
+    "source": "x",
+    "key": "x:2080557548659441713",
+    "datetime": "2026-07-24T16:50:33Z",
+    "is_read": true,
+    "is_saved": false,
+    "feedback": null,
+    "x": {
+      "id": "2080557548659441713",
+      "author_id": "6611142",
+      "author_handle": "JacyL4",
+      "author_name": "飞斯",
+      "text": "但是搞agent工程不得不拥抱混乱，这种一边疯狂扩展，一边秩序落成的工作方法非常折磨也非常有趣。某种意义上，这是一种本该在年轻阶段自然形成的探索韧性，只是 AI 时代又迫使已经建立方法论的人，重新学习如何在混乱中成长。",
+      "created_at": "2026-07-24T07:35:49Z",
+      "first_seen_at": "2026-07-24T16:50:33Z",
+      "media": null,
+      "metrics": {
+        "reply_count": 0,
+        "retweet_count": 0,
+        "like_count": 0
+      },
+      "quote": null,
+      "rt_of_handle": null,
+      "reply_to_id": null,
+      "article": null,
+      "feed": "foryou",
+      "feed_kind": "home",
+      "verdict": "negative",
+      "verdict_meta": {
+        "score": -1.0,
+        "neighbors": [
+          {
+            "tweet_id": "2080526422410752155",
+            "distance": 0.5819,
+            "label": "down",
+            "handle": "NiallxYoung"
+          }
+        ],
+        "model": "text-embedding-v4@256",
+        "algo": "knn-v1"
+      }
+    }
+  },
+  "verdict_negative": {
+    "source": "x",
+    "key": "x:2080557548659441713",
+    "datetime": "2026-07-24T16:50:33Z",
+    "is_read": true,
+    "is_saved": false,
+    "feedback": null,
+    "x": {
+      "id": "2080557548659441713",
+      "author_id": "6611142",
+      "author_handle": "JacyL4",
+      "author_name": "飞斯",
+      "text": "但是搞agent工程不得不拥抱混乱，这种一边疯狂扩展，一边秩序落成的工作方法非常折磨也非常有趣。某种意义上，这是一种本该在年轻阶段自然形成的探索韧性，只是 AI 时代又迫使已经建立方法论的人，重新学习如何在混乱中成长。",
+      "created_at": "2026-07-24T07:35:49Z",
+      "first_seen_at": "2026-07-24T16:50:33Z",
+      "media": null,
+      "metrics": {
+        "reply_count": 0,
+        "retweet_count": 0,
+        "like_count": 0
+      },
+      "quote": null,
+      "rt_of_handle": null,
+      "reply_to_id": null,
+      "article": null,
+      "feed": "foryou",
+      "feed_kind": "home",
+      "verdict": "negative",
+      "verdict_meta": {
+        "score": -1.0,
+        "neighbors": [
+          {
+            "tweet_id": "2080526422410752155",
+            "distance": 0.5819,
+            "label": "down",
+            "handle": "NiallxYoung"
+          }
+        ],
+        "model": "text-embedding-v4@256",
+        "algo": "knn-v1"
+      }
+    }
+  },
+  "media": {
+    "source": "x",
+    "key": "x:2080526422410752155",
+    "datetime": "2026-07-24T16:50:33Z",
+    "is_read": true,
+    "is_saved": false,
+    "feedback": "down",
+    "x": {
+      "id": "2080526422410752155",
+      "author_id": "1511658122149961730",
+      "author_handle": "NiallxYoung",
+      "author_name": "🍙fan",
+      "text": "Typora 团队设计的这个终端是真的好看啊 https://t.co/WSPyt3I6Qw",
+      "created_at": "2026-07-24T05:32:08Z",
+      "first_seen_at": "2026-07-24T16:50:33Z",
+      "media": [
+        {
+          "type": "photo",
+          "url": "https://pbs.twimg.com/media/HN-DsmubEAAKu_-.jpg",
+          "width": 2048,
+          "height": 1350,
+          "previewUrl": "https://pbs.twimg.com/media/HN-DsmubEAAKu_-.jpg:small"
+        }
+      ],
+      "metrics": {
+        "reply_count": 16,
+        "retweet_count": 5,
+        "like_count": 82
+      },
+      "quote": null,
+      "rt_of_handle": null,
+      "reply_to_id": null,
+      "article": null,
+      "feed": "foryou",
+      "feed_kind": "home",
+      "verdict": null,
+      "verdict_meta": null
+    }
+  },
+  "feedback": {
+    "source": "x",
+    "key": "x:2080526422410752155",
+    "datetime": "2026-07-24T16:50:33Z",
+    "is_read": true,
+    "is_saved": false,
+    "feedback": "down",
+    "x": {
+      "id": "2080526422410752155",
+      "author_id": "1511658122149961730",
+      "author_handle": "NiallxYoung",
+      "author_name": "🍙fan",
+      "text": "Typora 团队设计的这个终端是真的好看啊 https://t.co/WSPyt3I6Qw",
+      "created_at": "2026-07-24T05:32:08Z",
+      "first_seen_at": "2026-07-24T16:50:33Z",
+      "media": [
+        {
+          "type": "photo",
+          "url": "https://pbs.twimg.com/media/HN-DsmubEAAKu_-.jpg",
+          "width": 2048,
+          "height": 1350,
+          "previewUrl": "https://pbs.twimg.com/media/HN-DsmubEAAKu_-.jpg:small"
+        }
+      ],
+      "metrics": {
+        "reply_count": 16,
+        "retweet_count": 5,
+        "like_count": 82
+      },
+      "quote": null,
+      "rt_of_handle": null,
+      "reply_to_id": null,
+      "article": null,
+      "feed": "foryou",
+      "feed_kind": "home",
+      "verdict": null,
+      "verdict_meta": null
+    }
+  },
+  "feedback_down": {
+    "source": "x",
+    "key": "x:2080526422410752155",
+    "datetime": "2026-07-24T16:50:33Z",
+    "is_read": true,
+    "is_saved": false,
+    "feedback": "down",
+    "x": {
+      "id": "2080526422410752155",
+      "author_id": "1511658122149961730",
+      "author_handle": "NiallxYoung",
+      "author_name": "🍙fan",
+      "text": "Typora 团队设计的这个终端是真的好看啊 https://t.co/WSPyt3I6Qw",
+      "created_at": "2026-07-24T05:32:08Z",
+      "first_seen_at": "2026-07-24T16:50:33Z",
+      "media": [
+        {
+          "type": "photo",
+          "url": "https://pbs.twimg.com/media/HN-DsmubEAAKu_-.jpg",
+          "width": 2048,
+          "height": 1350,
+          "previewUrl": "https://pbs.twimg.com/media/HN-DsmubEAAKu_-.jpg:small"
+        }
+      ],
+      "metrics": {
+        "reply_count": 16,
+        "retweet_count": 5,
+        "like_count": 82
+      },
+      "quote": null,
+      "rt_of_handle": null,
+      "reply_to_id": null,
+      "article": null,
+      "feed": "foryou",
+      "feed_kind": "home",
+      "verdict": null,
+      "verdict_meta": null
+    }
+  },
+  "verdict_neutral": {
+    "source": "x",
+    "key": "x:2080496148192919869",
+    "datetime": "2026-07-24T16:50:33Z",
+    "is_read": true,
+    "is_saved": false,
+    "feedback": null,
+    "x": {
+      "id": "2080496148192919869",
+      "author_id": "42320751",
+      "author_handle": "onevcat",
+      "author_name": "onevcat",
+      "text": "@tualatrix spike first development",
+      "created_at": "2026-07-24T03:31:50Z",
+      "first_seen_at": "2026-07-24T16:50:33Z",
+      "media": null,
+      "metrics": {
+        "reply_count": 1,
+        "retweet_count": 0,
+        "like_count": 0
+      },
+      "quote": null,
+      "rt_of_handle": null,
+      "reply_to_id": "2080481666305593363",
+      "article": null,
+      "feed": "foryou",
+      "feed_kind": "home",
+      "verdict": "neutral",
+      "verdict_meta": {
+        "score": -0.0424,
+        "neighbors": [
+          {
+            "tweet_id": "2080526422410752155",
+            "distance": 0.5518,
+            "label": "down",
+            "handle": "NiallxYoung"
+          },
+          {
+            "tweet_id": "2080441004881215520",
+            "distance": 0.5883,
+            "label": "up",
+            "handle": "lawrencecchen"
+          }
+        ],
+        "model": "text-embedding-v4@256",
+        "algo": "knn-v1"
+      }
+    }
+  },
+  "quote": {
+    "source": "x",
+    "key": "x:2080466972039622848",
+    "datetime": "2026-07-24T16:50:33Z",
+    "is_read": true,
+    "is_saved": false,
+    "feedback": null,
+    "x": {
+      "id": "2080466972039622848",
+      "author_id": "22606322",
+      "author_handle": "jonnygravity",
+      "author_name": "Jonny Gravity",
+      "text": "I've certainly looked to t3code for inspiration on occasion... but atrium's sidebar was an innovation it's had since the very, very early days.\n\nDismiss - shuts down, releases resources, and bumps it to the \"Dismissed\" section\nLater - drops it to the bottom of the Waiting section\nClose - completely closes the session\n\nAnd the next gen of this experience I'm cooking up right now is going to be 1000x more badass.\n\nKeep an eye out ;)",
+      "created_at": "2026-07-24T01:35:53Z",
+      "first_seen_at": "2026-07-24T16:50:33Z",
+      "media": [
+        {
+          "type": "video",
+          "url": "https://pbs.twimg.com/amplify_video_thumb/2080466475857436672/img/ut18eoeksp1lU_Vs.jpg",
+          "width": 2048,
+          "height": 1285,
+          "previewUrl": "https://pbs.twimg.com/amplify_video_thumb/2080466475857436672/img/ut18eoeksp1lU_Vs.jpg:small",
+          "videoUrl": "https://video.twimg.com/amplify_video/2080466475857436672/vid/avc1/3442x2160/S0PXDHi17-dvQhU9.mp4?tag=29",
+          "durationMs": 30538
+        }
+      ],
+      "metrics": {
+        "reply_count": 0,
+        "retweet_count": 2,
+        "like_count": 4
+      },
+      "quote": {
+        "id": "2076460501123653774",
+        "author_handle": "jonnygravity",
+        "author_name": "Jonny Gravity",
+        "text": "Staying on top of tons of agents is hard.\n\nUnless you're using atrium.\n\nSee all of your agents at a glance with all of the signal you need to know when and where you're needed:\n\n- Permissions requests\n- Question menus\n- Errors\n- Turn ended\n\nAnd all this in a fully configurable surface:\n\n- Change density\n- Group by project or status\n- Maximize, expand, or collapse sections\n\nYou can even send a message directly to an agent from the sidebar. Pop open the Omni-chat or pop out the entire pane to have a full-blown conversation.\n\nIf you run a lot of agents, you need this!\n\n👉 https://t.co/Nowr9tv1uw",
+        "created_at": "2026-07-13T00:15:36Z",
+        "media": [
+          {
+            "type": "video",
+            "url": "https://pbs.twimg.com/amplify_video_thumb/2076458678874517504/img/oppe11pgTtF29FZX.jpg",
+            "width": 1580,
+            "height": 1080,
+            "previewUrl": "https://pbs.twimg.com/amplify_video_thumb/2076458678874517504/img/oppe11pgTtF29FZX.jpg:small",
+            "videoUrl": "https://video.twimg.com/amplify_video/2076458678874517504/vid/avc1/1580x1080/Bsb3TzsGxZeMLEdA.mp4?tag=28",
+            "durationMs": 119424
+          }
+        ],
+        "metrics": {
+          "reply_count": 4,
+          "retweet_count": 1,
+          "like_count": 11
+        }
+      },
+      "rt_of_handle": null,
+      "reply_to_id": null,
+      "article": null,
+      "feed": "foryou",
+      "feed_kind": "home",
+      "verdict": "positive",
+      "verdict_meta": {
+        "score": 0.1297,
+        "neighbors": [
+          {
+            "tweet_id": "2080433142456864773",
+            "distance": 0.4796,
+            "label": "up",
+            "handle": "geoffreylitt"
+          },
+          {
+            "tweet_id": "2080526422410752155",
+            "distance": 0.599,
+            "label": "down",
+            "handle": "NiallxYoung"
+          }
+        ],
+        "model": "text-embedding-v4@256",
+        "algo": "knn-v1"
+      }
+    }
+  },
+  "verdict_positive": {
+    "source": "x",
+    "key": "x:2080466972039622848",
+    "datetime": "2026-07-24T16:50:33Z",
+    "is_read": true,
+    "is_saved": false,
+    "feedback": null,
+    "x": {
+      "id": "2080466972039622848",
+      "author_id": "22606322",
+      "author_handle": "jonnygravity",
+      "author_name": "Jonny Gravity",
+      "text": "I've certainly looked to t3code for inspiration on occasion... but atrium's sidebar was an innovation it's had since the very, very early days.\n\nDismiss - shuts down, releases resources, and bumps it to the \"Dismissed\" section\nLater - drops it to the bottom of the Waiting section\nClose - completely closes the session\n\nAnd the next gen of this experience I'm cooking up right now is going to be 1000x more badass.\n\nKeep an eye out ;)",
+      "created_at": "2026-07-24T01:35:53Z",
+      "first_seen_at": "2026-07-24T16:50:33Z",
+      "media": [
+        {
+          "type": "video",
+          "url": "https://pbs.twimg.com/amplify_video_thumb/2080466475857436672/img/ut18eoeksp1lU_Vs.jpg",
+          "width": 2048,
+          "height": 1285,
+          "previewUrl": "https://pbs.twimg.com/amplify_video_thumb/2080466475857436672/img/ut18eoeksp1lU_Vs.jpg:small",
+          "videoUrl": "https://video.twimg.com/amplify_video/2080466475857436672/vid/avc1/3442x2160/S0PXDHi17-dvQhU9.mp4?tag=29",
+          "durationMs": 30538
+        }
+      ],
+      "metrics": {
+        "reply_count": 0,
+        "retweet_count": 2,
+        "like_count": 4
+      },
+      "quote": {
+        "id": "2076460501123653774",
+        "author_handle": "jonnygravity",
+        "author_name": "Jonny Gravity",
+        "text": "Staying on top of tons of agents is hard.\n\nUnless you're using atrium.\n\nSee all of your agents at a glance with all of the signal you need to know when and where you're needed:\n\n- Permissions requests\n- Question menus\n- Errors\n- Turn ended\n\nAnd all this in a fully configurable surface:\n\n- Change density\n- Group by project or status\n- Maximize, expand, or collapse sections\n\nYou can even send a message directly to an agent from the sidebar. Pop open the Omni-chat or pop out the entire pane to have a full-blown conversation.\n\nIf you run a lot of agents, you need this!\n\n👉 https://t.co/Nowr9tv1uw",
+        "created_at": "2026-07-13T00:15:36Z",
+        "media": [
+          {
+            "type": "video",
+            "url": "https://pbs.twimg.com/amplify_video_thumb/2076458678874517504/img/oppe11pgTtF29FZX.jpg",
+            "width": 1580,
+            "height": 1080,
+            "previewUrl": "https://pbs.twimg.com/amplify_video_thumb/2076458678874517504/img/oppe11pgTtF29FZX.jpg:small",
+            "videoUrl": "https://video.twimg.com/amplify_video/2076458678874517504/vid/avc1/1580x1080/Bsb3TzsGxZeMLEdA.mp4?tag=28",
+            "durationMs": 119424
+          }
+        ],
+        "metrics": {
+          "reply_count": 4,
+          "retweet_count": 1,
+          "like_count": 11
+        }
+      },
+      "rt_of_handle": null,
+      "reply_to_id": null,
+      "article": null,
+      "feed": "foryou",
+      "feed_kind": "home",
+      "verdict": "positive",
+      "verdict_meta": {
+        "score": 0.1297,
+        "neighbors": [
+          {
+            "tweet_id": "2080433142456864773",
+            "distance": 0.4796,
+            "label": "up",
+            "handle": "geoffreylitt"
+          },
+          {
+            "tweet_id": "2080526422410752155",
+            "distance": 0.599,
+            "label": "down",
+            "handle": "NiallxYoung"
+          }
+        ],
+        "model": "text-embedding-v4@256",
+        "algo": "knn-v1"
+      }
+    }
+  },
+  "article": {
+    "source": "x",
+    "key": "x:2080441004881215520",
+    "datetime": "2026-07-24T16:50:33Z",
+    "is_read": true,
+    "is_saved": false,
+    "feedback": "up",
+    "x": {
+      "id": "2080441004881215520",
+      "author_id": "805920038217662465",
+      "author_handle": "lawrencecchen",
+      "author_name": "Lawrence Chen",
+      "text": "Superrepos and why Claude Code is the best worktree manager",
+      "created_at": "2026-07-23T23:52:42Z",
+      "first_seen_at": "2026-07-24T16:50:33Z",
+      "media": null,
+      "metrics": {
+        "reply_count": 4,
+        "retweet_count": 4,
+        "like_count": 37
+      },
+      "quote": null,
+      "rt_of_handle": null,
+      "reply_to_id": null,
+      "article": {
+        "title": "Superrepos and why Claude Code is the best worktree manager",
+        "previewText": "Different workloads are best parallelized in different ways. Common ways include:\nWorktrees\nMultiple checkouts (git clone multiple times)\nmicroVMs/remote sandboxes via E2B/Freestyle/Daytona/Modal…"
+      },
+      "feed": "foryou",
+      "feed_kind": "home",
+      "verdict": null,
+      "verdict_meta": null
+    }
+  },
+  "feedback_up": {
+    "source": "x",
+    "key": "x:2080441004881215520",
+    "datetime": "2026-07-24T16:50:33Z",
+    "is_read": true,
+    "is_saved": false,
+    "feedback": "up",
+    "x": {
+      "id": "2080441004881215520",
+      "author_id": "805920038217662465",
+      "author_handle": "lawrencecchen",
+      "author_name": "Lawrence Chen",
+      "text": "Superrepos and why Claude Code is the best worktree manager",
+      "created_at": "2026-07-23T23:52:42Z",
+      "first_seen_at": "2026-07-24T16:50:33Z",
+      "media": null,
+      "metrics": {
+        "reply_count": 4,
+        "retweet_count": 4,
+        "like_count": 37
+      },
+      "quote": null,
+      "rt_of_handle": null,
+      "reply_to_id": null,
+      "article": {
+        "title": "Superrepos and why Claude Code is the best worktree manager",
+        "previewText": "Different workloads are best parallelized in different ways. Common ways include:\nWorktrees\nMultiple checkouts (git clone multiple times)\nmicroVMs/remote sandboxes via E2B/Freestyle/Daytona/Modal…"
+      },
+      "feed": "foryou",
+      "feed_kind": "home",
+      "verdict": null,
+      "verdict_meta": null
+    }
+  },
+  "retweet": {
+    "source": "x",
+    "key": "x:2080433142456864773",
+    "datetime": "2026-07-24T16:50:33Z",
+    "is_read": true,
+    "is_saved": false,
+    "feedback": "up",
+    "x": {
+      "id": "2080433142456864773",
+      "author_id": "221658618",
+      "author_handle": "geoffreylitt",
+      "author_name": "Geoffrey Litt",
+      "text": "RT @colebemis: Pro tip: ask your coding agent to attach annotated screenshots to your PRs https://t.co/CjlXmH4wBn",
+      "created_at": "2026-07-23T23:21:28Z",
+      "first_seen_at": "2026-07-24T16:50:33Z",
+      "media": [
+        {
+          "type": "photo",
+          "url": "https://pbs.twimg.com/media/HN8JnDzagAAq4ZE.jpg",
+          "width": 944,
+          "height": 1024,
+          "previewUrl": "https://pbs.twimg.com/media/HN8JnDzagAAq4ZE.jpg:small"
+        }
+      ],
+      "metrics": {
+        "reply_count": 0,
+        "retweet_count": 32,
+        "like_count": 0
+      },
+      "quote": null,
+      "rt_of_handle": "colebemis",
+      "reply_to_id": null,
+      "article": null,
+      "feed": "foryou",
+      "feed_kind": "home",
+      "verdict": null,
+      "verdict_meta": null
+    }
+  },
+  "user": {
+    "source": "x",
+    "key": "x:2080215574957928545",
+    "datetime": "2026-07-23T08:56:56Z",
+    "is_read": true,
+    "is_saved": false,
+    "feedback": null,
+    "x": {
+      "id": "2080215574957928545",
+      "author_id": "132736859",
+      "author_handle": "novoreorx",
+      "author_name": "Reorx",
+      "text": "这两天在主线工作上的进展给我带来了非常大的成就感。我发现我的语音输入法的效果，虽然原始转录结果已符合标准，但经过 LLM 润色后反而不尽如人意。我判断，问题出在模型与提示词的搭配上。但我并不擅长提示词工程，不想像无头苍蝇一样没有目标地乱试。我寻思，应当把样本数据收集起来，建立一套标准化的评估和迭代体系。只有这样，才可能量化每次改动的效果，把模糊变为确定。\n\n于是我把这个想法和 fable 沟通，让他帮我开发了一个 evaluation 系统(我告诉 fable 要做成 agent native，cli + api 调用，eat your own dogfood)，并把我过往语音转录的 2000 多条音频都收集起来导入进去。随后，我从中挑选了几十条音频人工标注，建立了一个数据集。然后让 fable 基于现在的 prompt 自己开始迭代。让我惊喜的是，只一个上午的时间，达标率（评分大于8）就从一开始的 33% 提高到 67%。当然，最让我高兴的是这套方法的行之有效。我发现，提供一套方法和工具，给定评判的标准，agent 就能持续地循环、迭代，把结果变得越来越好。虽然这和真正的 LLM 训练不能比，但也让我侧面感受到「炼丹」的魅力，好家伙真的有点上瘾的。\n\n现在我在做的，是把数据集细化，分短音频和长音频两种，用两套提示词针对性地迭代，这可以改进只用一个提示词泛用型强而针对性弱的缺点。再之后，准备把 STT 模型的评估也纳入进来，方便我选出最适合产品需求的语音转录模型。",
+      "created_at": "2026-07-23T08:56:56Z",
+      "first_seen_at": "2026-07-24T16:50:33Z",
+      "media": [
+        {
+          "type": "photo",
+          "url": "https://pbs.twimg.com/media/HN5mJdXakAAaovq.jpg",
+          "width": 2048,
+          "height": 1444,
+          "previewUrl": "https://pbs.twimg.com/media/HN5mJdXakAAaovq.jpg:small"
+        },
+        {
+          "type": "photo",
+          "url": "https://pbs.twimg.com/media/HN5mXU5agAAl6VN.jpg",
+          "width": 2048,
+          "height": 1444,
+          "previewUrl": "https://pbs.twimg.com/media/HN5mXU5agAAl6VN.jpg:small"
+        }
+      ],
+      "metrics": {
+        "reply_count": 2,
+        "retweet_count": 0,
+        "like_count": 17
+      },
+      "quote": null,
+      "rt_of_handle": null,
+      "reply_to_id": null,
+      "article": null,
+      "feed": "novoreorx",
+      "feed_kind": "user",
+      "verdict": null,
+      "verdict_meta": null
+    }
+  }
+}

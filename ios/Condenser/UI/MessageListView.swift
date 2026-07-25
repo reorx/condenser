@@ -145,6 +145,12 @@ struct MessageListView: View {
                 onOpenPhoto: { openViewer(for: message, at: $0) })
         } else if let story = item.hn {
             HnCard(item: item, story: story, onToggleSaved: { toggleSaved(item) })
+        } else if let tweet = item.x {
+            XCard(
+                item: item, tweet: tweet,
+                onToggleSaved: { toggleSaved(item) },
+                onFeedback: { setFeedback(item, $0) },
+                onOpenPhoto: { openViewer(for: tweet, at: $0) })
         }
     }
 
@@ -156,6 +162,11 @@ struct MessageListView: View {
                 onToggleSaved: { toggleSaved(item) })
         } else if let story = item.hn {
             HnDetailSheet(item: item, story: story, onToggleSaved: { toggleSaved(item) })
+        } else if let tweet = item.x {
+            XDetailSheet(
+                item: item, tweet: tweet,
+                onToggleSaved: { toggleSaved(item) },
+                onFeedback: { setFeedback(item, $0) })
         }
     }
 
@@ -253,6 +264,14 @@ struct MessageListView: View {
             startIndex: min(index, photos.count - 1))
     }
 
+    /// 卡片上点的是「画出来的第 index 张」（含视频），查看器只装图片——
+    /// 两套下标的对齐由 Kit 的 photoIndex(forDisplayed:) 独家负责
+    private func openViewer(for tweet: XTweet, at index: Int) {
+        guard let start = tweet.photoIndex(forDisplayed: index) else { return }
+        viewerItem = ImageViewerItem(
+            urls: tweet.photos.compactMap(\.thumbnailURL), startIndex: start)
+    }
+
     /// sheet 打开期间收藏态变化要跟随 store（乐观更新可见）
     private func currentVersion(of item: TimelineItem) -> TimelineItem {
         store.items.first { $0.key == item.key } ?? item
@@ -260,5 +279,9 @@ struct MessageListView: View {
 
     private func toggleSaved(_ item: TimelineItem) {
         Task { await store.toggleSaved(item) }
+    }
+
+    private func setFeedback(_ item: TimelineItem, _ verdict: ItemFeedback) {
+        Task { await store.setFeedback(item, verdict) }
     }
 }

@@ -224,8 +224,8 @@ endpoints are source-generic like the table, but only X joins the field today.
 Phase 3 **only records the label** — nothing is hidden, ranked or filtered by it;
 that is Phase 4's verdict, trained on exactly these labels (plus saved items as
 strong positives), which is why followed-account tweets are markable even though
-they will never get a verdict. iOS gets the buttons in Phase 5 with the rest of
-the X surfaces.
+they will never get a verdict. iOS got the buttons in Phase 5 (2026-07-25) with the
+rest of the X surfaces.
 
 ## Local probe (`probe/`, monorepo)
 
@@ -335,7 +335,25 @@ background. Foreground return calls `check()` **first** and only disturbs scroll
 count > 0 (scroll-to-top before refresh, else the new first screen lands above the
 viewport and scroll-to-read false-marks it); 0 = reading position untouched. Walkthrough
 `tmp/2026-07-22-ios-foreground-toast/`.
-132 Kit tests. v1 spec complete; remaining polish: end-to-end
+**X source (Phase 5, 2026-07-25)**: Kit gains the `XTweet` payload family
+(`XMediaItem`/`XMetrics`/`XArticle`/`XQuote`/`XVerdict`+`XVerdictMeta`) plus the
+source-generic `ItemFeedback` on the envelope, a `feed` scope on `TimelineStore` /
+`NewContentChecker` / the timeline endpoints (X is the first source with *many* feeds),
+`setFeedback`/`clearFeedback` on `CondenserAPI` with an optimistic toggle in both stores
+(tapping the lit side = undo), and `xAvatarURL`/`proxiedImageURL`. `XTweet` owns the
+card's pure logic (`bodyText` strips bird's `RT @orig:` prefix and drops a long-form
+post's title-as-text, `displayName`, `tweetURL`/`profileURL`, `photos`). App: `XCard`
+(+`XQuoteCard`/`XMediaView`/`XMediaThumb`/`XAvatarView`/`XGlyph`/`XVerdictBadge`/
+`XFeedbackButtons`) and `XDetailSheet` (verdict evidence — score + labeled neighbours
+with handles + `model@dims` — in Chinese; the card badge keeps web's English),
+`XFeedTimelineScreen` reached from the subs tab's X group (**For You's only entry — it is
+not in the aggregate timeline**), `ImageViewerItem` generalized to `ViewerPhoto`
+(`.telegram(cid,mid)` / `.proxied(url)`), and `TruncatableText` shared with `MessageCard`.
+Every image routes through the backend, so reading a tweet never contacts X.
+`XVerdict`/`ItemFeedback` decode unknown values to `.other` rather than failing the page.
+Debug routes gained `x[/<feed>]`, `detail/x/<feed>[/<id>]` and `tab/subs/<source>`.
+161 Kit tests; walkthrough `tmp/2026-07-25-x-phase5-ios/`.
+v1 spec complete; remaining polish: end-to-end
 `ASWebAuthenticationSession` verify on device, video playback (non-goal).
 
 ## Dev
@@ -473,10 +491,9 @@ so Phase 4 training data is unaffected. Author avatars proxy unavatar.io (decisi
 avatars over letter-only). 23 X-timeline + 211 backend + 51 frontend green; live
 end-to-end against the dev backend (fixture push → real UI, incl. unavatar avatars and
 proxied tweet media) with screenshots in `tmp/2026-07-25-x-phase2-timeline/`.
-⚠️ **iOS gap until Phase 5**: X envelopes decode fine on iOS (`source` is a plain String,
-payloads are optional) but `MessageListView.card(_:)` only dispatches telegram/hn, so a
-followed-account tweet renders as a **blank row**. For You is unaffected (it is never in
-the aggregate). Subscribe to For You only until Phase 5, or accept the blank rows.
+~~⚠️ iOS gap until Phase 5~~ — **closed 2026-07-25 by Phase 5**: followed-account tweets
+used to render as blank rows in the aggregate timeline (the card dispatch only knew
+telegram/hn); they now render as `XCard`. See the iOS section above.
 **X source Phase 3 — feedback loop** (2026-07-25, BDD): `/api/feedback` POST/DELETE +
 `db.set_feedback`/`clear_feedback`, the envelope's `feedback` field (X provider join +
 batched records join), `XFeedbackButtons` + `useFeedback` on the web card, and the
@@ -484,8 +501,9 @@ pane's 反馈 row. Deliberately inert: labels are recorded and nothing else chan
 no verdict, no hiding, no read side effect — so Phase 4 has training data waiting when
 it lands. 11 X-feedback + 223 backend + 58 frontend green, plus a live browser
 walkthrough against the dev backend (label → reload → server state → undo, saved
-view, detail pane, dark mode) in `tmp/2026-07-25-x-phase3-feedback/`. iOS deferred
-to Phase 5 (it can't render X cards yet, so there is nothing to attach buttons to).
+view, detail pane, dark mode) in `tmp/2026-07-25-x-phase3-feedback/`. iOS was deferred
+to Phase 5 (it couldn't render X cards yet, so there was nothing to attach buttons to)
+and landed there the same day.
 **X source Phase 4 — embedding verdict** (2026-07-25, BDD): schema v8 + `vectors.py` +
 `embedding.py` + `verdict.py` + `XVerdictBadge` / `XVerdictDetail` + the X status line's
 判定 row + `scripts/x_verdict_backtest.py` (see the module table and the v8 block above).
@@ -507,7 +525,13 @@ screenshots in `tmp/2026-07-25-x-phase4-verdict/`. ⚠️ **The classifier is un
 Phase 3 shipped the same day, so the real label count is ~0 and the production gate
 (20/20) keeps every verdict `null` until the user has labeled enough. Accuracy is a
 question for `x_verdict_backtest.py` later, and the ± thresholds stay placeholders
-until it has real data. iOS still deferred to Phase 5.
+until it has real data.
+**X source Phase 5 — iOS** (2026-07-25, BDD; the plan is now fully closed): the whole
+X surface lands on iOS — envelope payload + feedback in Kit, `feed`-scoped stores,
+`XCard`/`XDetailSheet`, the subs-tab X group as For You's only entry, and the verdict
+badge + its evidence. 41 new Kit scenarios (161 total) + 256 backend green; simulator
+walkthrough against the dev backend (real bird data + real DashScope verdicts) in
+`tmp/2026-07-25-x-phase5-ios/`. Web and iOS now render the same X contract.
 Still open: subscription
 "delete-with-messages" option (Q4 / `?purge=1`) and the backfill batch-interval sleep.
 Full checklist: `kb/sessions/2026-06-09-backend-remaining-work.md`.

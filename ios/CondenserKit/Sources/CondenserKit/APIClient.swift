@@ -34,7 +34,8 @@ public final class APIClient: @unchecked Sendable {
         channelID: Int? = nil,
         date: String? = nil,
         unreadOnly: Bool = false,
-        source: String? = nil
+        source: String? = nil,
+        feed: String? = nil
     ) async throws -> TimelinePage {
         try await get("/api/timeline", query: [
             "cursor": cursor,
@@ -43,6 +44,7 @@ public final class APIClient: @unchecked Sendable {
             "date": date,
             "unread_only": unreadOnly ? "true" : nil,
             "source": source,
+            "feed": feed,
         ])
     }
 
@@ -51,7 +53,8 @@ public final class APIClient: @unchecked Sendable {
         channelID: Int? = nil,
         limit: Int = 100,
         unreadOnly: Bool = false,
-        source: String? = nil
+        source: String? = nil,
+        feed: String? = nil
     ) async throws -> TimelineNew {
         try await get("/api/timeline/new", query: [
             "after": after,
@@ -59,6 +62,7 @@ public final class APIClient: @unchecked Sendable {
             "limit": String(limit),
             "unread_only": unreadOnly ? "true" : nil,
             "source": source,
+            "feed": feed,
         ])
     }
 
@@ -82,6 +86,20 @@ public final class APIClient: @unchecked Sendable {
 
     public func deleteRecord(key: String) async throws {
         try await send(request(path: "/api/records/\(key)", method: "DELETE"))
+    }
+
+    public func setFeedback(key: String, verdict: ItemFeedback) async throws {
+        struct Body: Encodable {
+            let key: String
+            let verdict: String
+        }
+        try await send(request(
+            path: "/api/feedback", method: "POST",
+            body: Body(key: key, verdict: verdict.rawValue)))
+    }
+
+    public func clearFeedback(key: String) async throws {
+        try await send(request(path: "/api/feedback/\(key)", method: "DELETE"))
     }
 
     public func fetchOlder(channelID: Int, count: Int = 200) async throws -> Int {
@@ -132,6 +150,16 @@ public final class APIClient: @unchecked Sendable {
 
     public func avatarURL(channelID: Int) -> URL {
         url(path: "/api/channels/\(channelID)/avatar", query: [:])
+    }
+
+    /// 推文作者头像：后端 unavatar 代理（bird 不带头像 URL）；404 = 画字母头像
+    public func xAvatarURL(handle: String) -> URL {
+        url(path: "/api/x/avatar/\(handle)", query: [:])
+    }
+
+    /// 任意外站图片经服务端代理：读一条推文不会让 X 看到读者的 IP
+    public func proxiedImageURL(_ raw: String) -> URL {
+        url(path: "/api/preview/image", query: ["url": raw])
     }
 
     /// 图片等非 JSON 资源的认证请求（供 ImageLoader 用）

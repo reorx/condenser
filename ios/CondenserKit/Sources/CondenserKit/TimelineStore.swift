@@ -24,8 +24,10 @@ public final class TimelineStore {
 
     public let channelID: Int?
     public let unreadOnly: Bool
-    /// nil = 全部启用的信源；"telegram" / "hn" = 单信源视图
+    /// nil = 全部启用的信源；"telegram" / "hn" / "x" = 单信源视图
     public let source: String?
+    /// 多 feed 信源（X）里的单个 feed；For You 只能从这条路进（不进聚合流）
+    public let feed: String?
     private let api: CondenserAPI
     private let pageSize: Int
     private let cache: SnapshotCache?
@@ -37,13 +39,14 @@ public final class TimelineStore {
 
     public init(
         api: CondenserAPI, channelID: Int? = nil, unreadOnly: Bool = false,
-        source: String? = nil, pageSize: Int = 30,
+        source: String? = nil, feed: String? = nil, pageSize: Int = 30,
         cache: SnapshotCache? = nil, cacheKey: String? = nil
     ) {
         self.api = api
         self.channelID = channelID
         self.unreadOnly = unreadOnly
         self.source = source
+        self.feed = feed
         self.pageSize = pageSize
         self.cache = cache
         self.cacheKey = cacheKey
@@ -78,7 +81,7 @@ public final class TimelineStore {
         do {
             let page = try await api.timeline(
                 cursor: nil, limit: pageSize, channelID: channelID, date: nil,
-                unreadOnly: unreadOnly, source: source)
+                unreadOnly: unreadOnly, source: source, feed: feed)
             apply(page: page)
             loadedOnce = true
             if let cache, let cacheKey {
@@ -105,7 +108,7 @@ public final class TimelineStore {
         do {
             let page = try await api.timeline(
                 cursor: cursor, limit: pageSize, channelID: channelID, date: nil,
-                unreadOnly: unreadOnly, source: source)
+                unreadOnly: unreadOnly, source: source, feed: feed)
             append(page: page)
         } catch {
             handle(error)
@@ -137,7 +140,7 @@ public final class TimelineStore {
             } else {
                 let page = try await api.timeline(
                     cursor: endCursor, limit: pageSize, channelID: channelID, date: nil,
-                    unreadOnly: unreadOnly, source: source)
+                    unreadOnly: unreadOnly, source: source, feed: feed)
                 if endCursor == nil {
                     // 此前列表为空（无锚点）：当作第一页整页替换
                     apply(page: page)
@@ -165,6 +168,27 @@ public final class TimelineStore {
         } catch {
             if let rollback = items.firstIndex(where: { $0.key == item.key }) {
                 items[rollback].isSaved = wasSaved
+            }
+            handle(error)
+        }
+    }
+
+    /// up/down 打标：乐观置位 + 失败回滚。点已选中的那一侧即撤销。
+    /// 只记录标签——不隐藏、不标已读、不改排序（判定是服务端 ingest 时的事）。
+    public func setFeedback(_ item: TimelineItem, _ tapped: ItemFeedback) async {
+        guard let index = items.firstIndex(where: { $0.key == item.key }) else { return }
+        let previous = items[index].feedback
+        let next = ItemFeedback.next(current: previous, tapped: tapped)
+        items[index].feedback = next
+        do {
+            if let next {
+                try await api.setFeedback(key: item.key, verdict: next)
+            } else {
+                try await api.clearFeedback(key: item.key)
+            }
+        } catch {
+            if let rollback = items.firstIndex(where: { $0.key == item.key }) {
+                items[rollback].feedback = previous
             }
             handle(error)
         }

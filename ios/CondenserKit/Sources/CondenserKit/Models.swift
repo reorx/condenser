@@ -48,14 +48,28 @@ public extension JSONEncoder {
 public enum SourceID {
     public static let telegram = "telegram"
     public static let hn = "hn"
+    public static let x = "x"
 
     /// 信源展示名（切换菜单 / 订阅分组标题）
     public static func label(_ source: String) -> String {
         switch source {
         case telegram: "Telegram"
         case hn: "Hacker News"
+        case x: "X"
         default: source
         }
+    }
+}
+
+/// X 的算法流 feed key；关注人 feed 的 key 就是 handle。
+/// For You 不进聚合 timeline（计划决策「隔离 + 降频」），只能从它自己的入口进。
+public enum XFeed {
+    public static let foryou = "foryou"
+
+    /// feed 展示名：For You 固定文案，关注人回落 @handle
+    public static func label(_ feed: String, name: String?) -> String {
+        if feed == foryou { return name ?? "For You" }
+        return name ?? "@\(feed)"
     }
 }
 
@@ -268,41 +282,313 @@ public struct HnStory: Codable, Equatable, Sendable {
     public var isJob: Bool { type == "job" }
 }
 
+// MARK: - X payload
+
+/// 推文的一个媒体附件——bird 的形态由后端原样透传（键是 camelCase，与其它
+/// payload 的 snake_case 不同，这里不加 CodingKeys 就是对的）。
+/// 实测 photo/video 都带宽高，前端得以预留占位。
+public struct XMediaItem: Codable, Equatable, Sendable {
+    public let type: String
+    public let url: String?
+    public let previewUrl: String?
+    public let videoUrl: String?
+    public let width: Int?
+    public let height: Int?
+    public let durationMs: Int?
+
+    public init(
+        type: String, url: String?, previewUrl: String?, videoUrl: String?,
+        width: Int?, height: Int?, durationMs: Int?
+    ) {
+        self.type = type
+        self.url = url
+        self.previewUrl = previewUrl
+        self.videoUrl = videoUrl
+        self.width = width
+        self.height = height
+        self.durationMs = durationMs
+    }
+
+    public var isVideo: Bool { videoUrl != nil || type == "video" || type == "animated_gif" }
+
+    /// 列表缩略图：优先 previewUrl（:small 变体），回落原图
+    public var thumbnailURL: String? { previewUrl ?? url }
+
+    public var aspectRatio: Double? {
+        guard let width, let height, width > 0, height > 0 else { return nil }
+        return Double(width) / Double(height)
+    }
+}
+
+public struct XMetrics: Codable, Equatable, Sendable {
+    public let replyCount: Int
+    public let retweetCount: Int
+    public let likeCount: Int
+
+    enum CodingKeys: String, CodingKey {
+        case replyCount = "reply_count"
+        case retweetCount = "retweet_count"
+        case likeCount = "like_count"
+    }
+}
+
+/// X 长文：bird 只给得到标题 + ~200 字符预览，正文拿不到
+public struct XArticle: Codable, Equatable, Sendable {
+    public let title: String?
+    public let previewText: String?
+
+    public init(title: String?, previewText: String?) {
+        self.title = title
+        self.previewText = previewText
+    }
+}
+
+/// 被引用的推文（depth=1 内嵌，不单独成条）
+public struct XQuote: Codable, Equatable, Sendable {
+    public let id: String
+    public let authorHandle: String?
+    public let authorName: String?
+    public let text: String?
+    public let createdAt: Date?
+    public let media: [XMediaItem]?
+    public let metrics: XMetrics?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case authorHandle = "author_handle"
+        case authorName = "author_name"
+        case text
+        case createdAt = "created_at"
+        case media, metrics
+    }
+
+    public var displayName: String {
+        authorName ?? authorHandle.map { "@\($0)" } ?? "Unknown"
+    }
+
+    public var tweetURL: URL { xTweetURL(id: id, handle: authorHandle) }
+}
+
+/// 反馈判定（计划 Phase 4）。other = 后端先行升级出的新值，前向兼容降级：
+/// 看不懂的判定不画徽标，而不是让整页解码失败。
+public enum XVerdict: String, Codable, Sendable {
+    case positive, neutral, negative, other
+
+    public init(from decoder: Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode(String.self)
+        self = XVerdict(rawValue: raw) ?? .other
+    }
+
+    /// 只有正/负是「表态」；neutral 是默认答案不是结论，不该出现在卡片上
+    public var isFinding: Bool { self == .positive || self == .negative }
+}
+
+/// 给某条判定投过票的一个已标注推文——徽标背后的证据
+public struct XVerdictNeighbor: Codable, Equatable, Sendable {
+    public let tweetID: String
+    /// cosine 距离：0 = 一样，1 = 无关
+    public let distance: Double
+    /// 'up' | 'down' | 'save'（未知值原样保留，UI 按未知处理）
+    public let label: String
+    /// 判定时顺手存下的作者 handle，证据才读得懂
+    public let handle: String?
+
+    enum CodingKeys: String, CodingKey {
+        case tweetID = "tweet_id"
+        case distance, label, handle
+    }
+}
+
+/// 判定为什么是这个结果。reason 标记两种「没判」：离所有标注都太远、没有可判的文本。
+public struct XVerdictMeta: Codable, Equatable, Sendable {
+    public let score: Double?
+    public let neighbors: [XVerdictNeighbor]?
+    public let reason: String?
+    /// 分数可比较的嵌入身份，如 'text-embedding-v4@256'
+    public let model: String?
+    public let algo: String?
+}
+
+/// TimelineItem 的 x payload：一条归档推文在某个 feed 里的那次出现。
+public struct XTweet: Codable, Equatable, Sendable {
+    /// snowflake id 以字符串承载（int64 超出 JS 安全整数范围，后端统一转字符串）
+    public let id: String
+    public let authorID: String?
+    public let authorHandle: String?
+    public let authorName: String?
+    public let text: String?
+    /// 推文自身发布时间；bird 的时间戳解析失败时为 nil
+    public let createdAt: Date?
+    /// probe 首次推送时刻——For You 的排序键
+    public let firstSeenAt: Date?
+    public let media: [XMediaItem]?
+    public let metrics: XMetrics?
+    public let quote: XQuote?
+    /// bird 把转推压平成 'RT @handle:' 前缀，只剩 handle 能救回来
+    public let rtOfHandle: String?
+    public let replyToID: String?
+    public let article: XArticle?
+    /// 这次出现属于哪个订阅：'foryou' 或关注人的 handle
+    public let feed: String
+    /// 'home'（For You）| 'user'（关注人）
+    public let feedKind: String
+    /// nil = 未判定（还没有标注，或不在 For You）；neutral = 判过但刻意不表态
+    public let verdict: XVerdict?
+    public let verdictMeta: XVerdictMeta?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case authorID = "author_id"
+        case authorHandle = "author_handle"
+        case authorName = "author_name"
+        case text
+        case createdAt = "created_at"
+        case firstSeenAt = "first_seen_at"
+        case media, metrics, quote
+        case rtOfHandle = "rt_of_handle"
+        case replyToID = "reply_to_id"
+        case article, feed
+        case feedKind = "feed_kind"
+        case verdict
+        case verdictMeta = "verdict_meta"
+    }
+
+    public init(
+        id: String, authorID: String?, authorHandle: String?, authorName: String?,
+        text: String?, createdAt: Date?, firstSeenAt: Date?, media: [XMediaItem]?,
+        metrics: XMetrics?, quote: XQuote?, rtOfHandle: String?, replyToID: String?,
+        article: XArticle?, feed: String, feedKind: String,
+        verdict: XVerdict?, verdictMeta: XVerdictMeta?
+    ) {
+        self.id = id
+        self.authorID = authorID
+        self.authorHandle = authorHandle
+        self.authorName = authorName
+        self.text = text
+        self.createdAt = createdAt
+        self.firstSeenAt = firstSeenAt
+        self.media = media
+        self.metrics = metrics
+        self.quote = quote
+        self.rtOfHandle = rtOfHandle
+        self.replyToID = replyToID
+        self.article = article
+        self.feed = feed
+        self.feedKind = feedKind
+        self.verdict = verdict
+        self.verdictMeta = verdictMeta
+    }
+
+    public var isForYou: Bool { feedKind == "home" }
+
+    public var displayName: String {
+        authorName ?? authorHandle.map { "@\($0)" } ?? "Unknown"
+    }
+
+    public var tweetURL: URL { xTweetURL(id: id, handle: authorHandle) }
+
+    public var profileURL: URL? { authorHandle.flatMap { URL(string: "https://x.com/\($0)") } }
+
+    /// 卡片正文；nil = 没有可打印的文字。吞掉两个上游怪癖：转推只以
+    /// 'RT @orig: …' 前缀存在（前缀改由标题行承载），长文的 text 就是文章标题
+    /// （article 卡已经在显示它了）。
+    public var bodyText: String? {
+        guard let raw = text else { return nil }
+        var body = raw
+        if rtOfHandle != nil, let range = body.range(of: #"^RT @[A-Za-z0-9_]{1,15}:\s*"#,
+                                                    options: .regularExpression) {
+            body.removeSubrange(range)
+        }
+        let trimmed = body.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty { return nil }
+        if let title = article?.title,
+           title.trimmingCharacters(in: .whitespacesAndNewlines) == trimmed { return nil }
+        return body
+    }
+
+    /// 卡片上真正画出来的媒体（有缩略图的那些）
+    public var displayedMedia: [XMediaItem] {
+        (media ?? []).filter { $0.thumbnailURL != nil }
+    }
+
+    /// 可进全屏查看器的图片（视频只留缩略图，v1 不做内嵌播放）
+    public var photos: [XMediaItem] {
+        displayedMedia.filter { !$0.isVideo }
+    }
+
+    /// 卡片上第 index 张（含视频）对应查看器里的第几张；nil = 点的是视频，不开查看器。
+    /// 两套下标必须由一个地方对齐——视频排在图片前面时，直接拿 index 会错位。
+    public func photoIndex(forDisplayed index: Int) -> Int? {
+        let shown = displayedMedia
+        guard index >= 0, index < shown.count, !shown[index].isVideo else { return nil }
+        return shown[..<index].filter { !$0.isVideo }.count
+    }
+}
+
+/// 原推链接；handle 缺失时 x.com 的 /i/status/<id> 形态照样能打开
+/// （判定证据里的近邻只有 id + handle，没有完整推文，所以这个入口是公开的）
+public func xTweetURL(id: String, handle: String?) -> URL {
+    URL(string: "https://x.com/\(handle ?? "i")/status/\(id)")!
+}
+
 // MARK: - Envelope
 
-/// 多信源条目 envelope：telegram / hn 恰有其一。
+/// 读者自己对条目打的标签（计划 Phase 3）——Phase 4 判定的训练信号。
+/// 表是源通用的，但今天只有 X 的 envelope 暴露它。other 同 XVerdict 的前向兼容理由。
+public enum ItemFeedback: String, Codable, Sendable {
+    case up, down, other
+
+    public init(from decoder: Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode(String.self)
+        self = ItemFeedback(rawValue: raw) ?? .other
+    }
+
+    /// 点击语义：点已选中的那一侧 = 撤销（nil），点另一侧 = 改正
+    public static func next(current: ItemFeedback?, tapped: ItemFeedback) -> ItemFeedback? {
+        current == tapped ? nil : tapped
+    }
+}
+
+/// 多信源条目 envelope：telegram / hn / x 恰有其一。
 /// key 是全局唯一 item id，也是 read/save API 的出入参。
 public struct TimelineItem: Codable, Equatable, Sendable, Identifiable {
-    /// "telegram" | "hn"（未知新信源按原样携带，UI 侧忽略）
+    /// "telegram" | "hn" | "x"（未知新信源按原样携带，UI 侧忽略）
     public let source: String
     public let key: String
-    /// 排序时间：TG=消息时间，HN=首次上榜时间
+    /// 排序时间：TG=消息时间，HN=首次上榜时间，
+    /// X=关注人 feed 用推文时间 / For You 用首次抓到的时间
     public let datetime: Date
     public var isRead: Bool
     public var isSaved: Bool
+    /// 尚未长出反馈按钮的信源不带这个字段；nil = 未标注
+    public var feedback: ItemFeedback?
     public var telegram: DisplayMessage?
     public var hn: HnStory?
+    public var x: XTweet?
 
     enum CodingKeys: String, CodingKey {
         case source, key, datetime
         case isRead = "is_read"
         case isSaved = "is_saved"
-        case telegram, hn
+        case feedback, telegram, hn, x
     }
 
     public var id: String { key }
 
     public init(
         source: String, key: String, datetime: Date, isRead: Bool, isSaved: Bool,
-        telegram: DisplayMessage? = nil, hn: HnStory? = nil
+        feedback: ItemFeedback? = nil,
+        telegram: DisplayMessage? = nil, hn: HnStory? = nil, x: XTweet? = nil
     ) {
         self.source = source
         self.key = key
         self.datetime = datetime
         self.isRead = isRead
         self.isSaved = isSaved
+        self.feedback = feedback
         self.telegram = telegram
         self.hn = hn
+        self.x = x
     }
 }
 

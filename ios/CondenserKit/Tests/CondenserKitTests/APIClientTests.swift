@@ -78,6 +78,31 @@ struct APIClientTests {
         #expect(groups[1].subscriptions[0].unread == 7)
     }
 
+    @Test("timeline：feed 参数把多 feed 信源收窄到一个 feed（X）")
+    func timelineFeedParam() async throws {
+        let captured = MockURLProtocol.respond(
+            status: 200, json: #"{"items": [], "next_cursor": null, "head_cursor": null}"#)
+        _ = try await makeClient().timeline(source: "x", feed: "foryou")
+        let comps = URLComponents(url: captured.url!, resolvingAgainstBaseURL: false)!
+        #expect(comps.queryItems!.contains(URLQueryItem(name: "source", value: "x")))
+        #expect(comps.queryItems!.contains(URLQueryItem(name: "feed", value: "foryou")))
+    }
+
+    @Test("反馈端点：POST /api/feedback {key, verdict}，撤销走 DELETE /api/feedback/{key}")
+    func feedbackEndpoints() async throws {
+        let posted = MockURLProtocol.respond(status: 200, json: #"{"ok": true}"#)
+        try await makeClient().setFeedback(key: "x:42", verdict: .down)
+        #expect(posted.method == "POST")
+        #expect(posted.url?.path() == "/api/feedback")
+        #expect(posted.bodyJSON?["key"] as? String == "x:42")
+        #expect(posted.bodyJSON?["verdict"] as? String == "down")
+
+        let deleted = MockURLProtocol.respond(status: 200, json: #"{"ok": true}"#)
+        try await makeClient().clearFeedback(key: "x:42")
+        #expect(deleted.method == "DELETE")
+        #expect(deleted.url?.path() == "/api/feedback/x:42")
+    }
+
     @Test("401 → APIError.unauthorized")
     func unauthorized() async throws {
         _ = MockURLProtocol.respond(status: 401, json: #"{"detail": "unauthorized"}"#)

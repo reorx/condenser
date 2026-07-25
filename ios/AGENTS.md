@@ -12,6 +12,17 @@ self-post HTML 经 Kit 的 `hnPlainText` 转纯文本）；`SnapshotCache` 目�
 （`condenser-snapshots-v2`，旧快照 decode 失败按 miss）。多信源计划见
 `../kb/plans/2026-07-19-multi-source-hn.md`。
 
+**X 信息源（Phase 5，2026-07-25）**：envelope 多了 `x`（`XTweet`）与源通用的
+`feedback`（`ItemFeedback`，今天只有 X 暴露）。X 是第一个「一个信源多个 feed」的源，
+所以 `TimelineStore` / `NewContentChecker` / timeline 端点都多了 `feed` 作用域
+（`XFeed.foryou` 或关注人 handle）。**For You 不进聚合 timeline**（一天 ~1000 条会淹没
+TG/HN），订阅 tab 的 X 分组行是它唯一入口 → `XFeedTimelineScreen`。卡片是 `XCard`
+（+`XQuoteCard`/`XMediaView`/`XMediaThumb`/`XAvatarView`/`XGlyph`/`XVerdictBadge`/
+`XFeedbackButtons`），详情是 `XDetailSheet`（判定证据用中文展开，卡片徽标沿用 web 的英文）。
+推文媒体走 `/api/preview/image`、作者头像走 `/api/x/avatar/{handle}`，客户端从不直连 X。
+`XVerdict` / `ItemFeedback` 都有 `other` 兜底值——后端先行升级出新值时降级渲染而不是炸解码。
+计划见 `../kb/plans/2026-07-24-x-source-local-probe.md`。
+
 ## 技术栈
 
 - iOS 18+，SwiftUI App lifecycle，Swift 5 语言模式（非 Swift 6 strict concurrency）
@@ -90,10 +101,17 @@ Info.plist 已配 `NSAllowsLocalNetworking`（http://localhost 放行）。
 SIMCTL_CHILD_CONDENSER_DEBUG_ROUTE=<route> xcrun simctl launch "iPhone 17" com.reorx.condenser
 ```
 
-route 取值：`tab/{timeline|subs|channels|saved}` 切 tab（channels 是订阅 tab 的旧别名）；
-`channel/<id>` push 单频道 timeline；`hn` push HN feed timeline；`settings` 切设置 tab；
+route 取值：`tab/{timeline|subs|channels|saved}` 切 tab（channels 是订阅 tab 的旧别名；
+`tab/subs/<source>` 再带一段则进去就滚到该信源分组——订阅列表已经长到一屏放不下，
+而模拟器窗口收不到合成手势：`System Events` 拿不到它的 window，`cliclick` 也就无从下手）；
+`channel/<id>` push 单频道 timeline；`hn` push HN feed timeline；
+`x[/<feed>]` push 某个 X feed（缺省第一条 X 订阅；For You 不在聚合流里，这是唯一入口）；
+`settings` 切设置 tab；
 `detail/<cid>/<mid>` / `viewer/<cid>/<mid>` 弹详情
 sheet / 全屏图片浏览器（消息须在 timeline 首页内，路由会等首屏加载完才应用）；
+`detail/x/<feed>[/<tweet id>]` 弹推文详情——X 条目单独走一次网络查，因为 For You
+根本不在 `reader.timeline.items` 里；省略 id 时挑该 feed 第一条有判定的（判定证据
+正是这个界面最值得看的部分）；
 `forward/<cid>/<mid>[/<comment>]` 直接弹转发 dialog（消息不必在首页内；带第 4 段
 则 1s 后自动提交——**真实转发落地目标频道**，`-` 表示空评论原生转发，中文评论需
 percent-encode）。

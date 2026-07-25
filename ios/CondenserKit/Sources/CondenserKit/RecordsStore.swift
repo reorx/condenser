@@ -52,6 +52,27 @@ public final class RecordsStore {
         }
     }
 
+    /// 收藏里同样可以改标签（反馈是随时会变的活状态，刻意不进收藏快照，
+    /// 所以这里改完服务端立刻生效，下次拉取读回来的就是新值）
+    public func setFeedback(_ item: TimelineItem, _ tapped: ItemFeedback) async {
+        guard let index = items.firstIndex(where: { $0.key == item.key }) else { return }
+        let previous = items[index].feedback
+        let next = ItemFeedback.next(current: previous, tapped: tapped)
+        items[index].feedback = next
+        do {
+            if let next {
+                try await api.setFeedback(key: item.key, verdict: next)
+            } else {
+                try await api.clearFeedback(key: item.key)
+            }
+        } catch {
+            if let rollback = items.firstIndex(where: { $0.key == item.key }) {
+                items[rollback].feedback = previous
+            }
+            handle(error)
+        }
+    }
+
     private func handle(_ error: Error) {
         if case APIError.unauthorized = error {
             onUnauthorized?()

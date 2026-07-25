@@ -65,6 +65,12 @@ struct SavedScreen: View {
                 onOpenPhoto: { openViewer(for: message, at: $0) })
         } else if let story = item.hn {
             HnCard(item: item, story: story, showsUnread: false, onToggleSaved: { unsave(item) })
+        } else if let tweet = item.x {
+            XCard(
+                item: item, tweet: tweet, showsUnread: false,
+                onToggleSaved: { unsave(item) },
+                onFeedback: { setFeedback(item, $0) },
+                onOpenPhoto: { openViewer(for: tweet, at: $0) })
         }
     }
 
@@ -76,6 +82,11 @@ struct SavedScreen: View {
                 onToggleSaved: { unsave(item) })
         } else if let story = item.hn {
             HnDetailSheet(item: item, story: story, onToggleSaved: { unsave(item) })
+        } else if let tweet = item.x {
+            XDetailSheet(
+                item: item, tweet: tweet,
+                onToggleSaved: { unsave(item) },
+                onFeedback: { setFeedback(item, $0) })
         }
     }
 
@@ -85,6 +96,12 @@ struct SavedScreen: View {
         viewerItem = ImageViewerItem(
             channelID: message.channelID, photos: photos,
             startIndex: min(index, photos.count - 1))
+    }
+
+    private func openViewer(for tweet: XTweet, at index: Int) {
+        guard let start = tweet.photoIndex(forDisplayed: index) else { return }
+        viewerItem = ImageViewerItem(
+            urls: tweet.photos.compactMap(\.thumbnailURL), startIndex: start)
     }
 
     private var emptyState: some View {
@@ -101,5 +118,9 @@ struct SavedScreen: View {
 
     private func unsave(_ item: TimelineItem) {
         Task { await reader.records.unsave(item) }
+    }
+
+    private func setFeedback(_ item: TimelineItem, _ verdict: ItemFeedback) {
+        Task { await reader.records.setFeedback(item, verdict) }
     }
 }

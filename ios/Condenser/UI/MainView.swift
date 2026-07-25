@@ -11,6 +11,8 @@ struct MainView: View {
     @State private var reader: ReaderSession?
     @State private var selectedTab: MainTab = .timeline
     @State private var subscriptionsPath = NavigationPath()
+    /// tab/subs/<source> 走查用：订阅列表进来就滚到该信源分组（只有 DEBUG 路由会设它）
+    @State private var subsScrollTarget: String?
     #if DEBUG
     @State private var debugDetail: TimelineItem?
     @State private var debugViewer: ImageViewerItem?
@@ -43,7 +45,7 @@ struct MainView: View {
             }
             Tab("订阅", systemImage: "square.stack", value: MainTab.subscriptions) {
                 NavigationStack(path: $subscriptionsPath) {
-                    SubscriptionsScreen()
+                    SubscriptionsScreen(scrollToSource: subsScrollTarget)
                 }
             }
             Tab("收藏", systemImage: "star", value: MainTab.saved) {
@@ -64,6 +66,8 @@ struct MainView: View {
                 MessageDetailSheet(item: item, message: message, onToggleSaved: {})
             } else if let story = item.hn {
                 HnDetailSheet(item: item, story: story, onToggleSaved: {})
+            } else if let tweet = item.x {
+                XDetailSheet(item: item, tweet: tweet, onToggleSaved: {}, onFeedback: { _ in })
             }
         }
         .fullScreenCover(item: $debugViewer) { item in
@@ -102,7 +106,10 @@ struct MainView: View {
         switch parts.first {
         case "tab":
             switch parts.dropFirst().first {
-            case "channels", "subs", "subscriptions": selectedTab = .subscriptions
+            case "channels", "subs", "subscriptions":
+                // tab/subs/<source> 可选第三段：直接滚到那个信源分组
+                subsScrollTarget = parts.dropFirst(2).first
+                selectedTab = .subscriptions
             case "saved": selectedTab = .saved
             default: selectedTab = .timeline
             }
@@ -117,10 +124,28 @@ struct MainView: View {
                 selectedTab = .subscriptions
                 subscriptionsPath.append(SubDestination.hnFeed(sub))
             }
+        case "x":
+            // x/<feed>（缺省第一条订阅）：For You 不在聚合流里，只能这样直达
+            let feed = parts.dropFirst().first
+            let sub = feed.flatMap { key in
+                reader.xSubs.first { $0.channelID.description == key }
+            } ?? reader.xSubs.first
+            if let sub {
+                selectedTab = .subscriptions
+                subscriptionsPath.append(SubDestination.xFeed(sub))
+            }
         case "settings":
             selectedTab = .settings
         case "detail":
-            debugDetail = debugItem(parts, reader: reader)
+            // detail/x/<feed>[/<tweet id>]：X 条目要单独走一次网络——For You 不在
+            // 聚合 timeline 里，从 reader.timeline.items 里永远找不到它
+            if parts.dropFirst().first == "x" {
+                let feed = parts.dropFirst(2).first ?? XFeed.foryou
+                let id = parts.dropFirst(3).first
+                Task { debugDetail = await debugXItem(feed: feed, id: id, reader: reader) }
+            } else {
+                debugDetail = debugItem(parts, reader: reader)
+            }
         case "forward":
             // forward/<cid>/<mid>[/<comment>]：直接弹转发 dialog；带第 4 段则自动提交
             // （"-" = 空评论原生转发；消息不必在 timeline 首页内）
@@ -142,6 +167,16 @@ struct MainView: View {
         default:
             break
         }
+    }
+
+    /// 指定 id 的推文，或该 feed 里第一条有判定的（判定证据是这个界面最想看的东西）
+    private func debugXItem(feed: String, id: String?, reader: ReaderSession) async -> TimelineItem? {
+        guard let page = try? await reader.api.timeline(limit: 50, source: SourceID.x, feed: feed)
+        else { return nil }
+        if let id {
+            return page.items.first { $0.x?.id == id }
+        }
+        return page.items.first { $0.x?.verdict?.isFinding == true } ?? page.items.first
     }
 
     private func debugItem(_ parts: [String], reader: ReaderSession) -> TimelineItem? {

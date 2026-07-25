@@ -1,18 +1,34 @@
 import SwiftUI
 import CondenserKit
 
-/// 订阅项导航目标：TG 频道 → 单频道 timeline；HN feed → 该 feed 的 timeline。
+/// 订阅项导航目标：TG 频道 → 单频道 timeline；HN / X feed → 该 feed 的 timeline。
+/// X 的 For You 不进聚合流，这里的两级列表就是它唯一的入口。
 enum SubDestination: Hashable {
     case telegramChannel(SourceSub)
     case hnFeed(SourceSub)
+    case xFeed(SourceSub)
 }
 
 /// 订阅 tab（原「频道」）：按 信源 → 订阅 两级展示（数据源 GET /api/sources）。
 /// iOS 仍为只读客户端，订阅的增删改留在 web。
 struct SubscriptionsScreen: View {
+    /// DEBUG 走查用：进来就滚到某个信源分组（模拟器窗口收不到合成手势，
+    /// 只能靠启动路由导航，见 AGENTS.md「CLI 驱动的界面走查」）
+    var scrollToSource: String?
+
     @Environment(ReaderSession.self) private var reader
 
     var body: some View {
+        ScrollViewReader { proxy in
+            list
+                .onAppear {
+                    guard let scrollToSource else { return }
+                    proxy.scrollTo(scrollToSource, anchor: .top)
+                }
+        }
+    }
+
+    private var list: some View {
         List {
             ForEach(reader.sources) { group in
                 Section(SourceID.label(group.source)) {
@@ -22,6 +38,7 @@ struct SubscriptionsScreen: View {
                         }
                     }
                 }
+                .id(group.source)
             }
         }
         .listStyle(.insetGrouped)
@@ -37,6 +54,8 @@ struct SubscriptionsScreen: View {
                 ChannelTimelineScreen(subscription: sub)
             case .hnFeed(let sub):
                 HnFeedTimelineScreen(subscription: sub)
+            case .xFeed(let sub):
+                XFeedTimelineScreen(subscription: sub)
             }
         }
         .refreshable { await reader.loadSources() }
@@ -48,20 +67,32 @@ struct SubscriptionsScreen: View {
     }
 
     private func destination(_ source: String, _ sub: SourceSub) -> SubDestination {
-        source == SourceID.hn ? .hnFeed(sub) : .telegramChannel(sub)
+        switch source {
+        case SourceID.hn: .hnFeed(sub)
+        case SourceID.x: .xFeed(sub)
+        default: .telegramChannel(sub)
+        }
     }
 
     private func row(_ source: String, _ sub: SourceSub) -> some View {
         HStack(spacing: 12) {
-            if source == SourceID.hn {
+            switch source {
+            case SourceID.hn:
                 HnGlyph(size: 40)
-            } else {
+            case SourceID.x:
+                // For You 没有作者可言，用信源标记；关注人用他自己的头像
+                if sub.channelID.description == XFeed.foryou {
+                    XGlyph(size: 40)
+                } else {
+                    XAvatarView(handle: sub.username, name: sub.name, size: 40)
+                }
+            default:
                 ChannelAvatarView(
                     channelID: sub.channelID.intValue,
                     title: sub.name ?? "#", size: 40)
             }
             VStack(alignment: .leading, spacing: 2) {
-                Text(sub.name ?? "频道 \(sub.channelID.description)")
+                Text(rowTitle(source, sub))
                     .font(.subheadline.weight(.medium))
                     .lineLimit(1)
                 if let username = sub.username {
@@ -81,6 +112,15 @@ struct SubscriptionsScreen: View {
             }
         }
         .padding(.vertical, 2)
+    }
+
+    /// X 关注人的 name 在首次 push 学到真实显示名前是 NULL，
+    /// 这时回落 @handle 而不是画一个占位（否则会出现「@x @x」）
+    private func rowTitle(_ source: String, _ sub: SourceSub) -> String {
+        if source == SourceID.x {
+            return XFeed.label(sub.channelID.description, name: sub.name)
+        }
+        return sub.name ?? "频道 \(sub.channelID.description)"
     }
 
     private var emptyState: some View {
@@ -141,6 +181,35 @@ struct HnFeedTimelineScreen: View {
         .onAppear {
             if store == nil {
                 store = reader.makeHnStore()
+            }
+        }
+    }
+}
+
+/// 单个 X feed 的 timeline（For You 或某个关注人）：X 是第一个「一个信源多个 feed」
+/// 的源，所以 store 要带 feed 作用域。For You **不进聚合流**（一天 ~1000 条会淹没
+/// TG/HN），这个界面就是它唯一的入口。
+struct XFeedTimelineScreen: View {
+    let subscription: SourceSub
+
+    @Environment(ReaderSession.self) private var reader
+    @State private var store: TimelineStore?
+
+    private var feed: String { subscription.channelID.description }
+
+    var body: some View {
+        Group {
+            if let store {
+                MessageListView(store: store, emptyLabel: "还没有归档的推文")
+            } else {
+                Color.clear
+            }
+        }
+        .navigationTitle(XFeed.label(feed, name: subscription.name))
+        .navigationBarTitleDisplayMode(.inline)
+        .onAppear {
+            if store == nil {
+                store = reader.makeXStore(feed: feed)
             }
         }
     }

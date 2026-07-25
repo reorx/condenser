@@ -14,6 +14,7 @@ public final class NewContentChecker {
     private let channelID: Int?
     private let unreadOnly: Bool
     private let source: String?
+    private let feed: String?
     private let headCursor: @MainActor () -> String?
 
     public init(
@@ -21,12 +22,14 @@ public final class NewContentChecker {
         channelID: Int? = nil,
         unreadOnly: Bool = false,
         source: String? = nil,
+        feed: String? = nil,
         headCursor: @escaping @MainActor () -> String?
     ) {
         self.api = api
         self.channelID = channelID
         self.unreadOnly = unreadOnly
         self.source = source
+        self.feed = feed
         self.headCursor = headCursor
     }
 
@@ -35,7 +38,7 @@ public final class NewContentChecker {
         do {
             let new = try await api.timelineNew(
                 after: after, channelID: channelID, limit: 100, unreadOnly: unreadOnly,
-                source: source)
+                source: source, feed: feed)
             return new.count
         } catch APIError.unauthorized {
             onUnauthorized?()

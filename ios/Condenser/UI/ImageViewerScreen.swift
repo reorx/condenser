@@ -1,13 +1,38 @@
 import SwiftUI
 import CondenserKit
 
+/// 查看器里的一张图：TG 走按消息寻址的媒体代理，X 走通用图片代理
+/// （两者都带 Bearer，浏览器/客户端从不直连源站）
+enum ViewerPhoto: Hashable {
+    case telegram(channelID: Int, messageID: Int)
+    case proxied(url: String)
+
+    var key: String {
+        switch self {
+        case let .telegram(channelID, messageID): "tg/\(channelID)/\(messageID)"
+        case let .proxied(url): url
+        }
+    }
+}
+
 /// fullScreenCover 的载体：一组照片 + 起始下标
 struct ImageViewerItem: Identifiable {
-    let channelID: Int
-    let photos: [MediaItem]
+    let photos: [ViewerPhoto]
     let startIndex: Int
 
-    var id: String { "\(channelID)/\(photos.first?.messageID ?? 0)/\(startIndex)" }
+    var id: String { "\(photos.first?.key ?? "")/\(startIndex)" }
+
+    /// TG 相册：按消息 id 寻址
+    init(channelID: Int, photos: [MediaItem], startIndex: Int) {
+        self.photos = photos.map { .telegram(channelID: channelID, messageID: $0.messageID) }
+        self.startIndex = startIndex
+    }
+
+    /// 推文媒体：原始 URL 交给服务端代理
+    init(urls: [String], startIndex: Int) {
+        photos = urls.map { .proxied(url: $0) }
+        self.startIndex = startIndex
+    }
 }
 
 /// 全屏图片浏览器：TabView(.page) 多图切换 + UIScrollView 双指缩放（双击切换）+
@@ -32,10 +57,8 @@ struct ImageViewerScreen: View {
                 .opacity(backdropOpacity)
                 .ignoresSafeArea()
             TabView(selection: $index) {
-                ForEach(Array(item.photos.enumerated()), id: \.element.messageID) { i, photo in
-                    ZoomableAsyncImage(
-                        request: reader.api.authedRequest(
-                            reader.api.mediaURL(channelID: item.channelID, messageID: photo.messageID)))
+                ForEach(Array(item.photos.enumerated()), id: \.element.key) { i, photo in
+                    ZoomableAsyncImage(request: reader.api.authedRequest(url(for: photo)))
                         .tag(i)
                 }
             }
@@ -77,6 +100,15 @@ struct ImageViewerScreen: View {
 
     private var backdropOpacity: Double {
         max(0.4, 1 - Double(dragOffset) / 500)
+    }
+
+    private func url(for photo: ViewerPhoto) -> URL {
+        switch photo {
+        case let .telegram(channelID, messageID):
+            reader.api.mediaURL(channelID: channelID, messageID: messageID)
+        case let .proxied(raw):
+            reader.api.proxiedImageURL(raw)
+        }
     }
 }
 

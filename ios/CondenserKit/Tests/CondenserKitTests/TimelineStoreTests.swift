@@ -49,9 +49,12 @@ extension [TimelineItem] {
 /// 可编程 stub：按调用顺序出队 timeline 页；记录收到的参数。
 final class StubAPI: CondenserAPI, @unchecked Sendable {
     var timelinePages: [Result<TimelinePage, Error>] = []
-    var timelineCalls: [(cursor: String?, channelID: Int?, unreadOnly: Bool, source: String?)] = []
+    var timelineCalls: [(cursor: String?, channelID: Int?, unreadOnly: Bool, source: String?, feed: String?)] = []
     var newResults: [Result<TimelineNew, Error>] = []
-    var newCalls: [(after: String, channelID: Int?, unreadOnly: Bool, source: String?)] = []
+    var newCalls: [(after: String, channelID: Int?, unreadOnly: Bool, source: String?, feed: String?)] = []
+    var feedbackCalls: [(key: String, verdict: ItemFeedback)] = []
+    var clearFeedbackCalls: [String] = []
+    var feedbackError: Error?
     var markReadCalls: [[String]] = []
     var markReadError: Error?
     var saveCalls: [String] = []
@@ -65,17 +68,18 @@ final class StubAPI: CondenserAPI, @unchecked Sendable {
 
     func timeline(
         cursor: String?, limit: Int?, channelID: Int?, date: String?, unreadOnly: Bool,
-        source: String?
+        source: String?, feed: String?
     ) async throws -> TimelinePage {
-        timelineCalls.append((cursor, channelID, unreadOnly, source))
+        timelineCalls.append((cursor, channelID, unreadOnly, source, feed))
         guard !timelinePages.isEmpty else { throw APIError.invalidResponse }
         return try timelinePages.removeFirst().get()
     }
 
     func timelineNew(
-        after: String, channelID: Int?, limit: Int, unreadOnly: Bool, source: String?
+        after: String, channelID: Int?, limit: Int, unreadOnly: Bool, source: String?,
+        feed: String?
     ) async throws -> TimelineNew {
-        newCalls.append((after, channelID, unreadOnly, source))
+        newCalls.append((after, channelID, unreadOnly, source, feed))
         guard !newResults.isEmpty else { throw APIError.invalidResponse }
         return try newResults.removeFirst().get()
     }
@@ -110,6 +114,16 @@ final class StubAPI: CondenserAPI, @unchecked Sendable {
         fetchOlderCalls.append((channelID, count))
         guard !fetchOlderResults.isEmpty else { throw APIError.invalidResponse }
         return try fetchOlderResults.removeFirst().get()
+    }
+
+    func setFeedback(key: String, verdict: ItemFeedback) async throws {
+        if let feedbackError { throw feedbackError }
+        feedbackCalls.append((key, verdict))
+    }
+
+    func clearFeedback(key: String) async throws {
+        if let feedbackError { throw feedbackError }
+        clearFeedbackCalls.append(key)
     }
 }
 
