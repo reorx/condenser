@@ -3,6 +3,7 @@ import { NavLink } from 'react-router-dom';
 
 import { SidebarChannelLink } from '@/components/SidebarChannelLink';
 import { SidebarHnFeedLink } from '@/components/SidebarHnFeedLink';
+import { SidebarXFeedLink } from '@/components/SidebarXFeedLink';
 import { UnreadBadge } from '@/components/UnreadBadge';
 import { sourceLabel, sourceSubLabel } from '@/lib/sources';
 import type { SourceGroup } from '@/lib/types';
@@ -54,6 +55,14 @@ export function SidebarSourceGroup({ group, collapsed, onToggleCollapsed, onNavi
               <SidebarChannelLink
                 key={s.channel_id}
                 channelId={s.channel_id}
+                label={sourceSubLabel(s)}
+                unread={s.unread}
+                onNavigate={onNavigate}
+              />
+            ) : group.source === 'x' ? (
+              <SidebarXFeedLink
+                key={s.channel_id}
+                feed={String(s.channel_id)}
                 label={sourceSubLabel(s)}
                 unread={s.unread}
                 onNavigate={onNavigate}

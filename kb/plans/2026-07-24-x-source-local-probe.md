@@ -14,21 +14,22 @@ tags:
 
 这是项目第一个**推模式**的源（TG/HN 都是服务端主动拉；X 的数据只存在于本地 bird 的 cookie 会话里，由 probe 推给服务端），也是第一个同时具备「feed 型 + 账号型」两种订阅的源。
 
-## 进展（更新于 2026-07-24）
+## 进展（更新于 2026-07-25）
 
 | Phase | 状态 | 说明 |
 |---|---|---|
 | 1 — probe + ingest + 存档 | ✅ **完成 2026-07-24** | schema v7、`condenser/x.py`、`routers/x.py`、`probe/` 包、web 订阅区块。188 backend（含 27 X）+ 11 probe + 45 frontend 绿；真机端到端 + UI 截图 `tmp/2026-07-24-x-source-phase1/`。会话记录：`kb/sessions/2026-07-24-x-source-phase1-probe-ingest.md` |
-| 2 — timeline 接入 | ⬜ 未开始 | **开工前先定 For You 容量策略**（见下方追加实测：实际约 2400 条/天，不是 ~500） |
+| 2 — timeline 接入 | ✅ **完成 2026-07-25** | `sources/x.py` provider、`items.py` 的 `x_key`/`x_envelope`、`feed` 作用域、`/api/sources` 的 X 分组、X 收藏快照、`/api/x/avatar/{handle}`、web 卡片 + `/s/:source/:feed` 路由。容量策略已定（见下）。211 backend（含 23 X timeline）+ 51 frontend 绿；对本地 dev 后端做了真实端到端（fixture 推送 → 真实 UI），截图 `tmp/2026-07-25-x-phase2-timeline/` |
 | 3 — 反馈闭环 | ⬜ 未开始 | `item_feedback` 表已在 v7 建好，等 API + UI |
-| 4 — Embedding 判定 | ⬜ 未开始 | `x_embeddings` / `x_vec_labeled` 届时才建（SCHEMA_VERSION 8）；存储估算需按新容量重算 |
-| 5 — iOS 适配 | ⬜ 未开始 | |
+| 4 — Embedding 判定 | ⬜ 未开始 | `x_embeddings` / `x_vec_labeled` 届时才建（SCHEMA_VERSION 8）；存储估算需按新容量重算（见下方修正） |
+| 5 — iOS 适配 | ⬜ 未开始 | Kit 的 `XTweet` payload + envelope 分发 + `XCard`；注意 iOS 也要遵守「For You 不进聚合流」 |
 
-未决问题（Phase 2 之前需要回答）：
+未决问题：
 
-1. **For You 的容量策略** —— probe 频率、是否对 For You 限量存档、要不要把 negative 过滤提前。
-2. **作者头像** —— bird 不给头像 URL（实测⑧）：v1 字母头像，还是接 unavatar.io 代理。
+1. ~~**For You 的容量策略**~~ —— 已定案（2026-07-25，见决策记录「For You 的容量策略」）。
+2. ~~**作者头像**~~ —— 已定案：unavatar.io 代理（`/api/x/avatar/{handle}`，`fallback=false`），失败回落字母头像。
 3. **旧 raw 的重 parse 回填工具** —— 目前只保证 raw 留底，还没有「格式漂移后按新解析器重刷」的脚本。
+4. **verdict 徽标的 UI 位置**（Phase 4 才需要）—— `XCard` 已经把 `verdict` 透到前端类型里，卡片上还没有呈现位。
 
 ## 决策记录
 
@@ -47,6 +48,10 @@ tags:
 | probe 鉴权 | **复用 device token**（`devices` 表 + web `/authorize` 流程） | probe 本质是一种 device，服务端零新增鉴权代码 |
 | 关注人订阅的 key | **handle（小写）作主键，数字 user_id 首次 ingest 自动学到写进 config** | 实现时发现的矛盾：数字 id 才是改名稳定的，但服务端拿不到它（bird 只在 probe 本地，web 端用户手上只有 @handle）。折中：probe 要的就是 handle，数字 id 作为改名后的人工修复线索留底。用户拍板于 2026-07-24 |
 | `name` 字段语义 | **= X 上的显示名**，学到之前留 NULL（不写 `@handle` 占位） | 占位会让 UI 出现「@x @x」重复；NULL 让客户端 fallback 到 handle |
+| **For You 的容量策略** | **隔离 + 降频**：For You 不进 All 聚合视图，只在 `/s/x` 与 `/s/x/foryou` 可见；`CONDENSER_X_HOME_COUNT` 默认 50 → 20。关注人 feed 照常进 All。**存档仍是全量**，不做限量存档 | 用户拍板（2026-07-25）。实测 ~2400 条/天，直接混入会淹没 TG/HN；但限量存档会伤到 Phase 4 的训练数据，所以只压「阅读面」不压「存档面」。For You 本来就是「想刷才刷」的东西，把它放在专属入口后面正好符合它的性质 |
+| 作者头像 | **unavatar.io 代理**（`GET /api/x/avatar/{handle}` → `unavatar.io/x/{handle}?fallback=false`），失败 404 → 客户端字母头像 | 用户拍板（2026-07-25）。For You 一屏 ~46 个不同作者，头像是最强的定位线索，字母头像在这个密度下几乎无效。`fallback=false` 是关键：否则 unavatar 会回一张通用占位图，客户端反而无法降级 |
+| 同一条推同时出现在两个 feed | **去重，保留「关注人」那次出现**（`ROW_NUMBER()` 分区取胜者） | For You 本来就包含你关注的人。保留关注人那次出现意味着它按 `created_at` 排序，跟同一个人的其它推一致；否则同一条推在 All 和 `/s/x` 里会落在两个不同位置 |
+| 聚合视图的「全部已读」 | **不动 For You**（`source='x'` 或 `feed=foryou` 才扫它） | 聚合视图从来没显示过 For You，从那里把它清掉等于烧掉一整个没看过的 feed |
 
 技术要点（实现侧）：
 
@@ -162,18 +167,54 @@ x_vec_labeled  vec0 虚拟表（KNN 索引，仅训练集），见 Phase 4「向
 - ✓ 鉴权：Bearer 与 cookie 皆可（与 device token 既有语义对齐），无凭据 401。
 - 额外：v7 升级不动既有数据、handle 归一化与去重、跨 feed 同推文共用一行、首次 push 学到 user_id/name。
 
-## Phase 2 — timeline 接入 ⬜
+## Phase 2 — timeline 接入 ✅ 已完成 2026-07-25
 
-多源框架现成，这一步比 HN 当时便宜得多。**开工前先定 For You 容量策略**（见上方追加实测）：
-实际约 2400 条/天，直接倒进 timeline 会把其它源淹没。
+容量策略先定后写（见决策记录）：**隔离 + 降频** —— For You 不进聚合流，`CONDENSER_X_HOME_COUNT`
+50 → 20，存档不限量。
 
-Phase 1 留给这一步的现成件：`x_feed_items` 已带 `(channel_id, first_seen_at)` 索引；
-`items.py` / `timeline.SOURCES` / `_SOURCE_PATTERN` **尚未**认识 `'x'`（Phase 1 刻意不碰阅读面）。
+### 服务端（✓ = 与计划一致，△ = 实现期调整）
 
-- `sources/x.py` provider：`x_feed_items JOIN x_tweets`，For You 按 `first_seen_at DESC`、关注人按 `created_at DESC` 分页，anti-join `hidden_items`，挂进 k-way merge。
-- `items.py`：`x_key` / parse / `x_envelope`（payload 含 author、text、media、metrics、rt/quote 嵌套、`first_seen_at`、feed 来源、verdict）。
-- web `XCard`：作者头像/名/handle、文本（linkify）、媒体、RT/quote 嵌套卡、metrics 行；时间入口进 `ItemDetailPane`（"Open on X" 链接自拼 `x.com/{handle}/status/{id}`）。
-- 侧边栏/订阅页/`GET /api/sources` 出现 X 分组（框架自动，验证即可）。
+- ✓ `sources/x.py` provider：`x_feed_items JOIN x_tweets`（+ 自连接取被引推），anti-join
+  `read_items` / `saved_items` / `hidden_items`，挂进 k-way merge。
+  △ 排序键做成一列 SQL 表达式 `SORT_AT_SQL`（For You → `first_seen_at`，关注人 →
+  `created_at`，都 COALESCE 回 `first_seen_at` 兜住时间戳解析失败的行），这样混合查询里
+  两种 feed 能用同一个 cursor 列比较。
+  △ 同一条推出现在两个 feed 时用 `ROW_NUMBER()` 去重，保留关注人那次出现。
+  △ **去重必须按查询作用域来排名**（自审时发现的 bug 并已加回归测试）：feed 过滤放在
+  子查询*里面*。放外面的话，一条同时在两个 feed 的推在「只看 For You」视图里会拿到
+  rank 2 而被过滤掉——从它自己的 feed 里消失。顺带解决性能：过滤下推后
+  `x_feed_items(channel_id, first_seen_at)` 索引才用得上，否则每翻一页全表扫描。
+  △ 单 feed 作用域时跳过窗口函数（`(channel_id, tweet_id)` 是主键，一个 feed 里不可能重复），
+  且 For You 单独看时排序键就是 `first_seen_at` 这一列本身 —— `EXPLAIN QUERY PLAN` 从
+  「materialize + 全量 temp b-tree 排序」变成「走索引 + 只对并列项排序」。For You 是唯一
+  高速增长的 feed（~1000 条/天），这条路径值得特化。
+- △ **`feed` 作用域**：`/api/timeline`、`/timeline/days`、`/timeline/new`、`/read/bulk`
+  都接受 `feed`（handle 归一化在 provider 里做，`@Name` / `NAME` 都认）。计划里没预见到
+  X 是第一个「一个源多个 feed」的源 —— HN 只有 `front`，TG 用 `channel_id`。
+- ✓ `items.py`：`x_key` / `parse_key` / `x_envelope`。
+  △ snowflake id 在 JSON 里一律**转字符串**（int64 超出 JS 安全整数范围，不转会被静默改值）。
+- ✓ `GET /api/sources` 出现 X 分组，带每个 feed 的未读数。
+- ✓ X 收藏：快照直接存 envelope payload（引用推已内嵌），删档后仍可渲染。
+- △ `GET /api/x/avatar/{handle}`：unavatar 代理（Phase 1 实测⑧留下的坑，这一步补上）。
+- △ `mark_read_bulk` 的聚合形态**跳过 For You**（只有 `source='x'` / `feed=foryou` 才扫）。
+
+### web（✓ 全部交付）
+
+- `XCard` + `XQuoteCard` + `XMedia` / `XMediaThumb` / `XLightbox` + `XAvatar`
+  （清单见 `frontend/AGENTS.md`）。RT 前缀转成「Retweeted @orig」标题并从正文里剥掉；
+  长文的 `text` 就是标题，只渲染 article 卡不重复打印。
+- `/s/:source/:feed` 路由 + `SidebarXFeedLink`（For You 只有这一个入口）。
+- `ItemDetailPane` / `ItemDetailInfo` 的 X 分支：作者、来自哪个 feed、发布 vs 抓取时间、
+  互动数、RT/引用/回复来源、"Open original on X"。
+- 推文媒体和头像都走后端代理，浏览器不直连 X。
+
+### 测试
+
+`tests/test_x_timeline.py`（23 场景）+ `XCard.test.tsx`（6）。211 backend / 51 frontend 绿。
+关键场景：For You 不进聚合流、只订阅 For You 时聚合流为空、`/s/x` 两个 feed 都在、
+feed 作用域与 handle 归一化、两种排序键、跨 feed 去重、envelope 形状（含字符串 id）、
+被引推不单独成条、read/save/hide 复用通用管道、删档后收藏仍可渲染、聚合「全部已读」
+不动 For You、days/new 的作用域。
 
 ## Phase 3 — 反馈闭环（web + iOS）⬜ —— `item_feedback` 表已在 v7 就位
 
@@ -227,7 +268,9 @@ WHERE embedding MATCH :query_vec AND k = 15
 
 ⚠️ 下表原按 ~500 条/天估算，Phase 1 实测 For You 每次调用重新采样（见上方追加实测），
 n=50 / 30min 一轮实际约 **2400 条/天**，即右列要 **×5**（256 维一年 ~950MB，1024 维 ~3.7GB）。
-所以「限量存档 / 降低频率 / retention」不再是可选优化，而是 Phase 4 的前置条件。
+**Phase 2 已把 n 降到 20**（决策：隔离 + 降频），30min 一轮 ≈ 960 条/天，256 维一年 ~380MB
+—— 回到可接受区间，但 **retention 仍然是 Phase 4 的前置条件**（未标注向量保留 90 天后
+prune，随时可重嵌）。注意降的是抓取量不是存档策略：`x_tweets` 仍然全量留底。
 
 | dims | 单条 | 一年 @~500 条/天（原估） | 一年 @~2400 条/天（实测频率） |
 |---|---|---|---|
@@ -351,6 +394,13 @@ async def embed_texts(texts: list[str]) -> list[list[float]]:
 
 - Kit：`XTweet` payload model + fixture、envelope 分发、feedback API。
 - App：`XCard` / detail sheet、up/down 按钮、源切换菜单与订阅页出现 X、verdict 徽标。
+- App 也要遵守「For You 不进聚合流」：源切换菜单里 X 的两级（源 / 各 feed）才是 For You 的入口。
+
+⚠️ **Phase 2 部署后、Phase 5 之前的空窗**：iOS 的 `TimelineItem.source` 是普通 String、
+payload 字段可选，所以 X 条目**不会炸解码**；但 `MessageListView.card(_:)` 的分发只认
+`telegram` / `hn`，X 条目会渲染成**空白行**。影响范围仅限「关注人 feed」——For You 本来
+就不进聚合流。规避办法：Phase 5 之前先只订阅 For You（web 上照常读 `/s/x/foryou`），
+或者接受 iOS 上的空白行。要提前消掉，最小改动是在 iOS 侧过滤掉 payload 全空的条目。
 
 ## 风险
 

@@ -16,9 +16,10 @@ from . import db
 from .items import norm_ts
 from .sources import hn as hn_source
 from .sources import telegram as tg_source
+from .sources import x as x_source
 from .sources.base import SourcePage, pack_pos
 
-SOURCES = ('telegram', 'hn')
+SOURCES = ('telegram', 'hn', 'x')
 
 
 class InvalidCursor(ValueError):
@@ -42,7 +43,10 @@ def decode_cursor_map(cursor: str) -> dict[str, str]:
 
 def _active_sources(channel_id: Optional[int], source: Optional[str]) -> list[str]:
     """Sources participating in this query. ``channel_id`` implies telegram; an
-    explicit ``source`` narrows to it; default = telegram + any active others."""
+    explicit ``source`` narrows to it; default = telegram + any active others.
+
+    The aggregate view only counts X as active when a *followed account* is
+    subscribed: For You is opt-in (see sources/x.py)."""
     if channel_id is not None:
         return ['telegram']
     if source:
@@ -50,6 +54,8 @@ def _active_sources(channel_id: Optional[int], source: Optional[str]) -> list[st
     active = ['telegram']
     if hn_source.active():
         active.append('hn')
+    if x_source.active(include_foryou=False):
+        active.append('x')
     return active
 
 
@@ -60,12 +66,23 @@ def _fetch_pages(
     channel_id: Optional[int],
     date: Optional[str],
     unread_only: bool,
+    source: Optional[str],
+    feed: Optional[str],
 ) -> dict[str, SourcePage]:
     pages: dict[str, SourcePage] = {}
     for s in active:
         if s == 'telegram':
             pages[s] = tg_source.fetch_page(
                 cursors.get(s), limit, channel_id=channel_id, date=date, unread_only=unread_only
+            )
+        elif s == 'x':
+            pages[s] = x_source.fetch_page(
+                cursors.get(s),
+                limit,
+                feed=feed,
+                include_foryou=source == 'x',
+                date=date,
+                unread_only=unread_only,
             )
         else:
             pages[s] = hn_source.fetch_page(cursors.get(s), limit, date=date, unread_only=unread_only)
@@ -79,16 +96,18 @@ def query_timeline(
     cursor: Optional[str] = None,
     limit: int = 30,
     source: Optional[str] = None,
+    feed: Optional[str] = None,
 ) -> dict:
     """Older-direction page: ``{items, next_cursor, end_cursor, head_cursor}`` (date desc).
 
     ``next_cursor`` is null once every active source is exhausted; ``end_cursor``
     still anchors the page's consumed positions so a client can resume paging after
-    fetch-older imports rows older than the local end (iOS pull-up).
+    fetch-older imports rows older than the local end (iOS pull-up). ``feed`` narrows
+    a multi-feed source (X) to one of its feeds.
     """
     active = _active_sources(channel_id, source)
     cursors = decode_cursor_map(cursor) if cursor else {}
-    pages = _fetch_pages(active, cursors, limit, channel_id, date, unread_only)
+    pages = _fetch_pages(active, cursors, limit, channel_id, date, unread_only, source, feed)
 
     consumed = dict(cursors)
     idx = {s: 0 for s in active}
@@ -149,6 +168,7 @@ def query_new(
     limit: int = 100,
     unread_only: bool = False,
     source: Optional[str] = None,
+    feed: Optional[str] = None,
 ) -> dict:
     """Newer-direction poll: ``{count, items}`` strictly newer than each source's anchor.
 
@@ -163,17 +183,30 @@ def query_new(
             continue
         if s == 'telegram':
             units += tg_source.fetch_new(anchors[s], limit, channel_id=channel_id, unread_only=unread_only)
+        elif s == 'x':
+            units += x_source.fetch_new(
+                anchors[s], limit, feed=feed, include_foryou=source == 'x', unread_only=unread_only
+            )
         else:
             units += hn_source.fetch_new(anchors[s], limit, unread_only=unread_only)
     units.sort(key=lambda u: u.sort_ts, reverse=True)
     return {'count': len(units), 'items': [u.envelope for u in units[:limit]]}
 
 
-def query_days(channel_id: Optional[int] = None, source: Optional[str] = None) -> list[dict]:
+def query_days(
+    channel_id: Optional[int] = None,
+    source: Optional[str] = None,
+    feed: Optional[str] = None,
+) -> list[dict]:
     """Days that have visible content (+ unit counts), summed across active sources."""
     totals: dict[str, int] = {}
     for s in _active_sources(channel_id, source):
-        counts = tg_source.days(channel_id) if s == 'telegram' else hn_source.days()
+        if s == 'telegram':
+            counts = tg_source.days(channel_id)
+        elif s == 'x':
+            counts = x_source.days(feed=feed, include_foryou=source == 'x')
+        else:
+            counts = hn_source.days()
         for day, cnt in counts.items():
             totals[day] = totals.get(day, 0) + cnt
     return [{'date': day, 'count': totals[day]} for day in sorted(totals, reverse=True)]

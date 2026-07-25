@@ -15,6 +15,7 @@ export function useNewContent({
   unreadOnly,
   active,
   source,
+  feed,
 }: {
   channelId?: number | null;
   headCursor: string | null;
@@ -22,13 +23,21 @@ export function useNewContent({
   active: boolean;
   /** Mirrors the view's source scope into the poll. */
   source?: Source | null;
+  /** Mirrors the view's feed scope (the /s/x/:feed views) into the poll. */
+  feed?: string | null;
 }) {
   return useQuery({
     queryKey: [
       'timeline-new',
-      { channel_id: channelId ?? null, head: headCursor, unread_only: !!unreadOnly, source: source ?? null },
+      {
+        channel_id: channelId ?? null,
+        head: headCursor,
+        unread_only: !!unreadOnly,
+        source: source ?? null,
+        feed: feed ?? null,
+      },
     ],
-    queryFn: () => api.timelineNew(headCursor!, channelId ?? null, 1, !!unreadOnly, source ?? null),
+    queryFn: () => api.timelineNew(headCursor!, channelId ?? null, 1, !!unreadOnly, source ?? null, feed ?? null),
     enabled: active && !!headCursor,
     refetchInterval: POLL_INTERVAL_MS,
     refetchIntervalInBackground: false,

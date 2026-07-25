@@ -2,6 +2,7 @@ import { type QueryClient, useMutation, useQueryClient } from '@tanstack/react-q
 import { toast } from 'sonner';
 
 import { api, errorMessage } from '@/lib/api';
+import { X_FORYOU_FEED } from '@/lib/sources';
 import type { Source, SourceGroup, Subscription, TimelineItem, TimelinePage } from '@/lib/types';
 
 export interface BulkReadArgs {
@@ -9,6 +10,18 @@ export interface BulkReadArgs {
   before_date?: string | null;
   /** Narrow the sweep to one source (the /s/:source views); channel_id implies telegram. */
   source?: Source | null;
+  /** Narrow further inside a multi-feed source (the /s/x/:feed views). */
+  feed?: string | null;
+}
+
+/** Does this sweep cover the given subscription row? Mirrors db.mark_read_bulk:
+ *  an unscoped sweep skips X's For You, which the aggregate view never showed. */
+function coversSub(args: BulkReadArgs, source: string, channelId: number | string): boolean {
+  if (args.channel_id != null) return channelId === args.channel_id;
+  if (args.source && source !== args.source) return false;
+  if (args.feed) return String(channelId) === args.feed;
+  if (!args.source && source === 'x' && channelId === X_FORYOU_FEED) return false;
+  return true;
 }
 
 function sweepTimelineRead(qc: QueryClient, args: BulkReadArgs): void {
@@ -23,8 +36,9 @@ function sweepTimelineRead(qc: QueryClient, args: BulkReadArgs): void {
         items: page.items.map((it: TimelineItem) => {
           const sourceMatch = !args.source || it.source === args.source;
           const channelMatch = channelId == null || it.telegram?.channel_id === channelId;
+          const feedMatch = !args.feed || it.x?.feed === args.feed;
           const dateMatch = !beforeDate || it.datetime.slice(0, 10) < beforeDate;
-          return sourceMatch && channelMatch && dateMatch ? { ...it, is_read: true } : it;
+          return sourceMatch && channelMatch && feedMatch && dateMatch ? { ...it, is_read: true } : it;
         }),
       })),
     };
@@ -33,22 +47,18 @@ function sweepTimelineRead(qc: QueryClient, args: BulkReadArgs): void {
 
 function zeroUnread(qc: QueryClient, args: BulkReadArgs): void {
   const channelId = args.channel_id ?? null;
-  if (args.source !== 'hn') {
+  // The legacy TG-only cache; other sources never appear in it.
+  if (!args.source || args.source === 'telegram') {
     qc.setQueryData<Subscription[]>(['subscriptions'], (subs) =>
       (subs ?? []).map((s) => (channelId == null || s.channel_id === channelId ? { ...s, unread: 0 } : s)),
     );
   }
   // The sidebar + aggregate header read /api/sources; zero the swept scope there too.
   qc.setQueryData<SourceGroup[]>(['sources'], (groups) =>
-    groups?.map((g) => {
-      if (args.source && g.source !== args.source) return g;
-      return {
-        ...g,
-        subscriptions: g.subscriptions.map((s) =>
-          channelId == null || s.channel_id === channelId ? { ...s, unread: 0 } : s,
-        ),
-      };
-    }),
+    groups?.map((g) => ({
+      ...g,
+      subscriptions: g.subscriptions.map((s) => (coversSub(args, g.source, s.channel_id) ? { ...s, unread: 0 } : s)),
+    })),
   );
 }
 

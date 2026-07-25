@@ -7,14 +7,20 @@ fetch (so the probe carries no local config beyond a server URL + token) and
 is registered with — it is just another authorized device.
 """
 
-from fastapi import APIRouter, Depends, HTTPException
+import httpx
+from fastapi import APIRouter, Depends, HTTPException, Response
 
-from .. import db, x
+from .. import db, preview, x
 from ..auth import require_auth
 from ..config import Settings, get_settings
 from ..types import XIngestBody, XSubscribeBody, XSubscriptionPatch
 
 router = APIRouter(prefix='/api', tags=['x'], dependencies=[Depends(require_auth)])
+
+# bird's output carries no avatar URL (Phase 1 finding #8), so author avatars come
+# from unavatar's X lookup. `fallback=false` makes a miss a 404 instead of a generic
+# placeholder image, which lets the client draw its own letter avatar instead.
+UNAVATAR_URL = 'https://unavatar.io/x/{handle}?fallback=false'
 
 
 def _require_source_enabled(settings: Settings) -> None:
@@ -97,3 +103,17 @@ def ingest(body: XIngestBody, settings: Settings = Depends(get_settings)):
 @router.get('/x/status')
 def x_status(settings: Settings = Depends(get_settings)):
     return x.status(settings)
+
+
+@router.get('/x/avatar/{handle}')
+async def get_x_avatar(handle: str):
+    """Proxy an author's avatar (see UNAVATAR_URL). 404 = draw a letter avatar."""
+    handle = _normalize_or_422(handle)
+    if handle == x.FORYOU_FEED:
+        raise HTTPException(status_code=404, detail='not an account handle')
+    try:
+        data, mime = await preview.fetch_image(UNAVATAR_URL.format(handle=handle))
+    except (preview.PreviewError, httpx.HTTPError):
+        raise HTTPException(status_code=404, detail='no avatar')
+    # avatars are tiny and change rarely; the server keeps nothing on disk
+    return Response(content=data, media_type=mime, headers={'Cache-Control': 'private, max-age=86400'})

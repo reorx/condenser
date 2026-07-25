@@ -4,8 +4,9 @@ import { type ReactNode } from 'react';
 
 import { ChannelAvatar } from '@/components/ChannelAvatar';
 import { HnGlyph } from '@/components/HnGlyph';
-import { channelName, fullDateLabel } from '@/lib/format';
-import { hnCommentsUrl } from '@/lib/sources';
+import { XAvatar } from '@/components/XAvatar';
+import { channelName, compactNumber, fullDateLabel } from '@/lib/format';
+import { hnCommentsUrl, xProfileUrl, X_FORYOU_FEED } from '@/lib/sources';
 import type { Subscription, TimelineItem } from '@/lib/types';
 
 function DetailRow({ label, children }: { label: string; children: ReactNode }) {
@@ -27,6 +28,7 @@ interface Props {
 export function ItemDetailInfo({ item, sub }: Props) {
   const msg = item.telegram;
   const hn = item.hn;
+  const tweet = item.x;
 
   if (msg) {
     const fwd = msg.forward_info;
@@ -51,6 +53,48 @@ export function ItemDetailInfo({ item, sub }: Props) {
           </DetailRow>
         )}
         {msg.media_items.length > 0 && <DetailRow label="媒体">{msg.media_items.length} 项</DetailRow>}
+        <DetailRow label="条目 ID">{item.key}</DetailRow>
+      </dl>
+    );
+  }
+
+  if (tweet) {
+    const m = tweet.metrics;
+    return (
+      <dl className="space-y-1.5">
+        <DetailRow label="作者">
+          <span className="inline-flex items-center gap-1.5">
+            <XAvatar handle={tweet.author_handle} name={tweet.author_name} className="size-4 text-[8px]" />
+            <span>{tweet.author_name ?? '未知'}</span>
+            {tweet.author_handle && (
+              <a
+                href={xProfileUrl(tweet.author_handle)}
+                target="_blank"
+                rel="noreferrer"
+                className="text-muted-foreground hover:underline"
+              >
+                @{tweet.author_handle}
+              </a>
+            )}
+          </span>
+        </DetailRow>
+        <DetailRow label="信息源">
+          {tweet.feed === X_FORYOU_FEED ? 'X · For You（算法推荐）' : `X · @${tweet.feed}`}
+        </DetailRow>
+        {tweet.created_at && <DetailRow label="发布时间">{fullDateLabel(tweet.created_at)}</DetailRow>}
+        {/* For You sorts on this, so it is the position you actually see it at. */}
+        <DetailRow label="抓取时间">{fullDateLabel(tweet.first_seen_at)}</DetailRow>
+        {m && (
+          <DetailRow label="互动">
+            {compactNumber(m.like_count)} 赞 · {compactNumber(m.retweet_count)} 转推 · {compactNumber(m.reply_count)}{' '}
+            回复
+          </DetailRow>
+        )}
+        {tweet.rt_of_handle && <DetailRow label="转推自">@{tweet.rt_of_handle}</DetailRow>}
+        {tweet.quote && <DetailRow label="引用">@{tweet.quote.author_handle ?? '未知'}</DetailRow>}
+        {tweet.reply_to_id && <DetailRow label="回复">该推文是一条回复</DetailRow>}
+        {tweet.media && tweet.media.length > 0 && <DetailRow label="媒体">{tweet.media.length} 项</DetailRow>}
+        {tweet.verdict && <DetailRow label="判定">{tweet.verdict}</DetailRow>}
         <DetailRow label="条目 ID">{item.key}</DetailRow>
       </dl>
     );

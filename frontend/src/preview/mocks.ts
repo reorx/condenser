@@ -1,6 +1,6 @@
 // Mock data for the component preview page (`/preview.html`, dev-only). Lets us render
 // real components with deterministic data and screenshot them to verify visual changes.
-import type { DisplayMessage, HnStory, LinkPreview, TimelineItem } from '@/lib/types';
+import type { DisplayMessage, HnStory, LinkPreview, TimelineItem, XTweet } from '@/lib/types';
 
 export const CHANNEL_ID = 1833253016;
 
@@ -75,6 +75,41 @@ export function makeHnItem(
     is_read: flags.is_read ?? false,
     is_saved: flags.is_saved ?? false,
     hn,
+  };
+}
+
+/** Wrap a tweet in its item envelope. The sort timestamp is feed-dependent, exactly
+ *  as the backend computes it: For You = first sighting, a followed account = post time. */
+export function makeXItem(
+  over: Partial<XTweet> & Pick<XTweet, 'id'>,
+  flags: { is_read?: boolean; is_saved?: boolean } = {},
+): TimelineItem {
+  const x: XTweet = {
+    author_id: '18824096',
+    author_handle: 'recatm',
+    author_name: '西乔 XiQiao',
+    text: 'a tweet',
+    created_at: '2026-06-23T02:38:39Z',
+    first_seen_at: '2026-06-23T03:08:00Z',
+    media: null,
+    metrics: { reply_count: 34, retweet_count: 2, like_count: 128 },
+    quote: null,
+    rt_of_handle: null,
+    reply_to_id: null,
+    article: null,
+    feed: 'foryou',
+    feed_kind: 'home',
+    verdict: null,
+    verdict_meta: null,
+    ...over,
+  };
+  return {
+    source: 'x',
+    key: `x:${x.id}`,
+    datetime: x.feed_kind === 'home' ? x.first_seen_at : (x.created_at ?? x.first_seen_at),
+    is_read: flags.is_read ?? false,
+    is_saved: flags.is_saved ?? false,
+    x,
   };
 }
 
@@ -197,4 +232,56 @@ export const dayItems: TimelineItem[] = [
     },
     { is_read: true },
   ),
+  // X cards: plain tweet w/ link, quote tweet, retweet, article, followed-account feed.
+  makeXItem({
+    id: '2080557548659441713',
+    text: '这两天在主线工作上的进展给我带来了非常大的成就感 —— 一个只属于自己的阅读器，终于把 X 也接进来了。 https://example.com/condenser',
+  }),
+  makeXItem(
+    {
+      id: '2080301572739695041',
+      text: '完蛋了，这个说法太准确了 https://t.co/fRiMeyu599',
+      quote: {
+        id: '2080267011654144075',
+        author_handle: 'MaxForAI',
+        author_name: 'Max For AI',
+        text: '所有的推荐算法最终都会变成同一个东西：一个你无法关掉的、永远在采样的老虎机。',
+        created_at: '2026-06-23T00:21:19Z',
+        media: null,
+        metrics: { reply_count: 240, retweet_count: 18, like_count: 770 },
+      },
+    },
+    { is_saved: true },
+  ),
+  makeXItem({
+    id: '2080433142456864773',
+    author_handle: 'geoffreylitt',
+    author_name: 'Geoffrey Litt',
+    rt_of_handle: 'colebemis',
+    text: 'RT @colebemis: The best interface for an LLM is the one you already know how to use.',
+    metrics: { reply_count: 0, retweet_count: 32, like_count: 0 },
+  }),
+  makeXItem(
+    {
+      id: '2080441004881215520',
+      author_handle: 'lawrencecchen',
+      author_name: 'Lawrence Chen',
+      text: 'Superrepos and why Claude Code is the best worktree manager',
+      article: {
+        title: 'Superrepos and why Claude Code is the best worktree manager',
+        previewText:
+          'Different workloads are best parallelized in different ways. Common ways include: Worktrees, multiple checkouts (git clone multiple times), microVMs/remote sandboxes via E2B/Freestyle/Daytona/Modal…',
+      },
+    },
+    { is_read: true },
+  ),
+  makeXItem({
+    id: '2080215574957928545',
+    author_handle: 'novoreorx',
+    author_name: 'Reorx',
+    feed: 'novoreorx',
+    feed_kind: 'user',
+    text: '关注的人的时间线按发布时间排序，和 TG 频道一个语义；For You 才按抓取时间。',
+    metrics: { reply_count: 3, retweet_count: 1, like_count: 26 },
+  }),
 ];

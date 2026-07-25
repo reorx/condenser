@@ -27,7 +27,7 @@ from peewee import (
 
 from telememo import db as tdb
 
-from .items import ItemKey
+from .items import FORYOU_FEED, ItemKey
 
 # The condenser is_filtered overlay column declared on telememo's messages table.
 MESSAGES_OPTIONAL_FIELDS = {
@@ -628,14 +628,22 @@ def mark_read(items: list[ItemKey]) -> int:
     return len(rows)
 
 
-def mark_read_bulk(channel_id: Optional[int], before_date: Optional[str], source: Optional[str] = None) -> None:
+def mark_read_bulk(
+    channel_id: Optional[int],
+    before_date: Optional[str],
+    source: Optional[str] = None,
+    feed: Optional[str] = None,
+) -> None:
     """Mark every subscribed, unfiltered item before a date (optionally one TG channel) as read.
 
     The aggregate form (no channel_id) covers every source: HN stories are included
     when an enabled HN subscription exists (all archived rows — hidden ranks don't
     affect visible counts and marking them keeps a later display-mode widening quiet).
-    `source` narrows the sweep to one source (the source-scoped timeline views);
-    `channel_id` already implies telegram.
+    `source` narrows the sweep to one source (the source-scoped timeline views),
+    `feed` narrows it further within a multi-feed source (X); `channel_id` already
+    implies telegram. X's For You only joins the sweep when the caller is X-scoped —
+    it is invisible in the aggregate view, so clearing it from there would silently
+    burn a feed the user never saw.
     """
     if source is None or source == 'telegram':
         where = ['m.is_filtered IS NOT 1']
@@ -665,6 +673,29 @@ def mark_read_bulk(channel_id: Optional[int], before_date: Optional[str], source
             "SELECT 'hn', h.id, 0, ? FROM hn_stories h WHERE " + ' AND '.join(hn_where),
             (_now().isoformat(sep=' '), *hn_params),
         )
+
+    if channel_id is None and source in (None, 'x'):
+        _mark_x_read_bulk(before_date, feed, include_foryou=source == 'x')
+
+
+def _mark_x_read_bulk(before_date: Optional[str], feed: Optional[str], include_foryou: bool) -> None:
+    # deferred: condenser.sources.x imports this module (the SQL sort key lives with
+    # the provider so the sweep and the timeline agree on which day a tweet is on)
+    from .sources.x import SORT_AT_SQL
+
+    feeds = enabled_x_feeds(feed, include_foryou=include_foryou)
+    if not feeds:
+        return
+    where = ['f.channel_id IN ({})'.format(','.join('?' for _ in feeds))]
+    params: list = list(feeds)
+    if before_date:
+        where.append(f'substr({SORT_AT_SQL}, 1, 10) < ?')
+        params.append(before_date)
+    tdb.db.execute_sql(
+        "INSERT OR IGNORE INTO read_items (source, ref1, ref2, read_at) SELECT 'x', f.tweet_id, 0, ? "
+        'FROM x_feed_items f JOIN x_tweets t ON t.id = f.tweet_id WHERE ' + ' AND '.join(where),
+        (_now().isoformat(sep=' '), *params),
+    )
 
 
 def is_item_read(source: str, ref1: int, ref2: int = 0) -> bool:
@@ -915,6 +946,20 @@ def enabled_x_subscriptions() -> list[Subscription]:
     return list(
         Subscription.select().where(_X & (Subscription.enabled == True)).order_by(Subscription.added_at)  # noqa: E712
     )
+
+
+def enabled_x_feeds(feed: Optional[str] = None, include_foryou: bool = False) -> list[str]:
+    """Enabled X feed keys for a query scope (empty = nothing to read).
+
+    For You is opt-in: it only joins when the caller asks for it by name or sets
+    ``include_foryou`` (the X-scoped views) — see condenser/sources/x.py for why.
+    """
+    ids = [s.channel_id for s in enabled_x_subscriptions()]
+    if feed is not None:
+        return [c for c in ids if c == feed]
+    if not include_foryou:
+        return [c for c in ids if c != FORYOU_FEED]
+    return ids
 
 
 # --- x tweets + feed items ----------------------------------------------------

@@ -10,6 +10,8 @@ import { HnGlyph } from '@/components/HnGlyph';
 import { IconBadge, PageHeader } from '@/components/PageHeader';
 import { Timeline } from '@/components/timeline/Timeline';
 import { Button } from '@/components/ui/button';
+import { XAvatar } from '@/components/XAvatar';
+import { XGlyph } from '@/components/XGlyph';
 import { useBulkRead } from '@/hooks/useBulkRead';
 import { useChannelFilter } from '@/hooks/useChannelFilter';
 import { hnDisplayModeOf } from '@/hooks/useHnDisplayMode';
@@ -18,15 +20,17 @@ import { useSources } from '@/hooks/useSources';
 import { useChannelLabels, useSubscriptions } from '@/hooks/useSubscriptions';
 import { useTimeline } from '@/hooks/useTimeline';
 import { channelName } from '@/lib/format';
-import { isSource, sourceLabel } from '@/lib/sources';
+import { isSource, sourceLabel, sourceSubLabel, X_FORYOU_FEED } from '@/lib/sources';
 import type { TimelineItem } from '@/lib/types';
 import { cn } from '@/lib/utils';
 
 export function TimelineView() {
-  const { channelId, source: sourceParam } = useParams();
+  const { channelId, source: sourceParam, feed: feedParam } = useParams();
   const [sp, setSp] = useSearchParams();
   const cid = channelId ? Number(channelId) : undefined;
   const source = isSource(sourceParam) ? sourceParam : undefined;
+  // Only X has more than one feed today; the route segment is ignored elsewhere.
+  const feed = source === 'x' ? feedParam : undefined;
   // Channel + source views are "scoped": they show everything unless "?unread=1"
   // narrows them. The aggregate view defaults to Unread ("/"); "?all=1" shows all.
   const scoped = cid != null || source != null;
@@ -40,30 +44,41 @@ export function TimelineView() {
   const refreshAll = useRefreshAll();
 
   const sub = cid != null ? subs?.find((s) => s.channel_id === cid) : undefined;
+  // The /s/x/:feed views name themselves after the feed's subscription row.
+  const feedSub = feed
+    ? sources?.find((g) => g.source === source)?.subscriptions.find((s) => String(s.channel_id) === feed)
+    : undefined;
   const title =
     cid != null
       ? sub
         ? channelName(sub)
         : `Channel ${cid}`
-      : source
-        ? sourceLabel(source)
-        : unreadOnly
-          ? 'Unread'
-          : 'All';
+      : feed
+        ? feedSub
+          ? sourceSubLabel(feedSub)
+          : `@${feed}`
+        : source
+          ? sourceLabel(source)
+          : unreadOnly
+            ? 'Unread'
+            : 'All';
 
-  // Unread count for the header: the channel's own count, one source group's sum
-  // (/s/:source), or the sum across every source for the All / Unread aggregate views.
+  // Unread count for the header: the channel's own count, one feed's (/s/:source/:feed),
+  // one source group's sum (/s/:source), or the sum across every source for the
+  // All / Unread aggregate views.
   const unreadCount =
     cid != null
       ? (sub?.unread ?? 0)
-      : (sources ?? [])
-          .filter((g) => !source || g.source === source)
-          .flatMap((g) => g.subscriptions)
-          .reduce((n, s) => n + (s.enabled ? s.unread : 0), 0);
+      : feed
+        ? (feedSub?.unread ?? 0)
+        : (sources ?? [])
+            .filter((g) => !source || g.source === source)
+            .flatMap((g) => g.subscriptions)
+            .reduce((n, s) => n + (s.enabled ? s.unread : 0), 0);
 
   // The timeline query lives here (not in <Timeline>) so the header can build the
   // channel-filter control from the loaded items.
-  const query = useTimeline({ channelId: cid, unreadOnly, date: date ?? undefined, source });
+  const query = useTimeline({ channelId: cid, unreadOnly, date: date ?? undefined, source, feed });
   const items = useMemo(() => query.data?.pages.flatMap((p) => p.items) ?? [], [query.data]);
   const channelOf = useCallback((it: TimelineItem) => it.telegram?.channel_id ?? null, []);
   const nameOf = useCallback(
@@ -80,8 +95,9 @@ export function TimelineView() {
 
   // Per-channel view re-pulls that one channel synchronously; the All/Unread view fans the
   // refresh out across every enabled channel in the background. HN has no manual pull —
-  // the sampling loop is the only ingest — so the /s/hn view hides the button.
-  const showRefresh = source !== 'hn';
+  // the sampling loop is the only ingest — and X is push-only (the local probe decides
+  // when data arrives), so both hide the button.
+  const showRefresh = source !== 'hn' && source !== 'x';
   const refreshing = cid != null ? refreshChannel.isPending : refreshAll.isPending;
   const onRefresh = () => (cid != null ? refreshChannel.mutate(cid) : refreshAll.mutate());
 
@@ -102,6 +118,10 @@ export function TimelineView() {
   const icon =
     cid != null ? (
       <ChannelAvatar channelId={cid} name={title} className="size-9 text-sm" />
+    ) : source === 'x' && feed && feed !== X_FORYOU_FEED ? (
+      <XAvatar handle={feed} name={title} className="size-9 text-sm" />
+    ) : source === 'x' ? (
+      <XGlyph className="size-9 rounded-full text-base" />
     ) : source === 'hn' ? (
       <HnGlyph className="size-9 rounded-full text-base" />
     ) : source === 'telegram' ? (
@@ -122,6 +142,7 @@ export function TimelineView() {
             <CalendarPopover
               channelId={cid ?? null}
               source={source}
+              feed={feed}
               date={date}
               onSelect={(d) => patchParams((p) => (d ? p.set('date', d) : p.delete('date')))}
             />
@@ -141,7 +162,7 @@ export function TimelineView() {
               size="icon"
               variant="ghost"
               className="size-8 text-muted-foreground"
-              onClick={() => bulkRead.mutate({ channel_id: cid ?? null, source: source ?? null })}
+              onClick={() => bulkRead.mutate({ channel_id: cid ?? null, source: source ?? null, feed: feed ?? null })}
               disabled={bulkRead.isPending}
               title="Mark all read"
             >
@@ -180,9 +201,10 @@ export function TimelineView() {
       />
       <Timeline
         query={query}
-        viewKey={`${source ?? ''}:${cid ?? 'all'}:${unreadOnly ? 'unread' : 'all'}:${date ?? ''}`}
+        viewKey={`${source ?? ''}/${feed ?? ''}:${cid ?? 'all'}:${unreadOnly ? 'unread' : 'all'}:${date ?? ''}`}
         channelId={cid}
         source={source}
+        feed={feed}
         date={date ?? undefined}
         unreadOnly={unreadOnly}
         items={items}

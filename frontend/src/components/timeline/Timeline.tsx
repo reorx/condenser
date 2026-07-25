@@ -41,6 +41,8 @@ interface TimelineProps {
   channelId?: number;
   /** Mirrors the view's source scope into the new-content poll. */
   source?: Source;
+  /** Mirrors the view's feed scope (the /s/x/:feed views) into the new-content poll. */
+  feed?: string;
   date?: string;
   /** Mirrors the view's unread filter into the new-content poll. */
   unreadOnly?: boolean;
@@ -59,6 +61,7 @@ export function Timeline({
   viewKey,
   channelId,
   source,
+  feed,
   date,
   unreadOnly,
   items,
@@ -75,7 +78,7 @@ export function Timeline({
 
   // New-content poll: anchored to the newest loaded item; disabled in date-filtered views.
   const headCursor = query.data?.pages[0]?.head_cursor ?? null;
-  const newContent = useNewContent({ channelId, headCursor, unreadOnly, active: !date, source });
+  const newContent = useNewContent({ channelId, headCursor, unreadOnly, active: !date, source, feed });
   const newCount = newContent.data?.count ?? 0;
 
   function jumpToNewest() {

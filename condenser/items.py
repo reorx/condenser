@@ -1,10 +1,10 @@
 """Item keys + timeline envelopes (multi-source plan 2.1).
 
 An item key is the API-level identifier of one timeline unit:
-``tg:{channel_id}:{message_id}`` / ``hn:{story_id}``. Storage uses the integer
-triple ``(source, ref1, ref2)`` — see ``read_items`` / ``saved_items`` in db.py;
-this module owns the string<->triple mapping and the envelope assembly shared by
-the timeline and records renderers.
+``tg:{channel_id}:{message_id}`` / ``hn:{story_id}`` / ``x:{tweet_id}``. Storage
+uses the integer triple ``(source, ref1, ref2)`` — see ``read_items`` /
+``saved_items`` in db.py; this module owns the string<->triple mapping and the
+envelope assembly shared by the timeline and records renderers.
 """
 
 import json
@@ -13,18 +13,25 @@ from typing import Optional, Union
 
 from pydantic import BaseModel
 
-SOURCES = ('telegram', 'hn')
+SOURCES = ('telegram', 'hn', 'x')
+
+# The X algorithmic feed's subscription key; a followed account's key is its handle.
+# Lives here because the envelope's sort timestamp depends on which one an item
+# came from (see ``x_envelope``).
+FORYOU_FEED = 'foryou'
 
 
 class ItemKey(BaseModel):
-    source: str  # 'telegram' | 'hn'
-    ref1: int  # TG: channel_id, HN: story_id
-    ref2: int = 0  # TG: message_id, HN: unused
+    source: str  # 'telegram' | 'hn' | 'x'
+    ref1: int  # TG: channel_id, HN: story_id, X: tweet id
+    ref2: int = 0  # TG: message_id, others: unused
 
     @property
     def key(self) -> str:
         if self.source == 'telegram':
             return f'tg:{self.ref1}:{self.ref2}'
+        if self.source == 'x':
+            return f'x:{self.ref1}'
         return f'hn:{self.ref1}'
 
     @property
@@ -40,6 +47,10 @@ def hn_key(story_id: int) -> str:
     return f'hn:{story_id}'
 
 
+def x_key(tweet_id: Union[int, str]) -> str:
+    return f'x:{tweet_id}'
+
+
 def parse_key(key: str) -> ItemKey:
     """Parse an item key string; raises ValueError on any malformed input."""
     parts = key.split(':')
@@ -47,6 +58,8 @@ def parse_key(key: str) -> ItemKey:
         return ItemKey(source='telegram', ref1=int(parts[1]), ref2=int(parts[2]))
     if parts[0] == 'hn' and len(parts) == 2:
         return ItemKey(source='hn', ref1=int(parts[1]))
+    if parts[0] == 'x' and len(parts) == 2:
+        return ItemKey(source='x', ref1=int(parts[1]))
     raise ValueError(f'invalid item key: {key!r}')
 
 
@@ -87,15 +100,21 @@ def tg_envelope(display: dict, is_read: bool, is_saved: bool) -> dict:
     }
 
 
-def _parse_preview(value: Union[str, dict, None]) -> Optional[dict]:
-    """``hn_stories.preview`` in its three shapes: absent/None, JSON str (timeline
-    query rows / model ``__data__``), or an already-parsed dict (saved-record replay)."""
-    if value is None or isinstance(value, dict):
+def _json_field(value: Union[str, list, dict, None]) -> Union[list, dict, None]:
+    """A stored JSON column in its three shapes: absent/None, a JSON str (timeline
+    query rows / model ``__data__``), or already parsed (saved-record replay, where
+    the snapshot *is* the payload)."""
+    if value is None or isinstance(value, (list, dict)):
         return value
     try:
         return json.loads(value)
     except (TypeError, ValueError):
         return None
+
+
+def _sid(value: Union[int, str, None]) -> Optional[str]:
+    """Snowflake ids cross the API as strings: int64 exceeds JS's safe integer range."""
+    return None if value is None else str(value)
 
 
 def hn_payload(row: dict) -> dict:
@@ -115,7 +134,7 @@ def hn_payload(row: dict) -> dict:
         'day_rank': row.get('day_rank'),
         'peak_rank': row.get('peak_rank'),
         'backfilled': bool(row.get('backfilled')),
-        'preview': _parse_preview(row.get('preview')),
+        'preview': _json_field(row.get('preview')),
     }
 
 
@@ -128,4 +147,71 @@ def hn_envelope(row: dict, is_read: bool, is_saved: bool) -> dict:
         'is_read': is_read,
         'is_saved': is_saved,
         'hn': payload,
+    }
+
+
+def _x_quote(row: dict) -> Optional[dict]:
+    """The quoted tweet, from either a joined query row (``q_*`` columns) or an
+    already-assembled payload (saved-record replay)."""
+    quote = row.get('quote')
+    if isinstance(quote, dict):
+        return quote
+    if row.get('q_id') is None:
+        return None
+    return {
+        'id': _sid(row['q_id']),
+        'author_handle': row.get('q_author_handle'),
+        'author_name': row.get('q_author_name'),
+        'text': row.get('q_text'),
+        'created_at': iso_utc(row.get('q_created_at')),
+        'media': _json_field(row.get('q_media')),
+        'metrics': _json_field(row.get('q_metrics')),
+    }
+
+
+def x_payload(row: dict) -> dict:
+    """The `x` payload from a provider row (or, idempotently, from a stored payload)."""
+    feed = row.get('feed')
+    return {
+        'id': _sid(row['id']),
+        'author_id': _sid(row.get('author_id')),
+        'author_handle': row.get('author_handle'),
+        'author_name': row.get('author_name'),
+        'text': row.get('text'),
+        'created_at': iso_utc(row.get('created_at')),
+        'first_seen_at': iso_utc(row.get('first_seen_at')),
+        'media': _json_field(row.get('media')),
+        'metrics': _json_field(row.get('metrics')),
+        'quote': _x_quote(row),
+        # bird flattens retweets into an 'RT @orig:' text prefix — a handle is all
+        # that survives, and only for retweets (see plan, bird finding #5)
+        'rt_of_handle': row.get('rt_of_handle'),
+        'reply_to_id': _sid(row.get('reply_to_id')),
+        'article': _json_field(row.get('article')),
+        'feed': feed,
+        'feed_kind': 'home' if feed == FORYOU_FEED else 'user',
+        'verdict': row.get('verdict'),  # Phase 4
+        'verdict_meta': _json_field(row.get('verdict_meta')),
+    }
+
+
+def x_envelope(row: dict, is_read: bool, is_saved: bool) -> dict:
+    """Wrap a tweet row/payload into the item envelope.
+
+    The sort timestamp is feed-dependent: For You uses ``first_seen_at`` (the
+    algorithm resurfaces days-old tweets, and ``created_at`` would splice those
+    into timeline history), a followed account uses the tweet's own time.
+    """
+    payload = x_payload(row)
+    if payload['feed_kind'] == 'home':
+        dt = payload['first_seen_at']
+    else:
+        dt = payload['created_at'] or payload['first_seen_at']
+    return {
+        'source': 'x',
+        'key': x_key(payload['id']),
+        'datetime': dt,
+        'is_read': is_read,
+        'is_saved': is_saved,
+        'x': payload,
     }

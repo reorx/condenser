@@ -94,8 +94,10 @@ class ReadBody(BaseModel):
 class ReadBulkBody(BaseModel):
     channel_id: Optional[int] = None
     before_date: Optional[str] = None
-    # narrow the sweep to one source ('telegram' / 'hn'); None = every source
-    source: Optional[str] = Field(default=None, pattern='^(telegram|hn)$')
+    # narrow the sweep to one source ('telegram' / 'hn' / 'x'); None = every source
+    source: Optional[str] = Field(default=None, pattern='^(telegram|hn|x)$')
+    # narrow further inside a multi-feed source (X): one feed key
+    feed: Optional[str] = Field(default=None, max_length=64)
 
 
 class RecordBody(BaseModel):

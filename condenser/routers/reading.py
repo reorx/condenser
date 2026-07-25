@@ -16,7 +16,11 @@ from ..types import HideBody, ReadBody, ReadBulkBody, RecordBody
 
 router = APIRouter(prefix='/api', tags=['reading'], dependencies=[Depends(require_auth)])
 
-_SOURCE_PATTERN = '^(telegram|hn)$'
+_SOURCE_PATTERN = '^(telegram|hn|x)$'
+
+# A multi-feed source (X) can be narrowed further; the provider normalizes the key,
+# so '@Handle' and 'handle' are the same feed.
+_FEED_QUERY = Query(None, max_length=64, description='narrow a multi-feed source to one feed (X)')
 
 
 def _parse_key_or_422(key: str) -> ItemKey:
@@ -34,9 +38,10 @@ def get_timeline(
     date: Optional[str] = None,
     unread_only: bool = False,
     source: Optional[str] = Query(None, pattern=_SOURCE_PATTERN),
+    feed: Optional[str] = _FEED_QUERY,
 ):
     try:
-        return timeline.query_timeline(channel_id, date, unread_only, cursor, limit, source)
+        return timeline.query_timeline(channel_id, date, unread_only, cursor, limit, source, feed)
     except timeline.InvalidCursor:
         raise HTTPException(status_code=422, detail='invalid cursor')
 
@@ -45,8 +50,9 @@ def get_timeline(
 def get_timeline_days(
     channel_id: Optional[int] = None,
     source: Optional[str] = Query(None, pattern=_SOURCE_PATTERN),
+    feed: Optional[str] = _FEED_QUERY,
 ):
-    return timeline.query_days(channel_id, source)
+    return timeline.query_days(channel_id, source, feed)
 
 
 @router.get('/timeline/new')
@@ -56,9 +62,10 @@ def get_timeline_new(
     limit: int = Query(100, ge=1, le=200),
     unread_only: bool = False,
     source: Optional[str] = Query(None, pattern=_SOURCE_PATTERN),
+    feed: Optional[str] = _FEED_QUERY,
 ):
     try:
-        return timeline.query_new(channel_id, after, limit, unread_only, source)
+        return timeline.query_new(channel_id, after, limit, unread_only, source, feed)
     except timeline.InvalidCursor:
         raise HTTPException(status_code=422, detail='invalid cursor')
 
@@ -71,7 +78,7 @@ def post_read(body: ReadBody):
 
 @router.post('/read/bulk')
 def post_read_bulk(body: ReadBulkBody):
-    db.mark_read_bulk(body.channel_id, body.before_date, body.source)
+    db.mark_read_bulk(body.channel_id, body.before_date, body.source, body.feed)
     return {'ok': True}
 
 

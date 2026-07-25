@@ -65,7 +65,7 @@ export interface DisplayMessage {
   channel?: ChannelRef | null;
 }
 
-export type Source = 'telegram' | 'hn';
+export type Source = 'telegram' | 'hn' | 'x';
 
 /** The `hn` payload of a TimelineItem: one archived Hacker News story. */
 export interface HnStory {
@@ -88,17 +88,81 @@ export interface HnStory {
   preview: LinkPreview | null;
 }
 
-/** Multi-source item envelope: exactly one of `telegram` / `hn` is present. */
+/** One media attachment on a tweet — bird's shape, passed through verbatim
+ *  (photo/video seen in the wild; width/height are always present for photos). */
+export interface XMediaItem {
+  type: string;
+  url?: string | null;
+  previewUrl?: string | null;
+  videoUrl?: string | null;
+  width?: number | null;
+  height?: number | null;
+  durationMs?: number | null;
+}
+
+export interface XMetrics {
+  reply_count: number;
+  retweet_count: number;
+  like_count: number;
+}
+
+/** An X long-form post: bird exposes only the title + a ~200-char preview. */
+export interface XArticle {
+  title?: string | null;
+  previewText?: string | null;
+}
+
+/** A quoted tweet, embedded at depth 1 inside the quoting tweet. */
+export interface XQuote {
+  id: string;
+  author_handle: string | null;
+  author_name: string | null;
+  text: string | null;
+  created_at: string | null;
+  media: XMediaItem[] | null;
+  metrics: XMetrics | null;
+}
+
+/** The `x` payload of a TimelineItem: one archived tweet, as it appeared in one feed. */
+export interface XTweet {
+  /** Snowflake id as a string — int64 exceeds JS's safe integer range. */
+  id: string;
+  author_id: string | null;
+  author_handle: string | null;
+  author_name: string | null;
+  text: string | null;
+  /** The tweet's own publish time; null when bird's timestamp failed to parse. */
+  created_at: string | null;
+  /** When the probe first pushed it — the For You sort key. */
+  first_seen_at: string;
+  media: XMediaItem[] | null;
+  metrics: XMetrics | null;
+  quote: XQuote | null;
+  /** bird flattens retweets into an 'RT @handle:' text prefix — only the handle survives. */
+  rt_of_handle: string | null;
+  reply_to_id: string | null;
+  article: XArticle | null;
+  /** The subscription this appearance belongs to: 'foryou' or a followed handle. */
+  feed: string;
+  feed_kind: 'home' | 'user';
+  /** Feedback-driven judgement (plan Phase 4); null until then. */
+  verdict: 'positive' | 'neutral' | 'negative' | null;
+  verdict_meta: Record<string, unknown> | null;
+}
+
+/** Multi-source item envelope: exactly one of `telegram` / `hn` / `x` is present. */
 export interface TimelineItem {
   source: Source;
-  /** Global item id, e.g. 'tg:123:45' / 'hn:678' — the read/save API currency. */
+  /** Global item id, e.g. 'tg:123:45' / 'hn:678' / 'x:208…' — the read/save API currency. */
   key: string;
-  /** Sort timestamp (ISO8601 UTC): TG = message time, HN = first front-page sighting. */
+  /** Sort timestamp (ISO8601 UTC): TG = message time, HN = first front-page sighting,
+   *  X = the tweet's time in a followed feed / the first sighting in For You. */
   datetime: string;
   is_read: boolean;
   is_saved: boolean;
   telegram?: DisplayMessage;
   hn?: HnStory;
+  x?: XTweet;
 }
 
 /** What scroll-to-read reports: the item key plus its TG channel (for badge math). */
@@ -266,6 +330,8 @@ export interface TimelineParams {
   unread_only?: boolean;
   /** Narrow the query to one source; channel_id already implies telegram. */
   source?: Source | null;
+  /** Narrow further inside a multi-feed source (X): one feed key. */
+  feed?: string | null;
 }
 
 /** HN front-feed display mode: how many of each day's top stories are visible. */

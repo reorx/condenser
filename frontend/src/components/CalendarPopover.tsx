@@ -15,10 +15,12 @@ interface CalendarPopoverProps {
   onSelect: (date: string | null) => void;
   /** Scope the day counts to one source (the /s/:source views). */
   source?: Source | null;
+  /** Scope further to one feed of a multi-feed source (the /s/x/:feed views). */
+  feed?: string | null;
 }
 
-export function CalendarPopover({ channelId, date, onSelect, source }: CalendarPopoverProps) {
-  const { data: days } = useTimelineDays(channelId, true, source ?? null);
+export function CalendarPopover({ channelId, date, onSelect, source, feed }: CalendarPopoverProps) {
+  const { data: days } = useTimelineDays(channelId, true, source ?? null, feed ?? null);
   const daySet = useMemo(() => new Set((days ?? []).map((d) => d.date)), [days]);
 
   const selected = date ? fromDayKey(date) : undefined;

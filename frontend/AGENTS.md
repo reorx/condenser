@@ -30,7 +30,7 @@ Two conventions this list exists to protect:
 | Component | Purpose |
 |---|---|
 | `AppShell` *(in `pages/`)* | App layout: desktop sidebar + mobile drawer + content column |
-| `CalendarPopover` | Date-filter popover; calendar limited to days that have content (channel- or source-scoped), with a Clear action |
+| `CalendarPopover` | Date-filter popover; calendar limited to days that have content (channel-, source- or feed-scoped), with a Clear action |
 | `ChannelAvatar` | Channel avatar from `/api/channels/{id}/avatar`; falls back to a colored initial (`letterOnly` forces the initial) |
 | `ChannelFilter` + `AllChannelsHidden` | Dropdown to toggle per-channel visibility in multi-channel views; `AllChannelsHidden` is the all-filtered-out empty state |
 | `ChannelFilterOption` | One row inside the `ChannelFilter` dropdown (avatar + name + message count) |
@@ -47,6 +47,8 @@ Two conventions this list exists to protect:
 | `SidebarSourceGroup` | One collapsible source section (collapse persisted via `useCollapsedSources`): the full-width header row links to `/s/:source` (+ unread badge when collapsed) with the collapse chevron as its own right-edge target, rows = the source's enabled subscriptions |
 | `SidebarChannelLink` + `navLinkClass` | One Telegram channel link in a sidebar source group; also exports the shared nav-row className used by the top-level links |
 | `SidebarHnFeedLink` | One HN feed link in the sidebar's Hacker News group (routes to `/s/hn` — v1 has a single feed) |
+| `SidebarXFeedLink` | One X feed link in the sidebar's X group, routing to `/s/x/:feed` (X has many feeds, unlike HN): `XGlyph` for For You, the author's `XAvatar` for a followed account. For You never appears in the aggregate timeline, so this is its only entry point |
+| `XAvatar` | An X author's avatar via `/api/x/avatar/{handle}` (unavatar proxy — bird carries no avatar URL); 404 falls back to a handle-seeded colored initial, ChannelAvatar-style |
 | `Spinner` + `FullScreenSpinner` | Loading spinner (inline + full-screen) |
 | `UnreadBadge` | Unread-count pill; renders nothing at 0, caps display at `999+` |
 
@@ -55,21 +57,26 @@ Two conventions this list exists to protect:
 | Component | Purpose |
 |---|---|
 | `Timeline` | Presentational timeline list: day groups + infinite scroll + new-content banner + loading/error/empty states |
-| `TimelineDayGroup` | One calendar day's messages under a static date divider |
+| `TimelineDayGroup` | One calendar day's items under a static date divider, dispatched by source |
 | `TimelineSkeleton` | Loading placeholder rows for the timeline |
 | `MessageCard` | A single Telegram item (takes the `TimelineItem` envelope; payload in `item.telegram`): header (avatar/name/time/save), text, media, webpage preview, forward box. The time is a button (full-date `title` tooltip) that opens the `ItemDetailPane` — the unified drawer entry on every message |
 | `HnCard` | A Hacker News story card: title link (external URL, or comments page for self-posts), day-rank badge + score/comments/domain meta, an embedded `LinkPreviewCard` when the story carries an ingest-prefetched `hn.preview` with content, sanitized self-post HTML behind a char-threshold "more" clamp, muted job posts, scroll-to-read + save; the submitted-time button opens the `ItemDetailPane` |
+| `XCard` | A single tweet: author identity as the subject (For You mixes ~46 authors per 50 tweets, so *who* is the orientation cue), body text (linkified; an `RT @orig:` prefix becomes a Retweeted caption, and a long-form post's `text` — which bird sets to the article title — is dropped in favor of the article card), `XMedia`, an `XQuoteCard`, and the like/RT/reply line. The time opens the `ItemDetailPane`; its tooltip also names the sighting time in For You, where that (not the post time) is the sort position |
+| `XQuoteCard` | The quoted tweet embedded at depth 1: a bordered muted sub-card (the forward-box visual language) with its own author, text and media, linking to the original |
+| `XMedia` | A tweet's media layout (single image at natural aspect vs 2/3-col square grid) + `XLightbox` trigger |
+| `XMediaThumb` | One tweet media thumbnail: skeleton + aspect-ratio transition like `MediaThumb`, a play badge for video, images routed through `/api/preview/image` so reading a tweet never pings X from the reader's IP |
+| `XLightbox` | Fullscreen viewer for a tweet's media — a sibling of `Lightbox`, not a generalization: X media are plain (proxied) origin URLs where Telegram's are message-scoped proxy paths, and X video is a link out rather than inline playback |
 | `MessageMedia` | Media layout (single image vs 2/3-col grid) + lightbox trigger |
 | `MediaThumb` | One media thumbnail: skeleton + aspect-ratio transition + file-chip fallback when no preview image |
 | `WebPagePreview` | Telegram-style inline link preview card (thumbnail + site/title/description) |
-| `ItemDetailPane` | The 条目详情 right-side slide-out (shadcn `Sheet`, Chinese copy) driven by the `itemDetailPane` context, which holds the open `TimelineItem` envelope. Top → bottom: `ItemDetailInfo` full-info block, TG-only `MessageStatsRow` + Forward-button row (no configured `forward_channel` → toast pointing to Settings, else opens `ForwardDialog`), the 链接预览 section (TG message links, or the HN story URL — the envelope's prefetched `story.preview` renders instantly, live `useUrlPreview` fetch only when it's absent), and a footer with the original link (`tgMessageUrl` / HN comments) + the 隐藏 button (`useHideItem` → optimistic timeline removal, close, toast with 撤销 undo). Mounted once in `AppShell` |
-| `ItemDetailInfo` | The pane's top full-info label/value list, source-dispatched: TG = channel (avatar/name/@username), author, publish/edit times, forward origin, media count, item key; HN = source/type, author, submitted + front-page times, score/comments, day + peak rank, domain, item key |
+| `ItemDetailPane` | The 条目详情 right-side slide-out (shadcn `Sheet`, Chinese copy) driven by the `itemDetailPane` context, which holds the open `TimelineItem` envelope. Top → bottom: `ItemDetailInfo` full-info block, TG-only `MessageStatsRow` + Forward-button row (no configured `forward_channel` → toast pointing to Settings, else opens `ForwardDialog`), the 链接预览 section (TG message links, or a single URL for the other sources — the HN story URL, whose ingest-prefetched `story.preview` renders instantly, or a tweet's first outbound link via `xPreviewUrls`; a live `useUrlPreview` fetch runs only when there is a URL and no prefetched preview), and a footer with the original link (`tgMessageUrl` / HN comments / `xTweetUrl`) + the 隐藏 button (`useHideItem` → optimistic timeline removal, close, toast with 撤销 undo). Mounted once in `AppShell` |
+| `ItemDetailInfo` | The pane's top full-info label/value list, source-dispatched: TG = channel (avatar/name/@username), author, publish/edit times, forward origin, media count, item key; HN = source/type, author, submitted + front-page times, score/comments, day + peak rank, domain, item key; X = author (avatar/name/@handle → profile), which feed it came from, publish + probe-fetch times, engagement, RT/quote/reply origin, media count, verdict (Phase 4), item key |
 | `MessageStatsRow` | Live views (Eye) / forwards (Repeat2) / `ReactionChip` list for the pane's TG message via `useMessageStats` (fetched fresh on every pane open, never stored); renders nothing while pending, on error, or when the channel exposes no stats |
 | `ReactionChip` | One reaction bucket pill: emoji glyph ('custom'/'other' kinds degrade to a generic icon) + count; `chosen` (own reaction) highlights |
 | `ForwardDialog` | "转发到我的频道" modal (deliberately Chinese copy): comment textarea → non-empty = quote message (text + t.me link), empty = native forward via `POST /api/messages/{cid}/{mid}/forward`; success toast carries an「打开」action opening the landed message |
 | `LinkPreviewCard` | One self-fetched link preview (proxied image / Telegram-image fallback + site/title/description; `channelId` optional — absent for HN targets); shared by the pane and `HnCard`'s embedded preview |
 | `Lightbox` | Fullscreen media viewer with prev/next navigation |
-| `SavedMessageItem` | One saved item in the Saved view: full date line + the source's card (`MessageCard` / `HnCard`) |
+| `SavedMessageItem` | One saved item in the Saved view: full date line + the source's card (`MessageCard` / `HnCard` / `XCard`) |
 
 ### `components/filters/`
 
@@ -113,9 +120,11 @@ Two conventions this list exists to protect:
   (runtime app settings incl. the forward target channel), `useHideItem` + `useUnhideItem`
   (hide an item from every timeline via `POST /api/hidden`; optimistic removal + undo),
   mutations, …). `useTimeline` / `useTimelineDays` / `useNewContent` / `useBulkRead` accept a
-  `source` scope (the `/s/:source` views).
+  `source` scope (the `/s/:source` views) plus a `feed` scope for multi-feed sources
+  (the `/s/:source/:feed` route — X's For You / one followed account).
 - `lib/` — `api.ts` (typed fetch client), `types.ts` (backend JSON mirror), `format.ts`,
-  `sources.ts` (source labels, `hnCommentsUrl`, sub-row labels), `sanitize.ts` (DOMPurify
+  `sources.ts` (source labels, `hnCommentsUrl`, `xTweetUrl` / `xProfileUrl` / `xPreviewUrls`,
+  `X_FORYOU_FEED`, sub-row labels), `sanitize.ts` (DOMPurify
   wrapper for HN self-post HTML), `linkify.tsx`, `extractUrls.ts` (shared URL
   regex/extraction for linkify + the detail pane), `itemDetailPane.tsx` (the detail pane's
   context: the open `TimelineItem` envelope), `theme.tsx`, `unreadIndicator.tsx`,

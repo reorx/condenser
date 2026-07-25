@@ -184,13 +184,22 @@ export const api = {
           date: params.date,
           unread_only: params.unread_only,
           source: params.source,
+          feed: params.feed,
         }),
     ),
-  timelineDays: (channelId?: number | null, source?: Source | null) =>
-    request<DayCount[]>('/api/timeline/days' + qs({ channel_id: channelId, source })),
-  timelineNew: (after: string, channelId?: number | null, limit = 100, unreadOnly = false, source?: Source | null) =>
+  timelineDays: (channelId?: number | null, source?: Source | null, feed?: string | null) =>
+    request<DayCount[]>('/api/timeline/days' + qs({ channel_id: channelId, source, feed })),
+  timelineNew: (
+    after: string,
+    channelId?: number | null,
+    limit = 100,
+    unreadOnly = false,
+    source?: Source | null,
+    feed?: string | null,
+  ) =>
     request<TimelineNew>(
-      '/api/timeline/new' + qs({ after, channel_id: channelId, limit, unread_only: unreadOnly || undefined, source }),
+      '/api/timeline/new' +
+        qs({ after, channel_id: channelId, limit, unread_only: unreadOnly || undefined, source, feed }),
     ),
 
   markRead: (keys: string[]) => post<{ ok: true }>('/api/read', { keys }),
@@ -199,8 +208,12 @@ export const api = {
   hideItem: (key: string) => post<{ ok: true }>('/api/hidden', { key }),
   unhideItem: (key: string) => del<{ ok: true }>(`/api/hidden/${encodeURIComponent(key)}`),
 
-  markReadBulk: (body: { channel_id?: number | null; before_date?: string | null; source?: Source | null }) =>
-    post<{ ok: true }>('/api/read/bulk', body),
+  markReadBulk: (body: {
+    channel_id?: number | null;
+    before_date?: string | null;
+    source?: Source | null;
+    feed?: string | null;
+  }) => post<{ ok: true }>('/api/read/bulk', body),
 
   // ---- message actions (live Telegram reads/writes) ----
   // Views/forwards/reactions, read live from Telegram each time (never cached server-side).
@@ -241,4 +254,9 @@ export function channelAvatarUrl(channelId: number): string {
 /** Proxy a preview's thumbnail through the backend (private + hotlink-proof). */
 export function previewImageUrl(originUrl: string): string {
   return `/api/preview/image?url=${encodeURIComponent(originUrl)}`;
+}
+
+/** X author avatar proxy (bird carries no avatar URL); 404 = draw a letter instead. */
+export function xAvatarUrl(handle: string): string {
+  return `/api/x/avatar/${encodeURIComponent(handle)}`;
 }

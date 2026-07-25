@@ -12,7 +12,7 @@ import { useSubscriptions } from '@/hooks/useSubscriptions';
 import { errorMessage } from '@/lib/api';
 import { tgMessageUrl } from '@/lib/format';
 import { useItemDetailPane } from '@/lib/itemDetailPane';
-import { hnCommentsUrl } from '@/lib/sources';
+import { hnCommentsUrl, xPreviewUrls, xTweetUrl } from '@/lib/sources';
 
 import { ForwardDialog } from './ForwardDialog';
 import { ItemDetailInfo } from './ItemDetailInfo';
@@ -41,21 +41,24 @@ export function ItemDetailPane() {
   const { open, close } = useItemDetailPane();
   const msg = open?.telegram ?? null;
   const story = open?.hn ?? null;
+  const tweet = open?.x ?? null;
   const msgRef = msg ? { channel_id: msg.channel_id, message_id: msg.id } : null;
 
   const messageQuery = useLinkPreviews(msgRef);
-  // The story's ingest-prefetched preview renders instantly; fetch live only without one.
-  const urlQuery = useUrlPreview(story && !story.preview ? story.url : null);
-  const query = story ? urlQuery : messageQuery;
-  const previews = story
-    ? story.preview
+  // Single-URL sources: the story's own link (unless ingest already prefetched a
+  // preview) or the tweet's first outbound link. Null = nothing to fetch.
+  const singleUrl = story ? (story.preview ? null : story.url) : tweet ? (xPreviewUrls(tweet)[0] ?? null) : null;
+  const urlQuery = useUrlPreview(singleUrl);
+  const query = msg ? messageQuery : urlQuery;
+  const previews = msg
+    ? (messageQuery.data ?? [])
+    : story?.preview
       ? [story.preview]
       : urlQuery.data
         ? [urlQuery.data]
-        : []
-    : (messageQuery.data ?? []);
-  // Self-posts (no URL) and prefetched stories never fetch; don't show their skeleton forever.
-  const pending = query.isPending && !(story && (!story.url || story.preview));
+        : [];
+  // Nothing to fetch (self-post, prefetched story, link-less tweet) — no endless skeleton.
+  const pending = msg ? messageQuery.isPending : !!singleUrl && urlQuery.isPending;
 
   const subs = useSubscriptions();
   const sub = msgRef ? subs.data?.find((s) => s.channel_id === msgRef.channel_id) : null;
@@ -95,7 +98,9 @@ export function ItemDetailPane() {
           <SheetTitle className="flex items-center gap-2">
             <Info className="size-4" /> 条目详情
           </SheetTitle>
-          <SheetDescription>{story ? '该 Hacker News 条目的完整信息。' : '该消息的完整信息。'}</SheetDescription>
+          <SheetDescription>
+            {story ? '该 Hacker News 条目的完整信息。' : tweet ? '该推文的完整信息。' : '该消息的完整信息。'}
+          </SheetDescription>
         </SheetHeader>
 
         {open && (
@@ -143,7 +148,7 @@ export function ItemDetailPane() {
             </div>
           ) : previews.length === 0 ? (
             <p className="py-8 text-center text-sm text-muted-foreground">
-              {story ? '自荐帖，无外部链接 — 讨论即内容。' : '消息中没有链接。'}
+              {story ? '自荐帖，无外部链接 — 讨论即内容。' : tweet ? '该推文没有外部链接。' : '消息中没有链接。'}
             </p>
           ) : (
             previews.map((p, i) => <LinkPreviewCard key={`${p.url}-${i}`} channelId={msgRef?.channel_id} preview={p} />)
@@ -154,14 +159,18 @@ export function ItemDetailPane() {
           <div className="flex items-center justify-between gap-3 border-t p-4">
             <a
               href={
-                story ? hnCommentsUrl(story.id) : tgMessageUrl(msgRef!.channel_id, msgRef!.message_id, sub?.username)
+                story
+                  ? hnCommentsUrl(story.id)
+                  : tweet
+                    ? xTweetUrl(tweet.id, tweet.author_handle)
+                    : tgMessageUrl(msgRef!.channel_id, msgRef!.message_id, sub?.username)
               }
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center gap-2 text-sm text-muted-foreground transition-colors hover:text-foreground"
             >
               <ExternalLink className="size-4" />
-              {story ? 'Open comments on Hacker News' : 'Open original in Telegram'}
+              {story ? 'Open comments on Hacker News' : tweet ? 'Open original on X' : 'Open original in Telegram'}
             </a>
             <Button
               variant="outline"

@@ -3,6 +3,7 @@ import type { ReadTarget, TimelineItem } from '@/lib/types';
 
 import { HnCard } from './HnCard';
 import { MessageCard } from './MessageCard';
+import { XCard } from './XCard';
 
 interface TimelineDayGroupProps {
   /** Items belonging to a single calendar day (UTC), in display order. */
@@ -38,6 +39,8 @@ export function TimelineDayGroup({ items, labels, observe }: TimelineDayGroupPro
             />
           ) : it.hn ? (
             <HnCard key={it.key} item={it} observe={observe} />
+          ) : it.x ? (
+            <XCard key={it.key} item={it} observe={observe} />
           ) : null,
         )}
       </div>

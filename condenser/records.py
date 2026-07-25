@@ -13,7 +13,8 @@ from telememo import db as tdb
 from telememo.utils import group_messages_to_display
 
 from . import db
-from .items import ItemKey, hn_envelope, hn_payload, tg_envelope
+from .items import ItemKey, hn_envelope, hn_payload, tg_envelope, x_envelope, x_payload
+from .sources import x as x_source
 
 _MSG_COLS = """
     id, channel_id AS channel, text, date, sender_id, sender_name,
@@ -70,6 +71,14 @@ def save_item(key: ItemKey) -> bool:
             return False
         db.add_saved_item('telegram', key.ref1, key.ref2, snapshot)
         return True
+    if key.source == 'x':
+        row = x_source.get_row(key.ref1)
+        if row is None:
+            return False
+        # the snapshot *is* the envelope payload (quote already nested), so the
+        # record replays without x_tweets / x_feed_items
+        db.add_saved_item('x', key.ref1, 0, x_payload(row))
+        return True
     story = db.get_hn_story(key.ref1)
     if story is None:
         return False
@@ -108,6 +117,8 @@ def render_item(rec: db.SavedItem, read_triples: set[tuple[str, int, int]]) -> O
         if display is None:
             return None
         return tg_envelope(display, is_read, True)
+    if rec.source == 'x':
+        return x_envelope(json.loads(rec.raw_data), is_read, True)
     return hn_envelope(json.loads(rec.raw_data), is_read, True)
 
 

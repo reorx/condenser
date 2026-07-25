@@ -45,7 +45,9 @@ class Settings(BaseSettings):
     # empty, so the local probe idles instead of archiving.
     condenser_x_enabled: bool = True
     # Default per-round fetch counts handed to the probe (per-feed config overrides).
-    condenser_x_home_count: int = 50
+    # For You re-samples on every bird call (no stable window), so this number times
+    # the probe's cadence *is* the archive growth rate — the capacity lever.
+    condenser_x_home_count: int = 20
     condenser_x_user_count: int = 10
 
     # --- link preview fetching (condenser/preview.py) ---

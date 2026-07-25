@@ -43,6 +43,8 @@ export default function App() {
         <Route path="/" element={<TimelineView />} />
         <Route path="/c/:channelId" element={<TimelineView />} />
         <Route path="/s/:source" element={<TimelineView />} />
+        {/* One feed inside a multi-feed source (X: For You / a followed account) */}
+        <Route path="/s/:source/:feed" element={<TimelineView />} />
         <Route path="/saved" element={<RecordsView />} />
         <Route path="/filters" element={<FiltersView />} />
         <Route path="/subscriptions" element={<SubscriptionsView />} />
