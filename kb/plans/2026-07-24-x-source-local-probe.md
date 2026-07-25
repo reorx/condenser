@@ -21,7 +21,7 @@ tags:
 | 1 — probe + ingest + 存档 | ✅ **完成 2026-07-24** | schema v7、`condenser/x.py`、`routers/x.py`、`probe/` 包、web 订阅区块。188 backend（含 27 X）+ 11 probe + 45 frontend 绿；真机端到端 + UI 截图 `tmp/2026-07-24-x-source-phase1/`。会话记录：`kb/sessions/2026-07-24-x-source-phase1-probe-ingest.md` |
 | 2 — timeline 接入 | ✅ **完成 2026-07-25** | `sources/x.py` provider、`items.py` 的 `x_key`/`x_envelope`、`feed` 作用域、`/api/sources` 的 X 分组、X 收藏快照、`/api/x/avatar/{handle}`、web 卡片 + `/s/:source/:feed` 路由。容量策略已定（见下）。211 backend（含 23 X timeline）+ 51 frontend 绿；对本地 dev 后端做了真实端到端（fixture 推送 → 真实 UI），截图 `tmp/2026-07-25-x-phase2-timeline/` |
 | 3 — 反馈闭环 | ✅ **完成 2026-07-25**（web；iOS 顺延到 Phase 5） | `/api/feedback` POST/DELETE、envelope 的 `feedback` 字段（timeline provider join + 收藏批量 join）、`XFeedbackButtons` + `useFeedback`、详情面板「反馈」行。11 反馈场景 + 223 backend / 58 frontend 绿 |
-| 4 — Embedding 判定 | ⬜ 未开始 | `x_embeddings` / `x_vec_labeled` 届时才建（SCHEMA_VERSION 8）；存储估算需按新容量重算（见下方修正）。训练数据从 Phase 3 上线起开始积累 |
+| 4 — Embedding 判定 | ✅ **完成 2026-07-25**（管线；准确率待回测） | schema v8（`x_embeddings` + `x_vec_labeled`）、`vectors.py` / `embedding.py` / `verdict.py`、`XVerdictBadge` + `XVerdictDetail` + 订阅页判定状态行、`scripts/x_verdict_backtest.py`。32 判定场景 + 254 backend / 64 frontend 绿；真实 DashScope 端到端 + 截图 `tmp/2026-07-25-x-phase4-verdict/`。⚠️ **分类质量未验证**：Phase 3 当天才上线，真实标注量 ≈ 0，生产闸门（20/20）会让所有 verdict 保持 null，直到你标够为止 |
 | 5 — iOS 适配 | ⬜ 未开始 | Kit 的 `XTweet` payload + envelope 分发 + `XCard` + up/down 按钮（Phase 3 的 iOS 半边并进来）；注意 iOS 也要遵守「For You 不进聚合流」 |
 
 未决问题：
@@ -29,10 +29,14 @@ tags:
 1. ~~**For You 的容量策略**~~ —— 已定案（2026-07-25，见决策记录「For You 的容量策略」）。
 2. ~~**作者头像**~~ —— 已定案：unavatar.io 代理（`/api/x/avatar/{handle}`，`fallback=false`），失败回落字母头像。
 3. **旧 raw 的重 parse 回填工具** —— 目前只保证 raw 留底，还没有「格式漂移后按新解析器重刷」的脚本。
-4. **verdict 徽标的 UI 位置**（Phase 4 才需要）—— `XCard` 已经把 `verdict` 透到前端类型里，卡片上还没有呈现位。
-   反馈按钮已占住底栏右侧，徽标大概率落在底栏左侧或作者行末尾，届时一起定。
-5. **标注量什么时候够**（Phase 4 前置）—— Phase 3 已开始攒 `item_feedback`，冷启动闸门的 P/N
-   阈值要等真实标注分布出来才好定；届时先跑一次留一法回测再决定上不上判定。
+4. ~~**verdict 徽标的 UI 位置**~~ —— 已定案（2026-07-25）：**底栏左侧，与反馈按钮对望**。用户拍板。
+5. **标注量什么时候够 / 阈值定案**（Phase 4 已上线但未标定）—— 管线已就位、闸门默认 20/20 挡着，
+   现在缺的只有真实标注。攒够后跑 `uv run python scripts/x_verdict_backtest.py --sweep`，
+   按 coverage → negative precision → positive precision 的顺序读数，再定 D_MAX / M / ± 阈值。
+   在那之前所有常量都是占位值。
+6. **判定文案的语言**（实现期出现的小分歧）—— 卡片徽标用英文（"Recommended" / "Likely not for
+   you"，与 `XCard` 其余文案一致），详情面板用中文（与 `ItemDetailPane` 一致）。如果觉得徽标也该
+   中文化，改 `XVerdictBadge` 的 `STYLES` 即可。
 
 ## 决策记录
 
@@ -248,7 +252,79 @@ feed 作用域与 handle 归一化、两种排序键、跨 feed 去重、envelop
 走查中发现并修掉一个视觉 bug：`hover:text-accent-foreground` 会盖掉选中色，悬停已选中的
 拇指会变黑——hover 文字色改成「仅未选中时生效」。
 
-## Phase 4 — Embedding 判定 ⬜
+## Phase 4 — Embedding 判定 ✅ 已完成 2026-07-25（管线；分类质量待回测）
+
+### 实现纪要（✓ = 与计划一致，△ = 实现期调整）
+
+- ✓ schema v8 纯新建：`x_embeddings`（向量的 storage of record，float32 BLOB + `model=name@dims`）
+  + `x_vec_labeled`（vec0，只装训练集），`init_db` 里**先加载扩展再原生 SQL 建虚拟表**。
+  维度变了自动 drop + 重建（`app_meta.x_vec_dims` 记着上次的值）。
+- ✓ `vectors.py` 把 sqlite-vec 关在一个模块里（`setup / pack / unpack / upsert / delete /
+  clear / labeled_ids / knn`），扩展不可用时全部降级为 no-op —— 不支持的宿主只丢判定，不丢应用。
+- ✓ `embedding.py`：OpenAI 兼容、批 ≤10、两次退避重试、L2 normalize、按 `index` 重排。
+  无 key = `available()` false = 整套 inert。
+- △ **冷启动闸门提前到 embedding 之前**（计划流程里是 ② embedding → ③ 闸门）。理由：闸门关着时
+  嵌入是纯浪费，一个刚装好的实例不该为了输出一堆 neutral 而花钱。同理，闸门关着时**不给 For You
+  推文算 embedding**。
+- △ **撤销标注不受闸门限制**：删索引不花钱，所以任何时候「你收回的标注不该还留在索引里」都成立。
+  （这条是被测试逼出来的：先写的实现让闸门把删除也挡了。）
+- △ **已标注的推文不再被判定**：它自己在索引里，会以距离 0 命中自己，判定结果就是标签本身——
+  循环论证，且发生在唯一不需要判定的条目上。
+- △ **训练集实时读表**（`item_feedback` ∪ `saved_items`），索引走**对账**而非写穿：标注端点保持
+  同步（嵌入要联网），重启 / API 挂掉 / 换模型都能在下一轮自愈。
+- △ `verdict_meta` 的近邻**截断到 5 条并带上作者 handle**。截断是因为这行每天写 ~1000 次；
+  带 handle 是因为一串裸 tweet id 无法「解释」——而可解释性正是「只打标不隐藏」的全部依据。
+- ✓ 三段阈值、save ×2 样本权重、OOD 闸门、`verdict_meta` 版本号，均按计划。
+- ✓ `POST /api/sources/x/ingest` 后 kick 判定轮（For You 只在 probe 推送时才变），
+  kick 失败不影响 ingest 返回——推送端点的契约是「存档收到了」。
+- △ `/api/x/status` 多了 `verdict` 块（能否运行 / 闸门是否打开 / 还差几个标注 / 已判多少），
+  订阅页 X 区块渲染成一行中文说明。「没有徽标」有三种完全不同的原因，只有一种是你能动手解决的。
+
+### 决策：向量检索仍然用 sqlite-vec（2026-07-25 复议后维持原案）
+
+动手前重新论证过一轮，结论不变，但理由比原计划更硬：
+
+| 方案 | 传递依赖 | 数据同一性 |
+|---|---|---|
+| chromadb 1.5.9 | **79 个包**（`kubernetes` / `onnxruntime` / `grpcio` / 整套 opentelemetry / `uvicorn`+`uvloop`） | 另一个存储引擎、另一套文件，**无共同事务**，标签与向量可漂移且无法 join |
+| 手写暴力 kNN | 0 | 靠「查询时现算」绕过漂移，等于用运行时开销换一致性 |
+| **sqlite-vec 0.1.9** | **1 个包** | 同一个文件、**同一个事务** |
+
+实测验证（`tmp/vec-smoke.py`，走 peewee 而非裸 sqlite3）：扩展在 uv 管理的 CPython 上正常加载；
+peewee 的线程本地新连接会自动重载扩展；snowflake int64 作 rowid 往返无损；**vec0 与普通表同事务
+回滚**——标签和向量要么一起提交要么一起回滚，结构上不可能漂移。这一条是 Chroma 给不了、暴力
+方案也给不了的，也是选型的真正理由。
+
+对「造轮子 / 可维护性」的回应：用库，但把库关进 `vectors.py` 的四个函数后面，换后端 = 重写这一个文件。
+
+### 实测数据（`text-embedding-v4@256`，真实 API）
+
+| 文本对 | cosine 距离 |
+|---|---|
+| 同主题、中英文（Rust borrow checker） | **0.18** |
+| 跨主题（Rust vs crypto 推广） | **0.80** |
+
+`CONDENSER_VERDICT_MAX_DISTANCE=0.6` 正好落在两者之间，占位值意外地合理。跨语种召回也说明
+中英混杂的 For You 流不需要分语言建模。
+
+### 真机端到端（本地 dev 后端 + 真实 DashScope）
+
+8 条真实 For You 推文、手工标 2 👍 + 2 👎 → 真实嵌入 → vec0 kNN → verdict → UI 徽标。
+截图与说明在 `tmp/2026-07-25-x-phase4-verdict/`。两点值得记下来：
+
+- **默认阈值下 4 条全部 neutral**，其中一条拿到 score −1.00 仍未判负，因为只有 1 个 down 近邻，
+  没达到「≥2 个佐证」。不对称闸门在真实数据上确实拦住了——这是设计生效，不是 bug。
+- 为了验证徽标渲染路径，另跑了一组**仅供演示的阈值**（`MIN_DOWN_NEIGHBORS=1`、
+  `POSITIVE_SCORE=0.10`）才凑出 1 正 1 负。**这组数字不构成任何准确率结论。**
+- 4 个标注下所有近邻距离都在 0.43–0.60 之间，即「什么都不太像什么」——这正是冷启动闸门
+  存在的理由，也说明 20/20 的默认下限不算保守。
+
+### 遗留
+
+`scripts/x_verdict_backtest.py` 已就位但**现在跑不出有意义的数字**（4 个标注 → coverage 0–25%）。
+真正的阈值定案要等真实标注积累，届时按 coverage → negative precision → positive precision 读数。
+
+### 原始设计（下文保留为实现依据）
 
 - **训练信号三档**：save（强正，权重最高）> up（正）> down（负）。训练集 = `item_feedback`（source='x'）∪ `saved_items`（source='x'）联合，训练时实时读表——取消收藏即自动退出训练集，无需同步逻辑。同一推文 save + down 并存属矛盾样本，从训练集剔除（预期极罕见）。kNN 的权重体现为投票加权；逻辑回归为样本权重。
 - 标注推文（up/down/save）入库时算 embedding 存 `x_embeddings`；embedding 后端做成可插拔接口，本地模型留为替代实现。Phase 4 上线时对存量已收藏/已标注推文做一次 embedding 回填。

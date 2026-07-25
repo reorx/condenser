@@ -9,6 +9,8 @@ import { channelName, compactNumber, fullDateLabel } from '@/lib/format';
 import { hnCommentsUrl, xProfileUrl, X_FORYOU_FEED } from '@/lib/sources';
 import type { Subscription, TimelineItem } from '@/lib/types';
 
+import { XVerdictDetail } from './XVerdictDetail';
+
 function DetailRow({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="flex gap-3 text-sm">
@@ -96,7 +98,11 @@ export function ItemDetailInfo({ item, sub }: Props) {
         {tweet.media && tweet.media.length > 0 && <DetailRow label="媒体">{tweet.media.length} 项</DetailRow>}
         {/* The reader's own label (Phase 3) — shown as a fact here; the card owns the buttons. */}
         {item.feedback && <DetailRow label="反馈">{item.feedback === 'up' ? '赞' : '踩'}</DetailRow>}
-        {tweet.verdict && <DetailRow label="判定">{tweet.verdict}</DetailRow>}
+        {tweet.verdict && (
+          <DetailRow label="判定">
+            <XVerdictDetail verdict={tweet.verdict} meta={tweet.verdict_meta} />
+          </DetailRow>
+        )}
         <DetailRow label="条目 ID">{item.key}</DetailRow>
       </dl>
     );

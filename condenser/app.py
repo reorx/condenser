@@ -27,6 +27,7 @@ from .routers import (
     x,
 )
 from .tg import TgManager
+from .verdict import VerdictManager
 
 configure_logging()
 
@@ -54,15 +55,19 @@ def create_app() -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        # 1. connect SQLite + build/migrate tables
-        db.init_db(settings.condenser_db_path)
+        # 1. connect SQLite + build/migrate tables (+ the sqlite-vec KNN index)
+        db.init_db(settings.condenser_db_path, settings.condenser_embedding_dimensions)
         # 2-3. reconnect stored TG session, resume listening + backfill
         app.state.tg = TgManager(settings)
         await app.state.tg.startup()
         # hn sampling loop (no-ops until an hn subscription exists)
         app.state.hn = HNManager(settings)
         await app.state.hn.startup()
+        # For You verdicts; inert until labels exist (and until an embedding key does)
+        app.state.verdict = VerdictManager(settings)
+        await app.state.verdict.startup()
         yield
+        await app.state.verdict.shutdown()
         await app.state.hn.shutdown()
         await app.state.tg.shutdown()
         db.close_db()

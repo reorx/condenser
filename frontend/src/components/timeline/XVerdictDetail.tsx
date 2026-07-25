@@ -1,0 +1,82 @@
+// The "why" behind a For You verdict, in the item detail pane (plan Phase 4).
+//
+// The badge on the card is a claim; this is the evidence for it — which labeled
+// tweets voted, how close each one was, and the score they produced. That trail
+// is the whole reason Phase 4 badges instead of hiding: a verdict you can audit
+// is one you can learn to trust (or catch being wrong and correct with a thumb).
+import { xTweetUrl } from '@/lib/sources';
+import type { XVerdict, XVerdictMeta, XVerdictNeighbor } from '@/lib/types';
+
+const VERDICT_LABEL: Record<XVerdict, string> = {
+  positive: '推荐',
+  neutral: '中性',
+  negative: '可能不感兴趣',
+};
+
+// The two ways the judge declines to commit, in the reader's terms.
+const REASON_LABEL: Record<string, string> = {
+  out_of_domain: '与你标注过的内容都不相似，不作判断',
+  no_text: '没有可判断的文本',
+};
+
+const LABEL_MARK: Record<XVerdictNeighbor['label'], string> = {
+  up: '👍',
+  down: '👎',
+  save: '🔖',
+};
+
+function NeighborRow({ neighbor }: { neighbor: XVerdictNeighbor }) {
+  return (
+    <li className="flex items-center gap-2">
+      <span aria-hidden>{LABEL_MARK[neighbor.label]}</span>
+      <a
+        href={xTweetUrl(neighbor.tweet_id, neighbor.handle)}
+        target="_blank"
+        rel="noreferrer"
+        className="truncate hover:underline"
+        title={`${neighbor.tweet_id} · 距离 ${neighbor.distance}`}
+      >
+        {neighbor.handle ? `@${neighbor.handle}` : neighbor.tweet_id}
+      </a>
+      <span className="ml-auto shrink-0 text-muted-foreground tabular-nums">{neighbor.distance.toFixed(2)}</span>
+    </li>
+  );
+}
+
+interface Props {
+  verdict: XVerdict;
+  meta: XVerdictMeta | null;
+}
+
+export function XVerdictDetail({ verdict, meta }: Props) {
+  const neighbors = meta?.neighbors ?? [];
+  const reason = meta?.reason ? REASON_LABEL[meta.reason] : null;
+
+  return (
+    <div className="space-y-1">
+      <div>
+        {VERDICT_LABEL[verdict]}
+        {typeof meta?.score === 'number' && (
+          <span className="ml-1.5 text-muted-foreground tabular-nums">score {meta.score.toFixed(2)}</span>
+        )}
+      </div>
+      {reason && <div className="text-muted-foreground">{reason}</div>}
+      {neighbors.length > 0 && (
+        <>
+          <div className="text-muted-foreground">依据（你标注过的最近邻）：</div>
+          <ul className="space-y-0.5">
+            {neighbors.map((neighbor) => (
+              <NeighborRow key={neighbor.tweet_id} neighbor={neighbor} />
+            ))}
+          </ul>
+        </>
+      )}
+      {meta?.model && (
+        <div className="text-xs text-muted-foreground">
+          {meta.model}
+          {meta.algo ? ` / ${meta.algo}` : ''}
+        </div>
+      )}
+    </div>
+  );
+}

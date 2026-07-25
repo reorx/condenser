@@ -27,6 +27,7 @@ from peewee import (
 
 from telememo import db as tdb
 
+from . import vectors
 from .items import FORYOU_FEED, ItemKey
 
 # The condenser is_filtered overlay column declared on telememo's messages table.
@@ -37,7 +38,7 @@ MESSAGES_OPTIONAL_FIELDS = {
 # Bumped when condenser's own table shapes change; recorded in app_meta on init so a
 # future startup can detect an upgrade and run a migration. Telememo manages its own
 # table migrations separately (init_db optional_fields / ALTER TABLE).
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 8
 
 
 class CondenserBaseModel(Model):
@@ -287,6 +288,27 @@ class ItemFeedback(CondenserBaseModel):
         primary_key = CompositeKey('source', 'ref1', 'ref2')
 
 
+class XEmbedding(CondenserBaseModel):
+    """A tweet's embedding vector (v8) — the storage of record for anything vector.
+
+    A rebuildable cache in the spirit of ``messages.is_filtered``: the text is in
+    ``x_tweets``, so any row can be re-embedded. ``model`` records ``name@dims``,
+    because vectors from a different model or dimension are not comparable — a
+    model change is a re-embed filtered on this column, never an in-place migration.
+
+    Unlabeled rows are pruned after a retention window (they are read once, at
+    judge time); labeled rows are the training set and stay.
+    """
+
+    tweet_id = BigIntegerField(primary_key=True)
+    vector = BlobField()  # float32, L2-normalized (see vectors.pack)
+    model = CharField()
+    created_at = DateTimeField(index=True)
+
+    class Meta:
+        table_name = 'x_embeddings'
+
+
 CONDENSER_TABLES = [
     Subscription,
     KeywordFilter,
@@ -301,11 +323,18 @@ CONDENSER_TABLES = [
     XTweet,
     XFeedItem,
     ItemFeedback,
+    XEmbedding,
 ]
 
 
-def init_db(db_path: str) -> None:
-    """Initialize the shared SQLite file: telememo tables (+ is_filtered) then condenser tables."""
+def init_db(db_path: str, vector_dims: int = 256) -> None:
+    """Initialize the shared SQLite file: telememo tables (+ is_filtered) then condenser tables.
+
+    ``vector_dims`` sizes the v8 KNN index; the vec0 virtual table is raw SQL and
+    has to be created *after* the sqlite-vec extension is loaded, hence the tail
+    position. A host that cannot load the extension still gets a working app —
+    only the For You verdict goes quiet.
+    """
     tdb.init_db(db_path, optional_fields=MESSAGES_OPTIONAL_FIELDS)
     _migrate_subscriptions_v3()
     tdb.db.create_tables(CONDENSER_TABLES)
@@ -313,6 +342,7 @@ def init_db(db_path: str) -> None:
     _migrate_hn_previews_v5()
     _enable_wal(db_path)
     set_meta('schema_version', str(SCHEMA_VERSION))
+    vectors.setup(vector_dims)
 
 
 def _migrate_subscriptions_v3() -> None:
@@ -1052,6 +1082,127 @@ def x_counts() -> tuple[int, int]:
 
 def x_feed_item_count(channel_id: str) -> int:
     return XFeedItem.select().where(XFeedItem.channel_id == channel_id).count()
+
+
+# --- x embeddings + verdicts (v8) --------------------------------------------
+
+
+def x_labeled_samples() -> dict[int, str]:
+    """The training set: tweet_id -> 'up' | 'down' | 'save'.
+
+    Read live from the label tables rather than copied anywhere, so un-saving or
+    undoing a thumb removes the sample with no synchronization code. A save
+    outranks an up on the same tweet (it is the stronger positive); a tweet that
+    is both saved and downvoted is contradictory and teaches nothing, so it is
+    dropped from both sides instead of letting a tie-break pick a direction.
+    """
+    labels = {row.ref1: row.verdict for row in ItemFeedback.select().where(ItemFeedback.source == 'x')}
+    saved = {row.ref1 for row in SavedItem.select(SavedItem.ref1).where(SavedItem.source == 'x')}
+    samples = {tid: verdict for tid, verdict in labels.items() if not (verdict == 'down' and tid in saved)}
+    samples.update({tid: 'save' for tid in saved if labels.get(tid) != 'down'})
+    return samples
+
+
+def x_embedding_ids(tweet_ids: Optional[set[int]] = None, model: Optional[str] = None) -> set[int]:
+    """Which of these tweets already have a stored vector (optionally: for this model)."""
+    query = XEmbedding.select(XEmbedding.tweet_id)
+    if tweet_ids is not None:
+        if not tweet_ids:
+            return set()
+        query = query.where(XEmbedding.tweet_id.in_(list(tweet_ids)))
+    if model is not None:
+        query = query.where(XEmbedding.model == model)
+    return {row.tweet_id for row in query}
+
+
+def x_author_handles(tweet_ids: set[int]) -> dict[int, str]:
+    """tweet_id -> author handle, for rendering verdict evidence readably."""
+    if not tweet_ids:
+        return {}
+    rows = XTweet.select(XTweet.id, XTweet.author_handle).where(XTweet.id.in_(list(tweet_ids)))
+    return {row.id: row.author_handle for row in rows if row.author_handle}
+
+
+def x_embedding_vectors(tweet_ids: set[int], model: str) -> dict[int, bytes]:
+    if not tweet_ids:
+        return {}
+    rows = XEmbedding.select().where((XEmbedding.tweet_id.in_(list(tweet_ids))) & (XEmbedding.model == model))
+    return {row.tweet_id: row.vector for row in rows}
+
+
+def upsert_x_embedding(tweet_id: int, vector: bytes, model: str, created_at: datetime) -> None:
+    XEmbedding.insert(tweet_id=tweet_id, vector=vector, model=model, created_at=created_at).on_conflict(
+        conflict_target=[XEmbedding.tweet_id],
+        update={XEmbedding.vector: vector, XEmbedding.model: model, XEmbedding.created_at: created_at},
+    ).execute()
+
+
+def prune_x_embeddings(before: datetime, keep_ids: set[int]) -> int:
+    """Drop unlabeled vectors older than ``before``; the training set is exempt."""
+    query = XEmbedding.delete().where(XEmbedding.created_at < before.strftime('%Y-%m-%d %H:%M:%S'))
+    if keep_ids:
+        query = query.where(XEmbedding.tweet_id.not_in(list(keep_ids)))
+    return query.execute()
+
+
+# The columns the judge needs to build a tweet's text: the body, plus what bird
+# flattened away (a retweet's prefix, an article's title/preview, a quoted tweet).
+_JUDGE_COLS = (
+    'SELECT t.id AS tweet_id, t.text AS text, t.rt_of_handle AS rt_of_handle, '
+    't.article AS article, q.text AS quote_text '
+    'FROM x_tweets t LEFT JOIN x_tweets q ON q.id = t.quote_of '
+)
+
+
+def _rows(cur) -> list[dict]:
+    columns = [c[0] for c in cur.description]
+    return [dict(zip(columns, row)) for row in cur.fetchall()]
+
+
+def x_tweet_judge_rows(tweet_ids: list[int]) -> list[dict]:
+    """Judge-text columns for specific tweets (used to embed labeled tweets)."""
+    if not tweet_ids:
+        return []
+    placeholders = ','.join('?' for _ in tweet_ids)
+    return _rows(tdb.db.execute_sql(f'{_JUDGE_COLS} WHERE t.id IN ({placeholders})', tuple(tweet_ids)))
+
+
+def x_pending_verdict_rows(since: datetime, limit: int) -> list[dict]:
+    """Unjudged, unlabeled For You appearances inside the judging window, newest first.
+
+    Only For You: a followed account is a choice you already made, and an algorithm
+    second-guessing it would just add noise.
+
+    Already-labeled tweets are excluded as well. They are in the KNN index, so they
+    would match themselves at distance 0 and the "verdict" would just be the label
+    read back — a circular answer on the one item that needs no answer at all.
+    """
+    return _rows(
+        tdb.db.execute_sql(
+            'SELECT f.channel_id AS channel_id, f.tweet_id AS tweet_id, t.text AS text, '
+            't.rt_of_handle AS rt_of_handle, t.article AS article, q.text AS quote_text '
+            'FROM x_feed_items f JOIN x_tweets t ON t.id = f.tweet_id '
+            'LEFT JOIN x_tweets q ON q.id = t.quote_of '
+            'WHERE f.channel_id = ? AND f.verdict IS NULL AND f.first_seen_at >= ? '
+            "AND NOT EXISTS (SELECT 1 FROM item_feedback fb WHERE fb.source = 'x' AND fb.ref1 = f.tweet_id) "
+            "AND NOT EXISTS (SELECT 1 FROM saved_items si WHERE si.source = 'x' AND si.ref1 = f.tweet_id) "
+            'ORDER BY f.first_seen_at DESC LIMIT ?',
+            (FORYOU_FEED, since.strftime('%Y-%m-%d %H:%M:%S'), limit),
+        )
+    )
+
+
+def set_x_verdict(channel_id: str, tweet_id: int, verdict: str, meta: dict) -> None:
+    XFeedItem.update(verdict=verdict, verdict_meta=json.dumps(meta, ensure_ascii=False)).where(
+        (XFeedItem.channel_id == channel_id) & (XFeedItem.tweet_id == tweet_id)
+    ).execute()
+
+
+def x_verdict_counts() -> dict[str, int]:
+    cur = tdb.db.execute_sql('SELECT verdict, COUNT(*) FROM x_feed_items WHERE verdict IS NOT NULL GROUP BY verdict')
+    counts = {'positive': 0, 'neutral': 0, 'negative': 0}
+    counts.update({row[0]: row[1] for row in cur.fetchall()})
+    return counts
 
 
 # --- link preview cache -----------------------------------------------------

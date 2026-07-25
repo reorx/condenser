@@ -139,17 +139,43 @@ export function XSection() {
   );
 }
 
+/** Why the For You verdict is quiet. Two very different silences look identical on
+ *  the timeline — "not configured" and "still waiting for you to label enough" —
+ *  and only one of them is something you can act on. */
+function XVerdictLine({ verdict }: { verdict: XStatus['verdict'] }) {
+  if (!verdict?.enabled) return null;
+  if (!verdict.embedding_configured) return <div>判定：未配置 embedding（CONDENSER_EMBEDDING_API_KEY）</div>;
+  if (!verdict.index_available) return <div>判定：sqlite-vec 扩展不可用，本机无法判定</div>;
+  if (!verdict.ready) {
+    const need = [
+      verdict.needs_positive > 0 ? `${verdict.needs_positive} 个 👍/🔖` : null,
+      verdict.needs_negative > 0 ? `${verdict.needs_negative} 个 👎` : null,
+    ].filter(Boolean);
+    return <div>判定：攒标注中，还需 {need.join(' 和 ')} 才会开始判定</div>;
+  }
+  const { positive, negative, neutral } = verdict.judged;
+  return (
+    <div>
+      判定：{verdict.positives} 正 / {verdict.negatives} 负样本 · 已判 {positive} 推荐、{negative} 可能不感兴趣、
+      {neutral} 中性
+    </div>
+  );
+}
+
 /** Whether the probe is alive at all, plus the archive size — the two things that
  *  tell you a silent feed is the probe's fault and not the server's. */
 function XStatusLine({ status }: { status: XStatus }) {
   const parts = [`${status.tweets_total} tweets archived`, `${status.feed_items_total} feed items`];
   parts.push(status.last_push_at ? `last push ${fullDateLabel(status.last_push_at)}` : 'no probe push yet');
   return (
-    <div className="border-t px-4 py-3 text-xs text-muted-foreground sm:px-5">
-      {parts.join(' · ')}
-      {status.parse_errors > 0 && (
-        <span className="text-destructive"> · {status.parse_errors} parse errors (bird 输出可能变了)</span>
-      )}
+    <div className="space-y-1 border-t px-4 py-3 text-xs text-muted-foreground sm:px-5">
+      <div>
+        {parts.join(' · ')}
+        {status.parse_errors > 0 && (
+          <span className="text-destructive"> · {status.parse_errors} parse errors (bird 输出可能变了)</span>
+        )}
+      </div>
+      <XVerdictLine verdict={status.verdict} />
     </div>
   );
 }

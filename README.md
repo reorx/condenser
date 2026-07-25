@@ -90,6 +90,23 @@ committing a local path dependency. (If you'd rather have a persistent link,
 | `CONDENSER_BACKFILL_DAYS` | days to backfill when subscribing (default `7`) |
 | `CONDENSER_ENTITY_CACHE_PATH` | JSON cache for forward-source names (default `condenser_entity_cache.json`) |
 | `CONDENSER_STATIC_DIR` | frontend build to serve at `/` (default `frontend/dist`) |
+| `CONDENSER_EMBEDDING_API_KEY` | enables the X "For You" verdict; unset = the feature stays off |
+
+See `.env.example` for the full list, including the X source and the embedding /
+verdict knobs.
+
+#### A note on sqlite-vec
+
+The For You verdict indexes its training vectors in a
+[sqlite-vec](https://alexgarcia.xyz/sqlite-vec/) virtual table inside the same SQLite
+file, which requires a Python built with SQLite **extension loading** enabled. The
+`uv`-managed interpreters and the Docker image both are; **macOS's system Python is
+not**. If the extension cannot load, condenser logs a warning and runs normally — only
+the verdict goes quiet (`/api/x/status` reports `verdict.index_available: false`).
+
+The vec0 table is a rebuildable cache: the vectors live in `x_embeddings` and the
+labels in `item_feedback` / `saved_items`, so a sqlite-vec upgrade is a rebuild, not a
+migration.
 
 ## Deployment (Docker)
 

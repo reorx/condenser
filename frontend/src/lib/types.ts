@@ -145,9 +145,34 @@ export interface XTweet {
   /** The subscription this appearance belongs to: 'foryou' or a followed handle. */
   feed: string;
   feed_kind: 'home' | 'user';
-  /** Feedback-driven judgement (plan Phase 4); null until then. */
-  verdict: 'positive' | 'neutral' | 'negative' | null;
-  verdict_meta: Record<string, unknown> | null;
+  /** Feedback-driven judgement (plan Phase 4). null = not judged (no labels yet, or
+   *  outside For You); 'neutral' = judged and deliberately non-committal. */
+  verdict: XVerdict | null;
+  verdict_meta: XVerdictMeta | null;
+}
+
+export type XVerdict = 'positive' | 'neutral' | 'negative';
+
+/** One labeled tweet that voted on a verdict — the evidence behind the badge. */
+export interface XVerdictNeighbor {
+  tweet_id: string;
+  /** Cosine distance: 0 = identical, 1 = unrelated. */
+  distance: number;
+  label: 'up' | 'down' | 'save';
+  /** The neighbour's author, denormalized at judge time so the evidence reads as
+   *  "like that post of @x's you marked down" without a second lookup. */
+  handle?: string | null;
+}
+
+/** Why the verdict came out the way it did. `reason` marks the two "did not judge"
+ *  outcomes: too far from anything labeled, or no text to judge. */
+export interface XVerdictMeta {
+  score?: number;
+  neighbors?: XVerdictNeighbor[];
+  reason?: 'out_of_domain' | 'no_text';
+  /** The embedding identity the score is comparable within, e.g. 'text-embedding-v4@256'. */
+  model?: string;
+  algo?: string;
 }
 
 /** The reader's own up/down label on an item (plan Phase 3) — the training signal
@@ -275,6 +300,28 @@ export interface XStatus {
   last_push_at: string | null;
   last_push_counts: Record<string, XPushCount>;
   parse_errors: number;
+  verdict: XVerdictStatus;
+}
+
+/** The For You verdict's own health (plan Phase 4): can it run, has the cold-start
+ *  gate opened, and how much labeling is still needed before it does. */
+export interface XVerdictStatus {
+  enabled: boolean;
+  embedding_configured: boolean;
+  index_available: boolean;
+  /** True once both label floors are met; until then everything stays unjudged. */
+  ready: boolean;
+  positives: number;
+  negatives: number;
+  needs_positive: number;
+  needs_negative: number;
+  /** Vectors in the KNN index, and vectors stored overall. */
+  indexed: number;
+  embedded: number;
+  judged: { positive: number; neutral: number; negative: number };
+  model: string;
+  algo: string;
+  last_run_at: string | null;
 }
 
 /** A broadcast channel the logged-in account follows, from GET /api/tg/dialogs. */

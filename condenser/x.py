@@ -380,6 +380,8 @@ def _parse_error_total() -> int:
 
 
 def status(settings: Settings) -> dict:
+    from . import verdict
+
     tweets_total, feed_items_total = db.x_counts()
     return {
         'source_enabled': settings.condenser_x_enabled,
@@ -389,4 +391,5 @@ def status(settings: Settings) -> dict:
         'last_push_at': db.get_meta(LAST_PUSH_META_KEY),
         'last_push_counts': _push_stats(),
         'parse_errors': _parse_error_total(),
+        'verdict': verdict.status(settings),
     }

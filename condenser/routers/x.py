@@ -7,13 +7,17 @@ fetch (so the probe carries no local config beyond a server URL + token) and
 is registered with — it is just another authorized device.
 """
 
+import logging
+
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 
 from .. import db, preview, x
 from ..auth import require_auth
 from ..config import Settings, get_settings
 from ..types import XIngestBody, XSubscribeBody, XSubscriptionPatch
+
+log = logging.getLogger('condenser.routers.x')
 
 router = APIRouter(prefix='/api', tags=['x'], dependencies=[Depends(require_auth)])
 
@@ -89,7 +93,7 @@ def get_probe_config(settings: Settings = Depends(get_settings)):
 
 
 @router.post('/sources/x/ingest')
-def ingest(body: XIngestBody, settings: Settings = Depends(get_settings)):
+def ingest(request: Request, body: XIngestBody, settings: Settings = Depends(get_settings)):
     _require_source_enabled(settings)
     channel_id = _normalize_or_422(body.channel_id)
     sub = db.get_x_subscription(channel_id)
@@ -97,7 +101,22 @@ def ingest(body: XIngestBody, settings: Settings = Depends(get_settings)):
         # the probe fetches strictly what probe-config listed; this means the
         # subscription went away mid-round (or the probe is misconfigured)
         raise HTTPException(status_code=404, detail='no enabled x subscription for this channel_id')
-    return {'channel_id': channel_id, **x.ingest_tweets(channel_id, body.tweets).as_dict()}
+    result = x.ingest_tweets(channel_id, body.tweets)
+    _kick_verdict(request)
+    return {'channel_id': channel_id, **result.as_dict()}
+
+
+def _kick_verdict(request: Request) -> None:
+    """Ask for a judging round. This endpoint's contract is "the archive took your
+    tweets" — a verdict is an async enhancement on top, so nothing it does may turn
+    a successful push into an error the probe would report as data loss."""
+    manager = getattr(request.app.state, 'verdict', None)
+    if manager is None:
+        return
+    try:
+        manager.kick()
+    except Exception:  # noqa: BLE001 - see the docstring
+        log.exception('x ingest: could not schedule a verdict round')
 
 
 @router.get('/x/status')

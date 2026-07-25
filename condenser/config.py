@@ -50,6 +50,47 @@ class Settings(BaseSettings):
     condenser_x_home_count: int = 20
     condenser_x_user_count: int = 10
 
+    # --- embeddings (condenser/embedding.py) ---
+    # OpenAI-compatible endpoint; the provider lives entirely in these four vars so
+    # switching vendors is an env change, not a code change. With no API key the
+    # whole verdict pipeline stays inert (nothing embedded, no verdicts written).
+    condenser_embedding_base_url: str = 'https://dashscope.aliyuncs.com/compatible-mode/v1'
+    condenser_embedding_api_key: str = ''
+    condenser_embedding_model: str = 'text-embedding-v4'
+    # text-embedding-v4 supports 64..2048. 256 is the capacity decision: For You
+    # embeds ~1000 tweets/day, and 1024 dims would cost ~4x the disk on a SQLite
+    # file that is bind-mounted as a single volume.
+    condenser_embedding_dimensions: int = 256
+    # DashScope caps a batch at 10 inputs per request.
+    condenser_embedding_batch: int = 10
+    # An unlabeled tweet's vector is used once (at judge time) and is re-derivable
+    # from x_tweets.text, so it expires. Labeled vectors are the training set and
+    # are never pruned. 0 disables pruning.
+    condenser_embedding_retention_days: int = 90
+
+    # --- For You verdict (condenser/verdict.py) ---
+    condenser_verdict_enabled: bool = True
+    # Cold-start gate: below this many labels of either polarity every tweet stays
+    # unjudged — and nothing is embedded at all, so a fresh install spends nothing.
+    condenser_verdict_min_positive: int = 20
+    condenser_verdict_min_negative: int = 20
+    # kNN over the labeled set, then the OOD gate: neighbours farther than
+    # max_distance (cosine) are not evidence, and fewer than min_neighbors of them
+    # means "too far from everything you labeled" -> neutral.
+    condenser_verdict_k: int = 15
+    condenser_verdict_max_distance: float = 0.6
+    condenser_verdict_min_neighbors: int = 3
+    # Deliberately asymmetric: a wrong "recommended" costs one glance, a wrong
+    # "uninteresting" costs the tweet. Negative also needs a second down neighbour,
+    # so one mis-click cannot condemn a whole semantic neighbourhood.
+    condenser_verdict_positive_score: float = 0.35
+    condenser_verdict_negative_score: float = -0.55
+    condenser_verdict_min_down_neighbors: int = 2
+    # Judging is for tweets you might still read; a backlog from a probe that was
+    # offline for a week is stale by the time it lands.
+    condenser_verdict_window_hours: int = 48
+    condenser_verdict_batch: int = 100
+
     # --- link preview fetching (condenser/preview.py) ---
     # Total per-request timeout (seconds) for fetching a URL/its image.
     condenser_preview_fetch_timeout: float = 8.0

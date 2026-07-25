@@ -64,10 +64,9 @@ def _init():
 # --- schema ------------------------------------------------------------------
 
 
-def test_fresh_db_records_schema_version_7(env):
+def test_fresh_db_creates_the_x_tables(env):
     _init()
-    assert db.SCHEMA_VERSION == 7
-    assert db.get_meta('schema_version') == '7'
+    assert db.get_meta('schema_version') == str(db.SCHEMA_VERSION)
     # new tables exist; no data migration is involved
     tables = {r[0] for r in db.tdb.db.execute_sql("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
     assert {'x_tweets', 'x_feed_items', 'item_feedback'} <= tables
@@ -85,7 +84,7 @@ def test_existing_v6_database_gains_the_new_tables(env):
 
     db.init_db(path)
 
-    assert db.get_meta('schema_version') == '7'
+    assert db.get_meta('schema_version') == str(db.SCHEMA_VERSION)
     assert db.get_hn_story(1).title == 'kept'
     assert db.XTweet.select().count() == 0
 
@@ -422,7 +421,9 @@ def test_same_tweet_in_two_feeds_shares_one_tweet_row(env):
 def test_status_reports_push_activity(env):
     with _client() as client:
         _login(client)
-        assert client.get('/api/x/status').json() == {
+        status = client.get('/api/x/status').json()
+        # the verdict block is Phase 4's and has its own tests (test_x_verdict.py)
+        assert {k: v for k, v in status.items() if k != 'verdict'} == {
             'source_enabled': True,
             'subscribed': False,
             'tweets_total': 0,

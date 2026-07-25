@@ -22,6 +22,7 @@ dependencies = [
     # path, which we bypass); `cgi` was removed in Python 3.13 (PEP 594), so we provide
     # the maintained backport on 3.13+ to keep `import metadata_parser` working.
     "legacy-cgi>=2.6; python_version >= '3.13'",
+    "sqlite-vec>=0.1.9",
 ]
 
 [project.optional-dependencies]

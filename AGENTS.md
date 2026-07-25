@@ -58,6 +58,18 @@ loop. Shares **one SQLite file** with [telememo](https://pypi.org/project/teleme
   `hidden_items`; **written since Phase 3**, 2026-07-25 — one row per item, so switching
   sides is a correction and the undo click deletes it. NOT album-expanded, unlike
   read/hide markers: a label belongs to the display unit the reader judged).
+  **SCHEMA_VERSION 8** (2026-07-25, X source Phase 4) adds the vector layer, again
+  purely additive: `x_embeddings` (`tweet_id` PK, float32 BLOB, `model` = `name@dims`,
+  `created_at`) is the **storage of record** for vectors — a rebuildable cache in the
+  spirit of `is_filtered`, since the text is still in `x_tweets` and any row can be
+  re-embedded; and `x_vec_labeled`, a **sqlite-vec `vec0` virtual table** holding only
+  the *labeled* set (hundreds of rows), created with raw SQL in `init_db` **after** the
+  extension loads (`vectors.setup`, which also drops+recreates it when
+  `CONDENSER_EMBEDDING_DIMENSIONS` changes). Two properties decided sqlite-vec over an
+  external vector DB: the index lives in the same file (backup stays "copy one file")
+  and vec0 shadow tables **join the surrounding transaction**, so a label and its vector
+  cannot drift apart. Unlabeled vectors are pruned after
+  `CONDENSER_EMBEDDING_RETENTION_DAYS`; labeled ones are the training set and stay.
 
 condenser's peewee models bind to telememo's `db` instance, so everything is one connection.
 `condenser/db.py:init_db()` initializes telememo tables (+ `is_filtered`) then condenser tables.
@@ -71,6 +83,9 @@ condenser's peewee models bind to telememo's `db` instance, so everything is one
 | `filters.py` | keyword-filter **materialization** into `messages.is_filtered` (on ingest + rule change) |
 | `items.py` | item keys (`tg:{cid}:{mid}` / `hn:{sid}` / `x:{tweet_id}` ↔ `(source, ref1, ref2)` triple) + the item **envelope** (`{source, key, datetime, is_read, is_saved, telegram\|hn\|x}`, plus `feedback` — the reader's own up/down label — on X envelopes, whose join the other sources grow when their UI does) shared by timeline + records; the hn payload carries `preview`; `_json_field` accepts a stored JSON str, an already-parsed value from saved-record replay, or None. The x payload renders snowflake ids as **strings** (int64 exceeds JS's safe range) and nests the quoted tweet; `x_envelope`'s `datetime` is feed-dependent — For You = `first_seen_at`, a followed account = `created_at` |
 | `timeline.py` + `sources/` | **federated timeline merge** (Phase 2): `sources/telegram.py` (the old query — album buffer, unit cursors — unchanged in substance), `sources/x.py` (see the X block below) and `sources/hn.py` (query-time `ROW_NUMBER()` day-rank, display_mode top10/top20/half/all from sub config) each return `SourceUnit` pages; `timeline.py` k-way merges by timestamp with a **composite cursor** `base64(json {source: "ts\x1fid"})` — a source absent from the map = not yet consumed, restarts from its top. `head_cursor`/`end_cursor` are composite too; `query_new` polls per-source anchors (an active source with zero units on page 1 gets a synthetic "now" anchor so its future items still poll). Merge keeps a per-source **floor**: a source drained below `limit` units with `has_more` ends the page early rather than letting older units from other sources jump ahead (album-dense TG pages). Bad/legacy cursors raise `InvalidCursor` → 422. HN unread counts respect the display mode (else the badge never clears) |
+| `vectors.py` | the **only** module that knows sqlite-vec exists: `setup(dims)` (load the extension onto the peewee *database* so every thread-local connection replays it, then ensure the `vec0` table), `pack`/`unpack` (float32 BLOB, deliberately extension-independent so vectors are storable even where the extension will not load), `upsert`/`delete`/`clear`/`labeled_ids`/`knn`. Everything degrades to no-op when the extension is unavailable, which is what makes an unsupported host lose only the verdict |
+| `embedding.py` | OpenAI-compatible embeddings (`CONDENSER_EMBEDDING_*`, default DashScope `text-embedding-v4@256`): batches of ≤10, two retries, L2-normalize, reorder by the echoed `index`. `available(settings)` is false without an API key → the whole verdict pipeline stays inert. `model_tag` = `name@dims`, the identity a stored vector is comparable within (a model/dimension change re-embeds rather than migrates) |
+| `verdict.py` | **For You verdict** (Phase 4, on `app.state.verdict`, kicked by ingest — For You only changes when the probe pushes). `run_once` = drop-retracted → cold-start gate → index-missing → judge → prune. Two gates own the behavior: the **cold-start gate** sits *before* any embedding call (no labels, no spend) and the **OOD gate** drops neighbours past `max_distance` — without it kNN always returns k neighbours and every tweet gets scored off whatever was nearest. Scoring is a distance-weighted vote (`save` ×2 weight, not ±2 value, so the score stays in [−1,+1]); `negative` additionally needs ≥2 down neighbours because a wrong "not for you" costs the tweet while a wrong "recommended" costs a glance. The training set is **read live** from `item_feedback` ∪ `saved_items` (unsaving retracts a sample with no sync code; saved-and-downvoted is contradictory and is dropped from both sides), and the KNN index is **reconciled**, not written through — a restart, an outage or a model change self-heals next round. Already-labeled tweets are excluded from judging (they are in the index and would match themselves at distance 0). `verdict_meta` archives the nearest `META_NEIGHBOURS` (5) with author handles — capped because it is written ~1000×/day. `rebuild_labeled_index()` is the escape hatch for a suspect index |
 | `records.py` | source-decoupled snapshots into `saved_items.raw_data` keyed by item key: TG = album rows + channel info, HN = story JSON, X = the envelope payload itself (quote already nested); rendered back into envelopes without source tables |
 | `preview.py` | source-agnostic link previews: fetch a URL (async httpx) + extract metadata (`metadata_parser`), `link_previews` cache, per-message batch w/ Telegram-bonus fill, image fetch for the proxy |
 | `hn.py` | `HNManager` (on `app.state.hn`, peer of `TgManager`): subscription-driven HN front-page sampling loop (`topstories` diff → `hn_stories`, sticky `first_seen_at`, peak_rank, 48h snapshot refresh) + serial rate-limited hckrnews history backfill w/ pending-day set in `app_meta` (`threading.Lock` + per-day read-modify-write — `schedule_backfill` runs on the threadpool while the loop rewrites the set); HTTP via injectable `fetch_json` (tests need no network). Hardened per `kb/plans/2026-07-19-hn-phase1-review-fixes.md`: `_loop` has a catch-all guard (DB errors outside `poll_once`'s try must not kill the task); **null item ≠ dead** — refresh only marks dead on explicit `dead`/`deleted` (Firebase transiently nulls live items), while a *never-seen* front-page id that fetches null gets a dead placeholder row so it isn't re-pulled every round; `kick()` marshals via `call_soon_threadsafe` (no-op before startup / when source disabled). **Link-preview prefetch** (2026-07-20): `_fill_previews` at the tail of `poll_once` sweeps linkable stories without a stored preview newest-first (`CONDENSER_HN_PREVIEW_BATCH`/round, 0=off; covers fresh, backfilled *and* pre-feature rows) through `preview.get_preview` (warming the shared pane cache) into `hn_stories.preview`; ≤3 real attempts per story (`PREVIEW_MAX_ATTEMPTS`) — a still-fresh negative cache entry skips *without* bumping (the 1h neg-TTL < poll interval would otherwise eat every retry), empty-but-ok results are terminal; injectable `fetch_preview` for tests. `routers/hn.py` = `/api/sources/hn/subscriptions*` + `/api/hn/status` (incl. `source_enabled`); POST = subscribe-and-enable (re-enables a paused row, `schedule_backfill` only on first create), POST/PATCH-enable → 503 when `CONDENSER_HN_ENABLED=false`. Multi-source plan Phase 1: `kb/plans/2026-07-19-multi-source-hn.md` |
@@ -352,6 +367,7 @@ scripts/dev-browser-login.sh [session] [--backend URL] [--frontend URL]
 
 | Script | What it does |
 |---|---|
+| `x_verdict_backtest.py` | Leave-one-out backtest of the For You verdict on your real labels — the tool that turns the Phase 4 constants from placeholders into decisions. Read-only on the DB (it does trash the KNN index per fold and rebuilds it at the end). `--sweep` grids over distance/threshold settings; `--embed-missing` is the only mode that calls the embedding API. Report **coverage first** (a judge that always answers neutral is 100% precise and useless), then negative precision (the number that decides whether hiding could ever be safe), then positive |
 | `dev-browser-login.sh` | Puts a logged-in session cookie into an `agent-browser` profile so a UI walkthrough can run behind the auth gate. The app password stays on stdin the whole way (envops → curl → cookie jar → cookie file → agent-browser), so it never reaches a command line or an agent transcript; the temp files are deleted on exit. Encodes two traps: agent-browser's cookie file must be bare `k=v; k2=v2` (a `Cookie: k=v` header line silently becomes a cookie *named* `Cookie: k`, stored but never sent), and a backend-issued cookie works on the Vite origin because cookies ignore ports. **Check the dev backend was started with `--reload`** (`ps -o command -p $(lsof -ti :8792 -sTCP:LISTEN)`) or the walkthrough verifies stale code |
 
 ## Status / known gaps
@@ -470,6 +486,28 @@ it lands. 11 X-feedback + 223 backend + 58 frontend green, plus a live browser
 walkthrough against the dev backend (label → reload → server state → undo, saved
 view, detail pane, dark mode) in `tmp/2026-07-25-x-phase3-feedback/`. iOS deferred
 to Phase 5 (it can't render X cards yet, so there is nothing to attach buttons to).
+**X source Phase 4 — embedding verdict** (2026-07-25, BDD): schema v8 + `vectors.py` +
+`embedding.py` + `verdict.py` + `XVerdictBadge` / `XVerdictDetail` + the X status line's
+判定 row + `scripts/x_verdict_backtest.py` (see the module table and the v8 block above).
+The plan's sqlite-vec choice was **re-litigated and kept** — Chroma resolves to 79
+packages (incl. `kubernetes`, `onnxruntime`, `grpcio`, a second web server) *and* makes
+labels and vectors two stores with no shared transaction, while a hand-rolled brute-force
+kNN trades that same guarantee for saved dependencies; sqlite-vec is 1 package, one file,
+one transaction (all four properties smoke-tested through peewee: extension loads,
+replays on new thread connections, int64 snowflake rowids round-trip, vec0 rolls back
+with ordinary tables). Two deviations from the plan's flow, both to avoid spending money
+on shrugs: the **cold-start gate moved ahead of the embedding call** (③ before ②), and
+unlabeled For You tweets are not embedded while the gate is closed. Retractions are
+processed even during cold start, since deleting from the index costs nothing.
+**Real numbers worth keeping** (`text-embedding-v4@256`): same topic across
+languages ≈ 0.18 cosine distance, unrelated ≈ 0.80 — `CONDENSER_VERDICT_MAX_DISTANCE=0.6`
+sits between them. 32 verdict + 254 backend + 64 frontend green; live end-to-end against
+the dev backend (real DashScope embeddings → vec0 kNN → verdict → badge) with
+screenshots in `tmp/2026-07-25-x-phase4-verdict/`. ⚠️ **The classifier is unvalidated**:
+Phase 3 shipped the same day, so the real label count is ~0 and the production gate
+(20/20) keeps every verdict `null` until the user has labeled enough. Accuracy is a
+question for `x_verdict_backtest.py` later, and the ± thresholds stay placeholders
+until it has real data. iOS still deferred to Phase 5.
 Still open: subscription
 "delete-with-messages" option (Q4 / `?purge=1`) and the backfill batch-interval sleep.
 Full checklist: `kb/sessions/2026-06-09-backend-remaining-work.md`.

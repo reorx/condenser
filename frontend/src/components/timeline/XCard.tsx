@@ -18,6 +18,7 @@ import type { ReadTarget, TimelineItem, XTweet } from '@/lib/types';
 import { XFeedbackButtons } from './XFeedbackButtons';
 import { XMedia } from './XMedia';
 import { XQuoteCard } from './XQuoteCard';
+import { XVerdictBadge } from './XVerdictBadge';
 
 interface Props {
   /** Envelope with `x` present. */
@@ -157,9 +158,11 @@ function XCardImpl({ item, observe }: Props) {
       {tweet.media && tweet.media.length > 0 && <XMedia items={tweet.media} />}
       {tweet.quote && <XQuoteCard quote={tweet.quote} />}
 
-      {/* The tweet's own numbers on the left, the reader's verdict on the right —
-          feedback is always offered, even when bird sent no metrics. */}
+      {/* Footer: the machine's read on the left, the reader's on the right, the
+          tweet's own numbers in between. Feedback is always offered, even when
+          bird sent no metrics. */}
       <div className="mt-2 flex items-center gap-4 text-xs text-muted-foreground">
+        <XVerdictBadge verdict={tweet.verdict} meta={tweet.verdict_meta} onOpen={() => openPane(item)} />
         {metrics && (
           <>
             <MetricChip icon={<Heart className="size-3.5" />} value={metrics.like_count} />
