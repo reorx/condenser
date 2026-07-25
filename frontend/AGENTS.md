@@ -135,6 +135,15 @@ Two conventions this list exists to protect:
 
 ## Debugging
 
+### Walk through the real app (behind the auth gate)
+
+For anything the harness below can't show — real data, routing, mutations hitting the
+backend — run `scripts/dev-browser-login.sh [session]` from the repo root. It injects a
+logged-in cookie into an `agent-browser` profile without the app password ever touching a
+command line, so `agent-browser --session <session> open http://localhost:5792/...` lands
+on the timeline instead of the unlock screen. See the `scripts/` table in the root
+`AGENTS.md`; note the dev backend must be running with `--reload` or you verify stale code.
+
 ### Render a component in isolation and screenshot it
 
 To verify a visual change **without a logged-in backend**, use the dev-only preview harness

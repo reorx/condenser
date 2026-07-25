@@ -343,7 +343,16 @@ cd frontend && pnpm install && pnpm dev   # proxies /api -> :8792 (CONDENSER_BAC
 pnpm build                                # -> frontend/dist (served by backend in prod)
 
 # Or launch both backend + frontend panes at once: tmuxp load .tmuxp.yaml
+
+# Log a browser session into the running dev app (the auth gate blocks walkthroughs):
+scripts/dev-browser-login.sh [session] [--backend URL] [--frontend URL]
 ```
+
+### `scripts/`
+
+| Script | What it does |
+|---|---|
+| `dev-browser-login.sh` | Puts a logged-in session cookie into an `agent-browser` profile so a UI walkthrough can run behind the auth gate. The app password stays on stdin the whole way (envops → curl → cookie jar → cookie file → agent-browser), so it never reaches a command line or an agent transcript; the temp files are deleted on exit. Encodes two traps: agent-browser's cookie file must be bare `k=v; k2=v2` (a `Cookie: k=v` header line silently becomes a cookie *named* `Cookie: k`, stored but never sent), and a backend-issued cookie works on the Vite origin because cookies ignore ports. **Check the dev backend was started with `--reload`** (`ps -o command -p $(lsof -ti :8792 -sTCP:LISTEN)`) or the walkthrough verifies stale code |
 
 ## Status / known gaps
 
