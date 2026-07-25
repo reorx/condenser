@@ -112,7 +112,7 @@ def judge_text(row: dict) -> Optional[str]:
     """
     text = (row.get('text') or '').strip()
     if row.get('rt_of_handle') and text:
-        text = _strip_rt_prefix(text)
+        text = _strip_rt_prefix(text, row['rt_of_handle'])
 
     article = _parsed(row.get('article'))
     if article:
@@ -125,9 +125,11 @@ def judge_text(row: dict) -> Optional[str]:
     return text or None
 
 
-def _strip_rt_prefix(text: str) -> str:
-    _, _, rest = text.partition(':')
-    return rest.strip() or text
+def _strip_rt_prefix(text: str, handle: str) -> str:
+    prefix = f'RT @{handle}:'
+    if not text.startswith(prefix):
+        return text
+    return text[len(prefix) :].strip() or text
 
 
 def _parsed(value) -> Optional[dict]:

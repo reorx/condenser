@@ -46,6 +46,14 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
 
+      # The verdict pipeline needs sqlite3 built with loadable-extension support
+      # (vectors.setup degrades to no-op otherwise, silently losing verdicts).
+      # Verify the assumption on every build instead of after a deploy.
+      - name: Smoke-test sqlite-vec loads in the image
+        run: |
+          docker run --rm "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}" \
+            /app/.venv/bin/python -c 'import sqlite3, sqlite_vec; c = sqlite3.connect(":memory:"); c.enable_load_extension(True); sqlite_vec.load(c); print("sqlite-vec", c.execute("select vec_version()").fetchone()[0])'
+
       - name: Trigger deploy via hookploy
         run: |
           curl -fsS -X POST "${{ vars.HOOKPLOY_URL }}/hooks/condenser" \

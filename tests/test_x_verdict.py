@@ -491,6 +491,14 @@ def test_judge_text_strips_the_retweet_prefix():
     assert verdict_mod.judge_text(row) == 'rust trait objects explained'
 
 
+def test_judge_text_only_strips_an_exact_rt_prefix():
+    """rt_of_handle set but the text does not start with 'RT @handle:' (the tweet
+    just happens to contain a colon): nothing before the first colon may be
+    discarded on a guess."""
+    row = {'text': 'PSA: rustup 1.28 is out', 'rt_of_handle': 'someone'}
+    assert verdict_mod.judge_text(row) == 'PSA: rustup 1.28 is out'
+
+
 def test_judge_text_appends_the_quoted_tweet():
     """A quote tweet's meaning lives in both halves ('look at this nonsense' + the
     nonsense), so both are embedded."""
