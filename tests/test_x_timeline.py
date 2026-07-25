@@ -469,5 +469,5 @@ def test_home_fetch_count_defaults_to_the_reduced_capacity(env):
     """For You re-samples every call, so the default n is the capacity lever."""
     from condenser.config import get_settings
 
-    assert get_settings().condenser_x_home_count == 20
+    assert get_settings().condenser_x_home_count == 10
     _ = os.environ  # (env fixture pins the rest of the config)

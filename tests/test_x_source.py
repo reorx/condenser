@@ -158,7 +158,7 @@ def test_probe_config_lists_enabled_feeds(env):
         feeds = client.get('/api/sources/x/probe-config').json()['feeds']
         by_id = {f['channel_id']: f for f in feeds}
         # For You re-samples every call, so the default n is the capacity lever (Phase 2)
-        assert by_id['foryou'] == {'channel_id': 'foryou', 'kind': 'home', 'handle': None, 'n': 20}
+        assert by_id['foryou'] == {'channel_id': 'foryou', 'kind': 'home', 'handle': None, 'n': 10}
         assert by_id[USER_HANDLE] == {
             'channel_id': USER_HANDLE,
             'kind': 'user',

@@ -47,7 +47,7 @@ class Settings(BaseSettings):
     # Default per-round fetch counts handed to the probe (per-feed config overrides).
     # For You re-samples on every bird call (no stable window), so this number times
     # the probe's cadence *is* the archive growth rate — the capacity lever.
-    condenser_x_home_count: int = 20
+    condenser_x_home_count: int = 10
     condenser_x_user_count: int = 10
 
     # --- embeddings (condenser/embedding.py) ---

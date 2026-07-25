@@ -50,7 +50,7 @@ Env equivalents (they win over the file): `CONDENSER_PROBE_SERVER_URL`,
 ```bash
 uv run condenser-probe check      # verify bird's session + the server token
 uv run condenser-probe run        # one round (what launchd/cron should call)
-uv run condenser-probe watch --interval 1800   # foreground loop, for setup
+uv run condenser-probe watch --interval 3600   # foreground loop, for setup
 ```
 
 Subscribe to feeds on the server's Subscriptions page (X block): **For You**
@@ -60,7 +60,7 @@ immediately — no probe restart, no local config.
 ## Scheduling (launchd)
 
 `run` is a single round that exits, which is what you want on a laptop: sleeping
-just misses rounds. Suggested cadence: For You every 30–60 min.
+just misses rounds. Suggested cadence: one round per hour.
 
 ```bash
 cp com.condenser.probe.plist.example ~/Library/LaunchAgents/com.condenser.probe.plist
@@ -69,7 +69,7 @@ launchctl load ~/Library/LaunchAgents/com.condenser.probe.plist
 tail -f ~/Library/Logs/condenser-probe.log
 ```
 
-cron works equally well: `*/30 * * * * cd /path/to/probe && uv run condenser-probe run >> ~/condenser-probe.log 2>&1`
+cron works equally well: `0 * * * * cd /path/to/probe && uv run condenser-probe run >> ~/condenser-probe.log 2>&1`
 
 ## Tests
 

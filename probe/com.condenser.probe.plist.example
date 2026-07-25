@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  launchd agent for condenser-probe: one round every 30 minutes.
+  launchd agent for condenser-probe: one round every hour.
 
   Copy to ~/Library/LaunchAgents/com.condenser.probe.plist, replace the two
   /PATH/TO paths (and the uv location if it is not in /opt/homebrew/bin), then:
@@ -35,7 +35,7 @@
     </dict>
 
     <key>StartInterval</key>
-    <integer>1800</integer>
+    <integer>3600</integer>
 
     <key>RunAtLoad</key>
     <true/>

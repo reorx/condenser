@@ -64,7 +64,7 @@ def _watch(settings, interval: int) -> int:
 def main() -> int:
     parser = argparse.ArgumentParser(prog='condenser-probe', description=__doc__)
     parser.add_argument('command', choices=('check', 'run', 'watch'), nargs='?', default='run')
-    parser.add_argument('--interval', type=int, default=1800, help='seconds between rounds in watch mode')
+    parser.add_argument('--interval', type=int, default=3600, help='seconds between rounds in watch mode')
     parser.add_argument('--log-level', default=None)
     args = parser.parse_args()
 
