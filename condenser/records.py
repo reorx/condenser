@@ -112,7 +112,7 @@ def _render_tg_display(raw_data: str) -> Optional[dict]:
 def render_item(
     rec: db.SavedItem,
     read_triples: set[tuple[str, int, int]],
-    feedback: Optional[dict[tuple[str, int, int], str]] = None,
+    feedback: Optional[dict[tuple[str, int, int], tuple[Optional[str], Optional[str]]]] = None,
 ) -> Optional[dict]:
     """Render one saved row into an item envelope (is_saved always True)."""
     triple = (rec.source, rec.ref1, rec.ref2)
@@ -123,7 +123,8 @@ def render_item(
             return None
         return tg_envelope(display, is_read, True)
     if rec.source == 'x':
-        return x_envelope(json.loads(rec.raw_data), is_read, True, (feedback or {}).get(triple))
+        verdict, reason = (feedback or {}).get(triple, (None, None))
+        return x_envelope(json.loads(rec.raw_data), is_read, True, verdict, reason)
     return hn_envelope(json.loads(rec.raw_data), is_read, True)
 
 
@@ -136,17 +137,18 @@ def _saved_read_triples() -> set[tuple[str, int, int]]:
     return set(cur.fetchall())
 
 
-def _saved_feedback() -> dict[tuple[str, int, int], str]:
-    """Labels for the saved items that have one, batched like the read markers.
+def _saved_feedback() -> dict[tuple[str, int, int], tuple[Optional[str], Optional[str]]]:
+    """Labels (verdict + reason chip) for the saved items that have one, batched like
+    the read markers.
 
     Feedback deliberately stays out of the snapshot: it is live state the user
     keeps editing, so a record replays the tweet but joins its current label.
     """
     cur = tdb.db.execute_sql(
-        'SELECT s.source, s.ref1, s.ref2, f.verdict FROM saved_items s '
+        'SELECT s.source, s.ref1, s.ref2, f.verdict, f.reason FROM saved_items s '
         'JOIN item_feedback f ON f.source = s.source AND f.ref1 = s.ref1 AND f.ref2 = s.ref2'
     )
-    return {(source, ref1, ref2): verdict for source, ref1, ref2, verdict in cur.fetchall()}
+    return {(source, ref1, ref2): (verdict, reason) for source, ref1, ref2, verdict, reason in cur.fetchall()}
 
 
 def list_rendered_records() -> list[dict]:

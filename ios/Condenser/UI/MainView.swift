@@ -67,7 +67,9 @@ struct MainView: View {
             } else if let story = item.hn {
                 HnDetailSheet(item: item, story: story, onToggleSaved: {})
             } else if let tweet = item.x {
-                XDetailSheet(item: item, tweet: tweet, onToggleSaved: {}, onFeedback: { _ in })
+                XDetailSheet(
+                    item: item, tweet: tweet, onToggleSaved: {},
+                    onFeedback: { _ in }, onReason: { _ in })
             }
         }
         .fullScreenCover(item: $debugViewer) { item in

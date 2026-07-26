@@ -52,7 +52,7 @@ final class StubAPI: CondenserAPI, @unchecked Sendable {
     var timelineCalls: [(cursor: String?, channelID: Int?, unreadOnly: Bool, source: String?, feed: String?)] = []
     var newResults: [Result<TimelineNew, Error>] = []
     var newCalls: [(after: String, channelID: Int?, unreadOnly: Bool, source: String?, feed: String?)] = []
-    var feedbackCalls: [(key: String, verdict: ItemFeedback)] = []
+    var feedbackCalls: [(key: String, verdict: ItemFeedback, reason: ItemFeedbackReason?)] = []
     var clearFeedbackCalls: [String] = []
     var feedbackError: Error?
     var markReadCalls: [[String]] = []
@@ -116,9 +116,9 @@ final class StubAPI: CondenserAPI, @unchecked Sendable {
         return try fetchOlderResults.removeFirst().get()
     }
 
-    func setFeedback(key: String, verdict: ItemFeedback) async throws {
+    func setFeedback(key: String, verdict: ItemFeedback, reason: ItemFeedbackReason?) async throws {
         if let feedbackError { throw feedbackError }
-        feedbackCalls.append((key, verdict))
+        feedbackCalls.append((key, verdict, reason))
     }
 
     func clearFeedback(key: String) async throws {

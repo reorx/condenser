@@ -598,9 +598,11 @@ def test_schema_v8_adds_the_vector_tables_without_touching_data(env, monkeypatch
 
     db.init_db(os.environ['CONDENSER_DB_PATH'], get_settings().condenser_embedding_dimensions)
 
-    assert db.get_meta('schema_version') == '8'
+    # restamped to current (this test owns v8's tables, not the version tripwire —
+    # that one lives in test_hn.test_fresh_db_records_schema_version)
+    assert db.get_meta('schema_version') == str(db.SCHEMA_VERSION)
     assert db.XTweet.get_or_none(db.XTweet.id == 101) is not None
-    assert db.get_feedback('x', 101) == 'down'
+    assert db.get_feedback('x', 101) == ('down', None)
     assert vectors.available()
     assert vectors.labeled_ids() == set()  # a fresh index, ready to be filled
 

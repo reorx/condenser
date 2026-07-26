@@ -11,9 +11,20 @@ verdict will only ever be computed for For You.
 The state has to survive back to the reader, so the envelope carries a
 ``feedback`` field on both reading surfaces: the timeline (provider join) and
 saved records (which replay from a snapshot and therefore need a live join).
+
+**Down reasons** (2026-07-26, schema v9) close the credit-assignment hole the
+algorithm note (kb/notes/2026-07-24-x-verdict-multi-channel-discussion.md) named:
+a bare down labels the whole tweet, but the thing you disliked is usually one
+attribute of it — its topic, its marketing voice, its AI-slop phrasing, its
+author. The optional one-tap chip says which, so a future multi-channel model can
+route the label to the right channel instead of averaging it into one vector.
+Skipping the chip is free: the label degrades to exactly the bag-level signal it
+was before.
 """
 
 import json
+import os
+import sqlite3
 from datetime import datetime
 from pathlib import Path
 
@@ -60,8 +71,11 @@ def _seed_both(client, monkeypatch):
     )
 
 
-def _feedback(client, key, verdict):
-    return client.post('/api/feedback', json={'key': key, 'verdict': verdict})
+def _feedback(client, key, verdict, reason=None):
+    body = {'key': key, 'verdict': verdict}
+    if reason is not None:
+        body['reason'] = reason
+    return client.post('/api/feedback', json=body)
 
 
 def _x_timeline(client, **params):
@@ -203,6 +217,145 @@ def test_a_saved_record_keeps_its_label_after_the_archive_is_gone(env, monkeypat
         db.XTweet.delete().execute()
 
         assert _item(client.get('/api/records').json(), key)['feedback'] == 'down'
+
+
+# --- down reasons (credit assignment, schema v9) -------------------------------
+
+
+def test_a_down_without_a_reason_is_still_a_complete_label(env, monkeypatch):
+    """The chip is skippable by design: no pick = the bag-level label we already had."""
+    with _client() as client:
+        _login(client)
+        _seed_both(client, monkeypatch)
+        key = x_key(PHOTO_TWEET)
+
+        assert _feedback(client, key, 'down').status_code == 200
+
+        item = _item(_x_timeline(client, feed='foryou'), key)
+        assert item['feedback'] == 'down'
+        assert item['feedback_reason'] is None
+
+
+def test_picking_a_chip_attaches_the_reason_to_the_same_row(env, monkeypatch):
+    """The chip lands as a second call after the thumb, so it must update, not insert:
+    the user made one judgement, and the row is that judgement."""
+    with _client() as client:
+        _login(client)
+        _seed_both(client, monkeypatch)
+        key = x_key(PHOTO_TWEET)
+
+        _feedback(client, key, 'down')
+        assert _feedback(client, key, 'down', 'ai_slop').status_code == 200
+
+        assert _item(_x_timeline(client, feed='foryou'), key)['feedback_reason'] == 'ai_slop'
+        assert db.ItemFeedback.select().count() == 1
+
+
+def test_every_chip_in_the_taxonomy_is_accepted(env, monkeypatch):
+    """The four chips map one-to-one onto the planned model channels — topic to the
+    dense-kNN channel, promo/ai_slop to the style channels, author to the author
+    prior. Locking them here is what makes the stored labels re-routable later."""
+    with _client() as client:
+        _login(client)
+        _seed_both(client, monkeypatch)
+        key = x_key(PHOTO_TWEET)
+
+        for reason in ('topic', 'promo', 'ai_slop', 'author'):
+            assert _feedback(client, key, 'down', reason).status_code == 200
+            assert _item(_x_timeline(client, feed='foryou'), key)['feedback_reason'] == reason
+
+
+def test_switching_sides_drops_the_stale_reason(env, monkeypatch):
+    """A POST states the whole label. Otherwise 'AI slop' would survive the correction
+    to a thumbs-up and poison the training set with a positive labeled as slop."""
+    with _client() as client:
+        _login(client)
+        _seed_both(client, monkeypatch)
+        key = x_key(PHOTO_TWEET)
+        _feedback(client, key, 'down', 'ai_slop')
+
+        _feedback(client, key, 'up')
+
+        item = _item(_x_timeline(client, feed='foryou'), key)
+        assert item['feedback'] == 'up'
+        assert item['feedback_reason'] is None
+
+
+def test_undo_takes_the_reason_with_it(env, monkeypatch):
+    with _client() as client:
+        _login(client)
+        _seed_both(client, monkeypatch)
+        key = x_key(PHOTO_TWEET)
+        _feedback(client, key, 'down', 'promo')
+
+        client.delete(f'/api/feedback/{key}')
+
+        item = _item(_x_timeline(client, feed='foryou'), key)
+        assert item['feedback'] is None and item['feedback_reason'] is None
+
+
+def test_a_reason_is_allowed_on_an_up_label(env, monkeypatch):
+    """The column is verdict-agnostic even though only the down UI offers chips today —
+    an up-side taxonomy later is a UI change, not a migration."""
+    with _client() as client:
+        _login(client)
+        _seed_both(client, monkeypatch)
+        key = x_key(PHOTO_TWEET)
+
+        assert _feedback(client, key, 'up', 'author').status_code == 200
+
+        assert _item(_x_timeline(client, feed='foryou'), key)['feedback_reason'] == 'author'
+
+
+def test_an_unknown_reason_is_rejected(env, monkeypatch):
+    """A free-text reason would be unusable as a training feature, so the taxonomy is
+    closed at the door like the verdict is."""
+    with _client() as client:
+        _login(client)
+        _seed_both(client, monkeypatch)
+
+        assert _feedback(client, x_key(PHOTO_TWEET), 'down', 'because-i-said-so').status_code == 422
+        assert db.ItemFeedback.select().count() == 0
+
+
+def test_saved_records_carry_the_reason_too(env, monkeypatch):
+    with _client() as client:
+        _login(client)
+        _seed_both(client, monkeypatch)
+        key = x_key(PHOTO_TWEET)
+        client.post('/api/records', json={'key': key})
+        _feedback(client, key, 'down', 'topic')
+
+        record = _item(client.get('/api/records').json(), key)
+
+        assert record['feedback'] == 'down' and record['feedback_reason'] == 'topic'
+
+
+def test_item_feedback_table_migrates_to_v9(env):
+    """A pre-v9 item_feedback table gains the reason column in place, labels intact —
+    the labels collected before the chips existed are the scarce ones."""
+    path = os.environ['CONDENSER_DB_PATH']
+    conn = sqlite3.connect(path)
+    conn.execute(
+        'CREATE TABLE item_feedback ('
+        'source VARCHAR(255) NOT NULL, ref1 INTEGER NOT NULL, ref2 INTEGER NOT NULL, '
+        'verdict VARCHAR(255) NOT NULL, created_at DATETIME NOT NULL, '
+        'PRIMARY KEY (source, ref1, ref2))'
+    )
+    conn.execute(
+        'INSERT INTO item_feedback (source, ref1, ref2, verdict, created_at) '
+        "VALUES ('x', 42, 0, 'down', '2026-07-25 10:00:00')"
+    )
+    conn.commit()
+    conn.close()
+
+    db.init_db(path)
+
+    assert db.get_feedback('x', 42) == ('down', None)
+    assert db.SCHEMA_VERSION == 9
+    # idempotent: init again on the migrated file
+    db.init_db(path)
+    assert db.get_feedback('x', 42) == ('down', None)
 
 
 # --- contract ------------------------------------------------------------------

@@ -1,11 +1,24 @@
 import { extractUrls } from './extractUrls';
-import type { Source, SourceSub, XTweet } from './types';
+import type { ItemFeedbackReason, Source, SourceSub, XTweet } from './types';
 
 const LABELS: Record<Source, string> = {
   telegram: 'Telegram',
   hn: 'Hacker News',
   x: 'X',
 };
+
+/** The down-reason chips, in the order they are offered. Shared by the card that asks
+ *  and the detail pane that reports the answer back, so the two can never drift. */
+export const FEEDBACK_REASONS: { value: ItemFeedbackReason; label: string }[] = [
+  { value: 'topic', label: '不感兴趣' },
+  { value: 'promo', label: '广告营销' },
+  { value: 'ai_slop', label: 'AI Slop' },
+  { value: 'author', label: '不喜欢作者' },
+];
+
+export const FEEDBACK_REASON_LABELS: Record<ItemFeedbackReason, string> = Object.fromEntries(
+  FEEDBACK_REASONS.map((r) => [r.value, r.label]),
+) as Record<ItemFeedbackReason, string>;
 
 /** The X algorithmic feed's subscription key (a followed account's key is its handle). */
 export const X_FORYOU_FEED = 'foryou';

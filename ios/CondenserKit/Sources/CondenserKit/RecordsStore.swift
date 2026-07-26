@@ -55,19 +55,29 @@ public final class RecordsStore {
     /// 收藏里同样可以改标签（反馈是随时会变的活状态，刻意不进收藏快照，
     /// 所以这里改完服务端立刻生效，下次拉取读回来的就是新值）
     public func setFeedback(_ item: TimelineItem, _ tapped: ItemFeedback) async {
+        let next = ItemFeedback.next(current: item.feedback, tapped: tapped)
+        await write(item, verdict: next, reason: nil)
+    }
+
+    /// 选理由 chip（语义同 TimelineStore.setReason）
+    public func setReason(_ item: TimelineItem, _ reason: ItemFeedbackReason) async {
+        await write(item, verdict: item.feedback ?? .down, reason: reason)
+    }
+
+    private func write(_ item: TimelineItem, verdict: ItemFeedback?, reason: ItemFeedbackReason?) async {
         guard let index = items.firstIndex(where: { $0.key == item.key }) else { return }
-        let previous = items[index].feedback
-        let next = ItemFeedback.next(current: previous, tapped: tapped)
-        items[index].feedback = next
+        let previous = (items[index].feedback, items[index].feedbackReason)
+        items[index].feedback = verdict
+        items[index].feedbackReason = verdict == nil ? nil : reason
         do {
-            if let next {
-                try await api.setFeedback(key: item.key, verdict: next)
+            if let verdict {
+                try await api.setFeedback(key: item.key, verdict: verdict, reason: reason)
             } else {
                 try await api.clearFeedback(key: item.key)
             }
         } catch {
             if let rollback = items.firstIndex(where: { $0.key == item.key }) {
-                items[rollback].feedback = previous
+                (items[rollback].feedback, items[rollback].feedbackReason) = previous
             }
             handle(error)
         }

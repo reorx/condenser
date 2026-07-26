@@ -195,7 +195,13 @@ def x_payload(row: dict) -> dict:
     }
 
 
-def x_envelope(row: dict, is_read: bool, is_saved: bool, feedback: Optional[str] = None) -> dict:
+def x_envelope(
+    row: dict,
+    is_read: bool,
+    is_saved: bool,
+    feedback: Optional[str] = None,
+    feedback_reason: Optional[str] = None,
+) -> dict:
     """Wrap a tweet row/payload into the item envelope.
 
     The sort timestamp is feed-dependent: For You uses ``first_seen_at`` (the
@@ -206,6 +212,11 @@ def x_envelope(row: dict, is_read: bool, is_saved: bool, feedback: Optional[str]
     ``item_feedback``. It sits at the envelope level, not inside the payload,
     because the table is source-generic like read/saved/hidden — the field
     appears on the other sources' envelopes when their UI grows the buttons.
+
+    ``feedback_reason`` (v9) is its optional chip, carried as a sibling field
+    rather than nested into ``feedback``: shipped iOS builds decode ``feedback``
+    as a bare string, and turning it into an object would fail the whole page's
+    decode on a binary the user installs separately from the server.
     """
     payload = x_payload(row)
     if payload['feed_kind'] == 'home':
@@ -219,5 +230,6 @@ def x_envelope(row: dict, is_read: bool, is_saved: bool, feedback: Optional[str]
         'is_read': is_read,
         'is_saved': is_saved,
         'feedback': feedback,
+        'feedback_reason': feedback_reason,
         'x': payload,
     }

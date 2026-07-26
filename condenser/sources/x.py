@@ -91,7 +91,7 @@ _COLS = """
     q.text AS q_text, q.created_at AS q_created_at, q.media AS q_media, q.metrics AS q_metrics,
     CASE WHEN ri.ref1 IS NOT NULL THEN 1 ELSE 0 END AS is_read,
     CASE WHEN si.ref1 IS NOT NULL THEN 1 ELSE 0 END AS is_saved,
-    fb.verdict AS feedback
+    fb.verdict AS feedback, fb.reason AS feedback_reason
 """
 
 _JOINS = """
@@ -175,7 +175,7 @@ def _to_unit(row: dict) -> SourceUnit:
     pos = pack_pos(row['sort_at'], row['id'])
     return SourceUnit(
         sort_ts=norm_ts(row['sort_at']),
-        envelope=x_envelope(row, bool(row['is_read']), bool(row['is_saved']), row['feedback']),
+        envelope=x_envelope(row, bool(row['is_read']), bool(row['is_saved']), row['feedback'], row['feedback_reason']),
         boundary=pos,
         head=pos,
     )

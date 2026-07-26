@@ -38,7 +38,7 @@ MESSAGES_OPTIONAL_FIELDS = {
 # Bumped when condenser's own table shapes change; recorded in app_meta on init so a
 # future startup can detect an upgrade and run a migration. Telememo manages its own
 # table migrations separately (init_db optional_fields / ALTER TABLE).
-SCHEMA_VERSION = 8
+SCHEMA_VERSION = 9
 
 
 class CondenserBaseModel(Model):
@@ -275,12 +275,22 @@ class ItemFeedback(CondenserBaseModel):
     Source-generic on purpose (X in v1, HN later needs no migration). Written by
     Phase 3's feedback endpoints; the table exists from v7 so the data can start
     accumulating as soon as the UI lands.
+
+    ``reason`` (v9) is the optional one-tap chip behind a thumbs-down: *which
+    attribute* of the tweet earned it. A bare down labels the whole bag, but the
+    cause is usually one instance in it — the topic, the marketing voice, the
+    AI-slop phrasing, the author — and a single embedding averages all four into
+    one point, so a down for tone reads as a down for the topic. Recording the
+    attribute now means the labels can be routed per channel when the model grows
+    them (see kb/notes/2026-07-24-x-verdict-multi-channel-discussion.md); NULL is
+    a first-class value, since skipping the chip must stay free.
     """
 
     source = CharField()
     ref1 = IntegerField()  # X: tweet id
     ref2 = IntegerField(default=0)
     verdict = CharField()  # 'up' | 'down'
+    reason = CharField(null=True)  # v9; one of FEEDBACK_REASONS, or NULL when skipped
     created_at = DateTimeField(default=datetime.now)
 
     class Meta:
@@ -340,6 +350,7 @@ def init_db(db_path: str, vector_dims: int = 256) -> None:
     tdb.db.create_tables(CONDENSER_TABLES)
     _migrate_read_saved_v4()
     _migrate_hn_previews_v5()
+    _migrate_feedback_reason_v9()
     _enable_wal(db_path)
     set_meta('schema_version', str(SCHEMA_VERSION))
     vectors.setup(vector_dims)
@@ -410,6 +421,19 @@ def _migrate_hn_previews_v5() -> None:
     with tdb.db.atomic():
         tdb.db.execute_sql('ALTER TABLE hn_stories ADD COLUMN preview TEXT')
         tdb.db.execute_sql('ALTER TABLE hn_stories ADD COLUMN preview_attempts INTEGER NOT NULL DEFAULT 0')
+
+
+def _migrate_feedback_reason_v9() -> None:
+    """Add the reason column to a pre-v9 ``item_feedback`` table.
+
+    Shape-based and idempotent like the v5 preview columns — a plain ADD COLUMN,
+    since NULL is the correct value for every label collected before the chips
+    existed (they were bag-level, and pretending otherwise would invent data).
+    """
+    cols = [r[1] for r in tdb.db.execute_sql('PRAGMA table_info(item_feedback)').fetchall()]
+    if not cols or 'reason' in cols:
+        return
+    tdb.db.execute_sql('ALTER TABLE item_feedback ADD COLUMN reason VARCHAR(255)')
 
 
 def _enable_wal(db_path: str) -> None:
@@ -766,9 +790,20 @@ def unhide_item(k: ItemKey) -> None:
 
 FEEDBACK_VERDICTS = ('up', 'down')
 
+# The down-chip taxonomy (v9). Four values, each aimed at a different channel of the
+# planned multi-channel model: 'topic' at the dense-kNN neighbourhood, 'promo' and
+# 'ai_slop' at the style/wording channels, 'author' at the author prior. Closed on
+# purpose — free text could not be used as a feature without another labeling pass.
+FEEDBACK_REASONS = ('topic', 'promo', 'ai_slop', 'author')
 
-def set_feedback(k: ItemKey, verdict: str) -> None:
+
+def set_feedback(k: ItemKey, verdict: str, reason: Optional[str] = None) -> None:
     """Label an item up or down; one row per item, so switching sides is a correction.
+
+    A call states the **whole** label, reason included: the chip arrives as a second
+    call right after the thumb, and an omitted reason means "no reason", not "keep
+    the old one". That is what makes a down→up correction drop the stale attribute
+    instead of carrying 'ai_slop' over onto a positive.
 
     Source-generic by table design (X in v1, HN whenever its UI grows buttons).
     Unlike read/hide markers this is NOT album-expanded: a label belongs to the
@@ -776,9 +811,11 @@ def set_feedback(k: ItemKey, verdict: str) -> None:
     writes it today.
     """
     now = _now()
-    ItemFeedback.insert(source=k.source, ref1=k.ref1, ref2=k.ref2, verdict=verdict, created_at=now).on_conflict(
+    ItemFeedback.insert(
+        source=k.source, ref1=k.ref1, ref2=k.ref2, verdict=verdict, reason=reason, created_at=now
+    ).on_conflict(
         conflict_target=[ItemFeedback.source, ItemFeedback.ref1, ItemFeedback.ref2],
-        update={ItemFeedback.verdict: verdict, ItemFeedback.created_at: now},
+        update={ItemFeedback.verdict: verdict, ItemFeedback.reason: reason, ItemFeedback.created_at: now},
     ).execute()
 
 
@@ -789,11 +826,16 @@ def clear_feedback(k: ItemKey) -> None:
     ).execute()
 
 
-def get_feedback(source: str, ref1: int, ref2: int = 0) -> Optional[str]:
+def get_feedback(source: str, ref1: int, ref2: int = 0) -> tuple[Optional[str], Optional[str]]:
+    """The item's label as the pair it is since v9: ``(verdict, reason)``.
+
+    Returns both halves rather than the verdict alone so a caller cannot silently
+    read a label that has lost its attribution.
+    """
     row = ItemFeedback.get_or_none(
         (ItemFeedback.source == source) & (ItemFeedback.ref1 == ref1) & (ItemFeedback.ref2 == ref2)
     )
-    return row.verdict if row else None
+    return (row.verdict, row.reason) if row else (None, None)
 
 
 # --- saved items (user assets, source-decoupled) -----------------------------

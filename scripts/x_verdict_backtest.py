@@ -22,6 +22,24 @@ Usage:
 
 ``--embed-missing`` is the only mode that calls the embedding API (and only for
 labeled tweets that have no stored vector yet).
+
+Two things this script does not yet know about, and whoever runs the sweep should:
+
+- **The label set has a discontinuity.** Downs written before 2026-07-26 carry no
+  `item_feedback.reason` (the chips did not exist); that is a real property of the
+  data, not a gap to fill in.
+- **The reasons are worth a sweep variant.** A down whose reason is `author`,
+  `promo` or `ai_slop` is not a judgement about the tweet's *topic*, so feeding it
+  to a topic-embedding kNN as a negative is the entanglement failure the design
+  note describes — restricting the negative set to
+  ``reason IS NULL OR reason = 'topic'`` is a one-line comparison against the
+  current all-downs behavior. Untested; that is the point of running it here.
+
+And a scope reminder, because this script makes it easy to believe the job ends
+with a tuned D_MAX: today's single-channel kNN is the **baseline**, and the target
+shape is the multi-channel ensemble in
+``kb/notes/2026-07-24-x-verdict-multi-channel-discussion.md`` — whose channels are
+meant to be selected by exactly this leave-one-out harness.
 """
 
 import argparse

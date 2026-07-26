@@ -17,11 +17,19 @@ import { XFeedbackButtons } from './XFeedbackButtons';
 
 function wrap(ui: ReactNode) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
-  return render(<QueryClientProvider client={qc}>{ui}</QueryClientProvider>);
+  const utils = render(<QueryClientProvider client={qc}>{ui}</QueryClientProvider>);
+  // The label is a prop: in the app the optimistic cache update pushes the new one
+  // back down. Tests that span two clicks have to replay that, or the second click
+  // is judged against a stale label.
+  return {
+    ...utils,
+    rerenderIn: (next: ReactNode) => utils.rerender(<QueryClientProvider client={qc}>{next}</QueryClientProvider>),
+  };
 }
 
 const up = () => screen.getByLabelText('More like this');
 const down = () => screen.getByLabelText('Less like this');
+const reasonRow = () => screen.queryByText('为什么？');
 
 describe('XFeedbackButtons', () => {
   beforeEach(() => vi.clearAllMocks());
@@ -38,7 +46,7 @@ describe('XFeedbackButtons', () => {
 
     await userEvent.click(up());
 
-    await waitFor(() => expect(api.setFeedback).toHaveBeenCalledWith('x:1', 'up'));
+    await waitFor(() => expect(api.setFeedback).toHaveBeenCalledWith('x:1', 'up', null));
   });
 
   it('highlights the chosen side', () => {
@@ -61,7 +69,91 @@ describe('XFeedbackButtons', () => {
 
     await userEvent.click(down());
 
-    await waitFor(() => expect(api.setFeedback).toHaveBeenCalledWith('x:1', 'down'));
+    await waitFor(() => expect(api.setFeedback).toHaveBeenCalledWith('x:1', 'down', null));
     expect(api.clearFeedback).not.toHaveBeenCalled();
+  });
+
+  // --- the reason chips (credit assignment) ---------------------------------
+  // A bare down says "not this tweet"; the chip says which attribute earned it,
+  // which is what lets a later model route the label instead of averaging it.
+
+  it('asks why right after a down', async () => {
+    wrap(<XFeedbackButtons itemKey="x:1" feedback={null} />);
+    expect(reasonRow()).not.toBeInTheDocument();
+
+    await userEvent.click(down());
+
+    expect(reasonRow()).toBeInTheDocument();
+    for (const chip of ['不感兴趣', '广告营销', 'AI Slop', '不喜欢作者']) {
+      expect(screen.getByRole('button', { name: chip })).toBeInTheDocument();
+    }
+  });
+
+  it('does not ask why on an up — the chips are the negative taxonomy', async () => {
+    wrap(<XFeedbackButtons itemKey="x:1" feedback={null} />);
+
+    await userEvent.click(up());
+
+    expect(reasonRow()).not.toBeInTheDocument();
+  });
+
+  it('a chip re-sends the whole label, verdict included', async () => {
+    wrap(<XFeedbackButtons itemKey="x:1" feedback={null} />);
+    await userEvent.click(down());
+
+    await userEvent.click(screen.getByRole('button', { name: 'AI Slop' }));
+
+    await waitFor(() => expect(api.setFeedback).toHaveBeenLastCalledWith('x:1', 'down', 'ai_slop'));
+  });
+
+  it('collapses once a chip is picked', async () => {
+    wrap(<XFeedbackButtons itemKey="x:1" feedback={null} />);
+    await userEvent.click(down());
+
+    await userEvent.click(screen.getByRole('button', { name: '不感兴趣' }));
+
+    await waitFor(() => expect(reasonRow()).not.toBeInTheDocument());
+  });
+
+  it('is skippable: dismissing keeps the down and sends no reason', async () => {
+    wrap(<XFeedbackButtons itemKey="x:1" feedback={null} />);
+    await userEvent.click(down());
+
+    await userEvent.click(screen.getByLabelText('跳过'));
+
+    expect(reasonRow()).not.toBeInTheDocument();
+    expect(api.setFeedback).toHaveBeenCalledTimes(1);
+    expect(api.setFeedback).toHaveBeenCalledWith('x:1', 'down', null);
+  });
+
+  it('undoing the down takes the question away with it', async () => {
+    const { rerenderIn } = wrap(<XFeedbackButtons itemKey="x:1" feedback={null} />);
+    await userEvent.click(down());
+    expect(reasonRow()).toBeInTheDocument();
+    rerenderIn(<XFeedbackButtons itemKey="x:1" feedback="down" />); // the label lands
+
+    await userEvent.click(down()); // clicking the lit thumb = undo
+
+    await waitFor(() => expect(api.clearFeedback).toHaveBeenCalledWith('x:1'));
+    expect(reasonRow()).not.toBeInTheDocument();
+  });
+
+  it('switching from down to up closes the question too', async () => {
+    const { rerenderIn } = wrap(<XFeedbackButtons itemKey="x:1" feedback={null} />);
+    await userEvent.click(down());
+    rerenderIn(<XFeedbackButtons itemKey="x:1" feedback="down" />);
+
+    await userEvent.click(up());
+
+    await waitFor(() => expect(api.setFeedback).toHaveBeenLastCalledWith('x:1', 'up', null));
+    expect(reasonRow()).not.toBeInTheDocument();
+  });
+
+  it('never nags a tweet that is merely already labeled', () => {
+    // The row answers *this* click; it is not a state of the card. An already
+    // down-voted tweet scrolling back into view must not re-ask on every render.
+    wrap(<XFeedbackButtons itemKey="x:1" feedback="down" />);
+
+    expect(reasonRow()).not.toBeInTheDocument();
   });
 });

@@ -549,6 +549,37 @@ public enum ItemFeedback: String, Codable, Sendable {
     }
 }
 
+/// 「踩」之后的一键理由（schema v9）：这条推文的**哪个属性**让你踩它。
+/// 光一个踩标的是整条推文，可真正惹到你的往往只是其中一样——话题、广告腔、
+/// AI 味、作者；而一条推文只有一个向量，四者被平均成同一个点，于是「讨厌这种
+/// 说话方式」和「讨厌这个话题」在模型眼里没有区别。记下属性，将来多通道模型
+/// 才能把标签分派到对的通道去。跳过是免费的：退化成原来的整条标签。
+/// other 同 ItemFeedback 的前向兼容理由。
+public enum ItemFeedbackReason: String, Codable, Sendable, CaseIterable {
+    case topic, promo
+    case aiSlop = "ai_slop"
+    case author
+    case other
+
+    public init(from decoder: Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode(String.self)
+        self = ItemFeedbackReason(rawValue: raw) ?? .other
+    }
+
+    /// 提供给读者的四个 chip（other 是解码兜底，不进 UI）
+    public static let offered: [ItemFeedbackReason] = [.topic, .promo, .aiSlop, .author]
+
+    public var label: String {
+        switch self {
+        case .topic: "不感兴趣"
+        case .promo: "广告营销"
+        case .aiSlop: "AI Slop"
+        case .author: "不喜欢作者"
+        case .other: "其他"
+        }
+    }
+}
+
 /// 多信源条目 envelope：telegram / hn / x 恰有其一。
 /// key 是全局唯一 item id，也是 read/save API 的出入参。
 public struct TimelineItem: Codable, Equatable, Sendable, Identifiable {
@@ -562,6 +593,10 @@ public struct TimelineItem: Codable, Equatable, Sendable, Identifiable {
     public var isSaved: Bool
     /// 尚未长出反馈按钮的信源不带这个字段；nil = 未标注
     public var feedback: ItemFeedback?
+    /// 标签的理由 chip；nil = 读者跳过了（合法且无损的标签）。
+    /// 与 feedback 平级而不是嵌进去：老版本 App 把 feedback 当字符串解，
+    /// 改成对象会让整页解码失败——而 App 是用户单独装的，未必跟服务端一起升。
+    public var feedbackReason: ItemFeedbackReason?
     public var telegram: DisplayMessage?
     public var hn: HnStory?
     public var x: XTweet?
@@ -570,6 +605,7 @@ public struct TimelineItem: Codable, Equatable, Sendable, Identifiable {
         case source, key, datetime
         case isRead = "is_read"
         case isSaved = "is_saved"
+        case feedbackReason = "feedback_reason"
         case feedback, telegram, hn, x
     }
 
@@ -577,7 +613,7 @@ public struct TimelineItem: Codable, Equatable, Sendable, Identifiable {
 
     public init(
         source: String, key: String, datetime: Date, isRead: Bool, isSaved: Bool,
-        feedback: ItemFeedback? = nil,
+        feedback: ItemFeedback? = nil, feedbackReason: ItemFeedbackReason? = nil,
         telegram: DisplayMessage? = nil, hn: HnStory? = nil, x: XTweet? = nil
     ) {
         self.source = source
@@ -586,6 +622,7 @@ public struct TimelineItem: Codable, Equatable, Sendable, Identifiable {
         self.isRead = isRead
         self.isSaved = isSaved
         self.feedback = feedback
+        self.feedbackReason = feedbackReason
         self.telegram = telegram
         self.hn = hn
         self.x = x

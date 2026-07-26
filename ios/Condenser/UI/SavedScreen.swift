@@ -70,6 +70,7 @@ struct SavedScreen: View {
                 item: item, tweet: tweet, showsUnread: false,
                 onToggleSaved: { unsave(item) },
                 onFeedback: { setFeedback(item, $0) },
+                onReason: { setReason(item, $0) },
                 onOpenPhoto: { openViewer(for: tweet, at: $0) })
         }
     }
@@ -86,7 +87,8 @@ struct SavedScreen: View {
             XDetailSheet(
                 item: item, tweet: tweet,
                 onToggleSaved: { unsave(item) },
-                onFeedback: { setFeedback(item, $0) })
+                onFeedback: { setFeedback(item, $0) },
+                onReason: { setReason(item, $0) })
         }
     }
 
@@ -122,5 +124,9 @@ struct SavedScreen: View {
 
     private func setFeedback(_ item: TimelineItem, _ verdict: ItemFeedback) {
         Task { await reader.records.setFeedback(item, verdict) }
+    }
+
+    private func setReason(_ item: TimelineItem, _ reason: ItemFeedbackReason) {
+        Task { await reader.records.setReason(item, reason) }
     }
 }

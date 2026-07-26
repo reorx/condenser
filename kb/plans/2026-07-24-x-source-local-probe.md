@@ -20,7 +20,7 @@ tags:
 |---|---|---|
 | 1 — probe + ingest + 存档 | ✅ **完成 2026-07-24** | schema v7、`condenser/x.py`、`routers/x.py`、`probe/` 包、web 订阅区块。188 backend（含 27 X）+ 11 probe + 45 frontend 绿；真机端到端 + UI 截图 `tmp/2026-07-24-x-source-phase1/`。会话记录：`kb/sessions/2026-07-24-x-source-phase1-probe-ingest.md` |
 | 2 — timeline 接入 | ✅ **完成 2026-07-25** | `sources/x.py` provider、`items.py` 的 `x_key`/`x_envelope`、`feed` 作用域、`/api/sources` 的 X 分组、X 收藏快照、`/api/x/avatar/{handle}`、web 卡片 + `/s/:source/:feed` 路由。容量策略已定（见下）。211 backend（含 23 X timeline）+ 51 frontend 绿；对本地 dev 后端做了真实端到端（fixture 推送 → 真实 UI），截图 `tmp/2026-07-25-x-phase2-timeline/` |
-| 3 — 反馈闭环 | ✅ **完成 2026-07-25**（web；iOS 顺延到 Phase 5） | `/api/feedback` POST/DELETE、envelope 的 `feedback` 字段（timeline provider join + 收藏批量 join）、`XFeedbackButtons` + `useFeedback`、详情面板「反馈」行。11 反馈场景 + 223 backend / 58 frontend 绿 |
+| 3 — 反馈闭环 | ✅ **完成 2026-07-25**（web；iOS 顺延到 Phase 5）；**理由 chips 补于 2026-07-26**（schema v9，三端齐活，见「Phase 3 补记」） | `/api/feedback` POST/DELETE、envelope 的 `feedback` 字段（timeline provider join + 收藏批量 join）、`XFeedbackButtons` + `useFeedback`、详情面板「反馈」行。11 反馈场景 + 223 backend / 58 frontend 绿 |
 | 4 — Embedding 判定 | ✅ **完成 2026-07-25**（管线；准确率待回测） | schema v8（`x_embeddings` + `x_vec_labeled`）、`vectors.py` / `embedding.py` / `verdict.py`、`XVerdictBadge` + `XVerdictDetail` + 订阅页判定状态行、`scripts/x_verdict_backtest.py`。32 判定场景 + 254 backend / 64 frontend 绿；真实 DashScope 端到端 + 截图 `tmp/2026-07-25-x-phase4-verdict/`。⚠️ **分类质量未验证**：Phase 3 当天才上线，真实标注量 ≈ 0，生产闸门（20/20）会让所有 verdict 保持 null，直到你标够为止 |
 | 5 — iOS 适配 | ✅ **完成 2026-07-25** | Kit 的 `XTweet` payload 家族 + envelope 的 `feedback` + `feed` 作用域 + 反馈 API；App 的 `XCard` / `XDetailSheet` / `XFeedTimelineScreen`（For You 唯一入口）/ 判定徽标与证据。41 个新 Kit 场景（共 161）+ 256 backend 绿；模拟器走查（真实 bird 数据 + 真实判定）截图 `tmp/2026-07-25-x-phase5-ios/` |
 
@@ -31,9 +31,16 @@ tags:
 3. **旧 raw 的重 parse 回填工具** —— 目前只保证 raw 留底，还没有「格式漂移后按新解析器重刷」的脚本。
 4. ~~**verdict 徽标的 UI 位置**~~ —— 已定案（2026-07-25）：**底栏左侧，与反馈按钮对望**。用户拍板。
 5. **标注量什么时候够 / 阈值定案**（Phase 4 已上线但未标定）—— 管线已就位、闸门默认 20/20 挡着，
-   现在缺的只有真实标注。攒够后跑 `uv run python scripts/x_verdict_backtest.py --sweep`，
-   按 coverage → negative precision → positive precision 的顺序读数，再定 D_MAX / M / ± 阈值。
-   在那之前所有常量都是占位值。
+   缺的是真实标注。每侧攒到 ~50 条后跑 `uv run python scripts/x_verdict_backtest.py --sweep`
+   （对生产库的**副本**跑，sweep 每折都会砸掉重建 KNN 索引），按 coverage → negative
+   precision → positive precision 的顺序读数，再定 D_MAX / M / ± 阈值。在那之前所有常量都是
+   占位值、徽标只是装饰，不该有任何东西被它隐藏或排序。
+   ⚠️ **但「阈值定案」≠「判定做完」**：单通道 dense kNN 是 baseline，它的向量纠缠缺陷调参调不掉
+   （见决策记录「踩的理由 chip」与 Phase 4「设计意图」末条），多通道才是目标形态，通道取舍同样
+   由这个回测框架定。回测时另外注意两点：2026-07-26 之前的标签 `reason` 全为 NULL（是真实的
+   断层，不是缺数据）；且**待验证的假设**——`author`/`promo`/`ai_slop` 的踩不是对话题的判断，
+   把它们喂给话题 embedding 的 kNN 当负样本正是纠缠的病灶，值得加一个「负样本只取
+   `reason IS NULL OR reason='topic'`」的 sweep 变体做对照。
 6. **判定文案的语言**（实现期出现的小分歧）—— 卡片徽标用英文（"Recommended" / "Likely not for
    you"，与 `XCard` 其余文案一致），详情面板用中文（与 `ItemDetailPane` 一致）。如果觉得徽标也该
    中文化，改 `XVerdictBadge` 的 `STYLES` 即可。**iOS 沿用了同一分工**（`XCard` 的
@@ -53,6 +60,7 @@ tags:
 | Embedding 模型 | **DashScope `text-embedding-v4`**，走 OpenAI 兼容接口（base URL 由 env 注入，无供应商专用代码） | 用户指定（2026-07-24）；参考 `../tenderbuddy` 的既有接法，见 Phase 4 示例代码 |
 | up/down 反馈范围 | **全部 X 推文**（For You + 关注人 feed 都可标注），但 verdict 计算与未来的隐藏动作**只作用于 For You** | 扩大标注数据量（正好补 embedding 方案的训练数据短板）；关注人的噪音用退订解决，不需要算法介入 |
 | 收藏作为反馈信号 | **收藏（save）是比 thumb up 更高级别的肯定**：`saved_items` 中的 X 推文自动进入训练集作强正样本，权重高于 up | 用户补充（2026-07-24）。零额外操作成本的高置信标注；不新建表，训练时直接读 `saved_items` |
+| **踩的理由 chip（credit assignment）** | **踩之后追问一次，四个封闭值、可跳过**：`topic` 不感兴趣 / `promo` 广告营销 / `ai_slop` AI Slop / `author` 不喜欢作者（`item_feedback.reason` 可空列，schema v9）。跳过 = 退化成原来的整条标签，零损失。up 侧暂不追问（列本身与 verdict 无关，将来要加是 UI 改动而非迁移） | 用户拍板（2026-07-26，chips 四个值由用户定）。**这是本计划最容易只看 plan 就丢掉的一条决策**，所以完整理由写在这里而不只在笔记里：一条推文只有**一个**向量，话题 / 文风 / 作者被平均成同一个点，于是 dense kNN 天生分不清「讨厌这个话题」和「讨厌这种说话方式」（笔记称之为**向量纠缠**，比信用分配更致命：down 十条 AI slop，换个话题的第十一条照样漏网；因「营销味」踩一条 LLM 话题的推则会误伤整个 LLM 邻域）。理由 chip 是这个问题**最便宜的解法——问用户**，而不是加模型：四个值一一对上笔记里规划的四个通道（`topic`→B 话题 kNN、`promo`/`ai_slop`→C/D 文风通道、`author`→A 作者先验），所以今天记下的属性将来可以按通道分派，而不是继续被平均。封闭枚举（入口 `Literal`，非法值 422）是因为自由文本没法当特征。**判定管线今天不读它**：数据先攒，通道取舍等回测 |
 | probe 配置来源 | **服务端下发**：probe 每轮先拉 probe-config，按当前 enabled 的 X 订阅决定抓什么 | 订阅管理保持在 web，probe 零本地配置；与「订阅驱动采样」的既有语义一致（HN 先例） |
 | probe 状态 | **无状态**：每轮全量推最近 N 条，服务端按 tweet id 幂等去重 | probe 崩溃/休眠/重装零恢复成本 |
 | probe 鉴权 | **复用 device token**（`devices` 表 + web `/authorize` 流程） | probe 本质是一种 device，服务端零新增鉴权代码 |
@@ -255,6 +263,46 @@ feed 作用域与 handle 归一化、两种排序键、跨 feed 去重、envelop
 走查中发现并修掉一个视觉 bug：`hover:text-accent-foreground` 会盖掉选中色，悬停已选中的
 拇指会变黑——hover 文字色改成「仅未选中时生效」。
 
+### Phase 3 补记 —— down-reason chips ✅ 2026-07-26（schema v9，三端齐活）
+
+**这是一处漏做的补票**：算法讨论笔记
+（`kb/notes/2026-07-24-x-verdict-multi-channel-discussion.md`）把 chips 称为「性价比之王」、
+建议进 Phase 3，并写明「`item_feedback` 需加可空 `reason` 列——落实时记得改主计划 schema」，
+但那条建议只在本计划第 446 行以「算法演进方向」被引用，**没有回流进 Phase 3 的规格**，于是
+按规格实现的 Phase 3 只有裸的 up/down。漏的代价是持续的：在补上之前打的每一个踩都是 bag 级
+标签，将来多通道模型只能降级使用。
+
+- **为什么要问**：一条推文只有一个向量，话题/文风/作者被平均成同一个点，所以「讨厌这种腔调」
+  和「讨厌这个话题」在 dense kNN 眼里没有区别（笔记里的「向量纠缠」）。理由 chip 把成因归到
+  属性上，是笔记里「信用分配」问题最便宜的解法——**问用户**，而不是加模型。
+- **taxonomy（用户拍板，2026-07-26）**：`topic` 不感兴趣 / `promo` 广告营销 / `ai_slop` AI Slop
+  / `author` 不喜欢作者。四个值一一对上笔记里规划的四个通道（B 话题 kNN、C/D 文风、A 作者
+  先验），这也是把它做成**封闭枚举**（入口 `Literal`，非法值 422）的理由：自由文本没法当特征。
+- **schema v9**：`item_feedback.reason` 可空列，shape-based `ALTER TABLE ADD COLUMN`（同 v5
+  的做法）。chips 之前的老标签留 NULL——它们本来就是 bag 级的，补一个理由等于编数据。
+- **「一次请求说清整条标签」**：`POST /api/feedback` 不带 reason = 没有理由，会清掉已存的那个。
+  否则把「踩 + AI Slop」改正成「赞」时，旧成因会跟着跑到正样本上去。撤销连理由一起删。
+- **理由可跳过**，跳过零损失（退化成原来的整条标签）——所以 UI 上它是一次追问，不是一道关卡。
+- **envelope 用平级的 `feedback_reason`，不嵌进 `feedback`**：已装机的 iOS 版本把 `feedback`
+  当字符串解，改成对象会让整页解码失败，而 App 是用户单独升的。
+- UI：web 是卡片底栏下方展开的一行 chips（`为什么？` + 四个 + × 跳过，选中即收起，**只回应这
+  一次点击**——已标注的推文滚回视野不会再问）；iOS 是原生 `confirmationDialog`（手机上一行摆
+  不下四个中文标签，而系统弹层本就是「点一项 / Cancel 跳过」的形状）。已选理由只在详情面板
+  回显（卡片上每条挂个 chip 太吵），web「反馈」行显示「踩 · AI Slop」，iOS 同。
+- 判定管线**没动**：`verdict.py` 今天仍不读 reason（单通道 dense kNN 是 v1 baseline），
+  这一步只保证数据质量，通道取舍等回测。
+
+测试：`tests/test_x_feedback.py` +9（共 20）、`XFeedbackButtons.test.tsx` +8（共 13）、
+Kit +7（共 168）。265 backend / 72 frontend / 168 Kit 绿。关键场景：跳过仍是完整标签、
+chip 更新同一行、四个值全接受、改正丢弃过期理由、撤销带走理由、up 也能带理由（列是
+verdict 无关的）、未知理由 422、收藏项回传理由、v9 迁移保住老标签。
+
+走查（本地 dev 后端 + 真实数据，截图 `tmp/2026-07-26-x-feedback-reason-chips/`）：
+web 走了「踩 → chips → 选 AI Slop → 落库 → 收起 → 刷新不再追问 → 详情面板显示
+『踩 · AI Slop』→ 改成赞后 reason 被清空」全程；dev DB 上真实跑过 v8→v9 迁移。
+iOS 侧 Kit 测试覆盖状态机，弹层渲染另行截图确认（模拟器窗口收不到合成手势，
+临时把 `askingReason` 初值置 true 构建截图后已还原）。
+
 ## Phase 4 — Embedding 判定 ✅ 已完成 2026-07-25（管线；分类质量待回测）
 
 ### 实现纪要（✓ = 与计划一致，△ = 实现期调整）
@@ -443,7 +491,7 @@ SQLite 文件是生产环境 bind-mount 的单文件，1024 维一年近 GB 不�
 - **verdict_meta 存命中邻居**是「先打标不隐藏」的配套：UI 可解释「因为它像你 down 过的这几条」，对误判的纠错点击回流成训练样本。
 - 所有常量（P、N、k、D_MAX、M、±阈值）为占位值，Phase 1–3 攒下标注后**留一法回测定案**。
 - verdict 只在 ingest 时算一次，标注变化不回溯已判定推文（For You 流式消费，回溯价值低；回测阶段可评估是否对最近 48h 重算）。
-- **本节的 dense kNN 定位是 v1 baseline / 回测对照组**。算法演进方向（多通道弱信号集成：作者先验 + dense kNN + LLM 属性提取 + n-gram 贝叶斯，及 down-reason chips）见讨论笔记 `kb/notes/2026-07-24-x-verdict-multi-channel-discussion.md`，通道取舍由留一法回测定。
+- **本节的 dense kNN 定位是 v1 baseline / 回测对照组**，不是终局。它有一个**调参调不掉**的结构性缺陷（向量纠缠：话题 / 文风 / 作者挤在同一个向量里，见决策记录「踩的理由 chip」那一行），所以「把 D_MAX 和 ± 阈值定下来」只是把 baseline 标定好，不等于判定做完了。算法演进方向——多通道弱信号集成（A 作者先验 + B dense kNN + C LLM 属性提取 + D n-gram 贝叶斯 + 组合器）——见讨论笔记 `kb/notes/2026-07-24-x-verdict-multi-channel-discussion.md`；**每个通道独立可关、独立留一法回测**，通道取舍由数据定而不是先定架构。笔记里唯一已落地的是 down-reason chips（2026-07-26，见「Phase 3 补记」），通道 A/C/D 与组合器仍在纸上。
 
 ### Embedding 接入：DashScope text-embedding-v4（OpenAI compatible）
 

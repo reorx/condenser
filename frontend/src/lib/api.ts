@@ -9,6 +9,7 @@ import type {
   ForwardResult,
   HnStatus,
   ItemFeedback,
+  ItemFeedbackReason,
   JoinedChannel,
   KeywordFilter,
   LinkPreview,
@@ -210,7 +211,10 @@ export const api = {
   unhideItem: (key: string) => del<{ ok: true }>(`/api/hidden/${encodeURIComponent(key)}`),
 
   // ---- feedback (up/down labels; only recorded, nothing is filtered by them yet) ----
-  setFeedback: (key: string, verdict: ItemFeedback) => post<{ ok: true }>('/api/feedback', { key, verdict }),
+  // A call states the *whole* label: sending no reason clears a stored one, which is
+  // what makes correcting a down-with-reason into an up drop the stale attribute.
+  setFeedback: (key: string, verdict: ItemFeedback, reason: ItemFeedbackReason | null = null) =>
+    post<{ ok: true }>('/api/feedback', { key, verdict, reason }),
   clearFeedback: (key: string) => del<{ ok: true }>(`/api/feedback/${encodeURIComponent(key)}`),
 
   markReadBulk: (body: {

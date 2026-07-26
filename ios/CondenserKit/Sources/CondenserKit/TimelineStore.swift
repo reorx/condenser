@@ -175,20 +175,32 @@ public final class TimelineStore {
 
     /// up/down 打标：乐观置位 + 失败回滚。点已选中的那一侧即撤销。
     /// 只记录标签——不隐藏、不标已读、不改排序（判定是服务端 ingest 时的事）。
+    /// 拇指本身不带理由，所以这一下会清掉旧理由：换一侧是改正，过期的成因不该留下。
     public func setFeedback(_ item: TimelineItem, _ tapped: ItemFeedback) async {
+        let next = ItemFeedback.next(current: item.feedback, tapped: tapped)
+        await write(item, verdict: next, reason: nil)
+    }
+
+    /// 选理由 chip：verdict 保持 down（这不是第二次点拇指，不能撤销），
+    /// 连同理由把整条标签重发一次。
+    public func setReason(_ item: TimelineItem, _ reason: ItemFeedbackReason) async {
+        await write(item, verdict: item.feedback ?? .down, reason: reason)
+    }
+
+    private func write(_ item: TimelineItem, verdict: ItemFeedback?, reason: ItemFeedbackReason?) async {
         guard let index = items.firstIndex(where: { $0.key == item.key }) else { return }
-        let previous = items[index].feedback
-        let next = ItemFeedback.next(current: previous, tapped: tapped)
-        items[index].feedback = next
+        let previous = (items[index].feedback, items[index].feedbackReason)
+        items[index].feedback = verdict
+        items[index].feedbackReason = verdict == nil ? nil : reason
         do {
-            if let next {
-                try await api.setFeedback(key: item.key, verdict: next)
+            if let verdict {
+                try await api.setFeedback(key: item.key, verdict: verdict, reason: reason)
             } else {
                 try await api.clearFeedback(key: item.key)
             }
         } catch {
             if let rollback = items.firstIndex(where: { $0.key == item.key }) {
-                items[rollback].feedback = previous
+                (items[rollback].feedback, items[rollback].feedbackReason) = previous
             }
             handle(error)
         }

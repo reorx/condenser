@@ -21,8 +21,9 @@ public protocol CondenserAPI: Sendable {
     func deleteRecord(key: String) async throws
     /// 触发后端从 Telegram 拉取该频道更早的历史（同步，返回实际入库条数）
     func fetchOlder(channelID: Int, count: Int) async throws -> Int
-    /// 给条目打上/改成 up|down 标签（一条目一行，换一侧是改正不是第二个标签）
-    func setFeedback(key: String, verdict: ItemFeedback) async throws
+    /// 给条目打上/改成 up|down 标签（一条目一行，换一侧是改正不是第二个标签）；
+    /// reason 是「踩」的理由 chip，一并写入——请求描述的是完整标签
+    func setFeedback(key: String, verdict: ItemFeedback, reason: ItemFeedbackReason?) async throws
     /// 撤销标签（再点已选中的那一侧）
     func clearFeedback(key: String) async throws
 }

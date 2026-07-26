@@ -180,6 +180,13 @@ export interface XVerdictMeta {
  *  X envelopes only until another source grows the buttons. */
 export type ItemFeedback = 'up' | 'down';
 
+/** The one-tap chip behind a thumbs-down: *which attribute* earned it. A bare down
+ *  labels the whole tweet, but the cause is usually one of these — and a single
+ *  embedding averages them all into one point, so "I hate this tone" reads as "I
+ *  hate this topic". Closed taxonomy; each value aims at a different channel of the
+ *  planned model (kb/notes/2026-07-24-x-verdict-multi-channel-discussion.md). */
+export type ItemFeedbackReason = 'topic' | 'promo' | 'ai_slop' | 'author';
+
 /** Multi-source item envelope: exactly one of `telegram` / `hn` / `x` is present. */
 export interface TimelineItem {
   source: Source;
@@ -192,6 +199,8 @@ export interface TimelineItem {
   is_saved: boolean;
   /** Absent on sources that don't expose feedback yet; null = unlabeled. */
   feedback?: ItemFeedback | null;
+  /** The label's reason chip; null = the reader skipped it (a valid, lossless label). */
+  feedback_reason?: ItemFeedbackReason | null;
   telegram?: DisplayMessage;
   hn?: HnStory;
   x?: XTweet;

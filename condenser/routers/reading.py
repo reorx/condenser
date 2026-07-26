@@ -96,9 +96,10 @@ def delete_hidden(key: str):
 
 @router.post('/feedback')
 def post_feedback(body: FeedbackBody):
-    """Label an item up/down (plan Phase 3). Nothing else happens to it — no verdict,
-    no hiding, no read marker; the label is training data for Phase 4."""
-    db.set_feedback(_parse_key_or_422(body.key), body.verdict)
+    """Label an item up/down (plan Phase 3), optionally with the reason chip (v9).
+    Nothing else happens to it — no verdict, no hiding, no read marker; the label is
+    training data for Phase 4."""
+    db.set_feedback(_parse_key_or_422(body.key), body.verdict, body.reason)
     return {'ok': True}
 
 

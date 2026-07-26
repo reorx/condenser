@@ -88,14 +88,19 @@ public final class APIClient: @unchecked Sendable {
         try await send(request(path: "/api/records/\(key)", method: "DELETE"))
     }
 
-    public func setFeedback(key: String, verdict: ItemFeedback) async throws {
+    /// 一次请求说清整条标签：不带 reason 就是「没有理由」，会清掉服务端已存的那个，
+    /// 所以把「踩+AI Slop」改成「赞」时旧理由不会跟着跑过去。
+    public func setFeedback(
+        key: String, verdict: ItemFeedback, reason: ItemFeedbackReason? = nil
+    ) async throws {
         struct Body: Encodable {
             let key: String
             let verdict: String
+            let reason: String?
         }
         try await send(request(
             path: "/api/feedback", method: "POST",
-            body: Body(key: key, verdict: verdict.rawValue)))
+            body: Body(key: key, verdict: verdict.rawValue, reason: reason?.rawValue)))
     }
 
     public func clearFeedback(key: String) async throws {

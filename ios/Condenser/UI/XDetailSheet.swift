@@ -10,6 +10,7 @@ struct XDetailSheet: View {
     let tweet: XTweet
     var onToggleSaved: () -> Void
     var onFeedback: (ItemFeedback) -> Void
+    var onReason: (ItemFeedbackReason) -> Void
 
     @State private var safariItem: SafariItem?
 
@@ -97,12 +98,19 @@ struct XDetailSheet: View {
         }
     }
 
+    /// 理由只在这里回显：卡片上不画（每条都挂个 chip 太吵），
+    /// 但过一阵回头想知道「当初那个踩到底嫌的是什么」时，答案得找得到。
     private var feedbackRow: some View {
         HStack {
             Text("反馈")
                 .font(.subheadline.weight(.medium))
             Spacer()
-            XFeedbackButtons(feedback: item.feedback, onFeedback: onFeedback)
+            if let reason = item.feedbackReason {
+                Text(reason.label)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            XFeedbackButtons(feedback: item.feedback, onFeedback: onFeedback, onReason: onReason)
                 .font(.body)
         }
     }

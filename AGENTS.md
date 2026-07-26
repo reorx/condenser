@@ -70,6 +70,16 @@ loop. Shares **one SQLite file** with [telememo](https://pypi.org/project/teleme
   and vec0 shadow tables **join the surrounding transaction**, so a label and its vector
   cannot drift apart. Unlabeled vectors are pruned after
   `CONDENSER_EMBEDDING_RETENTION_DAYS`; labeled ones are the training set and stay.
+  **SCHEMA_VERSION 9** (2026-07-26, the X Phase 3 make-up) adds `item_feedback.reason`
+  — the optional one-tap chip behind a thumbs-down, saying *which attribute* earned it
+  (`topic` / `promo` / `ai_slop` / `author`, a closed set validated at the endpoint).
+  A bare down labels the whole tweet while the cause is usually one instance in it, and
+  one embedding averages topic, tone and author into a single point — so "I hate this
+  phrasing" is indistinguishable from "I hate this topic" to a dense kNN. The chip is
+  what lets a later multi-channel model route the label instead of averaging it
+  (`kb/notes/2026-07-24-x-verdict-multi-channel-discussion.md`); nothing reads it yet.
+  Shape-based `ALTER TABLE ADD COLUMN` (the v5 pattern); pre-chip labels stay NULL,
+  because they *were* bag-level and inventing a reason would invent data.
 
 condenser's peewee models bind to telememo's `db` instance, so everything is one connection.
 `condenser/db.py:init_db()` initializes telememo tables (+ `is_filtered`) then condenser tables.
@@ -226,6 +236,22 @@ that is Phase 4's verdict, trained on exactly these labels (plus saved items as
 strong positives), which is why followed-account tweets are markable even though
 they will never get a verdict. iOS got the buttons in Phase 5 (2026-07-25) with the
 rest of the X surfaces.
+
+**Down-reason chips (2026-07-26, schema v9)**: the thumbs-down now asks *why* —
+`POST /api/feedback` takes an optional `reason` and the envelope carries it back as
+the sibling field `feedback_reason` (**not** nested into `feedback`: shipped iOS
+builds decode that as a bare string, and an object would fail the whole page's
+decode on a binary users upgrade separately). Two rules make it safe: a POST states
+the **whole** label, so omitting the reason clears a stored one and correcting a
+down-with-reason into an up cannot carry `ai_slop` onto a positive; and the chip is
+**skippable at zero cost** — no pick is exactly the bag-level label we had before.
+Web asks with an inline chip row under the card footer (`XFeedbackButtons`, transient
+— it answers *this* click and never re-nags an already-labeled tweet); iOS asks with
+a native `confirmationDialog` (four Chinese labels don't fit one phone-width row, and
+the system sheet is already "tap one / Cancel to skip"). The picked reason is echoed
+only in the detail pane, never on the card. `FEEDBACK_REASONS` lives in
+`db.py` / `lib/sources.ts` / Kit's `ItemFeedbackReason.offered`. Why this exists —
+and why it was missing until now — is the "Phase 3 补记" section of the X plan.
 
 ## Local probe (`probe/`, monorepo)
 
@@ -532,6 +558,37 @@ X surface lands on iOS — envelope payload + feedback in Kit, `feed`-scoped sto
 badge + its evidence. 41 new Kit scenarios (161 total) + 256 backend green; simulator
 walkthrough against the dev backend (real bird data + real DashScope verdicts) in
 `tmp/2026-07-25-x-phase5-ios/`. Web and iOS now render the same X contract.
+**TODO — settle the verdict thresholds once the labels exist** (opened 2026-07-26): the
+whole X source is live in production (probe pushes For You hourly at 10 tweets/round;
+`CONDENSER_X_HOME_COUNT` default dropped 20 → 10, so no prod env var is needed), and the
+embedding key is configured, but every `CONDENSER_VERDICT_*` constant (P, N, k, D_MAX, M,
+the ± thresholds) is still a **placeholder** — the 20/20 cold-start gate is the only thing
+keeping them from producing nonsense. When each side of the training set reaches **~50
+labels** (👍/saved vs 👎, check `verdict.positives` / `negatives` in `GET /api/x/status`),
+copy the production SQLite file down and run
+`uv run python scripts/x_verdict_backtest.py --sweep` against the copy (not the live file
+— the sweep trashes and rebuilds the KNN index per fold), then commit the chosen values.
+Read the output in the order the script prints it: coverage first, then negative precision,
+then positive. Until this happens the badges are decorative and nothing should be hidden
+or ranked by them.
+**Scope check — tuning these constants is not "the verdict is done".** The design note
+(`kb/notes/2026-07-24-x-verdict-multi-channel-discussion.md`, the authority on where this
+algorithm is going) classes today's single-channel dense kNN as a **v1 baseline / control
+group**, because it has a defect no threshold can reach: one tweet gets one vector, so
+topic, tone and author are averaged into a single point and "I hate this phrasing" is
+indistinguishable from "I hate this topic". Settling D_MAX and the ± thresholds calibrates
+the baseline; the note's target shape is a multi-channel ensemble (author prior + this kNN +
+LLM attribute extraction + n-gram Bayes + a combiner), with **each channel independently
+switchable and independently backtested** so the data picks the architecture. ~50 labels
+per side is the *baseline-tuning* milestone; the note's regime for the extra channels is
+hundreds-to-thousands. Two things the sweep should account for, both new since the chips
+landed (2026-07-26): labels written before that date have `reason` NULL — a real
+discontinuity in the training set, not missing data — and, **untested hypothesis worth a
+sweep variant**, a down whose reason is `author` / `promo` / `ai_slop` is not a *topic*
+judgement, so feeding it to a topic-embedding kNN as a negative is precisely the
+entanglement failure above; restricting the negative set to `reason IS NULL OR reason =
+'topic'` is a one-line variant to compare against the current all-downs behavior.
+
 Still open: subscription
 "delete-with-messages" option (Q4 / `?purge=1`) and the backfill batch-interval sleep.
 Full checklist: `kb/sessions/2026-06-09-backend-remaining-work.md`.

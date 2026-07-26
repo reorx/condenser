@@ -6,7 +6,7 @@ import { ChannelAvatar } from '@/components/ChannelAvatar';
 import { HnGlyph } from '@/components/HnGlyph';
 import { XAvatar } from '@/components/XAvatar';
 import { channelName, compactNumber, fullDateLabel } from '@/lib/format';
-import { hnCommentsUrl, xProfileUrl, X_FORYOU_FEED } from '@/lib/sources';
+import { FEEDBACK_REASON_LABELS, hnCommentsUrl, xProfileUrl, X_FORYOU_FEED } from '@/lib/sources';
 import type { Subscription, TimelineItem } from '@/lib/types';
 
 import { XVerdictDetail } from './XVerdictDetail';
@@ -96,8 +96,15 @@ export function ItemDetailInfo({ item, sub }: Props) {
         {tweet.quote && <DetailRow label="引用">@{tweet.quote.author_handle ?? '未知'}</DetailRow>}
         {tweet.reply_to_id && <DetailRow label="回复">该推文是一条回复</DetailRow>}
         {tweet.media && tweet.media.length > 0 && <DetailRow label="媒体">{tweet.media.length} 项</DetailRow>}
-        {/* The reader's own label (Phase 3) — shown as a fact here; the card owns the buttons. */}
-        {item.feedback && <DetailRow label="反馈">{item.feedback === 'up' ? '赞' : '踩'}</DetailRow>}
+        {/* The reader's own label (Phase 3) — shown as a fact here; the card owns the
+            buttons. The reason chip rides along, since the card shows it nowhere: this
+            is where you check what a past self actually meant by that thumbs-down. */}
+        {item.feedback && (
+          <DetailRow label="反馈">
+            {item.feedback === 'up' ? '赞' : '踩'}
+            {item.feedback_reason && ` · ${FEEDBACK_REASON_LABELS[item.feedback_reason]}`}
+          </DetailRow>
+        )}
         {tweet.verdict && (
           <DetailRow label="判定">
             <XVerdictDetail verdict={tweet.verdict} meta={tweet.verdict_meta} />

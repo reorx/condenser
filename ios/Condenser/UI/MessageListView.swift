@@ -150,6 +150,7 @@ struct MessageListView: View {
                 item: item, tweet: tweet,
                 onToggleSaved: { toggleSaved(item) },
                 onFeedback: { setFeedback(item, $0) },
+                onReason: { setReason(item, $0) },
                 onOpenPhoto: { openViewer(for: tweet, at: $0) })
         }
     }
@@ -166,7 +167,8 @@ struct MessageListView: View {
             XDetailSheet(
                 item: item, tweet: tweet,
                 onToggleSaved: { toggleSaved(item) },
-                onFeedback: { setFeedback(item, $0) })
+                onFeedback: { setFeedback(item, $0) },
+                onReason: { setReason(item, $0) })
         }
     }
 
@@ -283,5 +285,9 @@ struct MessageListView: View {
 
     private func setFeedback(_ item: TimelineItem, _ verdict: ItemFeedback) {
         Task { await store.setFeedback(item, verdict) }
+    }
+
+    private func setReason(_ item: TimelineItem, _ reason: ItemFeedbackReason) {
+        Task { await store.setReason(item, reason) }
     }
 }

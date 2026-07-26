@@ -119,11 +119,27 @@ struct XModelsDecodingTests {
         #expect(tweet.feed.isEmpty == false)
     }
 
-    @Test("未知 verdict / feedback 值降级而不炸解码（后端先行升级时的前向兼容）")
+    @Test("理由 chip 解码：feedback_reason 与 feedback 并列在 envelope 层")
+    func feedbackReason() throws {
+        let json = #"""
+        {"source": "x", "key": "x:1", "datetime": "2026-07-25T10:00:00Z",
+         "is_read": false, "is_saved": false, "feedback": "down", "feedback_reason": "ai_slop",
+         "x": {"id": "1", "author_id": null, "author_handle": "a", "author_name": null,
+               "text": "hi", "created_at": null, "first_seen_at": "2026-07-25T10:00:00Z",
+               "media": null, "metrics": null, "quote": null, "rt_of_handle": null,
+               "reply_to_id": null, "article": null, "feed": "foryou", "feed_kind": "home",
+               "verdict": null, "verdict_meta": null}}
+        """#
+        let item = try decoder.decode(TimelineItem.self, from: Data(json.utf8))
+        #expect(item.feedback == .down)
+        #expect(item.feedbackReason == .aiSlop)
+    }
+
+    @Test("未知 verdict / feedback / 理由值降级而不炸解码（后端先行升级时的前向兼容）")
     func forwardCompatibility() throws {
         let json = #"""
         {"source": "x", "key": "x:1", "datetime": "2026-07-25T10:00:00Z",
-         "is_read": false, "is_saved": false, "feedback": "shrug",
+         "is_read": false, "is_saved": false, "feedback": "shrug", "feedback_reason": "vibes",
          "x": {"id": "1", "author_id": null, "author_handle": "a", "author_name": null,
                "text": "hi", "created_at": null, "first_seen_at": "2026-07-25T10:00:00Z",
                "media": null, "metrics": null, "quote": null, "rt_of_handle": null,
@@ -132,6 +148,7 @@ struct XModelsDecodingTests {
         """#
         let item = try decoder.decode(TimelineItem.self, from: Data(json.utf8))
         #expect(item.feedback == .other)
+        #expect(item.feedbackReason == .other)
         #expect(item.x?.verdict == .other)
         #expect(item.x?.verdict?.isFinding == false, "看不懂的判定不该画徽标")
     }
@@ -255,12 +272,14 @@ func makeTweet(
 /// X envelope：key = "x:{tweet id}"
 func makeXItem(
     id: String = "2080000000000000000", isRead: Bool = false, isSaved: Bool = false,
-    feedback: ItemFeedback? = nil, feed: String = XFeed.foryou
+    feedback: ItemFeedback? = nil, feedbackReason: ItemFeedbackReason? = nil,
+    feed: String = XFeed.foryou
 ) -> TimelineItem {
     let tweet = makeTweet(id: id, feed: feed, feedKind: feed == XFeed.foryou ? "home" : "user")
     return TimelineItem(
         source: SourceID.x, key: "x:\(id)", datetime: tweet.firstSeenAt ?? Date(),
-        isRead: isRead, isSaved: isSaved, feedback: feedback, x: tweet)
+        isRead: isRead, isSaved: isSaved, feedback: feedback, feedbackReason: feedbackReason,
+        x: tweet)
 }
 
 @MainActor
@@ -336,6 +355,83 @@ struct XStoreTests {
         await store.setFeedback(store.items[0], .up)
         #expect(store.items[0].feedback == .up)
         #expect(api.feedbackCalls.map(\.key) == ["x:1"])
+    }
+
+    // MARK: 理由 chip（把「踩」的成因归到属性上，而不是整条推文）
+
+    @Test("选理由：重发整条标签（verdict 仍是 down）+ 乐观置位")
+    func setReason() async {
+        let api = StubAPI()
+        api.timelinePages = [.success(makePage([makeXItem(id: "1", feedback: .down)]))]
+        let store = TimelineStore(api: api)
+        await store.loadInitial()
+
+        await store.setReason(store.items[0], .aiSlop)
+
+        #expect(store.items[0].feedbackReason == .aiSlop)
+        #expect(store.items[0].feedback == .down, "选理由不是第二次点拇指，不能把标签撤掉")
+        #expect(api.feedbackCalls.map(\.verdict) == [.down])
+        #expect(api.feedbackCalls.map(\.reason) == [.aiSlop])
+    }
+
+    @Test("换一侧丢掉过期的理由——否则「AI Slop」会跟着改正跑到赞上面去")
+    func switchingSidesDropsReason() async {
+        let api = StubAPI()
+        api.timelinePages = [
+            .success(makePage([makeXItem(id: "1", feedback: .down, feedbackReason: .aiSlop)]))
+        ]
+        let store = TimelineStore(api: api)
+        await store.loadInitial()
+
+        await store.setFeedback(store.items[0], .up)
+
+        #expect(store.items[0].feedback == .up)
+        #expect(store.items[0].feedbackReason == nil)
+        #expect(api.feedbackCalls.map(\.reason) == [nil], "整条标签一起重写")
+    }
+
+    @Test("撤销把理由一并带走")
+    func undoClearsReason() async {
+        let api = StubAPI()
+        api.timelinePages = [
+            .success(makePage([makeXItem(id: "1", feedback: .down, feedbackReason: .promo)]))
+        ]
+        let store = TimelineStore(api: api)
+        await store.loadInitial()
+
+        await store.setFeedback(store.items[0], .down)
+
+        #expect(store.items[0].feedback == nil)
+        #expect(store.items[0].feedbackReason == nil)
+        #expect(api.clearFeedbackCalls == ["x:1"])
+    }
+
+    @Test("选理由失败：verdict 与理由一起回滚")
+    func reasonRollback() async {
+        let api = StubAPI()
+        api.timelinePages = [.success(makePage([makeXItem(id: "1", feedback: .down)]))]
+        let store = TimelineStore(api: api)
+        await store.loadInitial()
+        api.feedbackError = APIError.http(status: 500, detail: "boom")
+
+        await store.setReason(store.items[0], .topic)
+
+        #expect(store.items[0].feedbackReason == nil)
+        #expect(store.items[0].feedback == .down)
+        #expect(store.error == "boom")
+    }
+
+    @Test("收藏列表也能选理由")
+    func recordsReason() async {
+        let api = StubAPI()
+        api.recordsResults = [.success([makeXItem(id: "1", isSaved: true, feedback: .down)])]
+        let store = RecordsStore(api: api)
+        await store.loadInitial()
+
+        await store.setReason(store.items[0], .author)
+
+        #expect(store.items[0].feedbackReason == .author)
+        #expect(api.feedbackCalls.map(\.reason) == [.author])
     }
 }
 

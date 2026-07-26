@@ -111,10 +111,18 @@ class HideBody(BaseModel):
 
 
 class FeedbackBody(BaseModel):
-    """Explicit up/down on an item — the label Phase 4's classifier trains on."""
+    """Explicit up/down on an item — the label Phase 4's classifier trains on.
+
+    ``reason`` is the optional one-tap chip behind a thumbs-down (which attribute
+    earned it). Absent means the reader skipped it, which is a valid, lossless
+    label — but a *value* has to be one of the four, because free text could not be
+    used as a model feature. A request always states the complete label: omitting
+    the reason clears a previously stored one.
+    """
 
     key: str
     verdict: Literal['up', 'down']
+    reason: Optional[Literal['topic', 'promo', 'ai_slop', 'author']] = None
 
 
 class ForwardMessageBody(BaseModel):

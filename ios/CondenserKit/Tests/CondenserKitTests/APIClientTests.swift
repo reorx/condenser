@@ -103,6 +103,14 @@ struct APIClientTests {
         #expect(deleted.url?.path() == "/api/feedback/x:42")
     }
 
+    @Test("理由 chip 随标签一起 POST（一次请求说清整条标签）")
+    func feedbackReasonBody() async throws {
+        let posted = MockURLProtocol.respond(status: 200, json: #"{"ok": true}"#)
+        try await makeClient().setFeedback(key: "x:42", verdict: .down, reason: .aiSlop)
+        #expect(posted.bodyJSON?["verdict"] as? String == "down")
+        #expect(posted.bodyJSON?["reason"] as? String == "ai_slop")
+    }
+
     @Test("401 → APIError.unauthorized")
     func unauthorized() async throws {
         _ = MockURLProtocol.respond(status: 401, json: #"{"detail": "unauthorized"}"#)

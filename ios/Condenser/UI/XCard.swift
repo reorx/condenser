@@ -73,6 +73,7 @@ struct XCard: View {
     var showsUnread = true
     var onToggleSaved: () -> Void
     var onFeedback: (ItemFeedback) -> Void
+    var onReason: (ItemFeedbackReason) -> Void
     /// 点击第 i 张图片（timeline 直接全屏查看，不经详情 sheet）
     var onOpenPhoto: ((Int) -> Void)? = nil
 
@@ -146,7 +147,7 @@ struct XCard: View {
                     .labelStyle(CompactMetaLabelStyle())
             }
             Spacer(minLength: 0)
-            XFeedbackButtons(feedback: item.feedback, onFeedback: onFeedback)
+            XFeedbackButtons(feedback: item.feedback, onFeedback: onFeedback, onReason: onReason)
         }
         .font(.caption)
         .foregroundStyle(.secondary)
@@ -336,14 +337,30 @@ struct XVerdictBadge: View {
 /// 底栏的拇指对：点已选中的那一侧 = 撤销，点另一侧 = 改正。
 /// 所有 X 推文都可标注（关注人 feed 也算——扩大训练集），
 /// 但打标本身不隐藏、不标已读、不改排序。
+///
+/// 「踩」之后追问一次理由：光一个踩标的是整条推文，可惹到你的通常只是其中一样
+/// 属性（话题 / 广告腔 / AI 味 / 作者），而一条推文只有一个向量，四者被平均成
+/// 同一个点。用 confirmationDialog 而不是内联 chip 行：手机上一行摆不下四个中文
+/// 标签，而系统弹层本来就是「一次点击选一项、Cancel 即跳过」的形状——跳过是免费
+/// 的，标签退化成原来的整条标注。
 struct XFeedbackButtons: View {
     let feedback: ItemFeedback?
     var onFeedback: (ItemFeedback) -> Void
+    /// 缺省实现让还没接理由的调用点（如果有）照常编译成「不追问」
+    var onReason: ((ItemFeedbackReason) -> Void)?
+
+    @State private var askingReason = false
 
     var body: some View {
         HStack(spacing: 12) {
             button(.up, systemImage: "hand.thumbsup", tint: .green)
             button(.down, systemImage: "hand.thumbsdown", tint: .pink)
+        }
+        .confirmationDialog("为什么不喜欢？", isPresented: $askingReason, titleVisibility: .visible) {
+            ForEach(ItemFeedbackReason.offered, id: \.self) { reason in
+                Button(reason.label) { onReason?(reason) }
+            }
+            Button("跳过", role: .cancel) {}
         }
     }
 
@@ -351,6 +368,8 @@ struct XFeedbackButtons: View {
         let selected = feedback == side
         return Button {
             onFeedback(side)
+            // 只有「这一下确实把它标成了踩」才追问：撤销和改成赞都不该弹
+            askingReason = onReason != nil && ItemFeedback.next(current: feedback, tapped: side) == .down
         } label: {
             Image(systemName: selected ? "\(systemImage).fill" : systemImage)
                 .foregroundStyle(selected ? tint : .secondary)
