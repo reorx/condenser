@@ -6,9 +6,12 @@
   /PATH/TO paths (and the uv location if it is not in /opt/homebrew/bin), then:
     launchctl load ~/Library/LaunchAgents/com.condenser.probe.plist
 
-  RunAtLoad fires a round on login; StartInterval only counts wall-clock time
-  while the Mac is awake, so a sleeping laptop simply misses rounds — the probe
-  is stateless, the next round catches up.
+  RunAtLoad fires a round on login; StartCalendarInterval fires at a fixed
+  minute every hour. Firings missed while the Mac sleeps coalesce into one
+  catch-up round at wake — the probe is stateless, so that is all it needs.
+  (Deliberately NOT StartInterval: its timer can get pended across a sleep
+  cycle and never fire again — observed 2026-07-26, runs=1 with a stuck
+  "pended nondemand spawn = interval" while the Mac was awake for hours.)
 -->
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -34,8 +37,11 @@
         <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
     </dict>
 
-    <key>StartInterval</key>
-    <integer>3600</integer>
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Minute</key>
+        <integer>15</integer>
+    </dict>
 
     <key>RunAtLoad</key>
     <true/>
