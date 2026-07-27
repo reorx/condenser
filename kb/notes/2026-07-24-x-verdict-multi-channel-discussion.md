@@ -18,6 +18,10 @@ tags:
 
 ## 落地状态（本笔记是活文档，不是归档讨论）
 
+> 📋 通道 C / D + 组合器的**施工计划**已单独成文：
+> [2026-07-27-x-verdict-style-channels.md](../plans/2026-07-27-x-verdict-style-channels.md)
+> （handoff 规格：数据模型、taxonomy、计分、回测框架扩展、判负重开的门槛）。
+
 | 本笔记提出的东西 | 状态 |
 |---|---|
 | down-reason chips（下文「非算法杠杆」一节） | ✅ **已落地 2026-07-26**，schema v9 + 三端 UI。四个值：`topic` / `promo` / `ai_slop` / `author`。见主计划「Phase 3 补记」 |

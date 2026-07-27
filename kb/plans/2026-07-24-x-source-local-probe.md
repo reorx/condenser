@@ -38,6 +38,7 @@ tags:
    `author` 1），只有 1 个 `topic`；话题 embedding 表示不了文风，只能连坐它恰好挂靠的话题。
    所以负判定要复活，靠的不是调阈值，是笔记里的通道 C（LLM 属性提取）/ D（n-gram）/ A（作者
    先验）——而这三个通道的优先级现在也由这个 reason 分布直接给出了。
+   → **下一阶段的施工计划**：[2026-07-27-x-verdict-style-channels.md](2026-07-27-x-verdict-style-channels.md)
 6. **判定文案的语言**（实现期出现的小分歧）—— 卡片徽标用英文（"Recommended" / "Likely not for
    you"，与 `XCard` 其余文案一致），详情面板用中文（与 `ItemDetailPane` 一致）。如果觉得徽标也该
    中文化，改 `XVerdictBadge` 的 `STYLES` 即可。**iOS 沿用了同一分工**（`XCard` 的

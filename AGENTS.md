@@ -618,7 +618,10 @@ the baseline; the note's target shape is a multi-channel ensemble (author prior 
 LLM attribute extraction + n-gram Bayes + a combiner), with **each channel independently
 switchable and independently backtested** so the data picks the architecture. The 2026-07-27
 backtest is the first evidence that this is not just theory: **the entanglement defect is
-what killed the negative side**, and no threshold reached it. Which makes the extra channels
+what killed the negative side**, and no threshold reached it. The next phase is specced as a
+standalone handoff — `kb/plans/2026-07-27-x-verdict-style-channels.md` (channels C/D, the
+combiner, the extended backtest harness, and the written-down bar for ever re-enabling
+negative verdicts). Which makes the extra channels
 the actual roadmap for negatives — the reason mix says which ones pay first: `promo` (11) +
 `engagement_farming` (10) + `ai_slop` (3) = 24 of 29 downs are style, i.e. exactly channel C
 (LLM attribute extraction) and channel D (n-gram Bayes) territory, while `author` had 1 and
