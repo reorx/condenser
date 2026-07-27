@@ -31,7 +31,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Awaitable, Callable, Optional
 
-from . import db, embedding, vectors
+from . import attributes, db, embedding, vectors
 from .channels import ChannelScore
 from .config import Settings, get_settings
 
@@ -52,6 +52,7 @@ LABEL_WEIGHT = {'up': 1.0, 'save': 2.0, 'down': 1.0}
 LAST_RUN_META_KEY = 'x_verdict_last_run_at'
 
 Embedder = Callable[[list[str]], Awaitable[list[list[float]]]]
+Extractor = Callable[[list[str]], Awaitable[list[Optional[dict]]]]
 
 
 @dataclass
@@ -61,6 +62,7 @@ class RunResult:
     indexed: int = 0  # training vectors added to the KNN index
     dropped: int = 0  # training vectors removed (label undone / unsaved)
     judged: int = 0  # feed rows given a verdict
+    attributed: int = 0  # tweets described by the attribute extractor (channel C's fuel)
     pruned: int = 0  # expired unlabeled vectors deleted
     skipped_reason: Optional[str] = None  # 'disabled' | 'unavailable' | 'cold_start'
 
@@ -214,15 +216,19 @@ class VerdictManager:
     the probe pushes. ``embed`` is injectable so tests never touch the network.
     """
 
-    def __init__(self, settings: Settings, embed: Optional[Embedder] = None):
+    def __init__(self, settings: Settings, embed: Optional[Embedder] = None, extract: Optional[Extractor] = None):
         self.settings = settings
         self._embed = embed or self._default_embedder
+        self._extract = extract or self._default_extractor
         self._tasks: set[asyncio.Task] = set()
         self._loop_ref: Optional[asyncio.AbstractEventLoop] = None
         self._lock = asyncio.Lock()
 
     async def _default_embedder(self, texts: list[str]) -> list[list[float]]:
         return await embedding.embed_texts(texts, self.settings)
+
+    async def _default_extractor(self, texts: list[str]) -> list[Optional[dict]]:
+        return await attributes.extract_attributes(texts, self.settings)
 
     @staticmethod
     def _now() -> datetime:
@@ -261,10 +267,11 @@ class VerdictManager:
             return
         if result.skipped_reason is None:
             log.info(
-                'x verdict round: indexed=%s dropped=%s judged=%s pruned=%s',
+                'x verdict round: indexed=%s dropped=%s judged=%s attributed=%s pruned=%s',
                 result.indexed,
                 result.dropped,
                 result.judged,
+                result.attributed,
                 result.pruned,
             )
 
@@ -305,6 +312,10 @@ class VerdictManager:
                 return result
             result.indexed = await self._index_missing(samples)
             await self._judge(samples, result)
+            # After judging, deliberately: attributes feed a channel that does not
+            # score yet, so a slow or failing provider must not delay the verdicts
+            # the reader actually sees.
+            await self._describe(result)
             result.pruned = self._prune(samples)
             db.set_meta(LAST_RUN_META_KEY, self._now().isoformat(sep=' ', timespec='seconds'))
             return result
@@ -418,6 +429,39 @@ class VerdictManager:
         judgement.meta.update({'model': embedding.model_tag(self.settings), 'algo': ALGO_VERSION})
         return judgement
 
+    async def _describe(self, result: RunResult) -> None:
+        """Read attributes for tweets that have none under the current taxonomy.
+
+        Sits inside the cold-start gate with everything else that costs money, and
+        under a hard per-round cap: this is the first component billed per item, and
+        a first run against a full archive would otherwise be an unbounded bill.
+        """
+        if not attributes.available(self.settings):
+            return
+        model = attributes.model_tag(self.settings)
+        since = self._now() - timedelta(hours=self.settings.condenser_verdict_window_hours)
+        rows = db.x_describable_rows(since, self.settings.condenser_attr_batch, model)
+        texts = [(row['tweet_id'], judge_text(row)) for row in rows]
+        texts = [(tweet_id, text) for tweet_id, text in texts if text]
+        if not texts:
+            return
+
+        try:
+            answers = await self._extract([text for _, text in texts])
+        except Exception:  # noqa: BLE001 - the archive is intact; retry next round
+            log.exception('x verdict: attribute extraction failed for %s tweets', len(texts))
+            return
+
+        now = self._now()
+        for (tweet_id, _), answer in zip(texts, answers):
+            cleaned = attributes.clean(answer)
+            if cleaned is None:
+                # an unreadable answer leaves the tweet undescribed, so the next
+                # round picks it up again rather than storing a guess
+                continue
+            db.upsert_x_attributes(tweet_id, cleaned['topics'], cleaned['style_flags'], model, now)
+            result.attributed += 1
+
     def _prune(self, samples: dict[int, str]) -> int:
         days = self.settings.condenser_embedding_retention_days
         if days <= 0:
@@ -476,4 +520,12 @@ def status(settings: Settings, manager: Optional[VerdictManager] = None) -> dict
         'model': embedding.model_tag(settings),
         'algo': ALGO_VERSION,
         'last_run_at': db.get_meta(LAST_RUN_META_KEY),
+        # The attribute channel is billed per item and scores nothing yet, so the
+        # only way to tell "off", "misconfigured" and "working" apart is here.
+        'attributes': {
+            'enabled': settings.condenser_attr_enabled,
+            'configured': attributes.available(settings),
+            'model': attributes.model_tag(settings),
+            'described': db.x_attribute_count(attributes.model_tag(settings)),
+        },
     }

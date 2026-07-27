@@ -38,7 +38,7 @@ MESSAGES_OPTIONAL_FIELDS = {
 # Bumped when condenser's own table shapes change; recorded in app_meta on init so a
 # future startup can detect an upgrade and run a migration. Telememo manages its own
 # table migrations separately (init_db optional_fields / ALTER TABLE).
-SCHEMA_VERSION = 9
+SCHEMA_VERSION = 10
 
 
 class CondenserBaseModel(Model):
@@ -320,6 +320,30 @@ class XEmbedding(CondenserBaseModel):
         table_name = 'x_embeddings'
 
 
+class XAttribute(CondenserBaseModel):
+    """What a tweet is about and how it talks, as read by an LLM (v10).
+
+    A rebuildable cache, exactly like ``x_embeddings``: the text is in ``x_tweets``,
+    so any row can be re-read. ``model`` records ``model@taxonomy`` — a flag read
+    under one taxonomy version and one read under the next are not the same
+    feature, so a taxonomy edit is a re-extraction, never a migration.
+
+    Channel C scores these against the reader's labels (plan v2 step 3); until then
+    the table only accumulates, which is the point of landing it early — attributes
+    for already-labeled tweets are the training data, and they can only be
+    collected forwards.
+    """
+
+    tweet_id = BigIntegerField(primary_key=True)
+    topics = TextField()  # JSON list of open slugs
+    style_flags = TextField()  # JSON list, closed taxonomy (attributes.STYLE_FLAGS)
+    model = CharField(index=True)
+    created_at = DateTimeField()
+
+    class Meta:
+        table_name = 'x_attributes'
+
+
 CONDENSER_TABLES = [
     Subscription,
     KeywordFilter,
@@ -335,6 +359,7 @@ CONDENSER_TABLES = [
     XFeedItem,
     ItemFeedback,
     XEmbedding,
+    XAttribute,
 ]
 
 
@@ -1250,6 +1275,55 @@ def set_x_verdict(channel_id: str, tweet_id: int, verdict: str, meta: dict) -> N
     XFeedItem.update(verdict=verdict, verdict_meta=json.dumps(meta, ensure_ascii=False)).where(
         (XFeedItem.channel_id == channel_id) & (XFeedItem.tweet_id == tweet_id)
     ).execute()
+
+
+# --- x attributes (v10) -------------------------------------------------------
+
+
+def x_attribute_ids(model: str) -> set[int]:
+    """Tweets already described under this model@taxonomy (others need re-reading)."""
+    return {row.tweet_id for row in XAttribute.select(XAttribute.tweet_id).where(XAttribute.model == model)}
+
+
+def x_attribute_count(model: Optional[str] = None) -> int:
+    query = XAttribute.select()
+    return (query.where(XAttribute.model == model) if model else query).count()
+
+
+def upsert_x_attributes(tweet_id: int, topics: list, style_flags: list, model: str, created_at: datetime) -> None:
+    fields = {
+        'topics': json.dumps(topics, ensure_ascii=False),
+        'style_flags': json.dumps(style_flags),
+        'model': model,
+        'created_at': created_at,
+    }
+    XAttribute.insert(tweet_id=tweet_id, **fields).on_conflict(
+        conflict_target=[XAttribute.tweet_id],
+        update={getattr(XAttribute, key): value for key, value in fields.items()},
+    ).execute()
+
+
+def x_describable_rows(since: datetime, limit: int, model: str) -> list[dict]:
+    """Tweets worth describing, labeled ones first.
+
+    A labeled tweet is training data for the attribute channel, so it is worth
+    paying for before any unlabeled one — and there is a fixed backlog of them,
+    while unlabeled For You tweets arrive forever. Inside each group, newest first.
+    """
+    return _rows(
+        tdb.db.execute_sql(
+            f'{_JUDGE_COLS} '
+            'LEFT JOIN x_attributes a ON a.tweet_id = t.id AND a.model = ? '
+            "LEFT JOIN item_feedback fb ON fb.source = 'x' AND fb.ref1 = t.id "
+            "LEFT JOIN saved_items si ON si.source = 'x' AND si.ref1 = t.id "
+            'LEFT JOIN x_feed_items f ON f.tweet_id = t.id AND f.channel_id = ? '
+            'WHERE a.tweet_id IS NULL AND t.text IS NOT NULL '
+            '  AND (fb.ref1 IS NOT NULL OR si.ref1 IS NOT NULL OR f.first_seen_at >= ?) '
+            'ORDER BY (fb.ref1 IS NOT NULL OR si.ref1 IS NOT NULL) DESC, '
+            '  COALESCE(f.first_seen_at, t.created_at) DESC LIMIT ?',
+            (model, FORYOU_FEED, since.strftime('%Y-%m-%d %H:%M:%S'), limit),
+        )
+    )
 
 
 def x_verdict_counts() -> dict[str, int]:

@@ -100,6 +100,22 @@ class Settings(BaseSettings):
     condenser_verdict_window_hours: int = 48
     condenser_verdict_batch: int = 100
 
+    # --- verdict channel C: LLM attribute extraction (condenser/attributes.py) ---
+    # The project's first per-item billed component, so it is fenced three ways: a
+    # switch, a hard per-round cap, and a count on /api/x/status. It also needs its
+    # **own** API key — deliberately not falling back to the embedding one, so
+    # deploying this code cannot start spending on its own; setting the key is the
+    # act of turning it on. Same OpenAI-compatible shape as embeddings; qwen-flash
+    # is ~$0.05/$0.4 per 1M tokens, i.e. ~$0.01/day at 400 tweets.
+    condenser_attr_enabled: bool = True
+    condenser_attr_base_url: str = 'https://dashscope.aliyuncs.com/compatible-mode/v1'
+    condenser_attr_api_key: str = ''
+    condenser_attr_model: str = 'qwen-flash'
+    # Hard ceiling on tweets described per round — the spend bound. A first run
+    # against a full archive would otherwise be an unbounded bill.
+    condenser_attr_batch: int = 40
+    condenser_attr_concurrency: int = 4
+
     # --- verdict channel D: n-gram bayes (condenser/ngram.py) ---
     # Not wired into the running verdict yet (plan v2 step 1 ships the channel and
     # its backtest; step 4 ships the combiner that lets it vote). The knobs live

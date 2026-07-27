@@ -308,11 +308,17 @@ class Side:
     calls: int = 0
     right: int = 0
     total: int = 0
+    # Negative side only: wrong calls on a *saved* tweet — the plan's §9 condition 4
+    # (clarified 2026-07-28). A save is the ×2-weight positive, so condemning one is
+    # the most expensive mistake available; a wrong call on a mere thumbs-up is
+    # bounded by the precision bar instead.
+    saved_misses: int = 0
 
-    def add(self, called: bool, correct: bool) -> None:
+    def add(self, called: bool, correct: bool, saved: bool = False) -> None:
         self.total += 1
         self.calls += called
         self.right += called and correct
+        self.saved_misses += called and not correct and saved
 
     @property
     def coverage(self) -> float:
@@ -341,7 +347,8 @@ def side_metrics(samples: list[Sample], scores: dict, threshold: float, negative
             side.total += 1
             continue
         called = (score.score <= threshold and score.corroborated) if negative else score.score >= threshold
-        side.add(called, sample.expected == (verdict.NEGATIVE if negative else verdict.POSITIVE))
+        wanted = verdict.NEGATIVE if negative else verdict.POSITIVE
+        side.add(called, sample.expected == wanted, saved=negative and sample.label == 'save')
     return side
 
 
@@ -375,27 +382,38 @@ def report(samples: list[Sample], scores: dict, settings: Settings, sweep: bool,
 def summarize(rows: list[dict], settings: Settings) -> None:
     """The operating points worth arguing about, and whether any clears the bar.
 
-    The bar for re-enabling negative verdicts is written down in the plan (§9) and
-    is checked here rather than eyeballed: >=85% precision, >=15 calls, and clearly
-    above the base rate. Two of those are easy to satisfy by accident on a small
-    label set, which is exactly why the third is in the list.
+    Three of the plan's four §9 conditions are checked here rather than eyeballed:
+    >=85% precision, >=15 calls, and no *saved* tweet among the wrong negatives
+    (condition 4, as clarified 2026-07-28 — a save is the ×2-weight positive, so
+    condemning one is the most expensive mistake there is; a wrong call on a mere
+    thumbs-up is what the precision bar is for). The fourth, "clearly above the
+    base rate", stays a human call — it is printed beside every table, because a
+    number that clears the bar while sitting on the base rate means the label set,
+    not the classifier, is doing the work.
     """
     ranked = [row for row in rows if row['metrics'].calls >= MIN_CALLS_TO_RANK]
     ranked.sort(key=lambda row: (-(row['metrics'].precision or 0), -row['metrics'].calls))
     print(f'\n=== operating points with >= {MIN_CALLS_TO_RANK} calls, best precision first ===')
     for row in ranked[:15]:
         metrics = row['metrics']
-        clears = row['negative'] and (metrics.precision or 0) >= NEGATIVE_BAR and metrics.calls >= NEGATIVE_BAR_CALLS
+        clears = (
+            row['negative']
+            and (metrics.precision or 0) >= NEGATIVE_BAR
+            and metrics.calls >= NEGATIVE_BAR_CALLS
+            and not metrics.saved_misses
+        )
+        condemned = f'  [{metrics.saved_misses} saved condemned]' if metrics.saved_misses else ''
         print(
             f'  {"*" if clears else " "} {pct(metrics.precision)} precision  {metrics.calls:3d} calls  '
-            f'coverage {pct(metrics.coverage)}   {row["side"]}   {row["where"]}'
+            f'coverage {pct(metrics.coverage)}   {row["side"]}   {row["where"]}{condemned}'
         )
     if not any(row['negative'] for row in ranked):
         print('  (no negative operating point committed often enough to rank)')
     print(
-        f"  * = clears the plan's bar for re-enabling negative verdicts "
-        f'({NEGATIVE_BAR:.0%} precision, {NEGATIVE_BAR_CALLS} calls) — the base-rate '
-        'comparison and the "no upvoted/saved tweet among the misses" check are still yours to make'
+        f"  * = clears the plan's §9 bar for re-enabling negative verdicts "
+        f'({NEGATIVE_BAR:.0%} precision, {NEGATIVE_BAR_CALLS} calls, no saved tweet condemned).'
+        '\n      Yours to judge: whether it beats the base rate above, and that picking the best'
+        '\n      cell out of a grid scored on the same labels flatters whatever it picks.'
     )
 
 

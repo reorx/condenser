@@ -388,7 +388,7 @@ def test_item_feedback_table_migrates_to_v9(env):
     db.init_db(path)
 
     assert db.get_feedback('x', 42) == ('down', None)
-    assert db.SCHEMA_VERSION == 9
+    assert db.SCHEMA_VERSION >= 9  # the v9 migration keeps working past its own version
     # idempotent: init again on the migrated file
     db.init_db(path)
     assert db.get_feedback('x', 42) == ('down', None)
