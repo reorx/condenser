@@ -24,13 +24,14 @@ TG/HN），订阅 tab 的 X 分组行是它唯一入口 → `XFeedTimelineScreen
 计划见 `../kb/plans/2026-07-24-x-source-local-probe.md`。
 
 **理由 chip（2026-07-26，schema v9）**：踩之后追问一次「为什么不喜欢？」——
-`ItemFeedbackReason`（topic / promo / aiSlop / author，同样有 `other` 兜底），
+`ItemFeedbackReason`（topic / promo / aiSlop / engagementFarming / author，同样有
+`other` 兜底；`engagementFarming`「钓互动」是 2026-07-27 加的，只动常量不动 schema），
 envelope 上是与 `feedback` **平级**的 `feedback_reason`（老版本 App 把 `feedback` 当字符串
 解，改成对象会整页解码失败，而 App 是单独升的）。两条规则：`TimelineStore` /
 `RecordsStore` 的 `setFeedback`（拇指，不带理由）与 `setReason`（选 chip，verdict 保持
 down）都走同一个 `write(_:verdict:reason:)`，一次请求写完整条标签，所以改正会丢掉过期理由、
 撤销连理由一起删；理由**可跳过**，跳过零损失。UI 用原生 `confirmationDialog` 而不是内联
-chip 行（手机上一行摆不下四个中文标签），只在「这一下确实标成了踩」时弹；已选理由只在
+chip 行（手机上一行摆不下这些中文标签），只在「这一下确实标成了踩」时弹；已选理由只在
 `XDetailSheet` 的「反馈」行回显，卡片上不画。
 
 ## 技术栈

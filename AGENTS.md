@@ -247,11 +247,29 @@ down-with-reason into an up cannot carry `ai_slop` onto a positive; and the chip
 **skippable at zero cost** — no pick is exactly the bag-level label we had before.
 Web asks with an inline chip row under the card footer (`XFeedbackButtons`, transient
 — it answers *this* click and never re-nags an already-labeled tweet); iOS asks with
-a native `confirmationDialog` (four Chinese labels don't fit one phone-width row, and
+a native `confirmationDialog` (the Chinese labels don't fit one phone-width row, and
 the system sheet is already "tap one / Cancel to skip"). The picked reason is echoed
 only in the detail pane, never on the card. `FEEDBACK_REASONS` lives in
-`db.py` / `lib/sources.ts` / Kit's `ItemFeedbackReason.offered`. Why this exists —
-and why it was missing until now — is the "Phase 3 补记" section of the X plan.
+`db.py` / `lib/sources.ts` / Kit's `ItemFeedbackReason.offered`, plus the request
+schema's Literal in `types.py` — pinned to `db.FEEDBACK_REASONS` by a test, because a
+one-sided edit means the endpoint accepts and stores a label nothing can route. Why
+this exists — and why it was missing until now — is the "Phase 3 补记" section of the
+X plan.
+
+**`engagement_farming`「钓互动」** joined the taxonomy 2026-07-27 (a constant-only
+change: `reason` is a nullable TEXT column, so no migration and no schema bump). It is
+X's own platform-manipulation term for the influencer-thread pattern — hook, FOMO,
+"save this 🔖", payoff parked in the replies so an outbound link doesn't cost reach —
+and it is deliberately **not** a flavour of `promo`: promo sells a thing (intent), this
+games interaction (largely lexical, so the planned n-gram channel can learn it outright
+while `promo` needs the expensive LLM one). The rejected alternatives are worth knowing,
+since the argument recurs: `clout` overlaps `promo` semantically (clout chasing *is*
+self-promotion) and a chip the reader hesitates over yields noisy labels; `content_farm`
+names an operation rather than an item, and encodes a *quality* judgement that would
+misfire on the digest/summary accounts the user likes — those are derivative too, and
+differ only in not baiting. Being a superset (rage bait, poll bait, giveaways) is a
+feature: it reaches a trainable label count sooner, which is the binding constraint.
+Full reasoning: `kb/notes/2026-07-27-engagement-farming-chip.md`.
 
 ## Local probe (`probe/`, monorepo)
 

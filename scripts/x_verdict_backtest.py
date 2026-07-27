@@ -29,11 +29,13 @@ Two things this script does not yet know about, and whoever runs the sweep shoul
   `item_feedback.reason` (the chips did not exist); that is a real property of the
   data, not a gap to fill in.
 - **The reasons are worth a sweep variant.** A down whose reason is `author`,
-  `promo` or `ai_slop` is not a judgement about the tweet's *topic*, so feeding it
-  to a topic-embedding kNN as a negative is the entanglement failure the design
-  note describes — restricting the negative set to
+  `promo`, `ai_slop` or `engagement_farming` is not a judgement about the tweet's
+  *topic*, so feeding it to a topic-embedding kNN as a negative is the
+  entanglement failure the design note describes — restricting the negative set to
   ``reason IS NULL OR reason = 'topic'`` is a one-line comparison against the
   current all-downs behavior. Untested; that is the point of running it here.
+  `engagement_farming` is the sharpest case of it: bait phrasing is orthogonal to
+  subject matter, so those negatives should be the *first* the variant drops.
 
 And a scope reminder, because this script makes it easy to believe the job ends
 with a tuned D_MAX: today's single-channel kNN is the **baseline**, and the target

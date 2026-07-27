@@ -279,11 +279,12 @@ class ItemFeedback(CondenserBaseModel):
     ``reason`` (v9) is the optional one-tap chip behind a thumbs-down: *which
     attribute* of the tweet earned it. A bare down labels the whole bag, but the
     cause is usually one instance in it — the topic, the marketing voice, the
-    AI-slop phrasing, the author — and a single embedding averages all four into
-    one point, so a down for tone reads as a down for the topic. Recording the
-    attribute now means the labels can be routed per channel when the model grows
-    them (see kb/notes/2026-07-24-x-verdict-multi-channel-discussion.md); NULL is
-    a first-class value, since skipping the chip must stay free.
+    engagement bait, the AI-slop phrasing, the author — and a single embedding
+    averages them all into one point, so a down for tone reads as a down for the
+    topic. Recording the attribute now means the labels can be routed per channel
+    when the model grows them (see
+    kb/notes/2026-07-24-x-verdict-multi-channel-discussion.md); NULL is a
+    first-class value, since skipping the chip must stay free.
     """
 
     source = CharField()
@@ -790,11 +791,22 @@ def unhide_item(k: ItemKey) -> None:
 
 FEEDBACK_VERDICTS = ('up', 'down')
 
-# The down-chip taxonomy (v9). Four values, each aimed at a different channel of the
-# planned multi-channel model: 'topic' at the dense-kNN neighbourhood, 'promo' and
-# 'ai_slop' at the style/wording channels, 'author' at the author prior. Closed on
-# purpose — free text could not be used as a feature without another labeling pass.
-FEEDBACK_REASONS = ('topic', 'promo', 'ai_slop', 'author')
+# The down-chip taxonomy (v9). Each value is aimed at a different channel of the
+# planned multi-channel model: 'topic' at the dense-kNN neighbourhood, 'promo' /
+# 'ai_slop' / 'engagement_farming' at the style/wording channels, 'author' at the
+# author prior. Closed on purpose — free text could not be used as a feature
+# without another labeling pass.
+#
+# 'engagement_farming' (2026-07-27) is X's own platform-manipulation term for the
+# influencer-thread pattern: a hook, some FOMO, "save this 🔖", and the payoff
+# parked in the replies so an outbound link does not cost reach. It is deliberately
+# NOT folded into 'promo': promo is about selling a thing (intent), this is about
+# baiting interaction (largely lexical, so the cheap n-gram channel can learn it
+# outright). Folding them together would make a tweet that sells nothing but games
+# everything indistinguishable from an advertisement, and the reader would have to
+# hesitate over which chip to press — a taxonomy you hesitate over yields noisy
+# labels, which is the one thing a training set cannot recover from.
+FEEDBACK_REASONS = ('topic', 'promo', 'ai_slop', 'engagement_farming', 'author')
 
 
 def set_feedback(k: ItemKey, verdict: str, reason: Optional[str] = None) -> None:

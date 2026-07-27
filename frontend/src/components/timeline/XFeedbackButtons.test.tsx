@@ -12,6 +12,7 @@ vi.mock('@/lib/api', () => ({
 }));
 
 import { api } from '@/lib/api';
+import { FEEDBACK_REASONS } from '@/lib/sources';
 
 import { XFeedbackButtons } from './XFeedbackButtons';
 
@@ -84,9 +85,24 @@ describe('XFeedbackButtons', () => {
     await userEvent.click(down());
 
     expect(reasonRow()).toBeInTheDocument();
-    for (const chip of ['不感兴趣', '广告营销', 'AI Slop', '不喜欢作者']) {
-      expect(screen.getByRole('button', { name: chip })).toBeInTheDocument();
+    // Derived, not spelled out: a chip added to the taxonomy but not offered here
+    // is a value the backend accepts and the reader can never produce.
+    for (const { label } of FEEDBACK_REASONS) {
+      expect(screen.getByRole('button', { name: label })).toBeInTheDocument();
     }
+  });
+
+  it('offers 钓互动 — bait is not the same complaint as an advertisement', async () => {
+    // Added 2026-07-27. The influencer-thread pattern (hook, FOMO, "save this 🔖",
+    // the payoff parked in the replies) is what a reader actually meets on For You,
+    // and folding it into 广告营销 would make the two indistinguishable in the
+    // training set even though they feed different channels.
+    wrap(<XFeedbackButtons itemKey="x:1" feedback={null} />);
+    await userEvent.click(down());
+
+    await userEvent.click(screen.getByRole('button', { name: '钓互动' }));
+
+    await waitFor(() => expect(api.setFeedback).toHaveBeenLastCalledWith('x:1', 'down', 'engagement_farming'));
   });
 
   it('does not ask why on an up — the chips are the negative taxonomy', async () => {

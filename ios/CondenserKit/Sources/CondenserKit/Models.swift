@@ -551,13 +551,16 @@ public enum ItemFeedback: String, Codable, Sendable {
 
 /// 「踩」之后的一键理由（schema v9）：这条推文的**哪个属性**让你踩它。
 /// 光一个踩标的是整条推文，可真正惹到你的往往只是其中一样——话题、广告腔、
-/// AI 味、作者；而一条推文只有一个向量，四者被平均成同一个点，于是「讨厌这种
-/// 说话方式」和「讨厌这个话题」在模型眼里没有区别。记下属性，将来多通道模型
+/// 钓互动、AI 味、作者；而一条推文只有一个向量，它们被平均成同一个点，于是「讨厌
+/// 这种说话方式」和「讨厌这个话题」在模型眼里没有区别。记下属性，将来多通道模型
 /// 才能把标签分派到对的通道去。跳过是免费的：退化成原来的整条标签。
+/// engagementFarming（2026-07-27）是 X 官方对「钓互动」的说法，故意不并进 promo：
+/// 那个是卖东西，这个是骗互动，而且钓的话术是词汇级的，最便宜的通道就能学会。
 /// other 同 ItemFeedback 的前向兼容理由。
 public enum ItemFeedbackReason: String, Codable, Sendable, CaseIterable {
     case topic, promo
     case aiSlop = "ai_slop"
+    case engagementFarming = "engagement_farming"
     case author
     case other
 
@@ -566,14 +569,15 @@ public enum ItemFeedbackReason: String, Codable, Sendable, CaseIterable {
         self = ItemFeedbackReason(rawValue: raw) ?? .other
     }
 
-    /// 提供给读者的四个 chip（other 是解码兜底，不进 UI）
-    public static let offered: [ItemFeedbackReason] = [.topic, .promo, .aiSlop, .author]
+    /// 提供给读者的 chip 全集（other 是解码兜底，不进 UI）
+    public static let offered: [ItemFeedbackReason] = [.topic, .promo, .aiSlop, .engagementFarming, .author]
 
     public var label: String {
         switch self {
         case .topic: "不感兴趣"
         case .promo: "广告营销"
         case .aiSlop: "AI Slop"
+        case .engagementFarming: "钓互动"
         case .author: "不喜欢作者"
         case .other: "其他"
         }

@@ -115,14 +115,14 @@ class FeedbackBody(BaseModel):
 
     ``reason`` is the optional one-tap chip behind a thumbs-down (which attribute
     earned it). Absent means the reader skipped it, which is a valid, lossless
-    label — but a *value* has to be one of the four, because free text could not be
-    used as a model feature. A request always states the complete label: omitting
-    the reason clears a previously stored one.
+    label — but a *value* has to come from ``db.FEEDBACK_REASONS``, because free
+    text could not be used as a model feature. A request always states the complete
+    label: omitting the reason clears a previously stored one.
     """
 
     key: str
     verdict: Literal['up', 'down']
-    reason: Optional[Literal['topic', 'promo', 'ai_slop', 'author']] = None
+    reason: Optional[Literal['topic', 'promo', 'ai_slop', 'engagement_farming', 'author']] = None
 
 
 class ForwardMessageBody(BaseModel):

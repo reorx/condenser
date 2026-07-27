@@ -152,6 +152,23 @@ struct XModelsDecodingTests {
         #expect(item.x?.verdict == .other)
         #expect(item.x?.verdict?.isFinding == false, "看不懂的判定不该画徽标")
     }
+
+    @Test("理由 chip 全集都进 UI：offered 覆盖除兜底 other 外的每一个取值")
+    func everyReasonIsOffered() {
+        let expected = ItemFeedbackReason.allCases.filter { $0 != .other }
+
+        #expect(ItemFeedbackReason.offered == expected, "新增的理由没进 offered 就选不到")
+        #expect(ItemFeedbackReason.offered.allSatisfy { !$0.label.isEmpty })
+    }
+
+    @Test("钓互动是独立取值，不是广告营销的一种（2026-07-27）")
+    func engagementFarmingIsItsOwnReason() throws {
+        // 影响力钓鱼（钩子、FOMO、"save this 🔖"、正文钓在评论区）和"卖东西"是两码事，
+        // 喂的也不是同一个通道——词汇通道能直接学会钓的话术，广告更接近意图判断。
+        #expect(ItemFeedbackReason(rawValue: "engagement_farming") == .engagementFarming)
+        #expect(ItemFeedbackReason.engagementFarming != .promo)
+        #expect(ItemFeedbackReason.offered.contains(.engagementFarming))
+    }
 }
 
 @Suite("X 卡片文本逻辑")

@@ -13,6 +13,9 @@ export const FEEDBACK_REASONS: { value: ItemFeedbackReason; label: string }[] = 
   { value: 'topic', label: '不感兴趣' },
   { value: 'promo', label: '广告营销' },
   { value: 'ai_slop', label: 'AI Slop' },
+  // 钩子 + FOMO + 「save this 🔖」+ 正文钓在评论区。和「广告营销」分开：那个是卖东西，
+  // 这个是钓互动，喂的通道也不同（话术是词汇级的，广告更接近意图）。
+  { value: 'engagement_farming', label: '钓互动' },
   { value: 'author', label: '不喜欢作者' },
 ];
 

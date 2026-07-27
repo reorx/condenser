@@ -27,10 +27,11 @@ import os
 import sqlite3
 from datetime import datetime
 from pathlib import Path
+from typing import get_args
 
 from fastapi.testclient import TestClient
 
-from condenser import db, x
+from condenser import db, types, x
 from condenser.app import create_app
 from condenser.items import x_key
 
@@ -252,17 +253,40 @@ def test_picking_a_chip_attaches_the_reason_to_the_same_row(env, monkeypatch):
 
 
 def test_every_chip_in_the_taxonomy_is_accepted(env, monkeypatch):
-    """The four chips map one-to-one onto the planned model channels — topic to the
-    dense-kNN channel, promo/ai_slop to the style channels, author to the author
-    prior. Locking them here is what makes the stored labels re-routable later."""
+    """The chips map one-to-one onto the planned model channels — topic to the
+    dense-kNN channel, promo/ai_slop/engagement_farming to the style channels,
+    author to the author prior. Locking them here is what makes the stored labels
+    re-routable later."""
     with _client() as client:
         _login(client)
         _seed_both(client, monkeypatch)
         key = x_key(PHOTO_TWEET)
 
-        for reason in ('topic', 'promo', 'ai_slop', 'author'):
+        for reason in ('topic', 'promo', 'ai_slop', 'engagement_farming', 'author'):
             assert _feedback(client, key, 'down', reason).status_code == 200
             assert _item(_x_timeline(client, feed='foryou'), key)['feedback_reason'] == reason
+
+
+def test_engagement_farming_is_its_own_attribute_not_a_flavour_of_promo(env, monkeypatch):
+    """Added 2026-07-27. The chip a reader reaches for on an influencer thread —
+    the hook, the FOMO, the "save this 🔖", the payoff parked in the replies — is
+    *not* the one they reach for on a plain advertisement, and the two must stay
+    separable in the training set: `promo` is about selling something, this is
+    about baiting interaction (X's own platform-manipulation vocabulary for it).
+    They also feed different channels — a lexical/n-gram channel can learn bait
+    phrasing outright, while `promo` is closer to intent — so a correction from
+    one to the other has to land as a *replacement* on the same row, never as a
+    second label the model would then see twice."""
+    with _client() as client:
+        _login(client)
+        _seed_both(client, monkeypatch)
+        key = x_key(PHOTO_TWEET)
+
+        _feedback(client, key, 'down', 'promo')
+        assert _feedback(client, key, 'down', 'engagement_farming').status_code == 200
+
+        assert _item(_x_timeline(client, feed='foryou'), key)['feedback_reason'] == 'engagement_farming'
+        assert db.ItemFeedback.select().count() == 1
 
 
 def test_switching_sides_drops_the_stale_reason(env, monkeypatch):
@@ -316,6 +340,18 @@ def test_an_unknown_reason_is_rejected(env, monkeypatch):
 
         assert _feedback(client, x_key(PHOTO_TWEET), 'down', 'because-i-said-so').status_code == 422
         assert db.ItemFeedback.select().count() == 0
+
+
+def test_the_request_schema_and_the_stored_taxonomy_cannot_drift():
+    """The chip list is written twice — once as the door's validation (the pydantic
+    Literal) and once as the vocabulary of what is in the column (FEEDBACK_REASONS).
+    Adding a chip to only one of them fails in the worst possible direction: the
+    endpoint accepts a value nothing else in the system knows how to route, and it
+    is a stored label, so the damage is permanent. Pin them to each other."""
+    annotation = types.FeedbackBody.model_fields['reason'].annotation  # Optional[Literal[...]]
+    literal = next(arg for arg in get_args(annotation) if get_args(arg))
+
+    assert set(get_args(literal)) == set(db.FEEDBACK_REASONS)
 
 
 def test_saved_records_carry_the_reason_too(env, monkeypatch):
