@@ -24,10 +24,12 @@ whole path stays inert — nothing is described, nothing is charged.
 import asyncio
 import json
 import logging
-from typing import Optional
+from dataclasses import dataclass, field
+from typing import Iterable, Optional
 
 import httpx
 
+from .channels import ChannelScore
 from .config import Settings
 
 log = logging.getLogger('condenser.attributes')
@@ -136,6 +138,169 @@ def _strip_fence(payload: str) -> str:
 
 def _strings(value) -> list[str]:
     return [item for item in value if isinstance(item, str)] if isinstance(value, list) else []
+
+
+# --- channel C: scoring the attributes ----------------------------------------
+#
+# Extraction above is what a tweet *is*; this is what the reader has made of tweets
+# like it. The split is the point: the model reports, the counts judge, and the
+# counts improve with every label without another API call.
+
+# Which style flag a down-reason chip actually accuses. The chips are the reader's
+# own words for *why*, and routing them is the entire reason they exist: a down
+# whose reason is 'promo' says the promo attribute earned it — the emoji that
+# happened to be in the same tweet are not implicated. `topic` and `author` are
+# real reasons that this channel cannot represent; they belong to the embedding kNN
+# and the author prior. They map to nothing on purpose, and are named here rather
+# than left out so that a new chip cannot be added without deciding where it goes
+# (a test pins this against db.FEEDBACK_REASONS).
+REASON_FLAGS: dict[str, tuple[str, ...]] = {
+    'promo': ('promo_cta', 'crypto_shill', 'dropshipping', 'giveaway'),
+    'ai_slop': ('ai_slop',),
+    # humblebrag rides along here rather than under promo: success theatre sells
+    # attention, not a product, which is the line the chip itself draws
+    # (see the engagement_farming note in AGENTS.md).
+    'engagement_farming': ('engagement_bait', 'thread_bait', 'poll_bait', 'listicle', 'outrage', 'humblebrag'),
+    'topic': (),  # channel B's business
+    'author': (),  # channel A's business
+}
+
+# Smoothing on the per-flag counts (Beta/Laplace): a flag seen once must not be
+# certain of itself. Same role ALPHA plays in ngram.py, same value, same reason.
+FLAG_ALPHA = 1.0
+# Confidence saturates as observations accumulate: n/(n+k). No hard threshold to
+# tune — a flag seen 5 times is half a vote, seen 20 times nearly a whole one.
+CONFIDENCE_SMOOTH = 5.0
+# A negative needs two independent downvotes behind the deciding flag, mirroring the
+# kNN's ``min_down_neighbors``: one mis-tap must not condemn an attribute.
+MIN_DOWN_FOR_NEGATIVE = 2
+
+LABEL_WEIGHT = {'up': 1.0, 'save': 2.0, 'down': 1.0}
+
+
+@dataclass
+class LabeledFlags:
+    """One training sample: a labeled tweet's flags, the reader's verdict, the chip."""
+
+    flags: list[str]
+    verdict: str  # 'up' | 'save' | 'down'
+    reason: Optional[str] = None
+
+
+@dataclass
+class FlagModel:
+    """How each attribute has fared with this reader. Counts are fractional because
+    an unexplained downvote is shared out across the flags it might have meant."""
+
+    up: dict[str, float] = field(default_factory=dict)
+    down: dict[str, float] = field(default_factory=dict)
+
+    def observations(self, flag: str) -> float:
+        return self.up.get(flag, 0.0) + self.down.get(flag, 0.0)
+
+
+def fit_flags(samples: Iterable[LabeledFlags]) -> FlagModel:
+    """Count each attribute's ups and downs, routing downs through their chip.
+
+    The two sides are counted differently, and the asymmetry is the design: an
+    upvote has no chip and cannot have one, so every flag on a liked tweet is
+    credited in full. A downvote *does* carry the reader's own account of what was
+    wrong, so it is charged only to the flags that account names — and to all of
+    them, in shares, when it does not.
+    """
+    model = FlagModel()
+    for sample in samples:
+        flags = [flag for flag in sample.flags if flag in STYLE_FLAGS]
+        if not flags:
+            continue
+        weight = LABEL_WEIGHT.get(sample.verdict, 1.0)
+        if sample.verdict != 'down':
+            for flag in flags:
+                model.up[flag] = model.up.get(flag, 0.0) + weight
+            continue
+        for flag, share in _charged(flags, sample.reason).items():
+            model.down[flag] = model.down.get(flag, 0.0) + weight * share
+    return model
+
+
+def _charged(flags: list[str], reason: Optional[str]) -> dict[str, float]:
+    """Which flags a downvote is charged to, and in what shares.
+
+    Three cases, and the middle one was bought with real data. Measured on 59
+    production labels under the first, simpler rule ("a chip that matches nothing
+    charges nobody"), ``humblebrag`` scored **+0.600 while sitting on seven
+    downvoted tweets**: upvotes are credited to every flag in full — an upvote has
+    no chip and cannot have one — so any flag the chips never reach could only ever
+    accumulate positive evidence. The fix is to fall back rather than discard: the
+    reader did dislike *something*, and if the chip they chose does not match how
+    the extractor described the tweet, that is a disagreement about the
+    description, not a reason to drop the label.
+    """
+    if reason is None:
+        # bag-level: the label is real but unattributed, so it convicts nothing on
+        # its own — every candidate takes a share
+        return {flag: 1.0 / len(flags) for flag in flags}
+    if not REASON_FLAGS.get(reason):
+        # 'topic' / 'author': the reader said the problem was *not* the style, so
+        # spreading it over the style flags would be the entanglement defect again
+        return {}
+    accused = [flag for flag in flags if flag in REASON_FLAGS[reason]]
+    if not accused:
+        return {flag: 1.0 / len(flags) for flag in flags}
+    return {flag: 1.0 for flag in accused}
+
+
+def score_flags(model: FlagModel, flags: list[str], settings: Settings) -> Optional[ChannelScore]:
+    """This channel's opinion on a tweet, from its attributes alone.
+
+    One clearly bad attribute carries the tweet — a post with an unmistakable
+    marketing line *is* marketing, however much innocuous material surrounds it,
+    and averaging dilutes exactly the signal the channel exists to catch. With no
+    negative evidence the strongest positive speaks instead; with no sufficiently
+    observed flag at all the channel abstains, which at ~60 labels is the usual and
+    correct answer.
+
+    Each flag's rate is **shrunk toward zero by how much evidence stands behind
+    it**, so that a rare flag cannot outshout a well-established one: measured on
+    59 production labels, `thread_bait` sat at -0.600 off three sightings while
+    `promo_cta` sat at -0.405 off eighteen, and on a tweet carrying both it was the
+    three sightings that decided. Shrinkage puts the observed flag back in front.
+
+    It is *not* a fix for the unreliable tail, which was measured and has a
+    different cause: the five most negative scores in the whole label set are
+    upvoted promo tweets, because holding one out removes one of `promo_cta`'s
+    only five upvotes and makes the flag look worse exactly on the fold where it
+    is wrong. That is leave-one-out variance on a dominant flag, and no scoring
+    rule reaches it — only more labels do.
+    """
+    scored = [
+        (flag, _flag_score(model, flag) * _evidence(model, flag))
+        for flag in dict.fromkeys(flags)
+        if model.observations(flag) >= settings.condenser_verdict_c_min_observations
+    ]
+    if not scored:
+        return None
+    driver, value = min(scored, key=lambda item: item[1])
+    if value > 0:
+        driver, value = max(scored, key=lambda item: item[1])
+    return ChannelScore(
+        score=value,
+        confidence=_evidence(model, driver),
+        corroborated=model.down.get(driver, 0.0) >= MIN_DOWN_FOR_NEGATIVE,
+        meta={'driver': driver, 'flags': [[flag, round(item, 3)] for flag, item in scored]},
+    )
+
+
+def _flag_score(model: FlagModel, flag: str) -> float:
+    """[-1, +1]: how this attribute has fared, smoothed. No data -> 0.0."""
+    down, up = model.down.get(flag, 0.0), model.up.get(flag, 0.0)
+    return 1.0 - 2.0 * (down + FLAG_ALPHA) / (down + up + 2 * FLAG_ALPHA)
+
+
+def _evidence(model: FlagModel, flag: str) -> float:
+    """How much of a claim this flag has earned: n/(n+k), in [0, 1)."""
+    observations = model.observations(flag)
+    return observations / (observations + CONFIDENCE_SMOOTH)
 
 
 async def extract_attributes(texts: list[str], settings: Settings) -> list[Optional[dict]]:

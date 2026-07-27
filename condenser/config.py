@@ -115,6 +115,11 @@ class Settings(BaseSettings):
     # against a full archive would otherwise be an unbounded bill.
     condenser_attr_batch: int = 40
     condenser_attr_concurrency: int = 4
+    # Channel C's OOD gate: an attribute with fewer labeled observations than this
+    # does not get to decide anything. The plan's estimate is ~20 per flag before a
+    # flag means much, so at today's label count the channel abstains on almost
+    # everything — which is the correct answer, not a failure.
+    condenser_verdict_c_min_observations: int = 6
 
     # --- verdict channel D: n-gram bayes (condenser/ngram.py) ---
     # Not wired into the running verdict yet (plan v2 step 1 ships the channel and

@@ -1285,6 +1285,14 @@ def x_attribute_ids(model: str) -> set[int]:
     return {row.tweet_id for row in XAttribute.select(XAttribute.tweet_id).where(XAttribute.model == model)}
 
 
+def x_attributes_for(tweet_ids: set[int], model: str) -> dict[int, list[str]]:
+    """tweet_id -> style flags, for the tweets described under this model@taxonomy."""
+    if not tweet_ids:
+        return {}
+    rows = XAttribute.select().where((XAttribute.tweet_id.in_(list(tweet_ids))) & (XAttribute.model == model))
+    return {row.tweet_id: json.loads(row.style_flags) for row in rows}
+
+
 def x_attribute_count(model: Optional[str] = None) -> int:
     query = XAttribute.select()
     return (query.where(XAttribute.model == model) if model else query).count()

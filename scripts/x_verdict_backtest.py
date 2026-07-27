@@ -59,7 +59,7 @@ from typing import Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from condenser import db, embedding, ngram, vectors, verdict  # noqa: E402
+from condenser import attributes, db, embedding, ngram, vectors, verdict  # noqa: E402
 from condenser.channels import ChannelScore, combine  # noqa: E402
 from condenser.config import Settings, get_settings  # noqa: E402
 from condenser.db import ItemFeedback  # noqa: E402
@@ -72,7 +72,7 @@ EXPECTED = {'up': verdict.POSITIVE, 'save': verdict.POSITIVE, 'down': verdict.NE
 STYLE_REASONS = ('promo', 'ai_slop', 'engagement_farming', 'author')
 
 POSITIVE_THRESHOLDS = (0.15, 0.25, 0.35, 0.45)
-NEGATIVE_THRESHOLDS = (-0.35, -0.45, -0.55, -0.65)
+NEGATIVE_THRESHOLDS = (-0.25, -0.35, -0.45, -0.55, -0.65)
 
 # Below this many calls a precision figure is anecdote, not evidence.
 MIN_CALLS_TO_RANK = 5
@@ -89,6 +89,7 @@ class Sample:
     reason: Optional[str]  # the down chip, when there was one
     text: str  # what the judge reads (same text that got embedded)
     vector: Optional[list[float]]
+    flags: list[str]  # the LLM's style flags (channel C); empty when undescribed
 
     @property
     def positive(self) -> bool:
@@ -146,6 +147,32 @@ class TopicChannel:
         ]
 
 
+class AttributeChannel:
+    """Channel C — per-attribute counts over the LLM's reading of each tweet."""
+
+    key = 'c'
+    title = 'LLM attributes (style flags)'
+    needs_vector = False
+
+    def __init__(self, settings: Settings):
+        self._model = attributes.FlagModel()
+
+    def prepare(self, train: list[Sample]) -> None:
+        self._model = attributes.fit_flags(
+            attributes.LabeledFlags(flags=sample.flags, verdict=sample.label, reason=sample.reason) for sample in train
+        )
+
+    def evidence(self, sample: Sample) -> tuple[attributes.FlagModel, list[str]]:
+        return self._model, sample.flags
+
+    def score(self, evidence, settings: Settings) -> Optional[ChannelScore]:
+        model, flags = evidence
+        return attributes.score_flags(model, flags, settings)
+
+    def grid(self) -> list[tuple[str, dict]]:
+        return [(f'obs>={minimum}', {'condenser_verdict_c_min_observations': minimum}) for minimum in (2, 4, 6, 10)]
+
+
 class NgramChannel:
     """Channel D — naive Bayes over the words of the labeled tweets."""
 
@@ -187,8 +214,8 @@ class NgramChannel:
         ]
 
 
-CHANNELS = {'b': TopicChannel, 'd': NgramChannel}
-DEFAULT_WEIGHTS = {'b': 1.0, 'd': 0.5}
+CHANNELS = {'b': TopicChannel, 'c': AttributeChannel, 'd': NgramChannel}
+DEFAULT_WEIGHTS = {'b': 1.0, 'c': 1.0, 'd': 0.5}
 
 
 # --- data ---------------------------------------------------------------------
@@ -203,6 +230,7 @@ def load_samples(settings: Settings) -> list[Sample]:
     }
     blobs = db.x_embedding_vectors(set(labels), embedding.model_tag(settings))
     texts = {row['tweet_id']: verdict.judge_text(row) for row in db.x_tweet_judge_rows(list(labels))}
+    described = db.x_attributes_for(set(labels), attributes.model_tag(settings))
     return [
         Sample(
             tweet_id=tweet_id,
@@ -210,6 +238,7 @@ def load_samples(settings: Settings) -> list[Sample]:
             reason=reasons.get(tweet_id),
             text=texts.get(tweet_id) or '',
             vector=vectors.unpack(blobs[tweet_id]) if tweet_id in blobs else None,
+            flags=described.get(tweet_id, []),
         )
         for tweet_id, label in sorted(labels.items())
     ]
