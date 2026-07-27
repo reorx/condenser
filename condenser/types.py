@@ -131,6 +131,16 @@ class ForwardMessageBody(BaseModel):
     comment: Optional[str] = None
 
 
+class ForwardItemBody(ForwardMessageBody):
+    """Source-generic forward: any item key, plus the same optional comment.
+
+    For a non-Telegram item there is no native forward, so an empty comment means
+    "share it with nothing added" — the rendered title + source lines alone.
+    """
+
+    key: str
+
+
 class AppMetaPatch(BaseModel):
     """Runtime app settings backed by app_meta. None = leave unchanged."""
 

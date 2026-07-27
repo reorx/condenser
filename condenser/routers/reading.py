@@ -11,8 +11,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from .. import db, records, timeline
 from ..auth import require_auth
-from ..items import ItemKey, parse_key
 from ..types import FeedbackBody, HideBody, ReadBody, ReadBulkBody, RecordBody
+from .common import parse_key_or_422
 
 router = APIRouter(prefix='/api', tags=['reading'], dependencies=[Depends(require_auth)])
 
@@ -21,13 +21,6 @@ _SOURCE_PATTERN = '^(telegram|hn|x)$'
 # A multi-feed source (X) can be narrowed further; the provider normalizes the key,
 # so '@Handle' and 'handle' are the same feed.
 _FEED_QUERY = Query(None, max_length=64, description='narrow a multi-feed source to one feed (X)')
-
-
-def _parse_key_or_422(key: str) -> ItemKey:
-    try:
-        return parse_key(key)
-    except ValueError as e:
-        raise HTTPException(status_code=422, detail=str(e))
 
 
 @router.get('/timeline')
@@ -72,7 +65,7 @@ def get_timeline_new(
 
 @router.post('/read')
 def post_read(body: ReadBody):
-    db.mark_read([_parse_key_or_422(k) for k in body.keys])
+    db.mark_read([parse_key_or_422(k) for k in body.keys])
     return {'ok': True}
 
 
@@ -84,13 +77,13 @@ def post_read_bulk(body: ReadBulkBody):
 
 @router.post('/hidden')
 def post_hidden(body: HideBody):
-    db.hide_item(_parse_key_or_422(body.key))
+    db.hide_item(parse_key_or_422(body.key))
     return {'ok': True}
 
 
 @router.delete('/hidden/{key}')
 def delete_hidden(key: str):
-    db.unhide_item(_parse_key_or_422(key))
+    db.unhide_item(parse_key_or_422(key))
     return {'ok': True}
 
 
@@ -99,13 +92,13 @@ def post_feedback(body: FeedbackBody):
     """Label an item up/down (plan Phase 3), optionally with the reason chip (v9).
     Nothing else happens to it — no verdict, no hiding, no read marker; the label is
     training data for Phase 4."""
-    db.set_feedback(_parse_key_or_422(body.key), body.verdict, body.reason)
+    db.set_feedback(parse_key_or_422(body.key), body.verdict, body.reason)
     return {'ok': True}
 
 
 @router.delete('/feedback/{key}')
 def delete_feedback(key: str):
-    db.clear_feedback(_parse_key_or_422(key))
+    db.clear_feedback(parse_key_or_422(key))
     return {'ok': True}
 
 
@@ -116,13 +109,13 @@ def get_records():
 
 @router.post('/records')
 def post_record(body: RecordBody):
-    if not records.save_item(_parse_key_or_422(body.key)):
+    if not records.save_item(parse_key_or_422(body.key)):
         raise HTTPException(status_code=404, detail='item not found')
     return {'ok': True}
 
 
 @router.delete('/records/{key}')
 def delete_record(key: str):
-    k = _parse_key_or_422(key)
+    k = parse_key_or_422(key)
     db.delete_saved_item(k.source, k.ref1, k.ref2)
     return {'ok': True}

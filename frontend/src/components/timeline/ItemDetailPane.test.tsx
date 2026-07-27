@@ -19,6 +19,9 @@ vi.mock('@/lib/api', () => ({
     getAppMeta: vi.fn().mockResolvedValue({ schema_version: 6, backfill_days: 7, forward_channel: null }),
     hideItem: vi.fn().mockResolvedValue({ ok: true }),
     unhideItem: vi.fn().mockResolvedValue({ ok: true }),
+    saveRecord: vi.fn().mockResolvedValue({ ok: true }),
+    deleteRecord: vi.fn().mockResolvedValue({ ok: true }),
+    forwardItem: vi.fn().mockResolvedValue({ status: 'ok', mode: 'quote', link: 'https://t.me/mych/9' }),
   },
   errorMessage: (_e: unknown, fallback: string) => fallback,
   channelAvatarUrl: (id: number) => `/api/channels/${id}/avatar`,
@@ -121,7 +124,11 @@ function renderPane(item: TimelineItem) {
 describe('ItemDetailPane', () => {
   beforeEach(() => {
     vi.mocked(api.hideItem).mockClear();
+    vi.mocked(api.saveRecord).mockClear();
+    vi.mocked(api.deleteRecord).mockClear();
     vi.mocked(toast).mockClear();
+    vi.mocked(toast.info).mockClear();
+    vi.mocked(api.getAppMeta).mockResolvedValue({ schema_version: 6, backfill_days: 7, forward_channel: null });
   });
 
   it('renders the 条目详情 title and the TG item info', async () => {
@@ -152,5 +159,69 @@ describe('ItemDetailPane', () => {
 
     await userEvent.setup().click(screen.getByRole('button', { name: '隐藏' }));
     await waitFor(() => expect(api.hideItem).toHaveBeenCalledWith('hn:101'));
+  });
+
+  it('saves by key and flips the label, then unsaves on a second click', async () => {
+    renderPane(hnItem);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole('button', { name: '收藏' }));
+    await waitFor(() => expect(api.saveRecord).toHaveBeenCalledWith('hn:101'));
+
+    // The context holds a snapshot, so the pane mirrors its own mutation locally.
+    await user.click(await screen.findByRole('button', { name: '已收藏' }));
+    await waitFor(() => expect(api.deleteRecord).toHaveBeenCalledWith('hn:101'));
+  });
+
+  it('drops a stale save override when the item is reopened after an out-of-band change', async () => {
+    // The pane is mounted once for the app's lifetime, so an override left over from a
+    // previous session must not survive into the next one — every card carries its own
+    // bookmark button, and it can have flipped the item while the pane was closed.
+    function Controls() {
+      const { openPane } = useItemDetailPane();
+      // a fresh envelope each time, the way an updated cache hands one over
+      return <button onClick={() => openPane({ ...hnItem })}>打开</button>;
+    }
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={qc}>
+        <ItemDetailPaneProvider>
+          <Controls />
+          <ItemDetailPane />
+        </ItemDetailPaneProvider>
+      </QueryClientProvider>,
+    );
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole('button', { name: '打开' }));
+    await user.click(await screen.findByRole('button', { name: '收藏' }));
+    await screen.findByRole('button', { name: '已收藏' });
+
+    await user.click(screen.getByRole('button', { name: 'Close' }));
+    await user.click(await screen.findByRole('button', { name: '打开' }));
+
+    expect(await screen.findByRole('button', { name: '收藏' })).toBeInTheDocument();
+  });
+
+  it('offers forward on every source, pointing at Settings when no target is configured', async () => {
+    renderPane(hnItem);
+
+    await userEvent.setup().click(screen.getByRole('button', { name: '转发' }));
+
+    await waitFor(() => expect(toast.info).toHaveBeenCalled());
+    expect(screen.queryByText('转发到我的频道')).not.toBeInTheDocument();
+  });
+
+  it('opens the forward dialog for a non-TG item once a target channel exists', async () => {
+    vi.mocked(api.getAppMeta).mockResolvedValue({
+      schema_version: 6,
+      backfill_days: 7,
+      forward_channel: '@mych',
+    });
+    renderPane(hnItem);
+
+    await userEvent.setup().click(await screen.findByRole('button', { name: '转发' }));
+
+    expect(await screen.findByText('转发到我的频道')).toBeInTheDocument();
   });
 });

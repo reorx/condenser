@@ -1,15 +1,17 @@
 import SwiftUI
 import CondenserKit
 
-/// 「转发到我的频道」sheet：评论输入 + 确认。评论非空 → quote 新消息
-/// （评论文字 + t.me 链接），留空 → 原生 forward。目标频道在设置页配置
+/// 「转发到我的频道」sheet：评论输入 + 确认。Telegram 条目评论非空 → quote 新消息
+/// （评论文字 + t.me 链接），留空 → 原生 forward；其他信源没有「原生转发」这回事，
+/// 服务端把标题和链接渲染成一条新消息，留空就是只发这条。目标频道在设置页配置
 /// （app_meta.forward_channel），未配置时引导去设置。
 struct ForwardDialog: View {
-    let channelID: Int
-    let messageID: Int
+    let itemKey: String
+    /// 只影响文案：留空时到底是「原样转发」还是「只发标题和链接」，两件事不一样
+    let isTelegram: Bool
     #if DEBUG
-    /// CLI 走查（debug 路由 forward/<cid>/<mid>/<comment>）：就绪后自动填入并提交，
-    /// "" = 原生转发。真实网络请求，真实落地目标频道。
+    /// CLI 走查（debug 路由 forward/<item key>/<comment>）：就绪后自动填入并提交，
+    /// "" = 不带评论。真实网络请求，真实落地目标频道。
     var debugAutoComment: String?
     #endif
 
@@ -113,7 +115,9 @@ struct ForwardDialog: View {
 
     private var composer: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("写上自己的看法会通过文字 + 链接引用的形式发布新消息。")
+            Text(isTelegram
+                ? "写上自己的看法会通过文字 + 链接引用的形式发布新消息。"
+                : "写上自己的看法会和标题、链接一起发布成一条新消息。")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
             TextEditor(text: $comment)
@@ -122,7 +126,9 @@ struct ForwardDialog: View {
                 .background(Color(.systemGray6), in: RoundedRectangle(cornerRadius: 10))
                 .overlay(alignment: .topLeading) {
                     if comment.isEmpty {
-                        Text("留空则原样转发（保留 Forwarded from 头）")
+                        Text(isTelegram
+                            ? "留空则原样转发（保留 Forwarded from 头）"
+                            : "留空则只发标题和链接")
                             .font(.footnote)
                             .foregroundStyle(.tertiary)
                             .padding(.top, 14)
@@ -156,8 +162,7 @@ struct ForwardDialog: View {
         phase = .sending
         Task {
             do {
-                let result = try await reader.api.forwardMessage(
-                    channelID: channelID, messageID: messageID, comment: comment)
+                let result = try await reader.api.forwardItem(key: itemKey, comment: comment)
                 phase = .done(link: result.link)
             } catch {
                 phase = .ready

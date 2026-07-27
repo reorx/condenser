@@ -228,9 +228,10 @@ export const api = {
   // Views/forwards/reactions, read live from Telegram each time (never cached server-side).
   messageStats: (channelId: number, messageId: number) =>
     request<MessageStats>(`/api/messages/${channelId}/${messageId}/stats`),
-  // Republish into the configured forward channel: comment → quote message, empty → native forward.
-  forwardMessage: (channelId: number, messageId: number, comment?: string) =>
-    post<ForwardResult>(`/api/messages/${channelId}/${messageId}/forward`, { comment: comment ?? null }),
+  // Republish any item into the configured forward channel. A TG item forwards natively
+  // (or quotes its t.me link); the other sources are rendered into a message server-side.
+  forwardItem: (key: string, comment?: string) =>
+    post<ForwardResult>('/api/forward', { key, comment: comment ?? null }),
 
   // ---- app meta (runtime settings) ----
   getAppMeta: () => request<AppMeta>('/api/app/meta'),

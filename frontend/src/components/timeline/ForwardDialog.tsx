@@ -7,21 +7,23 @@ import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
 import { api, errorMessage } from '@/lib/api';
-import type { MsgRef } from '@/lib/types';
+import type { TimelineItem } from '@/lib/types';
 
 interface ForwardDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  msgRef: MsgRef;
+  item: TimelineItem;
 }
 
-/** 转发到 app_meta.forward_channel 配置的频道：评论非空 → 文字 + t.me 链接引用的新消息，
- *  留空 → 原生 forward。App 其余 UI 为英文，此处发布动作面向用户自己的中文频道，特意保留中文文案。 */
-export function ForwardDialog({ open, onOpenChange, msgRef }: ForwardDialogProps) {
+/** 转发到 app_meta.forward_channel 配置的频道。Telegram 条目：评论非空 → 文字 + t.me 链接
+ *  的新消息，留空 → 原生 forward。其他信源没有「原生转发」这回事，服务端把标题和链接渲染成
+ *  一条新消息，留空就是只发这条，不加评论。 */
+export function ForwardDialog({ open, onOpenChange, item }: ForwardDialogProps) {
   const [comment, setComment] = useState('');
+  const isTelegram = item.source === 'telegram';
 
   const forward = useMutation({
-    mutationFn: () => api.forwardMessage(msgRef.channel_id, msgRef.message_id, comment.trim() || undefined),
+    mutationFn: () => api.forwardItem(item.key, comment.trim() || undefined),
     onSuccess: (res) => {
       setComment('');
       onOpenChange(false);
@@ -46,14 +48,18 @@ export function ForwardDialog({ open, onOpenChange, msgRef }: ForwardDialogProps
       <DialogContent className="sm:max-w-sm">
         <DialogHeader>
           <DialogTitle>转发到我的频道</DialogTitle>
-          <DialogDescription>写上自己的看法会通过文字 + 链接引用的形式发布新消息。</DialogDescription>
+          <DialogDescription>
+            {isTelegram
+              ? '写上自己的看法会通过文字 + 链接引用的形式发布新消息。'
+              : '写上自己的看法会和标题、链接一起发布成一条新消息。'}
+          </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-3">
           <Textarea
             value={comment}
             onChange={(e) => setComment(e.target.value)}
-            placeholder="留空则原样转发…"
+            placeholder={isTelegram ? '留空则原样转发…' : '留空则只发标题和链接…'}
             autoFocus
           />
           <div className="flex justify-end gap-2">

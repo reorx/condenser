@@ -68,11 +68,6 @@ struct XDetailSheet: View {
                 }
             }
             Spacer()
-            Button(action: onToggleSaved) {
-                Image(systemName: item.isSaved ? "star.fill" : "star")
-                    .foregroundStyle(item.isSaved ? .orange : .secondary)
-            }
-            .buttonStyle(.plain)
         }
     }
 
@@ -175,7 +170,8 @@ struct XDetailSheet: View {
     }
 
     private var actions: some View {
-        HStack(spacing: 10) {
+        ItemActionRow {
+            ItemActionButtons(item: item, onToggleSaved: onToggleSaved)
             Button {
                 safariItem = SafariItem(url: tweet.tweetURL)
             } label: {
@@ -192,7 +188,6 @@ struct XDetailSheet: View {
                 }
                 .buttonStyle(.bordered)
             }
-            Spacer()
         }
     }
 

@@ -23,9 +23,10 @@ from telememo.service import TelegramService
 from telememo.telegram import convert_channel_to_info
 from telememo.types import ChannelInfo, DisplayMessage, SignInResult
 
-from . import db, filters
+from . import db, filters, forward
 from .config import Settings
 from .crypto import decrypt_session, encrypt_session
+from .items import ItemKey
 
 log = logging.getLogger('condenser.tg')
 
@@ -442,12 +443,19 @@ class TgManager:
             reactions=_convert_reactions(getattr(message, 'reactions', None)),
         )
 
-    async def forward_message(self, channel_id: int, message_id: int, comment: Optional[str] = None) -> dict:
-        """Republish a message to the configured target channel.
+    async def forward_item(self, key: ItemKey, comment: Optional[str] = None) -> dict:
+        """Republish any item to the configured target channel.
 
-        With a comment: a *new* message ``comment\\n\\n<t.me link>`` (Telegram renders the link
-        as a quote card). Without one: a native ``forward_messages`` keeping the "Forwarded
-        from" header. Returns the mode plus the t.me link of the message that just landed.
+        A Telegram item keeps its two native modes: with a comment, a *new* message
+        ``comment\\n\\n<t.me link>`` (Telegram expands the bare link into a full message
+        card — channel, text and media, which beats any hyperlink we could write);
+        without one, a native ``forward_messages`` keeping the "Forwarded from" header.
+
+        Every other source has no Telegram original to forward, so it is rendered into
+        HTML by ``forward.render`` and sent as a new message. ``mode`` follows the same
+        rule everywhere — a comment makes it a quote, no comment makes it a plain share.
+
+        Returns the mode plus the t.me link of the message that just landed.
         """
         service = self._require_service()
         configured = db.get_meta('forward_channel')
@@ -456,23 +464,27 @@ class TgManager:
         target = _normalize_target(configured)
         comment = (comment or '').strip()
         try:
-            if comment:
-                text = f'{comment}\n\n{channel_message_url(channel_id, message_id)}'
+            if key.source != 'telegram':
+                # render() runs before the send, so a missing source row 404s without
+                # having published anything
+                sent = await service.client.send_message(target, forward.render(key, comment), parse_mode='html')
+            elif comment:
+                text = f'{comment}\n\n{channel_message_url(key.ref1, key.ref2)}'
                 sent = await service.client.send_message(target, text)
-                mode = 'quote'
             else:
-                sent = await service.client.forward_messages(
-                    target, message_id, from_peer=self._channel_handle(channel_id)
-                )
-                mode = 'forward'
+                sent = await service.client.forward_messages(target, key.ref2, from_peer=self._channel_handle(key.ref1))
         except MessageIdInvalidError:  # the source message is gone
-            raise TelegramMessageNotFound(f'message {channel_id}/{message_id} not found')
+            raise TelegramMessageNotFound(f'message {key.ref1}/{key.ref2} not found')
         except UnauthorizedError:
             await self._demote_session()
             raise
         # forward_messages may hand back a list when Telethon batches; the id we want is the first
         sent_id = sent[0].id if isinstance(sent, list) else sent.id
-        return {'status': 'ok', 'mode': mode, 'link': _sent_message_url(target, sent_id)}
+        return {
+            'status': 'ok',
+            'mode': 'quote' if comment else 'forward',
+            'link': _sent_message_url(target, sent_id),
+        }
 
     # ---- subscription orchestration (used by routers) ----
     def _register_subscription(self, info: ChannelInfo) -> ChannelInfo:

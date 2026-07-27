@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ExternalLink, EyeOff, Forward, Info } from 'lucide-react';
+import { Bookmark, ExternalLink, EyeOff, Forward, Info } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
@@ -8,11 +8,14 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { useAppMeta } from '@/hooks/useAppMeta';
 import { useHideItem, useUnhideItem } from '@/hooks/useHideItem';
 import { useLinkPreviews, useUrlPreview } from '@/hooks/useLinkPreviews';
+import { useSaveToggle } from '@/hooks/useSaveToggle';
 import { useSubscriptions } from '@/hooks/useSubscriptions';
 import { errorMessage } from '@/lib/api';
 import { tgMessageUrl } from '@/lib/format';
 import { useItemDetailPane } from '@/lib/itemDetailPane';
 import { hnCommentsUrl, xPreviewUrls, xTweetUrl } from '@/lib/sources';
+import type { TimelineItem } from '@/lib/types';
+import { cn } from '@/lib/utils';
 
 import { ForwardDialog } from './ForwardDialog';
 import { ItemDetailInfo } from './ItemDetailInfo';
@@ -33,9 +36,10 @@ function CardSkeleton() {
 }
 
 /**
- * Right-side item detail pane: full info block on top, link previews in the middle,
- * actions (original link + hide) at the bottom. Mounted once (in AppShell) and driven
- * by the ItemDetailPane context, so it works across views.
+ * Right-side item detail pane: full info block on top, the item's actions right under
+ * it (save + forward, every source; live TG stats share the row), link previews in the
+ * middle, original link + hide at the bottom. Mounted once (in AppShell) and driven by
+ * the ItemDetailPane context, so it works across views.
  */
 export function ItemDetailPane() {
   const { open, close } = useItemDetailPane();
@@ -68,6 +72,33 @@ export function ItemDetailPane() {
 
   const hide = useHideItem();
   const unhide = useUnhideItem();
+
+  // The context holds the envelope captured at click time, so `is_saved` is a snapshot.
+  // While the pane is open the only writer is the button below, so mirroring its own
+  // mutation here is exactly right — but the pane is mounted for the app's lifetime, so
+  // the override has to expire with the session. It is tied to the envelope **object**,
+  // not its key: an out-of-band unsave (every card has its own bookmark) replaces the
+  // cached item, so reopening hands over a different object and the override is dropped
+  // on identity. Same object = nothing changed = the override is still the truth.
+  const save = useSaveToggle();
+  const [savedOverride, setSavedOverride] = useState<{ item: TimelineItem; saved: boolean } | null>(null);
+  const isSaved = savedOverride?.item === open ? savedOverride.saved : (open?.is_saved ?? false);
+
+  const toggleSaved = () => {
+    if (!open) return;
+    const item = open;
+    const next = !isSaved;
+    setSavedOverride({ item, saved: next });
+    save.mutate(
+      { key: item.key, saved: next },
+      {
+        onError: (e) => {
+          setSavedOverride({ item, saved: !next });
+          toast.error(errorMessage(e, next ? '收藏失败' : '取消收藏失败'));
+        },
+      },
+    );
+  };
 
   const hideOpenItem = () => {
     if (!open) return;
@@ -109,25 +140,33 @@ export function ItemDetailPane() {
           </div>
         )}
 
-        {msgRef && (
-          <div className="flex items-center gap-3 border-b px-4 py-3">
-            <div className="min-w-0 flex-1">
-              <MessageStatsRow msgRef={msgRef} />
-            </div>
+        {open && (
+          <div className="flex items-center gap-2 border-b px-4 py-3">
+            {/* Live engagement numbers exist for Telegram only; the actions are source-generic. */}
+            <div className="min-w-0 flex-1">{msgRef && <MessageStatsRow msgRef={msgRef} />}</div>
+            <Button
+              variant="outline"
+              size="sm"
+              className={cn('shrink-0', isSaved && 'text-amber-500 hover:text-amber-500')}
+              onClick={toggleSaved}
+            >
+              <Bookmark className={cn('size-4', isSaved && 'fill-current')} />
+              {isSaved ? '已收藏' : '收藏'}
+            </Button>
             <Button
               variant="outline"
               size="sm"
               className="shrink-0"
               onClick={() => {
                 if (!meta.data?.forward_channel) {
-                  toast.info('Set a forward target channel in Settings first.');
+                  toast.info('请先在设置中配置转发的目标频道。');
                   return;
                 }
                 setForwardOpen(true);
               }}
             >
               <Forward className="size-4" />
-              Forward
+              转发
             </Button>
           </div>
         )}
@@ -185,7 +224,7 @@ export function ItemDetailPane() {
           </div>
         )}
 
-        {msgRef && <ForwardDialog open={forwardOpen} onOpenChange={setForwardOpen} msgRef={msgRef} />}
+        {open && <ForwardDialog open={forwardOpen} onOpenChange={setForwardOpen} item={open} />}
       </SheetContent>
     </Sheet>
   );

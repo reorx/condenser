@@ -58,11 +58,6 @@ struct HnDetailSheet: View {
                 }
             }
             Spacer()
-            Button(action: onToggleSaved) {
-                Image(systemName: item.isSaved ? "star.fill" : "star")
-                    .foregroundStyle(item.isSaved ? .orange : .secondary)
-            }
-            .buttonStyle(.plain)
         }
     }
 
@@ -121,7 +116,8 @@ struct HnDetailSheet: View {
     }
 
     private var actions: some View {
-        HStack(spacing: 10) {
+        ItemActionRow {
+            ItemActionButtons(item: item, onToggleSaved: onToggleSaved)
             if let url = story.externalURL {
                 Button {
                     safariItem = SafariItem(url: url)
@@ -138,7 +134,6 @@ struct HnDetailSheet: View {
                     .font(.footnote)
             }
             .buttonStyle(.bordered)
-            Spacer()
         }
     }
 }

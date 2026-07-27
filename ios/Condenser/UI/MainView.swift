@@ -77,7 +77,7 @@ struct MainView: View {
         }
         .sheet(item: $debugForward) { route in
             ForwardDialog(
-                channelID: route.channelID, messageID: route.messageID,
+                itemKey: route.key, isTelegram: route.key.hasPrefix("tg:"),
                 debugAutoComment: route.autoComment)
         }
         .task { await applyDebugRouteIfNeeded(reader) }
@@ -149,14 +149,12 @@ struct MainView: View {
                 debugDetail = debugItem(parts, reader: reader)
             }
         case "forward":
-            // forward/<cid>/<mid>[/<comment>]：直接弹转发 dialog；带第 4 段则自动提交
-            // （"-" = 空评论原生转发；消息不必在 timeline 首页内）
-            if let cid = parts.dropFirst().first.flatMap(Int.init),
-               let mid = parts.dropFirst(2).first.flatMap(Int.init) {
-                let raw = parts.dropFirst(3).first
+            // forward/<item key>[/<comment>]：直接弹转发 dialog；带第 3 段则自动提交
+            // （"-" = 不带评论；条目不必在 timeline 首页内，只用 key）
+            if let key = parts.dropFirst().first {
+                let raw = parts.dropFirst(2).first
                 debugForward = DebugForwardRoute(
-                    channelID: cid, messageID: mid,
-                    autoComment: raw.map { $0 == "-" ? "" : $0 })
+                    key: key, autoComment: raw.map { $0 == "-" ? "" : $0 })
             }
         case "viewer":
             if let message = debugItem(parts, reader: reader)?.telegram {
@@ -188,10 +186,9 @@ struct MainView: View {
     }
 
     private struct DebugForwardRoute: Identifiable {
-        let channelID: Int
-        let messageID: Int
+        let key: String
         let autoComment: String?
-        var id: String { "\(channelID)/\(messageID)" }
+        var id: String { key }
     }
     #endif
 }

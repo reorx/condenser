@@ -119,15 +119,17 @@ public final class APIClient: @unchecked Sendable {
         try await get("/api/messages/\(channelID)/\(messageID)/stats")
     }
 
-    /// 空/纯空白评论 → body 不带 comment（后端走原生 forward）；有评论 → trim 后随 body
-    public func forwardMessage(
-        channelID: Int, messageID: Int, comment: String?
-    ) async throws -> ForwardResult {
-        struct Body: Encodable { let comment: String? }
+    /// 转发任意条目到自己的频道。空/纯空白评论 → body 不带 comment：TG 条目后端走原生
+    /// forward，其他信源没有「原生转发」这回事，就只发服务端渲染的标题 + 链接。
+    public func forwardItem(key: String, comment: String?) async throws -> ForwardResult {
+        struct Body: Encodable {
+            let key: String
+            let comment: String?
+        }
         let trimmed = comment?.trimmingCharacters(in: .whitespacesAndNewlines)
         let data = try await send(request(
-            path: "/api/messages/\(channelID)/\(messageID)/forward", method: "POST",
-            body: Body(comment: (trimmed?.isEmpty ?? true) ? nil : trimmed)))
+            path: "/api/forward", method: "POST",
+            body: Body(key: key, comment: (trimmed?.isEmpty ?? true) ? nil : trimmed)))
         return try decoder.decode(ForwardResult.self, from: data)
     }
 

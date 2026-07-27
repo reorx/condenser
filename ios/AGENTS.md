@@ -23,6 +23,18 @@ TG/HN），订阅 tab 的 X 分组行是它唯一入口 → `XFeedTimelineScreen
 `XVerdict` / `ItemFeedback` 都有 `other` 兜底值——后端先行升级出新值时降级渲染而不是炸解码。
 计划见 `../kb/plans/2026-07-24-x-source-local-probe.md`。
 
+**转发源通用化（2026-07-27）**：转发不再是 Telegram 专属。Kit 的
+`forwardMessage(channelID:messageID:)` 换成 `forwardItem(key:comment:)`（打
+`POST /api/forward`，服务端按 key 分派：TG 原生 forward / 引用发布，HN 渲染成
+「粗体标题超链接原文 + 来源行超链接讨论」，X 只发一条把域名换成 fixupx.com 的链接——
+x.com 不给 Telegram 供 embed，fixupx 给，作者/正文/图/引用推全在预览卡里）。三个 detail sheet 的
+**收藏星标从 header 挪到底部动作行**，和新加的「转发」并排——两件事都是「对这条做点
+什么」，摆在一起才好按；共用组件是 `ItemActionButtons`（收藏 + 转发）与
+`ItemActionRow`（放不下就横向滚动，四个中文按钮在窄屏上会溢出）。
+`ForwardDialog` 收 `itemKey` + `isTelegram`，后者只影响留空时的文案（「原样转发」
+vs「只发标题和链接」）。旧的 `/api/messages/{cid}/{mid}/forward` 服务端保留为薄壳，
+所以升级服务端不会打断手机上还没重装的旧版本。
+
 **理由 chip（2026-07-26，schema v9）**：踩之后追问一次「为什么不喜欢？」——
 `ItemFeedbackReason`（topic / promo / aiSlop / engagementFarming / author，同样有
 `other` 兜底；`engagementFarming`「钓互动」是 2026-07-27 加的，只动常量不动 schema），
@@ -123,8 +135,9 @@ sheet / 全屏图片浏览器（消息须在 timeline 首页内，路由会等�
 `detail/x/<feed>[/<tweet id>]` 弹推文详情——X 条目单独走一次网络查，因为 For You
 根本不在 `reader.timeline.items` 里；省略 id 时挑该 feed 第一条有判定的（判定证据
 正是这个界面最值得看的部分）；
-`forward/<cid>/<mid>[/<comment>]` 直接弹转发 dialog（消息不必在首页内；带第 4 段
-则 1s 后自动提交——**真实转发落地目标频道**，`-` 表示空评论原生转发，中文评论需
+`forward/<item key>[/<comment>]` 直接弹转发 dialog（条目不必在首页内，只用 key，
+例如 `forward/tg:-1001:123` / `forward/hn:44123` / `forward/x:2080…`；带第 3 段
+则 1s 后自动提交——**真实转发落地目标频道**，`-` 表示不带评论，中文评论需
 percent-encode）。
 每换一个界面 terminate + 重新 launch 一次即可。也支持
 `xcrun simctl openurl booted "condenser://debug/<route>"`，但系统会弹

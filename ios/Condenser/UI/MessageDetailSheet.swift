@@ -13,7 +13,6 @@ struct MessageDetailSheet: View {
     @State private var safariItem: SafariItem?
     @State private var viewerItem: ImageViewerItem?
     @State private var copied = false
-    @State private var showForward = false
     @State private var stats: MessageStats?
 
     var body: some View {
@@ -81,11 +80,6 @@ struct MessageDetailSheet: View {
                     .lineLimit(1)
             }
             Spacer()
-            Button(action: onToggleSaved) {
-                Image(systemName: item.isSaved ? "star.fill" : "star")
-                    .foregroundStyle(item.isSaved ? .orange : .secondary)
-            }
-            .buttonStyle(.plain)
         }
     }
 
@@ -120,7 +114,8 @@ struct MessageDetailSheet: View {
     }
 
     private var actions: some View {
-        HStack(spacing: 10) {
+        ItemActionRow {
+            ItemActionButtons(item: item, onToggleSaved: onToggleSaved)
             if let text = message.text, !text.isEmpty {
                 Button {
                     UIPasteboard.general.string = text
@@ -145,19 +140,8 @@ struct MessageDetailSheet: View {
                 }
                 .buttonStyle(.bordered)
             }
-            Button {
-                showForward = true
-            } label: {
-                Label("转发", systemImage: "arrowshape.turn.up.forward")
-                    .font(.footnote)
-            }
-            .buttonStyle(.bordered)
-            Spacer()
         }
         .sensoryFeedback(.success, trigger: copied) { _, new in new }
-        .sheet(isPresented: $showForward) {
-            ForwardDialog(channelID: message.channelID, messageID: message.id)
-        }
     }
 
     private func aspectRatio(_ item: MediaItem) -> CGFloat {

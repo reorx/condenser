@@ -92,40 +92,49 @@ extension APIClientTests {
             #expect(captured.authorization == "Bearer tok_test")
         }
 
-        @Test("forwardMessage 带评论：POST body {comment}，解析 quote 模式 + link")
+        @Test("forwardItem 带评论：POST /api/forward，body {key, comment}，解析 quote 模式 + link")
         func forwardWithComment() async throws {
             let captured = MockURLProtocol.respond(
                 status: 200, json: #"{"status": "ok", "mode": "quote", "link": "https://t.me/mych/123"}"#)
-            let result = try await makeClient().forwardMessage(
-                channelID: 7, messageID: 99, comment: "值得一读")
+            let result = try await makeClient().forwardItem(key: "tg:7:99", comment: "值得一读")
             #expect(result.mode == .quote)
             #expect(result.link == "https://t.me/mych/123")
             #expect(captured.method == "POST")
-            #expect(captured.url?.path() == "/api/messages/7/99/forward")
+            #expect(captured.url?.path() == "/api/forward")
+            #expect(captured.bodyJSON?["key"] as? String == "tg:7:99")
             #expect(captured.bodyJSON?["comment"] as? String == "值得一读")
         }
 
-        @Test("forwardMessage 空/纯空白评论 → body 不带 comment（原生 forward）")
+        @Test("forwardItem 空/纯空白评论 → body 不带 comment（TG 走原生 forward）")
         func forwardEmptyComment() async throws {
             var captured = MockURLProtocol.respond(
                 status: 200, json: #"{"status": "ok", "mode": "forward", "link": "https://t.me/mych/124"}"#)
-            var result = try await makeClient().forwardMessage(channelID: 7, messageID: 99, comment: nil)
+            var result = try await makeClient().forwardItem(key: "tg:7:99", comment: nil)
             #expect(result.mode == .forward)
             #expect(captured.bodyJSON?["comment"] == nil)
 
             captured = MockURLProtocol.respond(
                 status: 200, json: #"{"status": "ok", "mode": "forward", "link": "https://t.me/mych/125"}"#)
-            result = try await makeClient().forwardMessage(channelID: 7, messageID: 99, comment: "  \n ")
+            result = try await makeClient().forwardItem(key: "tg:7:99", comment: "  \n ")
             #expect(result.mode == .forward)
             #expect(captured.bodyJSON?["comment"] == nil)
         }
 
-        @Test("forwardMessage 评论两侧空白被 trim")
+        @Test("forwardItem 评论两侧空白被 trim")
         func forwardTrimsComment() async throws {
             let captured = MockURLProtocol.respond(
                 status: 200, json: #"{"status": "ok", "mode": "quote", "link": "https://t.me/mych/126"}"#)
-            _ = try await makeClient().forwardMessage(channelID: 7, messageID: 99, comment: "  好文 \n")
+            _ = try await makeClient().forwardItem(key: "tg:7:99", comment: "  好文 \n")
             #expect(captured.bodyJSON?["comment"] as? String == "好文")
+        }
+
+        @Test("forwardItem 非 TG 条目走同一个端点，只是 key 不同")
+        func forwardNonTelegramItem() async throws {
+            let captured = MockURLProtocol.respond(
+                status: 200, json: #"{"status": "ok", "mode": "quote", "link": "https://t.me/mych/127"}"#)
+            _ = try await makeClient().forwardItem(key: "hn:44123", comment: "值得一读")
+            #expect(captured.url?.path() == "/api/forward")
+            #expect(captured.bodyJSON?["key"] as? String == "hn:44123")
         }
 
         @Test("appMeta：GET /api/app/meta")
