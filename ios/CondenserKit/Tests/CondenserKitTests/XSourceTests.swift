@@ -161,7 +161,7 @@ struct XModelsDecodingTests {
         #expect(ItemFeedbackReason.offered.allSatisfy { !$0.label.isEmpty })
     }
 
-    @Test("钓互动是独立取值，不是广告营销的一种（2026-07-27）")
+    @Test("博眼球是独立取值，不是广告营销的一种（2026-07-27）")
     func engagementFarmingIsItsOwnReason() throws {
         // 影响力钓鱼（钩子、FOMO、"save this 🔖"、正文钓在评论区）和"卖东西"是两码事，
         // 喂的也不是同一个通道——词汇通道能直接学会钓的话术，广告更接近意图判断。

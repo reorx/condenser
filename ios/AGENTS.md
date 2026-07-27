@@ -37,7 +37,7 @@ vs「只发标题和链接」）。旧的 `/api/messages/{cid}/{mid}/forward` �
 
 **理由 chip（2026-07-26，schema v9）**：踩之后追问一次「为什么不喜欢？」——
 `ItemFeedbackReason`（topic / promo / aiSlop / engagementFarming / author，同样有
-`other` 兜底；`engagementFarming`「钓互动」是 2026-07-27 加的，只动常量不动 schema），
+`other` 兜底；`engagementFarming`「博眼球」是 2026-07-27 加的，只动常量不动 schema），
 envelope 上是与 `feedback` **平级**的 `feedback_reason`（老版本 App 把 `feedback` 当字符串
 解，改成对象会整页解码失败，而 App 是单独升的）。两条规则：`TimelineStore` /
 `RecordsStore` 的 `setFeedback`（拇指，不带理由）与 `setReason`（选 chip，verdict 保持

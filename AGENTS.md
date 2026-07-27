@@ -257,7 +257,7 @@ one-sided edit means the endpoint accepts and stores a label nothing can route. 
 this exists — and why it was missing until now — is the "Phase 3 补记" section of the
 X plan.
 
-**`engagement_farming`「钓互动」** joined the taxonomy 2026-07-27 (a constant-only
+**`engagement_farming`「博眼球」** joined the taxonomy 2026-07-27 (a constant-only
 change: `reason` is a nullable TEXT column, so no migration and no schema bump). It is
 X's own platform-manipulation term for the influencer-thread pattern — hook, FOMO,
 "save this 🔖", payoff parked in the replies so an outbound link doesn't cost reach —
@@ -270,6 +270,11 @@ names an operation rather than an item, and encodes a *quality* judgement that w
 misfire on the digest/summary accounts the user likes — those are derivative too, and
 differ only in not baiting. Being a superset (rage bait, poll bait, giveaways) is a
 feature: it reaches a trainable label count sooner, which is the binding constraint.
+The Chinese label started as the literal 「钓互动」 and became **「博眼球」** the same day
+(display-string only — the value, its scope and the stored labels are untouched): a chip
+is read mid-scroll, so an idiomatic phrase gets pressed while a translated one gets
+skipped. Known trade-off: 博眼球 leans toward the hook/clickbait flavour and reads less
+obviously right on a giveaway or a poll, which the value still covers.
 Full reasoning: `kb/notes/2026-07-27-engagement-farming-chip.md`.
 
 ## Local probe (`probe/`, monorepo)

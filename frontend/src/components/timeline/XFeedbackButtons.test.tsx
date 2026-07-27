@@ -12,7 +12,7 @@ vi.mock('@/lib/api', () => ({
 }));
 
 import { api } from '@/lib/api';
-import { FEEDBACK_REASONS } from '@/lib/sources';
+import { FEEDBACK_REASONS, FEEDBACK_REASON_LABELS } from '@/lib/sources';
 
 import { XFeedbackButtons } from './XFeedbackButtons';
 
@@ -92,7 +92,7 @@ describe('XFeedbackButtons', () => {
     }
   });
 
-  it('offers 钓互动 — bait is not the same complaint as an advertisement', async () => {
+  it('offers 博眼球 — bait is not the same complaint as an advertisement', async () => {
     // Added 2026-07-27. The influencer-thread pattern (hook, FOMO, "save this 🔖",
     // the payoff parked in the replies) is what a reader actually meets on For You,
     // and folding it into 广告营销 would make the two indistinguishable in the
@@ -100,7 +100,9 @@ describe('XFeedbackButtons', () => {
     wrap(<XFeedbackButtons itemKey="x:1" feedback={null} />);
     await userEvent.click(down());
 
-    await userEvent.click(screen.getByRole('button', { name: '钓互动' }));
+    // Through the label constant, not the string: the wording is cosmetic and has
+    // already changed once (钓互动 → 博眼球, 2026-07-27); the value mapping is the contract.
+    await userEvent.click(screen.getByRole('button', { name: FEEDBACK_REASON_LABELS.engagement_farming }));
 
     await waitFor(() => expect(api.setFeedback).toHaveBeenLastCalledWith('x:1', 'down', 'engagement_farming'));
   });

@@ -556,6 +556,7 @@ public enum ItemFeedback: String, Codable, Sendable {
 /// 才能把标签分派到对的通道去。跳过是免费的：退化成原来的整条标签。
 /// engagementFarming（2026-07-27）是 X 官方对「钓互动」的说法，故意不并进 promo：
 /// 那个是卖东西，这个是骗互动，而且钓的话术是词汇级的，最便宜的通道就能学会。
+/// 标签写「博眼球」而不是直译，读者按之前不用先在心里翻译一遍；值仍是那个超集。
 /// other 同 ItemFeedback 的前向兼容理由。
 public enum ItemFeedbackReason: String, Codable, Sendable, CaseIterable {
     case topic, promo
@@ -577,7 +578,7 @@ public enum ItemFeedbackReason: String, Codable, Sendable, CaseIterable {
         case .topic: "不感兴趣"
         case .promo: "广告营销"
         case .aiSlop: "AI Slop"
-        case .engagementFarming: "钓互动"
+        case .engagementFarming: "博眼球"
         case .author: "不喜欢作者"
         case .other: "其他"
         }
