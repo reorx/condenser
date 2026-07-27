@@ -100,6 +100,29 @@ class Settings(BaseSettings):
     condenser_verdict_window_hours: int = 48
     condenser_verdict_batch: int = 100
 
+    # --- verdict channel D: n-gram bayes (condenser/ngram.py) ---
+    # Not wired into the running verdict yet (plan v2 step 1 ships the channel and
+    # its backtest; step 4 ships the combiner that lets it vote). The knobs live
+    # here so the backtest grids the same constants production would read.
+    # A token must appear in this many labeled tweets before it counts as evidence —
+    # the small-corpus equivalent of the kNN's OOD gate.
+    condenser_verdict_d_min_df: int = 2
+    # A word both sides use is not evidence: below this many nats of log-odds it
+    # does not vote at all. Without the floor, enough near-neutral words assemble a
+    # confident verdict out of noise.
+    condenser_verdict_d_min_weight: float = 0.5
+    # Fewer recognizable tokens than this and the channel abstains outright.
+    condenser_verdict_d_min_hits: int = 3
+    # Only the most discriminative tokens vote, so filler cannot outvote one clear
+    # marketing phrase.
+    condenser_verdict_d_top_tokens: int = 8
+    # Divisor before tanh, applied to the corpus-centered *mean* of those tokens'
+    # log-odds — i.e. how one-sided the evidence has to be to count as a made-up
+    # mind, in nats. At 1.0 a tweet whose words are e times likelier under one side
+    # than the other scores ±0.76. Moving it is the same experiment as moving the
+    # verdict thresholds, so the backtest sweeps those instead.
+    condenser_verdict_d_scale: float = 1.0
+
     # --- link preview fetching (condenser/preview.py) ---
     # Total per-request timeout (seconds) for fetching a URL/its image.
     condenser_preview_fetch_timeout: float = 8.0

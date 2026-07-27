@@ -247,8 +247,8 @@ CONDENSER_DB_PATH=tmp/prod-snapshot.db uv run python scripts/x_verdict_backtest.
 
 | 步 | 内容 | 依赖 | 默认状态 |
 |---|---|---|---|
-| 0 | 回测框架扩展（§8） | 无 | —— |
-| 1 | 通道 D（n-gram），含回测报告 | 0 | off |
+| 0 | ✅ **已完成 2026-07-27** 回测框架扩展（§8） | 无 | —— |
+| 1 | ✅ **已完成 2026-07-27** 通道 D（n-gram），含回测报告 | 0 | off |
 | 2 | 属性抽取管线 + taxonomy + `x_attributes`（schema v10），补齐已标注推文 | 无 | 抽取 on、计分未接 |
 | 3 | 通道 C 计分 + reason 定向记账，含回测报告 | 2 | off |
 | 4 | 组合器 + `verdict_meta` 升级 + web/iOS 证据面板扩展 | 1,3 | 权重手调 |
@@ -257,6 +257,43 @@ CONDENSER_DB_PATH=tmp/prod-snapshot.db uv run python scripts/x_verdict_backtest.
 
 **D 排在 C 前面是刻意的**：零成本、零依赖、能立刻拿到一张回测报告，用来验证扩展后的回测框架
 本身是对的；C 涉及外部 API 与费用，值得在框架被验证过之后再接。
+
+## 10.1 步骤 0 / 1 实施记录（2026-07-27）
+
+**步骤 0**：`scripts/x_verdict_backtest.py` 重写为「通道 × 设置格 × 阈值」三层，
+`tmp/x_verdict_variants.py` 已并入（正负阈值解耦、按 reason 拆召回、`--negatives topic`
+变体）。新增：`--channels b,d`（同一批 fold）、组合报告、弃权率单列、每张表旁打印基率、
+结尾按精确度排序的操作点汇总（自动给够到 §9 门槛的负操作点打星）。性能上把「取证据」和
+「按设置打分」分开，sweep 只跑一遍贵的部分。
+**验收标准是复现旧数字**：通道 B 的 13.6% coverage / 100% 正精确度（8 次）/ promo 召回
+2 of 11、其余全 0 —— 全部一致。
+
+`verdict.score_neighbours` 拆成 `topic_score`（投票，返回 `ChannelScore`）+ `classify`
+（阈值），新增 `condenser/channels.py`（`ChannelScore` + `combine`，弃权是 `None` 而不是 0.0）。
+回测的通道包的是**生产代码本身**，不是复制品。
+
+**步骤 1**：`condenser/ngram.py` + 23 个行为测试。**前三版都是基率**，每一版错法不同，值得记住：
+
+| 版本 | 结果 |
+|---|---|
+| top-k 对数几率**求和** | 78% 都判负、54.3% 精确度（基率 49.2%）；**没有一条赞过的推为正** —— 求和随长度增长，而踩过的推平均 30.8 个有效 token，赞过的只有 15.3 |
+| 改**均值** + `min_weight` 下限 | 69.7%，但整条尺度沉在零下（up 最高才 -0.05） |
+| 再按 **token** 中心化 | 尺度对了、**排序毁了**（正精确度 36.4%）—— 偏移改变了「谁算最强证据」 |
+| 改为对**分数**中心化，偏移用留一法在 fit 时测 | up 中位数 +0.07 / down -0.31；`neg <= -0.45` → **86.7% / 15 次** |
+
+翻案靠的是换指标：`tmp/x_ngram_variants.py` 用 **AUC** 一测，所有变体都在 0.78–0.85 ——
+信息一直在，坏的只是标定。「阈值上的精确度」同时在回答「排序好不好」和「尺度对不对」，
+于是两个都没回答。通道 D 的**正向**也可用（`top5 |w|0.0` 下 100% / 9–10 次），
+这不在预期内（原以为它只做文风判负）。
+
+**没有任何东西上生产**：`negative_enabled` 仍是 false，判定仍然只跑通道 B，D 只在回测里
+可达（按计划，接线是第 4 步）。除计划顺序外还有两个理由：
+
+1. 那个 86.7% 是从 **88 个负操作点**里挑出来的，而挑选和评分用的是同一批 59 条标注
+   （选择偏差；15 次判定上 86.7% 的 95% 区间大约是 60–98%）。
+2. ⚠️ **§9 的第 4 条在留一法回测里无法满足**：回测集全是标注过的样本，所以「错误的负判定」
+   按定义就是「用户点过赞的推」。最严读法 = 要求 100% 精确度（那前三条就多余了）；
+   大概率的本意是「不许有**收藏**过的」。**这条需要先定义清楚，否则谁都没法宣称门槛达标。**
 
 ## 11. 开发约定（本项目的，别踩）
 
@@ -271,7 +308,10 @@ CONDENSER_DB_PATH=tmp/prod-snapshot.db uv run python scripts/x_verdict_backtest.
 
 | 文件 | 用途 |
 |---|---|
-| `tmp/x_verdict_variants.py` | 解耦正负阈值 + 按 reason 拆召回的回测变体（§8 要合并进 scripts/） |
+| `tmp/x_verdict_variants.py` | ~~解耦正负阈值 + 按 reason 拆召回的回测变体~~ 已并入 `scripts/x_verdict_backtest.py`（2026-07-27），保留作参考 |
+| `tmp/x_ngram_variants.py` | 通道 D 的估计量选型：按 **AUC** 比较 df/mnb 加权 × sum/mean/max 聚合 × 门槛。换估计量时先跑这个，别看阈值精确度 |
+| `tmp/x_ngram_diagnose.py` | 通道 D 的留一法分数分布（分类别的分位数）+ 判错最狠的赞过的推及其证据词。标定跑偏时先看这个 |
+| `tmp/check_ngram.py` | 玩具语料上的通道 D 手感检查（分数、证据词、有无标定的对照） |
 | `tmp/x_prod_labels.sh` / `x_prod_gate.sh` / `x_prod_verdicts.sh` / `x_prod_unread.sh` | 生产库只读快照查询（标注量、闸门时序、判定分布、未读积压） |
 | `tmp/x_prod_rejudge.sh` | 清空窗口内 verdict 让下一轮重判（换阈值后用；向量已缓存，不重复付费） |
 | `tmp/x_probe_burst.sh` | 连跑 N 轮 probe 灌数据（`bash tmp/x_probe_burst.sh 6 20`） |

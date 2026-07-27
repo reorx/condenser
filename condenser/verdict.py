@@ -32,6 +32,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Awaitable, Callable, Optional
 
 from . import db, embedding, vectors
+from .channels import ChannelScore
 from .config import Settings, get_settings
 
 log = logging.getLogger('condenser.verdict')
@@ -147,32 +148,60 @@ def _parsed(value) -> Optional[dict]:
 # --- scoring ------------------------------------------------------------------
 
 
-def score_neighbours(neighbours: list[Neighbour], settings: Settings) -> Judgement:
-    """Distance-weighted vote over the effective neighbours -> a verdict + its evidence."""
+def topic_score(neighbours: list[Neighbour], settings: Settings) -> Optional[ChannelScore]:
+    """Channel B: the distance-weighted vote over the labeled neighbours.
+
+    Split out from the thresholding below so the ensemble (and the backtest that
+    picks its channels) can read this channel's opinion on the same scale as every
+    other one. None is the OOD gate firing — an abstention, not a neutral score.
+    """
     close = [n for n in neighbours if n.distance <= settings.condenser_verdict_max_distance]
     if len(close) < settings.condenser_verdict_min_neighbors:
-        # too far from everything ever labeled: say so instead of guessing
-        return Judgement(NEUTRAL, {'reason': 'out_of_domain', 'neighbors': [], 'score': 0.0})
+        return None
 
     numerator = sum(n.similarity * LABEL_WEIGHT[n.label] * LABEL_VALUE[n.label] for n in close)
     denominator = sum(n.similarity * LABEL_WEIGHT[n.label] for n in close)
-    score = numerator / denominator if denominator else 0.0
-    downs = sum(1 for n in close if n.label == 'down')
-
-    verdict = NEUTRAL
-    if score >= settings.condenser_verdict_positive_score:
-        verdict = POSITIVE
-    elif (
-        settings.condenser_verdict_negative_enabled
-        and score <= settings.condenser_verdict_negative_score
-        and downs >= settings.condenser_verdict_min_down_neighbors
-    ):
-        # Off by default since the 2026-07-27 backtest: on real labels this branch
-        # scored at the base rate, i.e. it carried no information. The score below
-        # is still archived, so the evidence outlives the switch.
-        verdict = NEGATIVE
     evidence = sorted(close, key=lambda n: n.distance)[:META_NEIGHBOURS]
-    return Judgement(verdict, {'score': round(score, 4), 'neighbors': [n.as_meta() for n in evidence]})
+    return ChannelScore(
+        score=numerator / denominator if denominator else 0.0,
+        # how *near* the neighbourhood is, not how many are in it: a vote from
+        # tweets at distance 0.1 is evidence, the same vote at 0.59 is a coincidence
+        # that happened to clear the gate
+        confidence=max(0.0, min(1.0, sum(n.similarity for n in close) / len(close))),
+        corroborated=sum(1 for n in close if n.label == 'down') >= settings.condenser_verdict_min_down_neighbors,
+        meta={'neighbors': [n.as_meta() for n in evidence]},
+    )
+
+
+def classify(channel: ChannelScore, settings: Settings) -> str:
+    """Score -> verdict, with the asymmetry that outlived the 2026-07-27 backtest.
+
+    Negative additionally needs ``corroborated`` (a second down neighbour, or a
+    second bait token) and, since that backtest, the switch to be on at all: on
+    real labels the negative branch scored at the base rate, so it is off by
+    default. The score is still archived, so the evidence outlives the switch.
+    """
+    if channel.score >= settings.condenser_verdict_positive_score:
+        return POSITIVE
+    if (
+        settings.condenser_verdict_negative_enabled
+        and channel.score <= settings.condenser_verdict_negative_score
+        and channel.corroborated
+    ):
+        return NEGATIVE
+    return NEUTRAL
+
+
+def score_neighbours(neighbours: list[Neighbour], settings: Settings) -> Judgement:
+    """Distance-weighted vote over the effective neighbours -> a verdict + its evidence."""
+    channel = topic_score(neighbours, settings)
+    if channel is None:
+        # too far from everything ever labeled: say so instead of guessing
+        return Judgement(NEUTRAL, {'reason': 'out_of_domain', 'neighbors': [], 'score': 0.0})
+    return Judgement(
+        classify(channel, settings),
+        {'score': round(channel.score, 4), 'neighbors': channel.meta['neighbors']},
+    )
 
 
 # --- the round ----------------------------------------------------------------
