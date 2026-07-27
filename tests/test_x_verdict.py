@@ -151,9 +151,9 @@ def feed_verdict(tweet_id: int, channel_id: str = 'foryou'):
     return None if row is None else row.verdict
 
 
-def seed_labelled_world(monkeypatch, embedder=None):
+def seed_labelled_world(monkeypatch, embedder=None, **overrides):
     """The standard fixture: two crypto tweets downed, two rust tweets upped."""
-    setup_db(monkeypatch)
+    setup_db(monkeypatch, **overrides)
     seed_foryou(
         bird_entry(101, 'crypto to the moon', minutes=200),
         bird_entry(102, 'crypto presale now', minutes=190),
@@ -323,7 +323,9 @@ async def test_a_tweet_like_your_upvotes_is_positive(env, monkeypatch):
 
 
 async def test_a_tweet_like_your_downvotes_is_negative(env, monkeypatch):
-    mgr = seed_labelled_world(monkeypatch)
+    """The mechanism, exercised with the negative side switched on — which is not
+    the default any more (see the off-by-default test below)."""
+    mgr = seed_labelled_world(monkeypatch, CONDENSER_VERDICT_NEGATIVE_ENABLED='1')
     ingest('foryou', bird_entry(301, 'crypto airdrop live', minutes=5))
 
     await mgr.run_once()
@@ -331,10 +333,47 @@ async def test_a_tweet_like_your_downvotes_is_negative(env, monkeypatch):
     assert feed_verdict(301) == 'negative'
 
 
+async def test_negative_verdicts_are_off_by_default(env, monkeypatch):
+    """Settled 2026-07-27 by `scripts/x_verdict_backtest.py` on 59 real labels: the
+    negative side called 55.6% right against a 49.2% base rate — statistically it
+    knew nothing — while the positive side ran at 100%. The cause is in the label
+    mix: 24 of 29 downs were style judgements (`promo` / `engagement_farming` /
+    `ai_slop` / `author`), which a topic embedding cannot represent, so they only
+    dragged down whatever shared their subject.
+
+    The evidence is still computed and archived, so flipping the switch back on
+    (or a later channel that can read style) needs no backfill.
+    """
+    mgr = seed_labelled_world(monkeypatch)
+    ingest('foryou', bird_entry(301, 'crypto airdrop live', minutes=5))
+
+    await mgr.run_once()
+
+    assert feed_verdict(301) == 'neutral'
+    assert verdict_meta(301)['score'] <= -0.55
+    assert verdict_meta(301)['neighbors']
+
+
+def test_tuned_constants_are_the_backtested_ones(env):
+    """The Phase-4 placeholders became decisions on 2026-07-27 (59 labels, leave-one-out
+    over a production snapshot). Pinned here because they are not arbitrary any more:
+    at D0.60 / M3, `positive >= 0.25` called 8 tweets with 100% precision — twice the
+    coverage of 0.35 at the same precision — and no negative setting beat guessing.
+    Re-run the sweep before moving any of them.
+    """
+    from condenser.config import get_settings
+
+    settings = get_settings()
+    assert settings.condenser_verdict_max_distance == 0.6
+    assert settings.condenser_verdict_min_neighbors == 3
+    assert settings.condenser_verdict_positive_score == 0.25
+    assert settings.condenser_verdict_negative_enabled is False
+
+
 async def test_one_down_neighbour_is_not_enough_to_go_negative(env, monkeypatch):
     """Asymmetric by design: a mis-clicked down must not blacklist a whole
     neighbourhood, so negative needs corroboration from a second down sample."""
-    setup_db(monkeypatch, CONDENSER_VERDICT_MIN_NEGATIVE='1')
+    setup_db(monkeypatch, CONDENSER_VERDICT_MIN_NEGATIVE='1', CONDENSER_VERDICT_NEGATIVE_ENABLED='1')
     seed_foryou(
         bird_entry(101, 'crypto to the moon', minutes=200),
         bird_entry(201, 'rust borrow checker notes', minutes=180),
@@ -374,10 +413,16 @@ async def test_a_save_counts_double_an_up(env, monkeypatch):
 
     One save and one down at the same distance therefore score +1/3 rather than the
     0.0 an up would have produced. Asserting the score, not the verdict, keeps this
-    about the weighting: +1/3 is still below the positive threshold, and it should
-    stay that way — a tilt is not evidence.
+    about the weighting: a tilt is not evidence. The threshold is pinned locally
+    rather than inherited, because the default moves with each backtest and this
+    test is about the arithmetic, not about where the line currently sits.
     """
-    setup_db(monkeypatch, CONDENSER_VERDICT_MIN_POSITIVE='1', CONDENSER_VERDICT_MIN_NEGATIVE='1')
+    setup_db(
+        monkeypatch,
+        CONDENSER_VERDICT_MIN_POSITIVE='1',
+        CONDENSER_VERDICT_MIN_NEGATIVE='1',
+        CONDENSER_VERDICT_POSITIVE_SCORE='0.5',
+    )
     seed_foryou(
         bird_entry(101, 'rust macro hygiene', minutes=200),
         bird_entry(102, 'rust pin and unpin', minutes=190),
@@ -414,7 +459,7 @@ async def test_stored_evidence_is_capped(env, monkeypatch):
     """Every close neighbour votes, but only the nearest few are archived: this row
     is written ~1000x/day on For You, and an unbounded list of ids would outgrow the
     tweets it explains."""
-    setup_db(monkeypatch)
+    setup_db(monkeypatch, CONDENSER_VERDICT_NEGATIVE_ENABLED='1')
     crypto = [bird_entry(100 + i, f'crypto shill number {i}', minutes=200 - i) for i in range(8)]
     seed_foryou(*crypto, bird_entry(201, 'rust borrow checker notes', minutes=180))
     train(downs=[100 + i for i in range(8)], ups=[201])
@@ -613,7 +658,7 @@ def test_schema_v8_adds_the_vector_tables_without_touching_data(env, monkeypatch
 async def test_the_verdict_reaches_the_timeline_envelope(env, monkeypatch):
     """The badge is rendered from the envelope, so both the label and its evidence
     have to survive the trip out."""
-    mgr = seed_labelled_world(monkeypatch)
+    mgr = seed_labelled_world(monkeypatch, CONDENSER_VERDICT_NEGATIVE_ENABLED='1')
     ingest('foryou', bird_entry(301, 'crypto airdrop live', minutes=5))
     await mgr.run_once()
 
@@ -629,7 +674,7 @@ async def test_the_verdict_reaches_the_timeline_envelope(env, monkeypatch):
 async def test_status_reports_the_gate_and_the_counts(env, monkeypatch):
     """When no badges appear, the first question is 'is it broken or just waiting?' —
     the status line has to answer it without reading logs."""
-    mgr = seed_labelled_world(monkeypatch)
+    mgr = seed_labelled_world(monkeypatch, CONDENSER_VERDICT_NEGATIVE_ENABLED='1')
     ingest('foryou', bird_entry(301, 'crypto airdrop live', minutes=5))
     await mgr.run_once()
 
@@ -641,6 +686,22 @@ async def test_status_reports_the_gate_and_the_counts(env, monkeypatch):
     assert status['verdict']['positives'] == 2
     assert status['verdict']['negatives'] == 2
     assert status['verdict']['judged']['negative'] == 1
+
+
+async def test_status_says_the_negative_side_is_switched_off(env, monkeypatch):
+    """A silence with a third cause: fully trained, judging away, and *still* no
+    "not for you" badge will ever appear. Without this field the only way to learn
+    that is to read config.py."""
+    mgr = seed_labelled_world(monkeypatch)
+    ingest('foryou', bird_entry(301, 'crypto airdrop live', minutes=5))
+    await mgr.run_once()
+
+    with TestClient(create_app()) as client:
+        assert client.post('/api/auth/login', json={'password': 'pw'}).status_code == 200
+        status = client.get('/api/x/status').json()
+
+    assert status['verdict']['negative_enabled'] is False
+    assert status['verdict']['judged']['negative'] == 0
 
 
 async def test_status_says_when_it_is_only_waiting_for_labels(env, monkeypatch):

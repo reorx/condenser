@@ -21,7 +21,7 @@ tags:
 | 1 — probe + ingest + 存档 | ✅ **完成 2026-07-24** | schema v7、`condenser/x.py`、`routers/x.py`、`probe/` 包、web 订阅区块。188 backend（含 27 X）+ 11 probe + 45 frontend 绿；真机端到端 + UI 截图 `tmp/2026-07-24-x-source-phase1/`。会话记录：`kb/sessions/2026-07-24-x-source-phase1-probe-ingest.md` |
 | 2 — timeline 接入 | ✅ **完成 2026-07-25** | `sources/x.py` provider、`items.py` 的 `x_key`/`x_envelope`、`feed` 作用域、`/api/sources` 的 X 分组、X 收藏快照、`/api/x/avatar/{handle}`、web 卡片 + `/s/:source/:feed` 路由。容量策略已定（见下）。211 backend（含 23 X timeline）+ 51 frontend 绿；对本地 dev 后端做了真实端到端（fixture 推送 → 真实 UI），截图 `tmp/2026-07-25-x-phase2-timeline/` |
 | 3 — 反馈闭环 | ✅ **完成 2026-07-25**（web；iOS 顺延到 Phase 5）；**理由 chips 补于 2026-07-26**（schema v9，三端齐活，见「Phase 3 补记」） | `/api/feedback` POST/DELETE、envelope 的 `feedback` 字段（timeline provider join + 收藏批量 join）、`XFeedbackButtons` + `useFeedback`、详情面板「反馈」行。11 反馈场景 + 223 backend / 58 frontend 绿 |
-| 4 — Embedding 判定 | ✅ **完成 2026-07-25**（管线；准确率待回测） | schema v8（`x_embeddings` + `x_vec_labeled`）、`vectors.py` / `embedding.py` / `verdict.py`、`XVerdictBadge` + `XVerdictDetail` + 订阅页判定状态行、`scripts/x_verdict_backtest.py`。32 判定场景 + 254 backend / 64 frontend 绿；真实 DashScope 端到端 + 截图 `tmp/2026-07-25-x-phase4-verdict/`。⚠️ **分类质量未验证**：Phase 3 当天才上线，真实标注量 ≈ 0，生产闸门（20/20）会让所有 verdict 保持 null，直到你标够为止 |
+| 4 — Embedding 判定 | ✅ **完成 2026-07-25**（管线；准确率待回测） | schema v8（`x_embeddings` + `x_vec_labeled`）、`vectors.py` / `embedding.py` / `verdict.py`、`XVerdictBadge` + `XVerdictDetail` + 订阅页判定状态行、`scripts/x_verdict_backtest.py`。32 判定场景 + 254 backend / 64 frontend 绿；真实 DashScope 端到端 + 截图 `tmp/2026-07-25-x-phase4-verdict/`。**分类质量已回测 2026-07-27**（30 👍 / 29 👎）：正判定阈值定为 0.25（100% 精确），**负判定默认关闭**（在整个网格上等同瞎猜，成因是标签里 24/29 是文风判断）——见下方「阈值定案与负判定下线」 |
 | 5 — iOS 适配 | ✅ **完成 2026-07-25** | Kit 的 `XTweet` payload 家族 + envelope 的 `feedback` + `feed` 作用域 + 反馈 API；App 的 `XCard` / `XDetailSheet` / `XFeedTimelineScreen`（For You 唯一入口）/ 判定徽标与证据。41 个新 Kit 场景（共 161）+ 256 backend 绿；模拟器走查（真实 bird 数据 + 真实判定）截图 `tmp/2026-07-25-x-phase5-ios/` |
 
 未决问题：
@@ -30,17 +30,14 @@ tags:
 2. ~~**作者头像**~~ —— 已定案：unavatar.io 代理（`/api/x/avatar/{handle}`，`fallback=false`），失败回落字母头像。
 3. **旧 raw 的重 parse 回填工具** —— 目前只保证 raw 留底，还没有「格式漂移后按新解析器重刷」的脚本。
 4. ~~**verdict 徽标的 UI 位置**~~ —— 已定案（2026-07-25）：**底栏左侧，与反馈按钮对望**。用户拍板。
-5. **标注量什么时候够 / 阈值定案**（Phase 4 已上线但未标定）—— 管线已就位、闸门默认 20/20 挡着，
-   缺的是真实标注。每侧攒到 ~50 条后跑 `uv run python scripts/x_verdict_backtest.py --sweep`
-   （对生产库的**副本**跑，sweep 每折都会砸掉重建 KNN 索引），按 coverage → negative
-   precision → positive precision 的顺序读数，再定 D_MAX / M / ± 阈值。在那之前所有常量都是
-   占位值、徽标只是装饰，不该有任何东西被它隐藏或排序。
-   ⚠️ **但「阈值定案」≠「判定做完」**：单通道 dense kNN 是 baseline，它的向量纠缠缺陷调参调不掉
-   （见决策记录「踩的理由 chip」与 Phase 4「设计意图」末条），多通道才是目标形态，通道取舍同样
-   由这个回测框架定。回测时另外注意两点：2026-07-26 之前的标签 `reason` 全为 NULL（是真实的
-   断层，不是缺数据）；且**待验证的假设**——`author`/`promo`/`ai_slop` 的踩不是对话题的判断，
-   把它们喂给话题 embedding 的 kNN 当负样本正是纠缠的病灶，值得加一个「负样本只取
-   `reason IS NULL OR reason='topic'`」的 sweep 变体做对照。
+5. ~~**标注量什么时候够 / 阈值定案**~~ —— ✅ **已定案 2026-07-27**，见下方「阈值定案与负判定
+   下线」。一句话结论：正判定 `>=0.25` 100% 精确、负判定在整个网格上都等于瞎猜，于是
+   **负判定默认关闭**（新开关 `CONDENSER_VERDICT_NEGATIVE_ENABLED=false`）。
+   ⚠️ **「阈值定案」≠「判定做完」这句话现在有数据了**：负判定失效的成因正是笔记里那个「待验证
+   的假设」——29 个踩里 24 个是文风判断（`promo` 11 / `engagement_farming` 10 / `ai_slop` 3 /
+   `author` 1），只有 1 个 `topic`；话题 embedding 表示不了文风，只能连坐它恰好挂靠的话题。
+   所以负判定要复活，靠的不是调阈值，是笔记里的通道 C（LLM 属性提取）/ D（n-gram）/ A（作者
+   先验）——而这三个通道的优先级现在也由这个 reason 分布直接给出了。
 6. **判定文案的语言**（实现期出现的小分歧）—— 卡片徽标用英文（"Recommended" / "Likely not for
    you"，与 `XCard` 其余文案一致），详情面板用中文（与 `ItemDetailPane` 一致）。如果觉得徽标也该
    中文化，改 `XVerdictBadge` 的 `STYLES` 即可。**iOS 沿用了同一分工**（`XCard` 的
@@ -370,10 +367,30 @@ peewee 的线程本地新连接会自动重载扩展；snowflake int64 作 rowid
 - 4 个标注下所有近邻距离都在 0.43–0.60 之间，即「什么都不太像什么」——这正是冷启动闸门
   存在的理由，也说明 20/20 的默认下限不算保守。
 
-### 遗留
+### ~~遗留~~ → 阈值定案与负判定下线 ✅ 2026-07-27
 
-`scripts/x_verdict_backtest.py` 已就位但**现在跑不出有意义的数字**（4 个标注 → coverage 0–25%）。
-真正的阈值定案要等真实标注积累，届时按 coverage → negative precision → positive precision 读数。
+标注攒够（30 👍 / 29 👎，闸门 20/20）后，管线第一次真跑：`indexed=59 dropped=0 judged=82
+pruned=0`，82 条里 11 positive / 71 neutral / **0 negative**（`out_of_domain` 仅 3 条，最近邻
+距离 min 0.094 / avg 0.413 / max 0.563）。随后把生产库快照到本地做留一法回测，占位常量变成了
+决策：
+
+| 侧 | 最好的一档 | 结论 |
+|---|---|---|
+| 正 | D0.60 / M3 / `>= 0.25` | **100% 精确**（8 次判定，coverage 13.6%），且是 0.35 那档的两倍覆盖、精确度不变 |
+| 负 | 整个网格 | 最好 **55.6%** 精确，而负样本基率 **49.2%** —— 等于没有信息 |
+
+于是 `condenser_verdict_positive_score` 定为 **0.25**，并新增
+`condenser_verdict_negative_enabled`（默认 **false**，在 `score_neighbours` 里拦截负分支；
+score 与近邻照常写进 `verdict_meta`，所以将来打开无需回填）。
+
+**为什么负判定不是调参能救的**：29 个踩里 24 个是文风判断（`promo` 11 / `engagement_farming`
+10 / `ai_slop` 3 / `author` 1），`topic` 只有 1 个。按 reason 拆开看召回（D0.60/M3/−0.45）：
+`promo` 11 个里召回 2 个，**其余全部 0**。话题 embedding 表示不了文风，负标签只会拖累它恰好
+挂靠的话题邻域——这正是笔记预言的纠缠病灶，第一次拿到了数据。
+
+笔记要的「负样本只取 `reason IS NULL OR topic`」变体也跑了，**在这个数据量上不是解法**：只剩
+4 个负样本，正判定看着 88% 精确其实是 30/34 的基率（分类器把所有东西都判正）。工具留在
+`tmp/x_verdict_variants.py`（拆开正负阈值 + 按 reason 拆召回），下次回测直接复用。
 
 ### 原始设计（下文保留为实现依据）
 

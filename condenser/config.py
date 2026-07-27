@@ -47,7 +47,7 @@ class Settings(BaseSettings):
     # Default per-round fetch counts handed to the probe (per-feed config overrides).
     # For You re-samples on every bird call (no stable window), so this number times
     # the probe's cadence *is* the archive growth rate — the capacity lever.
-    condenser_x_home_count: int = 10
+    condenser_x_home_count: int = 20
     condenser_x_user_count: int = 10
 
     # --- embeddings (condenser/embedding.py) ---
@@ -83,7 +83,16 @@ class Settings(BaseSettings):
     # Deliberately asymmetric: a wrong "recommended" costs one glance, a wrong
     # "uninteresting" costs the tweet. Negative also needs a second down neighbour,
     # so one mis-click cannot condemn a whole semantic neighbourhood.
-    condenser_verdict_positive_score: float = 0.35
+    # Backtested 2026-07-27 on 59 real labels (scripts/x_verdict_backtest.py):
+    # positive >= 0.25 was 100% precise over 8 calls, double the coverage of 0.35
+    # at the same precision. The negative side, at every setting in the grid, was
+    # indistinguishable from guessing (best 55.6% against a 49.2% base rate), so it
+    # is **off by default** — 24 of those 29 downs were style judgements (promo /
+    # engagement_farming / ai_slop / author), and a topic embedding cannot see
+    # style; it only sees the subject the down happened to be attached to. Turning
+    # this on is what the design note's extra channels are for.
+    condenser_verdict_positive_score: float = 0.25
+    condenser_verdict_negative_enabled: bool = False
     condenser_verdict_negative_score: float = -0.55
     condenser_verdict_min_down_neighbors: int = 2
     # Judging is for tweets you might still read; a backlog from a probe that was

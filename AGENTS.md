@@ -582,19 +582,32 @@ X surface lands on iOS — envelope payload + feedback in Kit, `feed`-scoped sto
 badge + its evidence. 41 new Kit scenarios (161 total) + 256 backend green; simulator
 walkthrough against the dev backend (real bird data + real DashScope verdicts) in
 `tmp/2026-07-25-x-phase5-ios/`. Web and iOS now render the same X contract.
-**TODO — settle the verdict thresholds once the labels exist** (opened 2026-07-26): the
-whole X source is live in production (probe pushes For You hourly at 10 tweets/round;
-`CONDENSER_X_HOME_COUNT` default dropped 20 → 10, so no prod env var is needed), and the
-embedding key is configured, but every `CONDENSER_VERDICT_*` constant (P, N, k, D_MAX, M,
-the ± thresholds) is still a **placeholder** — the 20/20 cold-start gate is the only thing
-keeping them from producing nonsense. When each side of the training set reaches **~50
-labels** (👍/saved vs 👎, check `verdict.positives` / `negatives` in `GET /api/x/status`),
-copy the production SQLite file down and run
-`uv run python scripts/x_verdict_backtest.py --sweep` against the copy (not the live file
-— the sweep trashes and rebuilds the KNN index per fold), then commit the chosen values.
-Read the output in the order the script prints it: coverage first, then negative precision,
-then positive. Until this happens the badges are decorative and nothing should be hidden
-or ranked by them.
+**Verdict thresholds are settled, and the negative side is OFF** (2026-07-27, closes the
+2026-07-26 TODO): the gate opened the moment the training set crossed 20/20 (30 👍 / 29 👎),
+the first real round ran `indexed=59 judged=82`, and a leave-one-out backtest over a
+production snapshot turned the placeholders into decisions:
+
+| | result |
+|---|---|
+| positive, D0.60 / M3 / `>= 0.25` | **100% precision** over 8 calls, 13.6% coverage — double 0.35's coverage at the same precision |
+| negative, every grid cell | best **55.6%** precision against a **49.2%** base rate — statistically it knew nothing |
+
+So `condenser_verdict_positive_score` is now **0.25** and the new
+`condenser_verdict_negative_enabled` defaults to **false** (`verdict.score_neighbours`
+gates the branch; the score and neighbours are still archived, so flipping it on needs no
+backfill). Why the asymmetry is a *property of the labels*, not a tuning failure: 24 of the
+29 downs were style judgements (`promo` 11, `engagement_farming` 10, `ai_slop` 3, `author`
+1) and only **1** was `topic` — a topic embedding cannot represent style, so those downs
+only dragged on whatever subject they happened to be attached to. Per-reason recall makes it
+concrete: at D0.60/M3/−0.45 the model recovered 2 of 11 `promo` downs and **0 of everything
+else**. The `reason IS NULL OR reason='topic'` variant the note asked for was run too and is
+**not** the fix at this size — it leaves 4 negatives, and its flattering 88% positive
+precision is just the 30/34 base rate of a classifier that calls everything positive.
+Re-run `scripts/x_verdict_backtest.py --sweep` (plus `tmp/x_verdict_variants.py`, which
+decouples the two thresholds and breaks recall down by reason) against a **copy** of the
+production DB before moving any of these — the sweep trashes and rebuilds the KNN index per
+fold. `CONDENSER_X_HOME_COUNT` went 20 → 10 → **20 again on 2026-07-27**, raised to fill the
+training set faster; prod reads the code default, so no prod env var is needed.
 **Scope check — tuning these constants is not "the verdict is done".** The design note
 (`kb/notes/2026-07-24-x-verdict-multi-channel-discussion.md`, the authority on where this
 algorithm is going) classes today's single-channel dense kNN as a **v1 baseline / control
@@ -603,15 +616,14 @@ topic, tone and author are averaged into a single point and "I hate this phrasin
 indistinguishable from "I hate this topic". Settling D_MAX and the ± thresholds calibrates
 the baseline; the note's target shape is a multi-channel ensemble (author prior + this kNN +
 LLM attribute extraction + n-gram Bayes + a combiner), with **each channel independently
-switchable and independently backtested** so the data picks the architecture. ~50 labels
-per side is the *baseline-tuning* milestone; the note's regime for the extra channels is
-hundreds-to-thousands. Two things the sweep should account for, both new since the chips
-landed (2026-07-26): labels written before that date have `reason` NULL — a real
-discontinuity in the training set, not missing data — and, **untested hypothesis worth a
-sweep variant**, a down whose reason is `author` / `promo` / `ai_slop` is not a *topic*
-judgement, so feeding it to a topic-embedding kNN as a negative is precisely the
-entanglement failure above; restricting the negative set to `reason IS NULL OR reason =
-'topic'` is a one-line variant to compare against the current all-downs behavior.
+switchable and independently backtested** so the data picks the architecture. The 2026-07-27
+backtest is the first evidence that this is not just theory: **the entanglement defect is
+what killed the negative side**, and no threshold reached it. Which makes the extra channels
+the actual roadmap for negatives — the reason mix says which ones pay first: `promo` (11) +
+`engagement_farming` (10) + `ai_slop` (3) = 24 of 29 downs are style, i.e. exactly channel C
+(LLM attribute extraction) and channel D (n-gram Bayes) territory, while `author` had 1 and
+channel A (author prior) stays near-zero cost. The labels before 2026-07-26 carry `reason`
+NULL — a real discontinuity, not missing data.
 
 **Forward is source-generic** (2026-07-27, BDD): `POST /api/forward {key, comment?}` joins
 the key-driven family (`/api/read`, `/api/hidden`, `/api/feedback`, `/api/records`);

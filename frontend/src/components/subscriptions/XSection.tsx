@@ -158,6 +158,7 @@ function XVerdictLine({ verdict }: { verdict: XStatus['verdict'] }) {
     <div>
       判定：{verdict.positives} 正 / {verdict.negatives} 负样本 · 已判 {positive} 推荐、{negative} 可能不感兴趣、
       {neutral} 中性
+      {!verdict.negative_enabled && <span> · 负判定已关闭（回测显示与瞎猜无异）</span>}
     </div>
   );
 }

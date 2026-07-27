@@ -316,6 +316,9 @@ export interface XStatus {
  *  gate opened, and how much labeling is still needed before it does. */
 export interface XVerdictStatus {
   enabled: boolean;
+  /** The "not for you" half. Off since the 2026-07-27 backtest found it no better
+   *  than guessing, so a fully trained verdict still shows no negative badges. */
+  negative_enabled: boolean;
   embedding_configured: boolean;
   index_available: boolean;
   /** True once both label floors are met; until then everything stays unjudged. */

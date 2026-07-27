@@ -162,7 +162,14 @@ def score_neighbours(neighbours: list[Neighbour], settings: Settings) -> Judgeme
     verdict = NEUTRAL
     if score >= settings.condenser_verdict_positive_score:
         verdict = POSITIVE
-    elif score <= settings.condenser_verdict_negative_score and downs >= settings.condenser_verdict_min_down_neighbors:
+    elif (
+        settings.condenser_verdict_negative_enabled
+        and score <= settings.condenser_verdict_negative_score
+        and downs >= settings.condenser_verdict_min_down_neighbors
+    ):
+        # Off by default since the 2026-07-27 backtest: on real labels this branch
+        # scored at the base rate, i.e. it carried no information. The score below
+        # is still archived, so the evidence outlives the switch.
         verdict = NEGATIVE
     evidence = sorted(close, key=lambda n: n.distance)[:META_NEIGHBOURS]
     return Judgement(verdict, {'score': round(score, 4), 'neighbors': [n.as_meta() for n in evidence]})
@@ -421,6 +428,9 @@ def status(settings: Settings, manager: Optional[VerdictManager] = None) -> dict
     negatives = len(samples) - positives
     return {
         'enabled': settings.condenser_verdict_enabled,
+        # A third kind of silence, and the least guessable one: trained, judging,
+        # and still never a "not for you" badge — because that side is switched off.
+        'negative_enabled': settings.condenser_verdict_negative_enabled,
         'embedding_configured': embedding.available(settings),
         'index_available': vectors.available(),
         'ready': (
