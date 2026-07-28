@@ -703,7 +703,8 @@ same thing yet. **A finding for step 4**: the channels' scales are not comparabl
 about [-0.4, +0.1] where B and D span [-1, +1]), so a plain weighted mean dilutes the
 sharper channel — the b+c+d mix scored 100% over 7 calls where B alone managed 100% over 8,
 and its negative side never spoke. The combiner needs per-channel calibration or a vote,
-not an average.
+not an average. 337 backend green (52 new behaviour tests across steps 0–3); the analysis
+scripts that produced these numbers live in `tmp/` and are listed in the plan's §12.
 
 **Nothing shipped to production.** `condenser_verdict_negative_enabled` stays false and the
 verdict still runs channel B alone — D is reachable only from the backtest until the
