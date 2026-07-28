@@ -399,6 +399,141 @@ async def test_a_tweet_without_attributes_leaves_channel_c_abstaining(env, monke
     assert 'c' not in verdict_meta(301)['channels']
 
 
+# --- shadow channels (plan v2 step 5b) --------------------------------------------
+#
+# A shadow channel scores every tweet and archives the score, but casts no vote.
+# It exists because §9's prospective validation had a cost nobody wanted to pay:
+# measuring channel C or D in production meant letting them badge the reader
+# first, at the 33% / 64.7% positive precision the 76-label backtest measured.
+# Shadowing makes the measurement free — `scripts/x_verdict_prospective.py`
+# replays the archived scores at any threshold, on tweets judged before they were
+# labeled, without a single badge changing.
+
+
+async def test_a_shadow_channel_cannot_change_the_verdict(env, monkeypatch):
+    """Bait phrasing on a subject the reader likes. Voting, channel D cancels
+    channel B into neutral (the conflict test above); shadowing, it says the same
+    thing into the archive and the reader still sees B's positive."""
+    mgr = seed_bait_world(
+        monkeypatch,
+        CONDENSER_VERDICT_CHANNELS='b',
+        CONDENSER_VERDICT_SHADOW_CHANNELS='d',
+        # every gate that could let D speak is open — only shadowing holds it back
+        CONDENSER_VERDICT_NEGATIVE_ENABLED='1',
+        CONDENSER_VERDICT_D_NEGATIVE_ENABLED='1',
+    )
+    ingest('foryou', bird_entry(301, 'save this thread 🧵 rust tools you must know', 5))
+
+    await mgr.run_once()
+
+    assert feed_verdict(301) == 'positive'
+
+
+async def test_a_shadow_channels_score_and_evidence_are_archived(env, monkeypatch):
+    """The whole point: the number is in the database even though nothing was shown.
+    ``verdict: null`` plus ``shadow: true`` says why — an abstention is *absent*
+    from the block, so silence and shadowing stay distinguishable."""
+    mgr = seed_bait_world(monkeypatch, CONDENSER_VERDICT_SHADOW_CHANNELS='d')
+    ingest('foryou', bird_entry(301, 'save this thread 🧵 rust tools you must know', 5))
+
+    await mgr.run_once()
+
+    channel = verdict_meta(301)['channels']['d']
+    assert channel['verdict'] is None and channel['shadow'] is True
+    assert channel['score'] < 0
+    assert 'save this' in [token for token, _ in channel['tokens']]
+
+
+async def test_a_voting_channel_is_never_also_shadowed(env, monkeypatch):
+    """Listing a channel in both is a configuration mistake, not a third mode:
+    voting wins, so a fat-fingered env var cannot silently mute a channel that the
+    admission flags say is live."""
+    mgr = seed_bait_world(
+        monkeypatch,
+        CONDENSER_VERDICT_CHANNELS='b,d',
+        CONDENSER_VERDICT_SHADOW_CHANNELS='d',
+        CONDENSER_VERDICT_NEGATIVE_ENABLED='1',
+        CONDENSER_VERDICT_D_NEGATIVE_ENABLED='1',
+    )
+    ingest('foryou', bird_entry(301, 'save this thread 🧵 gardening tools you must know', 5))
+
+    await mgr.run_once()
+
+    assert feed_verdict(301) == 'negative'
+    assert 'shadow' not in verdict_meta(301)['channels']['d']
+
+
+async def test_the_top_level_evidence_is_untouched_by_shadowing(env, monkeypatch):
+    """Shipped iOS builds decode the top-level ``score``/``neighbors`` and the algo
+    tag names how the *verdict* was made. A shadow channel changes neither — it is
+    additive, exactly like the ensemble block was."""
+    mgr = seed_bait_world(monkeypatch, CONDENSER_VERDICT_SHADOW_CHANNELS='d')
+    ingest('foryou', bird_entry(301, 'a fresh take on rust lifetimes', 5))
+
+    await mgr.run_once()
+
+    meta = verdict_meta(301)
+    assert meta['algo'] == 'knn-v1'  # channel B alone still decided
+    assert meta['score'] > 0 and meta['neighbors']
+
+
+async def test_shadowing_channel_c_still_describes_before_judging(env, monkeypatch):
+    """Attribute extraction has to run *before* judging whenever channel C scores —
+    voting or not. A tweet is judged exactly once, so an attribute that arrives
+    afterwards would never reach the archive for that tweet, and the shadow
+    measurement would be silently empty."""
+    extractor = FakeExtractor(
+        answers={
+            'crypto': {'topics': ['crypto'], 'style_flags': ['promo_cta']},
+            'course': {'topics': ['course'], 'style_flags': ['promo_cta']},
+        }
+    )
+    setup_db(
+        monkeypatch,
+        CONDENSER_ATTR_API_KEY='test-key',
+        CONDENSER_VERDICT_CHANNELS='b',
+        CONDENSER_VERDICT_SHADOW_CHANNELS='c',
+        CONDENSER_VERDICT_C_MIN_OBSERVATIONS='1',
+    )
+    db.add_x_subscription('foryou', name=x.FORYOU_NAME, config={'kind': 'home'})
+    ingest(
+        'foryou',
+        bird_entry(101, 'crypto presale is live, buy now', 200),
+        bird_entry(102, 'crypto signals group, join today', 190),
+        bird_entry(201, 'notes on rust borrow checking', 180),
+        bird_entry(202, 'more notes on rust async runtimes', 170),
+    )
+    label(101, 'down', 'promo')
+    label(102, 'down', 'promo')
+    label(201, 'up')
+    label(202, 'up')
+    mgr = make_manager(extractor=extractor)
+    ingest('foryou', bird_entry(301, 'limited seats: buy my course today', 5))
+
+    await mgr.run_once()
+
+    channel = verdict_meta(301)['channels']['c']
+    assert channel['shadow'] is True and channel['driver'] == 'promo_cta'
+    assert channel['score'] < 0
+
+
+async def test_the_prospective_monitor_scores_a_shadow_channel_without_crediting_a_vote(env, monkeypatch):
+    """The two halves meeting: the shadow channel is invisible to the as-shipped
+    attribution (it claimed nothing) and fully visible to the replay (it left a
+    score). That is what lets a channel earn admission before being admitted."""
+    from condenser import prospective
+
+    mgr = seed_bait_world(monkeypatch, CONDENSER_VERDICT_SHADOW_CHANNELS='d')
+    ingest('foryou', bird_entry(301, 'save this thread 🧵 rust tools you must know', 5))
+    await mgr.run_once()
+    label(301, 'down')  # the reader disagrees, after the fact
+
+    sample = prospective.pairs()
+    assert prospective.summarize(sample).by_channel.get('d') is None
+    replay = prospective.shadow(sample, 'd', positive_score=0.25, negative_score=-0.45)
+    assert (replay.scored, replay.negative.calls, replay.negative.hits) == (1, 1, 1)
+
+
 # --- visibility ------------------------------------------------------------------
 
 
@@ -414,3 +549,20 @@ async def test_status_reports_the_enabled_channels(env, monkeypatch):
         status = client.get('/api/x/status').json()
 
     assert status['verdict']['channels'] == ['b', 'd']
+
+
+async def test_status_reports_the_shadow_channels(env, monkeypatch):
+    """A channel that scores in silence is the hardest state to notice from the
+    outside — no badge ever changes — so the status line has to name it."""
+    from fastapi.testclient import TestClient
+
+    from condenser.app import create_app
+
+    seed_bait_world(monkeypatch, CONDENSER_VERDICT_SHADOW_CHANNELS='c,d')
+
+    with TestClient(create_app()) as client:
+        assert client.post('/api/auth/login', json={'password': 'pw'}).status_code == 200
+        status = client.get('/api/x/status').json()
+
+    assert status['verdict']['channels'] == ['b']
+    assert status['verdict']['shadow_channels'] == ['c', 'd']

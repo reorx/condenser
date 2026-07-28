@@ -241,6 +241,10 @@ struct XVerdictChannelRow: View {
                     Text(voteLabel(verdict))
                         .foregroundStyle(tone(verdict))
                 }
+                if channel.shadow == true {
+                    Text("影子（不参与投票）")
+                        .foregroundStyle(.secondary)
+                }
                 Spacer(minLength: 0)
                 Text(String(format: "%.2f", channel.score))
                     .foregroundStyle(.secondary)

@@ -171,6 +171,10 @@ export interface XVerdictNeighbor {
 export interface XVerdictChannel {
   verdict: XVerdict | null;
   score: number;
+  /** Step 5b: this channel scored into the archive but was not allowed to vote, so
+   *  it could be measured on real traffic without badging anyone. An *abstaining*
+   *  channel is absent from the block entirely — that is the difference. */
+  shadow?: boolean;
   /** Channel C: the flag that decided, plus every sufficiently observed flag's score. */
   driver?: string;
   flags?: [string, number][];

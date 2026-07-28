@@ -1355,6 +1355,53 @@ def x_verdict_counts() -> dict[str, int]:
     return counts
 
 
+def x_prospective_rows() -> list[dict]:
+    """For You rows carrying both a verdict and a label — the out-of-sample set.
+
+    No timestamp comparison, because none is needed: ``x_pending_verdict_rows``
+    never judges an already-labeled tweet, so a row with both was judged first and
+    labeled afterwards. That structural fact is why there is no ``verdict_at``
+    column and why these pairs are free of the leave-one-out backtest's selection
+    bias — the reader labeled them without being asked to grade anything.
+    """
+    return _rows(
+        tdb.db.execute_sql(
+            'SELECT f.tweet_id AS tweet_id, f.verdict AS verdict, f.verdict_meta AS verdict_meta, '
+            'f.first_seen_at AS first_seen_at, t.author_handle AS author_handle, t.text AS text, '
+            'fb.verdict AS feedback, fb.reason AS reason, fb.created_at AS labeled_at, '
+            'si.created_at AS saved_at '
+            'FROM x_feed_items f '
+            'LEFT JOIN x_tweets t ON t.id = f.tweet_id '
+            "LEFT JOIN item_feedback fb ON fb.source = 'x' AND fb.ref1 = f.tweet_id "
+            "LEFT JOIN saved_items si ON si.source = 'x' AND si.ref1 = f.tweet_id "
+            'WHERE f.channel_id = ? AND f.verdict IS NOT NULL '
+            'AND (fb.ref1 IS NOT NULL OR si.ref1 IS NOT NULL) '
+            'ORDER BY f.first_seen_at',
+            (FORYOU_FEED,),
+        )
+    )
+
+
+def x_verdict_label_coverage() -> list[dict]:
+    """Per verdict: how many were judged, read, and labeled at all.
+
+    The denominator behind every prospective precision figure — a badge nobody
+    ever read produces no evidence, and a channel is not being validated just
+    because it has been running.
+    """
+    return _rows(
+        tdb.db.execute_sql(
+            'SELECT f.verdict AS verdict, COUNT(*) AS judged, '
+            "SUM(EXISTS (SELECT 1 FROM read_items r WHERE r.source = 'x' AND r.ref1 = f.tweet_id)) AS read, "
+            "SUM(EXISTS (SELECT 1 FROM item_feedback fb WHERE fb.source = 'x' AND fb.ref1 = f.tweet_id) "
+            "  OR EXISTS (SELECT 1 FROM saved_items si WHERE si.source = 'x' AND si.ref1 = f.tweet_id)) AS labeled "
+            'FROM x_feed_items f WHERE f.channel_id = ? AND f.verdict IS NOT NULL '
+            'GROUP BY f.verdict ORDER BY f.verdict',
+            (FORYOU_FEED,),
+        )
+    )
+
+
 # --- link preview cache -----------------------------------------------------
 
 

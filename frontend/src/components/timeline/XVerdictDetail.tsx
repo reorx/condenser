@@ -76,6 +76,7 @@ function ChannelRow({ channelKey, channel }: { channelKey: string; channel: XVer
             {VOTE_LABEL[channel.verdict]}
           </span>
         )}
+        {channel.shadow && <span className="text-muted-foreground">影子（不参与投票）</span>}
         <span className="ml-auto shrink-0 text-muted-foreground tabular-nums">{channel.score.toFixed(2)}</span>
       </div>
       {evidence && <div className="truncate text-xs text-muted-foreground">{evidence}</div>}

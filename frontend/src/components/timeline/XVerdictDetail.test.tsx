@@ -67,6 +67,22 @@ describe('XVerdictDetail', () => {
     expect(screen.getByText('判负')).toBeInTheDocument();
   });
 
+  it('marks a shadow channel so its score is not read as a vote', () => {
+    // Step 5b: a channel measured on real traffic without being allowed to badge
+    // anyone. Its score is real evidence, its silence is not an opinion — and the
+    // detail pane is the only place that difference is visible.
+    const shadowed: XVerdictMeta = {
+      score: 0.4,
+      neighbors: [],
+      channels: { d: { verdict: null, score: -0.81, shadow: true, tokens: [['save this', -1.1]] } },
+      algo: 'knn-v1',
+    };
+    render(<XVerdictDetail verdict="positive" meta={shadowed} />);
+
+    expect(screen.getByText('影子（不参与投票）')).toBeInTheDocument();
+    expect(screen.queryByText('判负')).not.toBeInTheDocument();
+  });
+
   it('keeps the abstain explanation when only the topic channel stayed silent', () => {
     // out_of_domain describes channel B; the ensemble may still have spoken
     render(<XVerdictDetail verdict="negative" meta={ensemble} />);

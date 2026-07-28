@@ -142,6 +142,33 @@ struct XModelsDecodingTests {
         #expect(item.x?.verdictMeta?.channels == nil)
     }
 
+    @Test("影子通道：verdict 为 null + shadow=true，解出来是「有分数但没投票」")
+    func shadowChannel() throws {
+        // 步骤 5b：通道只打分归档、不投票，好在不打扰读者的前提下拿前瞻证据。
+        // 弃权的通道压根不在 channels 块里，所以 shadow 标记是唯一能把
+        // 「没资格说话」和「没什么可说」分开的东西。
+        let json = #"""
+        {"source": "x", "key": "x:1", "datetime": "2026-07-28T10:00:00Z",
+         "is_read": false, "is_saved": false,
+         "x": {"id": "1", "author_id": null, "author_handle": "a", "author_name": null,
+               "text": "hi", "created_at": null, "first_seen_at": "2026-07-28T10:00:00Z",
+               "media": null, "metrics": null, "quote": null, "rt_of_handle": null,
+               "reply_to_id": null, "article": null, "feed": "foryou", "feed_kind": "home",
+               "verdict": "positive",
+               "verdict_meta": {"score": 0.4, "neighbors": [],
+                 "channels": {"d": {"verdict": null, "score": -0.81, "shadow": true,
+                                    "tokens": [["save this", -1.1]]}},
+                 "model": "text-embedding-v4@256", "algo": "knn-v1"}}}
+        """#
+        let item = try decoder.decode(TimelineItem.self, from: Data(json.utf8))
+        let d = try #require(item.x?.verdictMeta?.channels?["d"])
+        #expect(d.verdict == nil)
+        #expect(d.shadow == true)
+        #expect(d.score == -0.81)
+        // 判定本身仍然只由投票的通道决定
+        #expect(item.x?.verdict == .positive)
+    }
+
     @Test("feedback 在 envelope 层（源通用），up/down 都能读回")
     func feedback() throws {
         let shapes = try decodeShapes()

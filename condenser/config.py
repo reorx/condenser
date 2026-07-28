@@ -101,6 +101,16 @@ class Settings(BaseSettings):
     # behavior — enabling more channels is a config decision backed by a backtest,
     # never a side effect of deploying this code.
     condenser_verdict_channels: str = 'b'
+    # Channels that score and archive but never vote (plan v2 step 5b). The revised
+    # §9 validates a channel prospectively — on tweets judged before they were
+    # labeled — but doing that by *enabling* the channel means badging the reader
+    # with an unproven one first (measured: channel C's positive side is 33%
+    # precise against a 48.7% base rate). Shadowing makes the measurement free:
+    # the score lands in `verdict_meta.channels` and
+    # `scripts/x_verdict_prospective.py` replays it at any threshold, while not one
+    # badge changes. A channel listed here *and* in the line above votes — voting
+    # wins, so a typo cannot mute an admitted channel.
+    condenser_verdict_shadow_channels: str = ''
     # Negatives are double-gated: `condenser_verdict_negative_enabled` above is the
     # master kill-switch, and each channel additionally needs its own admission
     # flag (the revised §9's unit of admission). The split is what lets channel D

@@ -422,6 +422,9 @@ public struct XVerdictEvidencePair: Codable, Equatable, Sendable {
 public struct XVerdictChannel: Codable, Equatable, Sendable {
     public let verdict: XVerdict?
     public let score: Double
+    /// 步骤 5b：该通道只打分归档、不投票（为了在不打扰读者的前提下拿到前瞻证据）。
+    /// 弃权的通道压根不在 channels 块里——这就是两者的区别。
+    public let shadow: Bool?
     /// 通道 C：拍板的那个属性
     public let driver: String?
     public let flags: [XVerdictEvidencePair]?

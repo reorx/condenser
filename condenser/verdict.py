@@ -224,6 +224,23 @@ def enabled_channels(settings: Settings) -> list[str]:
     return [key for key in keys if key in ('b', 'c', 'd')]
 
 
+def shadow_channels(settings: Settings) -> list[str]:
+    """The channels that score and archive this round without casting a vote.
+
+    The cheap half of the revised §9: a channel has to be measured on tweets that
+    were judged before they were labeled, and the obvious way to get there — turn
+    it on and watch — spends the reader's attention on an unproven channel first.
+    Shadowing buys the same evidence for nothing, because the score is archived
+    either way and ``scripts/x_verdict_prospective.py`` replays it.
+
+    A channel that already votes is never also shadowed: voting wins, so listing
+    one in both places is a harmless typo rather than a silent mute.
+    """
+    voting = set(enabled_channels(settings))
+    keys = [key.strip() for key in settings.condenser_verdict_shadow_channels.split(',')]
+    return [key for key in keys if key in ('b', 'c', 'd') and key not in voting]
+
+
 def classify(channel: ChannelScore, policy: ChannelPolicy) -> str:
     """Score -> this channel's vote, with the asymmetry that outlived the backtests.
 
@@ -343,11 +360,13 @@ class VerdictManager:
                 result.skipped_reason = 'cold_start'
                 return result
             result.indexed = await self._index_missing(samples)
-            keys = enabled_channels(self.settings)
+            keys = enabled_channels(self.settings) + shadow_channels(self.settings)
             if 'c' in keys:
                 # Channel C scores off the attributes, so this round's arrivals
                 # must be described before they are judged — a tweet is judged
                 # exactly once, and an attribute that arrives later never votes.
+                # Shadowing C needs the same order for the same reason: a score
+                # that arrives after the row is written is never archived at all.
                 # (_describe absorbs provider failures, so judging still runs and
                 # C simply abstains on whatever went undescribed.)
                 await self._describe(result)
@@ -450,10 +469,12 @@ class VerdictManager:
             return
 
         keys = enabled_channels(self.settings)
-        fitted = self._fit_channels(samples, keys)
+        shadows = shadow_channels(self.settings)
+        scoring = keys + shadows
+        fitted = self._fit_channels(samples, scoring)
         flags = (
             db.x_attributes_for({row['tweet_id'] for row, _ in pending}, attributes.model_tag(self.settings))
-            if 'c' in keys
+            if 'c' in scoring
             else {}
         )
         handles = db.x_author_handles(set(samples))
@@ -461,7 +482,9 @@ class VerdictManager:
             vec = vecs.get(row['tweet_id'])
             if vec is None:
                 continue
-            judgement = self._judge_one(vec, text, flags.get(row['tweet_id'], []), samples, handles, keys, fitted)
+            judgement = self._judge_one(
+                vec, text, flags.get(row['tweet_id'], []), samples, handles, keys, shadows, fitted
+            )
             db.set_x_verdict(row['channel_id'], row['tweet_id'], judgement.verdict, judgement.meta)
             result.judged += 1
 
@@ -494,10 +517,11 @@ class VerdictManager:
         samples: dict[int, str],
         handles: dict[int, str],
         keys: list[str],
+        shadows: list[str],
         fitted: dict,
     ) -> Judgement:
         scores: dict[str, Optional[ChannelScore]] = {}
-        for key in keys:
+        for key in keys + shadows:
             if key == 'b':
                 hits = vectors.knn(vector, self.settings.condenser_verdict_k)
                 neighbours = [
@@ -513,11 +537,16 @@ class VerdictManager:
         votes = {
             key: None if score is None else classify(score, channel_policy(key, self.settings))
             for key, score in scores.items()
+            if key in keys  # a shadow channel scores, archives, and says nothing
         }
-        return Judgement(resolve(votes), self._meta(scores, votes, keys))
+        return Judgement(resolve(votes), self._meta(scores, votes, keys, shadows))
 
     def _meta(
-        self, scores: dict[str, Optional[ChannelScore]], votes: dict[str, Optional[str]], keys: list[str]
+        self,
+        scores: dict[str, Optional[ChannelScore]],
+        votes: dict[str, Optional[str]],
+        keys: list[str],
+        shadows: list[str],
     ) -> dict:
         """The archived evidence, additive over the single-channel shape.
 
@@ -526,19 +555,24 @@ class VerdictManager:
         ``channels`` block beside them, never instead of them. Channel B's entry in
         that block carries no second copy of the neighbours (this row is written
         ~1000×/day; the top level already has them).
+
+        A shadow channel is marked, not merely voteless: an *abstaining* channel is
+        absent from the block entirely, so without the flag "said nothing" and "was
+        not allowed to speak" would be told apart only by the absence of a field.
         """
         topic = scores.get('b')
-        if 'b' not in keys:
+        if 'b' not in keys and 'b' not in shadows:
             meta: dict = {'score': 0.0, 'neighbors': []}
         elif topic is None:
             meta = {'reason': 'out_of_domain', 'neighbors': [], 'score': 0.0}
         else:
             meta = {'score': round(topic.score, 4), 'neighbors': topic.meta['neighbors']}
-        if keys != ['b']:
+        if keys != ['b'] or shadows:
             meta['channels'] = {
                 key: {
-                    'verdict': votes[key],
+                    'verdict': votes.get(key),
                     'score': round(score.score, 4),
+                    **({'shadow': True} if key in shadows else {}),
                     **(score.meta if key != 'b' else {}),
                 }
                 for key, score in scores.items()
@@ -626,6 +660,10 @@ def status(settings: Settings, manager: Optional[VerdictManager] = None) -> dict
         # Which channels vote (plan v2 step 4). The default is B alone; a channel
         # listed here still abstains whenever it has nothing to say.
         'channels': enabled_channels(settings),
+        # And which ones only score into the archive (step 5b). This is the state
+        # nothing else can reveal — a shadow channel never changes a badge, so
+        # without this line "running silently" looks exactly like "not configured".
+        'shadow_channels': shadow_channels(settings),
         'embedding_configured': embedding.available(settings),
         'index_available': vectors.available(),
         'ready': (
