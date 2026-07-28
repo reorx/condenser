@@ -135,6 +135,16 @@ struct XDetailSheet: View {
             ForEach(tweet.verdictMeta?.neighbors ?? [], id: \.tweetID) { neighbor in
                 XVerdictNeighborRow(neighbor: neighbor)
             }
+            // ensemble（判定 v2 步骤 4）：每个开口的通道一行，各自的投票 + 各自的证据。
+            // 旧判定没有 channels 块，这一段整体不出现。
+            if let channels = tweet.verdictMeta?.channels, !channels.isEmpty {
+                Text("各通道投票")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                ForEach(channels.sorted(by: { $0.key < $1.key }), id: \.key) { key, channel in
+                    XVerdictChannelRow(key: key, channel: channel)
+                }
+            }
             if let model = tweet.verdictMeta?.model {
                 Text(model)
                     .font(.caption2)
@@ -213,6 +223,63 @@ struct XDetailSheet: View {
         case "out_of_domain": "离所有已标注的推文都太远，没有硬判"
         case "no_text": "没有可判定的文本"
         default: reason
+        }
+    }
+}
+
+/// ensemble 的一行通道投票：通道名（reader 的语言）+ 投票 + 分数，
+/// 证据（D 的词 / C 的属性）作小字第二行——B 的证据就是上面的近邻列表，不重复画。
+struct XVerdictChannelRow: View {
+    let key: String
+    let channel: XVerdictChannel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 6) {
+                Text(name)
+                if let verdict = channel.verdict {
+                    Text(voteLabel(verdict))
+                        .foregroundStyle(tone(verdict))
+                }
+                Spacer(minLength: 0)
+                Text(String(format: "%.2f", channel.score))
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+            }
+            if !channel.evidence.isEmpty {
+                Text(channel.evidence.map { "\($0.name) \(String(format: "%+.2f", $0.weight))" }
+                    .joined(separator: " · "))
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+        }
+        .font(.caption)
+    }
+
+    private var name: String {
+        switch key {
+        case "b": "话题相似"
+        case "c": "内容属性"
+        case "d": "词面特征"
+        default: key
+        }
+    }
+
+    private func voteLabel(_ verdict: XVerdict) -> String {
+        switch verdict {
+        case .positive: "判正"
+        case .negative: "判负"
+        case .neutral: "中性"
+        case .other: "未知"
+        }
+    }
+
+    private func tone(_ verdict: XVerdict) -> Color {
+        switch verdict {
+        case .positive: .green
+        case .negative: .pink
+        default: .secondary
         }
     }
 }

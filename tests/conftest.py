@@ -18,10 +18,11 @@ def env(tmp_path, monkeypatch):
     monkeypatch.setenv('CONDENSER_SECRET_KEY', 'secret')
     monkeypatch.setenv('CONDENSER_DB_PATH', str(tmp_path / 'condenser.db'))
     monkeypatch.setenv('CONDENSER_BACKFILL_DAYS', '7')
-    # Settings also reads the real .env, where a working embedding key may live.
-    # Blank it by default so no test can spend money or hit the network by accident;
-    # the verdict tests opt back in explicitly (with an injected fake embedder).
+    # Settings also reads the real .env, where working API keys may live. Blank
+    # them by default so no test can spend money or hit the network by accident;
+    # the verdict/attribute tests opt back in explicitly (with injected fakes).
     monkeypatch.setenv('CONDENSER_EMBEDDING_API_KEY', '')
+    monkeypatch.setenv('CONDENSER_ATTR_API_KEY', '')
     from condenser.config import get_settings
 
     get_settings.cache_clear()

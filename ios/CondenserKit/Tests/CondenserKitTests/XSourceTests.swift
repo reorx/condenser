@@ -88,6 +88,60 @@ struct XModelsDecodingTests {
         #expect(neighbors.allSatisfy { !$0.tweetID.isEmpty && $0.distance >= 0 })
     }
 
+    @Test("ensemble meta：channels 块逐通道解码，证据对是 [名字, 权重] 异构数组")
+    func ensembleChannels() throws {
+        let json = #"""
+        {"source": "x", "key": "x:1", "datetime": "2026-07-28T10:00:00Z",
+         "is_read": false, "is_saved": false,
+         "x": {"id": "1", "author_id": null, "author_handle": "a", "author_name": null,
+               "text": "hi", "created_at": null, "first_seen_at": "2026-07-28T10:00:00Z",
+               "media": null, "metrics": null, "quote": null, "rt_of_handle": null,
+               "reply_to_id": null, "article": null, "feed": "foryou", "feed_kind": "home",
+               "verdict": "negative",
+               "verdict_meta": {"reason": "out_of_domain", "neighbors": [], "score": 0.0,
+                 "channels": {"d": {"verdict": "negative", "score": -0.81,
+                                    "tokens": [["save this", -1.1], ["🧵", -0.9]]},
+                              "c": {"verdict": "neutral", "score": -0.14,
+                                    "driver": "promo_cta", "flags": [["promo_cta", -0.14]]}},
+                 "model": "text-embedding-v4@256", "algo": "vote-v1"}}}
+        """#
+        let item = try decoder.decode(TimelineItem.self, from: Data(json.utf8))
+        let channels = try #require(item.x?.verdictMeta?.channels)
+        let d = try #require(channels["d"])
+        #expect(d.verdict == .negative)
+        #expect(d.evidence.first?.name == "save this")
+        #expect(d.evidence.first?.weight == -1.1)
+        let c = try #require(channels["c"])
+        #expect(c.driver == "promo_cta")
+        #expect(c.evidence.map(\.name) == ["promo_cta"])
+    }
+
+    @Test("旧 meta 没有 channels 块照常解码；channels 块坏了整块降级为 nil 而不炸整页")
+    func ensembleForwardCompatibility() throws {
+        // 步骤 4 之前写下的判定：没有 channels 键
+        let shapes = try decodeShapes()
+        #expect(shapes["verdict_positive"]?.x?.verdictMeta?.channels == nil)
+
+        // 后端先行升级出看不懂的 channels 形状：多通道证据是增强信息，
+        // 判定本身与顶层证据必须原样活着
+        let json = #"""
+        {"source": "x", "key": "x:1", "datetime": "2026-07-28T10:00:00Z",
+         "is_read": false, "is_saved": false,
+         "x": {"id": "1", "author_id": null, "author_handle": "a", "author_name": null,
+               "text": "hi", "created_at": null, "first_seen_at": "2026-07-28T10:00:00Z",
+               "media": null, "metrics": null, "quote": null, "rt_of_handle": null,
+               "reply_to_id": null, "article": null, "feed": "foryou", "feed_kind": "home",
+               "verdict": "negative",
+               "verdict_meta": {"score": -0.7, "neighbors": [],
+                 "channels": {"d": {"verdict": "negative", "score": "loud"}},
+                 "model": "text-embedding-v4@256", "algo": "vote-v1"}}}
+        """#
+        let item = try decoder.decode(TimelineItem.self, from: Data(json.utf8))
+        #expect(item.x?.verdict == .negative)
+        #expect(item.x?.verdictMeta?.score == -0.7)
+        #expect(item.x?.verdictMeta?.channels == nil)
+    }
+
     @Test("feedback 在 envelope 层（源通用），up/down 都能读回")
     func feedback() throws {
         let shapes = try decodeShapes()

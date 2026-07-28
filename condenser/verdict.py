@@ -31,16 +31,17 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Awaitable, Callable, Optional
 
-from . import attributes, db, embedding, vectors
-from .channels import ChannelScore
+from . import attributes, db, embedding, ngram, vectors
+from .channels import NEGATIVE, NEUTRAL, POSITIVE, ChannelScore, resolve
 from .config import Settings, get_settings
 
 log = logging.getLogger('condenser.verdict')
 
-# Bumped when the scoring changes, so a stored verdict says which rules produced it.
+# Bumped when the scoring changes, so a stored verdict says which rules produced
+# it. Single-channel rounds keep the historical tag — their scoring is unchanged —
+# while a multi-channel round is a different algorithm and says so.
 ALGO_VERSION = 'knn-v1'
-
-POSITIVE, NEUTRAL, NEGATIVE = 'positive', 'neutral', 'negative'
+ENSEMBLE_ALGO_VERSION = 'vote-v1'
 
 # Sample weights per label kind. A save is a higher-grade positive than a thumb —
 # it costs the reader an intent, not a reflex. The weight lives here rather than in
@@ -175,35 +176,66 @@ def topic_score(neighbours: list[Neighbour], settings: Settings) -> Optional[Cha
     )
 
 
-def classify(channel: ChannelScore, settings: Settings) -> str:
-    """Score -> verdict, with the asymmetry that outlived the 2026-07-27 backtest.
+@dataclass(frozen=True)
+class ChannelPolicy:
+    """One channel's thresholds and its negative admission, resolved from settings.
+
+    Per channel because the scales are incomparable (the reason the combiner is a
+    vote at all), and because the revised §9 admits negatives one channel at a
+    time. ``negative_enabled`` already has the master switch folded in: the global
+    flag is the kill-all, the per-channel flag is the admission, and both must be
+    on — so admitting channel D can never quietly resurrect channel B's negative
+    side, the one the 2026-07-27 backtest showed to be guessing.
+    """
+
+    positive_score: float
+    negative_score: float
+    negative_enabled: bool
+
+
+def channel_policy(key: str, settings: Settings) -> ChannelPolicy:
+    master = settings.condenser_verdict_negative_enabled
+    if key == 'b':
+        return ChannelPolicy(
+            settings.condenser_verdict_positive_score,
+            settings.condenser_verdict_negative_score,
+            master and settings.condenser_verdict_b_negative_enabled,
+        )
+    if key == 'c':
+        return ChannelPolicy(
+            settings.condenser_verdict_c_positive_score,
+            settings.condenser_verdict_c_negative_score,
+            master and settings.condenser_verdict_c_negative_enabled,
+        )
+    if key == 'd':
+        return ChannelPolicy(
+            settings.condenser_verdict_d_positive_score,
+            settings.condenser_verdict_d_negative_score,
+            master and settings.condenser_verdict_d_negative_enabled,
+        )
+    raise KeyError(key)
+
+
+def enabled_channels(settings: Settings) -> list[str]:
+    """The channels that vote this round, in the configured order. Unknown keys are
+    dropped rather than raised: a typo in an env var must degrade, not crash the
+    judging loop."""
+    keys = [key.strip() for key in settings.condenser_verdict_channels.split(',')]
+    return [key for key in keys if key in ('b', 'c', 'd')]
+
+
+def classify(channel: ChannelScore, policy: ChannelPolicy) -> str:
+    """Score -> this channel's vote, with the asymmetry that outlived the backtests.
 
     Negative additionally needs ``corroborated`` (a second down neighbour, or a
-    second bait token) and, since that backtest, the switch to be on at all: on
-    real labels the negative branch scored at the base rate, so it is off by
-    default. The score is still archived, so the evidence outlives the switch.
+    second bait token) and the channel's admission to be on at all — the score is
+    still archived either way, so the evidence outlives the switch.
     """
-    if channel.score >= settings.condenser_verdict_positive_score:
+    if channel.score >= policy.positive_score:
         return POSITIVE
-    if (
-        settings.condenser_verdict_negative_enabled
-        and channel.score <= settings.condenser_verdict_negative_score
-        and channel.corroborated
-    ):
+    if policy.negative_enabled and channel.score <= policy.negative_score and channel.corroborated:
         return NEGATIVE
     return NEUTRAL
-
-
-def score_neighbours(neighbours: list[Neighbour], settings: Settings) -> Judgement:
-    """Distance-weighted vote over the effective neighbours -> a verdict + its evidence."""
-    channel = topic_score(neighbours, settings)
-    if channel is None:
-        # too far from everything ever labeled: say so instead of guessing
-        return Judgement(NEUTRAL, {'reason': 'out_of_domain', 'neighbors': [], 'score': 0.0})
-    return Judgement(
-        classify(channel, settings),
-        {'score': round(channel.score, 4), 'neighbors': channel.meta['neighbors']},
-    )
 
 
 # --- the round ----------------------------------------------------------------
@@ -311,11 +343,19 @@ class VerdictManager:
                 result.skipped_reason = 'cold_start'
                 return result
             result.indexed = await self._index_missing(samples)
+            keys = enabled_channels(self.settings)
+            if 'c' in keys:
+                # Channel C scores off the attributes, so this round's arrivals
+                # must be described before they are judged — a tweet is judged
+                # exactly once, and an attribute that arrives later never votes.
+                # (_describe absorbs provider failures, so judging still runs and
+                # C simply abstains on whatever went undescribed.)
+                await self._describe(result)
             await self._judge(samples, result)
-            # After judging, deliberately: attributes feed a channel that does not
-            # score yet, so a slow or failing provider must not delay the verdicts
-            # the reader actually sees.
-            await self._describe(result)
+            if 'c' not in keys:
+                # With C not scoring, the old order stands: a slow or failing
+                # provider must not delay the verdicts the reader actually sees.
+                await self._describe(result)
             result.pruned = self._prune(samples)
             db.set_meta(LAST_RUN_META_KEY, self._now().isoformat(sep=' ', timespec='seconds'))
             return result
@@ -409,25 +449,104 @@ class VerdictManager:
             log.exception('x verdict: embedding failed, leaving %s tweets unjudged', len(pending))
             return
 
+        keys = enabled_channels(self.settings)
+        fitted = self._fit_channels(samples, keys)
+        flags = (
+            db.x_attributes_for({row['tweet_id'] for row, _ in pending}, attributes.model_tag(self.settings))
+            if 'c' in keys
+            else {}
+        )
         handles = db.x_author_handles(set(samples))
-        for row, _ in pending:
+        for row, text in pending:
             vec = vecs.get(row['tweet_id'])
             if vec is None:
                 continue
-            judgement = self._judge_one(vec, samples, handles)
+            judgement = self._judge_one(vec, text, flags.get(row['tweet_id'], []), samples, handles, keys, fitted)
             db.set_x_verdict(row['channel_id'], row['tweet_id'], judgement.verdict, judgement.meta)
             result.judged += 1
 
-    def _judge_one(self, vector: list[float], samples: dict[int, str], handles: dict[int, str]) -> Judgement:
-        hits = vectors.knn(vector, self.settings.condenser_verdict_k)
-        neighbours = [
-            Neighbour(tweet_id, distance, samples[tweet_id], handles.get(tweet_id))
-            for tweet_id, distance in hits
-            if tweet_id in samples
-        ]
-        judgement = score_neighbours(neighbours, self.settings)
-        judgement.meta.update({'model': embedding.model_tag(self.settings), 'algo': ALGO_VERSION})
-        return judgement
+    def _fit_channels(self, samples: dict[int, str], keys: list[str]) -> dict:
+        """Refit the cheap channels from the live labels, once per round.
+
+        Channel D's counts rebuild from ``x_tweets.text`` in milliseconds at a few
+        hundred labels (the no-table decision from step 1); channel C's counts come
+        from the stored attributes plus the reader's chips. Channel B's "model" is
+        the KNN index, which ``_index_missing`` has already reconciled.
+        """
+        fitted: dict = {}
+        if 'd' in keys:
+            texts = {row['tweet_id']: judge_text(row) for row in db.x_tweet_judge_rows(sorted(samples))}
+            fitted['d'] = ngram.fit((texts[tid], samples[tid] != 'down') for tid in samples if texts.get(tid))
+        if 'c' in keys:
+            described = db.x_attributes_for(set(samples), attributes.model_tag(self.settings))
+            reasons = db.x_down_reasons()
+            fitted['c'] = attributes.fit_flags(
+                attributes.LabeledFlags(flags=described.get(tid, []), verdict=samples[tid], reason=reasons.get(tid))
+                for tid in samples
+            )
+        return fitted
+
+    def _judge_one(
+        self,
+        vector: list[float],
+        text: str,
+        flags: list[str],
+        samples: dict[int, str],
+        handles: dict[int, str],
+        keys: list[str],
+        fitted: dict,
+    ) -> Judgement:
+        scores: dict[str, Optional[ChannelScore]] = {}
+        for key in keys:
+            if key == 'b':
+                hits = vectors.knn(vector, self.settings.condenser_verdict_k)
+                neighbours = [
+                    Neighbour(tweet_id, distance, samples[tweet_id], handles.get(tweet_id))
+                    for tweet_id, distance in hits
+                    if tweet_id in samples
+                ]
+                scores['b'] = topic_score(neighbours, self.settings)
+            elif key == 'c':
+                scores['c'] = attributes.score_flags(fitted['c'], flags, self.settings)
+            elif key == 'd':
+                scores['d'] = ngram.score(fitted['d'], text, self.settings)
+        votes = {
+            key: None if score is None else classify(score, channel_policy(key, self.settings))
+            for key, score in scores.items()
+        }
+        return Judgement(resolve(votes), self._meta(scores, votes, keys))
+
+    def _meta(
+        self, scores: dict[str, Optional[ChannelScore]], votes: dict[str, Optional[str]], keys: list[str]
+    ) -> dict:
+        """The archived evidence, additive over the single-channel shape.
+
+        The top level stays channel B's evidence exactly as it always was — shipped
+        iOS builds decode ``score`` / ``neighbors``, so the ensemble adds a
+        ``channels`` block beside them, never instead of them. Channel B's entry in
+        that block carries no second copy of the neighbours (this row is written
+        ~1000×/day; the top level already has them).
+        """
+        topic = scores.get('b')
+        if 'b' not in keys:
+            meta: dict = {'score': 0.0, 'neighbors': []}
+        elif topic is None:
+            meta = {'reason': 'out_of_domain', 'neighbors': [], 'score': 0.0}
+        else:
+            meta = {'score': round(topic.score, 4), 'neighbors': topic.meta['neighbors']}
+        if keys != ['b']:
+            meta['channels'] = {
+                key: {
+                    'verdict': votes[key],
+                    'score': round(score.score, 4),
+                    **(score.meta if key != 'b' else {}),
+                }
+                for key, score in scores.items()
+                if score is not None
+            }
+        meta['model'] = embedding.model_tag(self.settings)
+        meta['algo'] = ALGO_VERSION if keys == ['b'] else ENSEMBLE_ALGO_VERSION
+        return meta
 
     async def _describe(self, result: RunResult) -> None:
         """Read attributes for tweets that have none under the current taxonomy.
@@ -504,6 +623,9 @@ def status(settings: Settings, manager: Optional[VerdictManager] = None) -> dict
         # A third kind of silence, and the least guessable one: trained, judging,
         # and still never a "not for you" badge — because that side is switched off.
         'negative_enabled': settings.condenser_verdict_negative_enabled,
+        # Which channels vote (plan v2 step 4). The default is B alone; a channel
+        # listed here still abstains whenever it has nothing to say.
+        'channels': enabled_channels(settings),
         'embedding_configured': embedding.available(settings),
         'index_available': vectors.available(),
         'ready': (

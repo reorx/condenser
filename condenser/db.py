@@ -1182,6 +1182,20 @@ def x_labeled_samples() -> dict[int, str]:
     return samples
 
 
+def x_down_reasons() -> dict[int, str]:
+    """tweet_id -> the down's chip, for downs that carry one.
+
+    Channel C's routing input: the chip says *which attribute* earned the down,
+    and ``attributes.fit_flags`` charges that attribute instead of the whole bag.
+    Pre-chip downs (before 2026-07-26) are absent, which is the honest reading —
+    they were bag-level labels and stay that way.
+    """
+    query = ItemFeedback.select(ItemFeedback.ref1, ItemFeedback.reason).where(
+        (ItemFeedback.source == 'x') & (ItemFeedback.verdict == 'down') & ItemFeedback.reason.is_null(False)
+    )
+    return {row.ref1: row.reason for row in query}
+
+
 def x_embedding_ids(tweet_ids: Optional[set[int]] = None, model: Optional[str] = None) -> set[int]:
     """Which of these tweets already have a stored vector (optionally: for this model)."""
     query = XEmbedding.select(XEmbedding.tweet_id)

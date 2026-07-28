@@ -323,9 +323,12 @@ async def test_a_tweet_like_your_upvotes_is_positive(env, monkeypatch):
 
 
 async def test_a_tweet_like_your_downvotes_is_negative(env, monkeypatch):
-    """The mechanism, exercised with the negative side switched on — which is not
-    the default any more (see the off-by-default test below)."""
-    mgr = seed_labelled_world(monkeypatch, CONDENSER_VERDICT_NEGATIVE_ENABLED='1')
+    """The mechanism, exercised with the negative side switched on — which takes
+    both the master switch and, since the ensemble (step 4), the channel's own
+    admission flag (see the off-by-default test below)."""
+    mgr = seed_labelled_world(
+        monkeypatch, CONDENSER_VERDICT_NEGATIVE_ENABLED='1', CONDENSER_VERDICT_B_NEGATIVE_ENABLED='1'
+    )
     ingest('foryou', bird_entry(301, 'crypto airdrop live', minutes=5))
 
     await mgr.run_once()
@@ -373,7 +376,12 @@ def test_tuned_constants_are_the_backtested_ones(env):
 async def test_one_down_neighbour_is_not_enough_to_go_negative(env, monkeypatch):
     """Asymmetric by design: a mis-clicked down must not blacklist a whole
     neighbourhood, so negative needs corroboration from a second down sample."""
-    setup_db(monkeypatch, CONDENSER_VERDICT_MIN_NEGATIVE='1', CONDENSER_VERDICT_NEGATIVE_ENABLED='1')
+    setup_db(
+        monkeypatch,
+        CONDENSER_VERDICT_MIN_NEGATIVE='1',
+        CONDENSER_VERDICT_NEGATIVE_ENABLED='1',
+        CONDENSER_VERDICT_B_NEGATIVE_ENABLED='1',
+    )
     seed_foryou(
         bird_entry(101, 'crypto to the moon', minutes=200),
         bird_entry(201, 'rust borrow checker notes', minutes=180),
@@ -459,7 +467,7 @@ async def test_stored_evidence_is_capped(env, monkeypatch):
     """Every close neighbour votes, but only the nearest few are archived: this row
     is written ~1000x/day on For You, and an unbounded list of ids would outgrow the
     tweets it explains."""
-    setup_db(monkeypatch, CONDENSER_VERDICT_NEGATIVE_ENABLED='1')
+    setup_db(monkeypatch, CONDENSER_VERDICT_NEGATIVE_ENABLED='1', CONDENSER_VERDICT_B_NEGATIVE_ENABLED='1')
     crypto = [bird_entry(100 + i, f'crypto shill number {i}', minutes=200 - i) for i in range(8)]
     seed_foryou(*crypto, bird_entry(201, 'rust borrow checker notes', minutes=180))
     train(downs=[100 + i for i in range(8)], ups=[201])
@@ -658,7 +666,9 @@ def test_schema_v8_adds_the_vector_tables_without_touching_data(env, monkeypatch
 async def test_the_verdict_reaches_the_timeline_envelope(env, monkeypatch):
     """The badge is rendered from the envelope, so both the label and its evidence
     have to survive the trip out."""
-    mgr = seed_labelled_world(monkeypatch, CONDENSER_VERDICT_NEGATIVE_ENABLED='1')
+    mgr = seed_labelled_world(
+        monkeypatch, CONDENSER_VERDICT_NEGATIVE_ENABLED='1', CONDENSER_VERDICT_B_NEGATIVE_ENABLED='1'
+    )
     ingest('foryou', bird_entry(301, 'crypto airdrop live', minutes=5))
     await mgr.run_once()
 
@@ -674,7 +684,9 @@ async def test_the_verdict_reaches_the_timeline_envelope(env, monkeypatch):
 async def test_status_reports_the_gate_and_the_counts(env, monkeypatch):
     """When no badges appear, the first question is 'is it broken or just waiting?' —
     the status line has to answer it without reading logs."""
-    mgr = seed_labelled_world(monkeypatch, CONDENSER_VERDICT_NEGATIVE_ENABLED='1')
+    mgr = seed_labelled_world(
+        monkeypatch, CONDENSER_VERDICT_NEGATIVE_ENABLED='1', CONDENSER_VERDICT_B_NEGATIVE_ENABLED='1'
+    )
     ingest('foryou', bird_entry(301, 'crypto airdrop live', minutes=5))
     await mgr.run_once()
 

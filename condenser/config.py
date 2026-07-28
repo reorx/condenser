@@ -95,6 +95,18 @@ class Settings(BaseSettings):
     condenser_verdict_negative_enabled: bool = False
     condenser_verdict_negative_score: float = -0.55
     condenser_verdict_min_down_neighbors: int = 2
+    # --- the ensemble (plan v2 step 4, 2026-07-28) ---
+    # Which channels vote: 'b' (topic kNN), 'c' (LLM attributes), 'd' (n-gram).
+    # Comma-separated; default is channel B alone, i.e. exactly the pre-ensemble
+    # behavior — enabling more channels is a config decision backed by a backtest,
+    # never a side effect of deploying this code.
+    condenser_verdict_channels: str = 'b'
+    # Negatives are double-gated: `condenser_verdict_negative_enabled` above is the
+    # master kill-switch, and each channel additionally needs its own admission
+    # flag (the revised §9's unit of admission). The split is what lets channel D
+    # be admitted without quietly resurrecting channel B's negative side, which
+    # the 2026-07-27 backtest showed to be indistinguishable from guessing.
+    condenser_verdict_b_negative_enabled: bool = False
     # Judging is for tweets you might still read; a backlog from a probe that was
     # offline for a week is stale by the time it lands.
     condenser_verdict_window_hours: int = 48
@@ -120,6 +132,15 @@ class Settings(BaseSettings):
     # flag means much, so at today's label count the channel abstains on almost
     # everything — which is the correct answer, not a failure.
     condenser_verdict_c_min_observations: int = 6
+    # Channel C's own vote thresholds (each channel classifies on its own scale —
+    # that is why the combiner is a vote, see channels.resolve). The negative
+    # default is the widest backtested point (80.8% over 26 calls, 2026-07-28) —
+    # below the §9 bar, which is why the admission flag defaults off. The positive
+    # threshold is out of the channel's observed range (~[-0.4, +0.1]) on purpose:
+    # its positive side has shown nothing yet.
+    condenser_verdict_c_positive_score: float = 0.25
+    condenser_verdict_c_negative_score: float = -0.25
+    condenser_verdict_c_negative_enabled: bool = False
 
     # --- verdict channel D: n-gram bayes (condenser/ngram.py) ---
     # Not wired into the running verdict yet (plan v2 step 1 ships the channel and
@@ -143,6 +164,13 @@ class Settings(BaseSettings):
     # than the other scores ±0.76. Moving it is the same experiment as moving the
     # verdict thresholds, so the backtest sweeps those instead.
     condenser_verdict_d_scale: float = 1.0
+    # Channel D's own vote thresholds. The negative default is the operating point
+    # the step-1 backtest starred (86.7% over 15 calls at -0.45) — kept off until
+    # the §9 admission is actually decided, because that figure was picked out of
+    # 88 operating points scored on the same 59 labels.
+    condenser_verdict_d_positive_score: float = 0.25
+    condenser_verdict_d_negative_score: float = -0.45
+    condenser_verdict_d_negative_enabled: bool = False
 
     # --- link preview fetching (condenser/preview.py) ---
     # Total per-request timeout (seconds) for fetching a URL/its image.

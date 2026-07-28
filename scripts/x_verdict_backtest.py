@@ -60,7 +60,7 @@ from typing import Optional
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from condenser import attributes, db, embedding, ngram, vectors, verdict  # noqa: E402
-from condenser.channels import ChannelScore, combine  # noqa: E402
+from condenser.channels import ChannelScore, combine, resolve  # noqa: E402
 from condenser.config import Settings, get_settings  # noqa: E402
 from condenser.db import ItemFeedback  # noqa: E402
 
@@ -321,12 +321,83 @@ def run_folds(channels: list, samples: list[Sample], cells: dict[str, list[Cell]
 
 
 def combined_scores(channels: list, scores: dict, weights: dict[str, float]) -> dict[int, Optional[ChannelScore]]:
-    """The ensemble, at each channel's current settings."""
+    """The mean ensemble, at each channel's current settings.
+
+    Kept as the comparison baseline: this is the combiner the step-3 backtest
+    rejected (incomparable scales dilute the sharp channel), and the numbers that
+    rejected it should stay reproducible next to the vote's.
+    """
     tweet_ids = next(iter(scores.values())).keys()
     return {
         tweet_id: combine({channel.key: scores[(channel.key, CURRENT)][tweet_id] for channel in channels}, weights)
         for tweet_id in tweet_ids
     }
+
+
+def vote_verdicts(channels: list, scores: dict, settings: Settings) -> dict[int, dict[str, Optional[str]]]:
+    """Each channel's vote per tweet, at its current settings and its own thresholds.
+
+    This is the **production** combiner (channels.resolve) evaluated the only way a
+    backtest can: with every channel's negative side admitted. In production the
+    admission flags gate which of these votes are allowed to exist at all; here the
+    question is precisely whether they should be.
+    """
+    votes: dict[int, dict[str, Optional[str]]] = {}
+    for tweet_id in next(iter(scores.values())).keys():
+        votes[tweet_id] = {}
+        for channel in channels:
+            score = scores[(channel.key, CURRENT)][tweet_id]
+            if score is None:
+                votes[tweet_id][channel.key] = None
+                continue
+            policy = verdict.channel_policy(channel.key, settings)
+            admitted = verdict.ChannelPolicy(policy.positive_score, policy.negative_score, True)
+            votes[tweet_id][channel.key] = verdict.classify(score, admitted)
+    return votes
+
+
+def vote_report(samples: list[Sample], votes: dict[int, dict[str, Optional[str]]], where: str) -> list[dict]:
+    """Coverage/precision for the resolved vote, plus the numbers only a vote has:
+    the conflict rate (how often rule 3 held a verdict back) and per-reason recall."""
+    resolved = {tweet_id: resolve(cast) for tweet_id, cast in votes.items()}
+    conflicts = sum(
+        1 for cast in votes.values() if verdict.POSITIVE in cast.values() and verdict.NEGATIVE in cast.values()
+    )
+    abstained = sum(1 for cast in votes.values() if not any(cast.values()))
+    positives = sum(1 for sample in samples if sample.positive)
+    base = f'base rate pos {positives / len(samples):.1%} / neg {(len(samples) - positives) / len(samples):.1%}'
+    print(f'\n=== {where} — n={len(samples)} ({positives} pos / {len(samples) - positives} neg, {base}) ===')
+    print(f'    abstain {pct(abstained / len(samples))}  ({abstained}/{len(samples)} no channel spoke)')
+    print(f'    conflicts {conflicts:3d}  (a positive and a negative vote cancelled to neutral)')
+
+    rows = []
+    for negative in (True, False):
+        wanted = verdict.NEGATIVE if negative else verdict.POSITIVE
+        side = Side()
+        for sample in samples:
+            called = resolved[sample.tweet_id] == wanted
+            side.add(called, sample.expected == wanted, saved=negative and sample.label == 'save')
+        label = 'neg (vote)' if negative else 'pos (vote)'
+        print(f'      {label}   coverage {pct(side.coverage)}  precision {pct(side.precision)}  ({side.calls} calls)')
+        rows.append({'where': where, 'side': label, 'negative': negative, 'metrics': side})
+
+    downs = [sample for sample in samples if not sample.positive]
+    if downs:
+        print('    down recall by reason (resolved vote):')
+        tally: Counter = Counter()
+        for sample in downs:
+            reason = sample.reason or '(none)'
+            tally[(reason, 'n')] += 1
+            if resolved[sample.tweet_id] == verdict.NEGATIVE:
+                tally[(reason, 'recalled')] += 1
+            elif resolved[sample.tweet_id] == verdict.POSITIVE:
+                tally[(reason, 'wrong')] += 1
+        for reason in sorted({key[0] for key in tally}):
+            print(
+                f'      {reason:20s} n={tally[(reason, "n")]:2d}  recalled {tally[(reason, "recalled")]:2d}  '
+                f'called POSITIVE {tally[(reason, "wrong")]:2d}'
+            )
+    return rows
 
 
 # --- reporting ----------------------------------------------------------------
@@ -543,9 +614,14 @@ async def main() -> int:
     if len(channels) > 1:
         mixed = combined_scores(channels, scores, weights)
         used = {channel.key: weights.get(channel.key, 0.0) for channel in channels}
-        header(f'combined ({used}) — each channel at its current settings', samples, mixed)
-        rows += report(samples, mixed, settings, args.sweep, 'combined')
+        header(f'combined mean ({used}) — the rejected baseline, for comparison', samples, mixed)
+        rows += report(samples, mixed, settings, args.sweep, 'mean')
         per_reason(samples, mixed, settings)
+        rows += vote_report(
+            samples,
+            vote_verdicts(channels, scores, settings),
+            f'combined vote ({",".join(channel.key for channel in channels)}) — the production combiner',
+        )
 
     summarize(rows, settings)
     if any(channel.needs_vector for channel in channels):

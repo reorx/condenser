@@ -20,6 +20,10 @@ backtest that killed the single-channel negative side:
 from dataclasses import dataclass, field
 from typing import Optional
 
+# The three verdicts, here rather than in verdict.py because they are the
+# vocabulary the vote below is resolved in (verdict.py re-exports them).
+POSITIVE, NEUTRAL, NEGATIVE = 'positive', 'neutral', 'negative'
+
 
 @dataclass
 class ChannelScore:
@@ -43,8 +47,38 @@ class ChannelScore:
     meta: dict = field(default_factory=dict)
 
 
+def resolve(votes: dict[str, Optional[str]]) -> str:
+    """The vote (plan §7 as revised 2026-07-28): per-channel verdicts -> one verdict.
+
+    Each channel has already classified on its own thresholds; ``None`` is an
+    abstention and casts nothing. The rules are deliberately rank-free:
+
+    * any negative with no positive anywhere -> negative;
+    * any positive with no negative anywhere -> positive;
+    * a conflict -> neutral. Conservative on purpose — a wrong negative costs the
+      tweet — and revisitable once the backtest has measured the conflict rate;
+    * silence -> neutral.
+
+    A vote rather than the weighted mean below because the channels' scales are
+    incomparable (measured: C spans ~[-0.4, +0.1] against B/D's [-1, +1], and the
+    mean diluted the sharp channel), and because the revised §9 admits, monitors
+    and kills *one channel's negative side* at a time — which requires the final
+    verdict to be attributable to the channel that cast it.
+    """
+    cast = {vote for vote in votes.values() if vote is not None}
+    if NEGATIVE in cast and POSITIVE not in cast:
+        return NEGATIVE
+    if POSITIVE in cast and NEGATIVE not in cast:
+        return POSITIVE
+    return NEUTRAL
+
+
 def combine(scores: dict[str, Optional[ChannelScore]], weights: dict[str, float]) -> Optional[ChannelScore]:
     """Weighted mean over the channels that actually spoke, or None if none did.
+
+    **Not the production combiner** — that is ``resolve`` above, since 2026-07-28.
+    This stays as the backtest's comparison baseline (the numbers that rejected it
+    should remain reproducible) and as the sketch of the future stacked combiner.
 
     Confidence multiplies the configured weight rather than the score, so a
     half-confident channel is half a vote instead of a full vote for a halved

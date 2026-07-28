@@ -5,12 +5,26 @@
 // is the whole reason Phase 4 badges instead of hiding: a verdict you can audit
 // is one you can learn to trust (or catch being wrong and correct with a thumb).
 import { xTweetUrl } from '@/lib/sources';
-import type { XVerdict, XVerdictMeta, XVerdictNeighbor } from '@/lib/types';
+import type { XVerdict, XVerdictChannel, XVerdictMeta, XVerdictNeighbor } from '@/lib/types';
 
 const VERDICT_LABEL: Record<XVerdict, string> = {
   positive: '推荐',
   neutral: '中性',
   negative: '可能不感兴趣',
+};
+
+// The channels in the reader's terms. Keyed by the backend's channel letters; an
+// unknown key (a future channel) degrades to the letter rather than hiding the row.
+const CHANNEL_LABEL: Record<string, string> = {
+  b: '话题相似',
+  c: '内容属性',
+  d: '词面特征',
+};
+
+const VOTE_LABEL: Record<XVerdict, string> = {
+  positive: '判正',
+  neutral: '中性',
+  negative: '判负',
 };
 
 // The two ways the judge declines to commit, in the reader's terms.
@@ -43,6 +57,32 @@ function NeighborRow({ neighbor }: { neighbor: XVerdictNeighbor }) {
   );
 }
 
+function evidenceLine(channel: XVerdictChannel): string | null {
+  // Channel D names words, channel C names attributes; channel B's neighbours are
+  // rendered above from the meta's top level, so its row is just the vote.
+  const pairs = channel.tokens ?? channel.flags ?? [];
+  if (pairs.length === 0) return null;
+  return pairs.map(([name, weight]) => `${name} ${weight > 0 ? '+' : ''}${weight.toFixed(2)}`).join(' · ');
+}
+
+function ChannelRow({ channelKey, channel }: { channelKey: string; channel: XVerdictChannel }) {
+  const evidence = evidenceLine(channel);
+  return (
+    <li>
+      <div className="flex items-center gap-2">
+        <span>{CHANNEL_LABEL[channelKey] ?? channelKey}</span>
+        {channel.verdict && (
+          <span className={channel.verdict === 'negative' ? 'text-destructive' : 'text-muted-foreground'}>
+            {VOTE_LABEL[channel.verdict]}
+          </span>
+        )}
+        <span className="ml-auto shrink-0 text-muted-foreground tabular-nums">{channel.score.toFixed(2)}</span>
+      </div>
+      {evidence && <div className="truncate text-xs text-muted-foreground">{evidence}</div>}
+    </li>
+  );
+}
+
 interface Props {
   verdict: XVerdict;
   meta: XVerdictMeta | null;
@@ -51,6 +91,7 @@ interface Props {
 export function XVerdictDetail({ verdict, meta }: Props) {
   const neighbors = meta?.neighbors ?? [];
   const reason = meta?.reason ? REASON_LABEL[meta.reason] : null;
+  const channels = Object.entries(meta?.channels ?? {});
 
   return (
     <div className="space-y-1">
@@ -67,6 +108,16 @@ export function XVerdictDetail({ verdict, meta }: Props) {
           <ul className="space-y-0.5">
             {neighbors.map((neighbor) => (
               <NeighborRow key={neighbor.tweet_id} neighbor={neighbor} />
+            ))}
+          </ul>
+        </>
+      )}
+      {channels.length > 0 && (
+        <>
+          <div className="text-muted-foreground">各通道投票：</div>
+          <ul className="space-y-0.5">
+            {channels.map(([key, channel]) => (
+              <ChannelRow key={key} channelKey={key} channel={channel} />
             ))}
           </ul>
         </>

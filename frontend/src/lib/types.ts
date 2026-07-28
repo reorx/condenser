@@ -164,12 +164,30 @@ export interface XVerdictNeighbor {
   handle?: string | null;
 }
 
+/** One channel's vote inside the ensemble meta (plan v2 step 4): its verdict at its
+ *  own thresholds, its score on its own scale, and channel-specific evidence.
+ *  Channel B carries no evidence here — its neighbours stay at the meta's top level
+ *  (the pre-ensemble shape shipped clients decode). */
+export interface XVerdictChannel {
+  verdict: XVerdict | null;
+  score: number;
+  /** Channel C: the flag that decided, plus every sufficiently observed flag's score. */
+  driver?: string;
+  flags?: [string, number][];
+  /** Channel D: the strongest evidence tokens with their log-odds. */
+  tokens?: [string, number][];
+}
+
 /** Why the verdict came out the way it did. `reason` marks the two "did not judge"
- *  outcomes: too far from anything labeled, or no text to judge. */
+ *  outcomes: too far from anything labeled, or no text to judge — both about the
+ *  topic channel, which the top-level fields describe. */
 export interface XVerdictMeta {
   score?: number;
   neighbors?: XVerdictNeighbor[];
   reason?: 'out_of_domain' | 'no_text';
+  /** Present when more than channel B voted (algo 'vote-v1'): key -> that channel's
+   *  vote. Only channels that actually spoke appear — abstention is absence. */
+  channels?: Record<string, XVerdictChannel>;
   /** The embedding identity the score is comparable within, e.g. 'text-embedding-v4@256'. */
   model?: string;
   algo?: string;

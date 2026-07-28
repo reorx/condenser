@@ -399,14 +399,65 @@ public struct XVerdictNeighbor: Codable, Equatable, Sendable {
     }
 }
 
-/// 判定为什么是这个结果。reason 标记两种「没判」：离所有标注都太远、没有可判的文本。
+/// JSON 里的 ["save this", -1.1] 异构数组：一个证据名字 + 它的权重。
+public struct XVerdictEvidencePair: Codable, Equatable, Sendable {
+    public let name: String
+    public let weight: Double
+
+    public init(from decoder: Decoder) throws {
+        var container = try decoder.unkeyedContainer()
+        name = try container.decode(String.self)
+        weight = try container.decode(Double.self)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.unkeyedContainer()
+        try container.encode(name)
+        try container.encode(weight)
+    }
+}
+
+/// ensemble（判定 v2 步骤 4）里一个通道的投票：各自阈值下的判定、各自尺度上的分数、
+/// 通道特有的证据。通道 B 的证据（近邻）仍在 meta 顶层——已发布客户端解码的就是那个位置。
+public struct XVerdictChannel: Codable, Equatable, Sendable {
+    public let verdict: XVerdict?
+    public let score: Double
+    /// 通道 C：拍板的那个属性
+    public let driver: String?
+    public let flags: [XVerdictEvidencePair]?
+    /// 通道 D：最强证据 token 及其对数几率
+    public let tokens: [XVerdictEvidencePair]?
+
+    /// 渲染用证据：D 给词、C 给属性；B 在这里没有第二份近邻
+    public var evidence: [XVerdictEvidencePair] { tokens ?? flags ?? [] }
+}
+
+/// 判定为什么是这个结果。reason 标记两种「没判」：离所有标注都太远、没有可判的文本
+/// ——两者说的都是话题通道，顶层字段描述的就是它。
 public struct XVerdictMeta: Codable, Equatable, Sendable {
     public let score: Double?
     public let neighbors: [XVerdictNeighbor]?
     public let reason: String?
+    /// 多于通道 B 投票时才有（algo 'vote-v1'）：通道字母 -> 该通道的投票，弃权即缺席。
+    public let channels: [String: XVerdictChannel]?
     /// 分数可比较的嵌入身份，如 'text-embedding-v4@256'
     public let model: String?
     public let algo: String?
+
+    enum CodingKeys: String, CodingKey {
+        case score, neighbors, reason, channels, model, algo
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        score = try container.decodeIfPresent(Double.self, forKey: .score)
+        neighbors = try container.decodeIfPresent([XVerdictNeighbor].self, forKey: .neighbors)
+        reason = try container.decodeIfPresent(String.self, forKey: .reason)
+        // 多通道证据是增强信息：形状看不懂就整块丢掉，判定与顶层证据不陪葬
+        channels = try? container.decodeIfPresent([String: XVerdictChannel].self, forKey: .channels)
+        model = try container.decodeIfPresent(String.self, forKey: .model)
+        algo = try container.decodeIfPresent(String.self, forKey: .algo)
+    }
 }
 
 /// TimelineItem 的 x payload：一条归档推文在某个 feed 里的那次出现。
