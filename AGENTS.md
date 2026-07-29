@@ -775,8 +775,17 @@ confidently wrong answer about production. Measured on the box 2026-07-29: schem
 revision `6143621`, `x_attributes` filling, shadow `c,d` live. **Check, don't infer**:
 `ssh -p 1122 root@<PROD-HOST>` → `docker inspect ghcr.io/reorx/condenser:latest --format
 '{{index .Config.Labels "org.opencontainers.image.revision"}}'`, and read
-`app_meta.schema_version` out of `/data/condenser.db`. condenser deploys are **manual**
-(hh-hk-01 has no CI webhook), so "merged" never implies "deployed" — nor the reverse.
+`app_meta.schema_version` out of `/data/condenser.db`, and `GET /api/x/status` for which channels
+are actually live.
+⚠️ **`git push` to master IS a production deploy.** `.github/workflows/deploy.yml` (CD restored
+2026-07-19 via hookploy): push → build → push to ghcr.io → `POST /hooks/condenser`, and the
+hookploy edge on hh-hk-01 pins the digest and recreates the container. Treat pushing as an
+outward-facing action, not as syncing a remote. Two stale sources say otherwise and both are
+wrong as of 2026-07-29 — the deploy workspace's `ansible/playbook.yml` comment ("deploys are
+manual … the repo's CI webhook step was removed") and an earlier revision of this very
+paragraph. The workflow file is the authority. Note also that the compose env — including
+`CONDENSER_VERDICT_SHADOW_CHANNELS` — lives in the ansible role template, not in `.env`, and
+hookploy only repins the image: a template change still needs an ansible run to land.
 
 **For You 的推荐进主时间线** (2026-07-29, BDD): the Phase 2 capacity decision — For You is a
 firehose, keep it out of the aggregate — was made against the *whole* feed. Filtering by the
