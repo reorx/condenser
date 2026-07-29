@@ -33,13 +33,18 @@ def score(model, flags, **overrides):
 
 @pytest.fixture
 def model():
-    """Bait was downed for being bait; the same tweets happen to carry emoji."""
+    """Bait was downed for being bait; the same tweets happen to advertise something.
+
+    ``promo_cta`` is the innocent bystander here because ``emoji_spam`` stopped being
+    one on 2026-07-29: 「博眼球」 now accuses it, so an engagement_farming down does
+    charge it. Only a chip that names *another* attribute can leave a flag innocent.
+    """
     return attrs.fit_flags(
         [
-            labeled(['engagement_bait', 'emoji_spam'], 'down', 'engagement_farming'),
-            labeled(['engagement_bait', 'emoji_spam'], 'down', 'engagement_farming'),
+            labeled(['engagement_bait', 'promo_cta'], 'down', 'engagement_farming'),
+            labeled(['engagement_bait', 'promo_cta'], 'down', 'engagement_farming'),
             labeled(['engagement_bait'], 'down', 'engagement_farming'),
-            labeled(['emoji_spam'], 'up'),
+            labeled(['promo_cta'], 'up'),
             labeled(['listicle'], 'up'),
             labeled(['listicle'], 'up'),
         ]
@@ -50,14 +55,14 @@ def model():
 
 
 def test_a_reason_credits_the_attribute_it_names(env, model):
-    """The chip's whole purpose. Three downs carried `emoji_spam` alongside the bait,
-    but the reader said the bait was the problem — so the emoji must come out of this
+    """The chip's whole purpose. Two downs carried `promo_cta` alongside the bait,
+    but the reader said the bait was the problem — so the promo must come out of this
     innocent, or the channel has just re-invented "penalize the whole bag"."""
     bait = score(model, ['engagement_bait'], condenser_verdict_c_min_observations=1)
-    emoji = score(model, ['emoji_spam'], condenser_verdict_c_min_observations=1)
+    promo = score(model, ['promo_cta'], condenser_verdict_c_min_observations=1)
 
     assert bait.score < 0
-    assert emoji.score > 0  # its only *credited* appearance was on a tweet you liked
+    assert promo.score > 0  # its only *credited* appearance was on a tweet you liked
 
 
 def test_a_down_with_no_reason_is_shared_out_across_the_flags(env):
@@ -186,6 +191,35 @@ def test_the_evidence_names_the_attribute_that_decided(env, model):
     flags = dict((flag, weight) for flag, weight in result.meta['flags'])
     assert flags['engagement_bait'] < 0
     assert result.meta['driver'] == 'engagement_bait'
+
+
+def test_an_upvote_is_shared_out_the_way_an_unattributed_down_already_is(env):
+    """The asymmetry this fixes was measured on 104 production labels (2026-07-29).
+
+    A down carries the reader's own account of *what* was wrong; an upvote carries
+    none and never can — the reader liked the tweet, not necessarily each attribute
+    in it. Crediting every flag on a liked tweet in full therefore let any flag the
+    chips rarely accuse bank positive evidence it had not earned: `ai_slop` scored
+    **+0.429 while sitting on six downvoted tweets**. Spreading an upvote is the same
+    rule an unattributed down already follows (see `_charged`'s first branch), so the
+    two sides now treat "I cannot attribute this" identically.
+    """
+    solo = attrs.fit_flags([labeled(['listicle'], 'up')])
+    shared = attrs.fit_flags([labeled(['listicle', 'promo_cta', 'emoji_spam'], 'up')])
+
+    assert shared.up['listicle'] < solo.up['listicle']
+    # the label is worth what it was worth; only its attribution is now uncertain
+    assert sum(shared.up.values()) == pytest.approx(sum(solo.up.values()))
+
+
+def test_every_style_flag_can_be_accused_by_some_chip(env):
+    """The mirror of the test below, and the hole `emoji_spam` fell through for three
+    days: it appeared in no chip's list at all, so no downvote could ever charge it
+    while every upvote credited it — 1 up against 6 downs scored **+0.200**. Pinning
+    both directions means a new flag cannot be added without deciding who accuses it."""
+    accused = {flag for flags in attrs.REASON_FLAGS.values() for flag in flags}
+
+    assert set(attrs.STYLE_FLAGS) == accused
 
 
 def test_every_chip_reason_maps_somewhere_explicit(env):

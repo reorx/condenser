@@ -865,10 +865,12 @@ reader likes. **§9's bar is 3 of 4 met** — ≥85% ✓, ≥15 calls ✓, above
 **one saved tweet still condemned ✗** — so `condenser_verdict_c_negative_enabled` stays false and
 C stays a shadow channel. Two honest caveats: C is *still* effectively a `promo_cta` detector
 (every other flag now sits at 1–3 observations, so the threshold is inert across −0.25…−0.45),
-and its positive side has never made a single call. `condenser_verdict_c_min_observations` went
-6 → 4 — measured under v1, where symmetric credit cost `thread_bait` the gate; under v2 it is
-**inert** (nothing but `promo_cta` clears any gate) and should be re-validated when a second flag
-accumulates. 402 backend green. ⚠️ **Not deployed**: on deploy, `model_tag` changes and all 256
+and its positive side has never made a single call. `condenser_verdict_c_min_observations` was
+lowered 6 → 4 and then **put back**: it was measured under v1, where symmetric credit cost
+`thread_bait` the gate, but under v2 nothing except `promo_cta` clears *any* gate, so 4 bought
+no measurable difference while loosening the only thing between a thinly-observed flag and a
+verdict — and `score_flags` lets the most negative flag decide alone. Revisit when a second flag
+accumulates real observations. 402 backend green. ⚠️ **Not deployed**: on deploy, `model_tag` changes and all 256
 production attribute rows re-extract at `condenser_attr_batch`=40/round (~7 rounds, pennies).
 
 **判定 v2 步骤 6 — 通道 A（作者先验）落地** (2026-07-29, BDD; `condenser/authors.py`). The plan

@@ -224,7 +224,7 @@ async def test_a_taxonomy_change_re_reads_instead_of_mixing_vocabularies(env, mo
     await manager.run_once()
     described = len(extractor.calls)
 
-    monkeypatch.setattr(attrs, 'TAXONOMY_VERSION', 'v2')
+    monkeypatch.setattr(attrs, 'TAXONOMY_VERSION', 'not-the-current-one')
     await manager.run_once()
 
     assert len(extractor.calls) > described
@@ -310,6 +310,20 @@ def test_the_prompt_carries_the_whole_closed_taxonomy(env):
     prompt = attrs.system_prompt()
 
     assert all(flag in prompt for flag in attrs.STYLE_FLAGS)
+
+
+def test_the_prompt_defines_every_flag_it_offers(env):
+    """A bare flag name is a guess, and the guess was measured (2026-07-29): the
+    taxonomy's meanings lived in Python comments and only the *names* were ever sent,
+    so `ai_slop` reached the model as a naked token. It read that as machine-written
+    spam; the reader uses it for the LLM explainer register. **0 of 3** `ai_slop`
+    chips landed on a tweet the extractor had flagged `ai_slop`. A closed taxonomy is
+    only closed if its definitions travel with it."""
+    prompt = attrs.system_prompt()
+
+    for flag in attrs.STYLE_FLAGS:
+        assert f'- {flag}:' in prompt
+        assert attrs.FLAG_GUIDE[flag] in prompt
 
 
 def test_a_malformed_payload_reads_as_no_attributes(env):

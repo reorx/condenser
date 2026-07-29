@@ -36,27 +36,49 @@ log = logging.getLogger('condenser.attributes')
 
 # Bumped when the flags below change meaning, membership or wording. Old rows then
 # fall out of `model_tag` and are re-extracted rather than reinterpreted.
-TAXONOMY_VERSION = 'v1'
+# v2 (2026-07-29): the definitions below started being *sent* — see FLAG_GUIDE.
+TAXONOMY_VERSION = 'v2'
 
 # Grown from the reader's own down-reason chips (topic / promo / ai_slop / author /
 # engagement_farming), split finer where the chip lumps distinct patterns together:
 # a 🧵-thread hook and a "save this 🔖" bookmark bait are both engagement_farming to
 # the reader, but they are different words on the page, and channel C only earns its
 # keep if it can tell attributes apart that one embedding cannot.
-STYLE_FLAGS = (
-    'promo_cta',  # selling something, with a call to action
-    'engagement_bait',  # hook + FOMO + "save this 🔖", payoff parked in the replies
-    'thread_bait',  # "a thread 🧵 1/N" written to farm follows
-    'ai_slop',  # template prose: parallel bullets, hollow summary, emoji subheads
-    'listicle',  # "5 things you must know about…"
-    'emoji_spam',
-    'humblebrag',  # success theatre, revenue screenshots
-    'outrage',  # rage bait, deliberately inflammatory framing
-    'poll_bait',
-    'giveaway',
-    'crypto_shill',
-    'dropshipping',
-)
+#
+# Each definition **travels with its flag into the prompt**. Until 2026-07-29 these
+# were Python comments and only the bare names were sent, which was measured and cost
+# real accuracy: `ai_slop` arrived as a naked token, the model read it as "obviously
+# machine-written spam", and **0 of the reader's 3 `ai_slop` chips** landed on a tweet
+# it had so flagged. The reader means something narrower and more specific — the LLM
+# explainer *register* — and a closed taxonomy only closes if its meanings are shipped.
+FLAG_GUIDE = {
+    'promo_cta': (
+        'selling or signing up for something — a product, a course, a token, a referral — '
+        'with an explicit call to action'
+    ),
+    'engagement_bait': (
+        'a hook written to farm replies: "save this 🔖", "comment X and I will DM you", '
+        'FOMO framing, the actual payoff parked in the replies'
+    ),
+    'thread_bait': '"a thread 🧵", "1/N", "read to the end" — structure written to farm follows',
+    # Deliberately about form, not quality. The reader chips posts whose facts are
+    # first-hand and correct but whose prose is written in this register; a definition
+    # that said "hollow" or "low quality" would miss exactly those.
+    'ai_slop': (
+        'the LLM explainer register, whether or not the content is accurate: templated section '
+        'dividers, numbered or emoji subheads, parallel bullet lists, a patient "here is what '
+        'this means for you" tone, or a second-hand write-up of someone else\'s announcement'
+    ),
+    'listicle': '"5 things you must know about…" — ranked or numbered rundowns',
+    'emoji_spam': 'emoji used throughout as decoration or structure, not as occasional punctuation',
+    'humblebrag': 'success theatre — revenue screenshots, milestone announcements, "turns out people wanted this"',
+    'outrage': 'rage bait, deliberately inflammatory framing, manufactured enemies',
+    'poll_bait': 'a poll whose purpose is the interaction rather than the answer',
+    'giveaway': 'like / retweet / follow to win something',
+    'crypto_shill': 'promoting a token, airdrop or chain',
+    'dropshipping': 'generic e-commerce product pushing',
+}
+STYLE_FLAGS = tuple(FLAG_GUIDE)
 
 # One tweet cannot be about fifteen things; a longer list is the model padding.
 MAX_TOPICS = 6
@@ -86,7 +108,7 @@ def model_tag(settings: Settings) -> str:
 
 def system_prompt() -> str:
     """The taxonomy, spelled out. The model can only answer with flags it was shown."""
-    flags = '\n'.join(f'- {flag}' for flag in STYLE_FLAGS)
+    flags = '\n'.join(f'- {flag}: {guide}' for flag, guide in FLAG_GUIDE.items())
     return (
         'You label social media posts for a personal reading filter. '
         'Report attributes only; never judge whether the post is good or bad.\n\n'
@@ -159,8 +181,19 @@ REASON_FLAGS: dict[str, tuple[str, ...]] = {
     'ai_slop': ('ai_slop',),
     # humblebrag rides along here rather than under promo: success theatre sells
     # attention, not a product, which is the line the chip itself draws
-    # (see the engagement_farming note in AGENTS.md).
-    'engagement_farming': ('engagement_bait', 'thread_bait', 'poll_bait', 'listicle', 'outrage', 'humblebrag'),
+    # (see the engagement_farming note in AGENTS.md). emoji_spam joined on
+    # 2026-07-29 (user decision): it was in *no* chip's list, and since an upvote
+    # credited it in full while no downvote could ever charge it, 1 up against 6
+    # downs scored +0.200. A test now pins the mapping in both directions.
+    'engagement_farming': (
+        'engagement_bait',
+        'thread_bait',
+        'poll_bait',
+        'listicle',
+        'outrage',
+        'humblebrag',
+        'emoji_spam',
+    ),
     'topic': (),  # channel B's business
     'author': (),  # channel A's business
 }
@@ -200,13 +233,19 @@ class FlagModel:
 
 
 def fit_flags(samples: Iterable[LabeledFlags]) -> FlagModel:
-    """Count each attribute's ups and downs, routing downs through their chip.
+    """Count each attribute's ups and downs, routing each label through its chip.
 
-    The two sides are counted differently, and the asymmetry is the design: an
-    upvote has no chip and cannot have one, so every flag on a liked tweet is
-    credited in full. A downvote *does* carry the reader's own account of what was
-    wrong, so it is charged only to the flags that account names — and to all of
-    them, in shares, when it does not.
+    One rule governs both sides: **credit follows attribution**. A downvote whose
+    chip names an attribute charges that attribute in full — the reader said which
+    one earned it. A label that attributes nothing is shared out across the flags it
+    might have meant, because it convicts none of them on its own.
+
+    An upvote is always in that second case. It carries no chip and cannot: the
+    reader liked the tweet, not necessarily each thing in it. Crediting every flag on
+    a liked tweet in full — as this did until 2026-07-29 — broke the symmetry in a
+    way that only ever pushed one direction, since any flag the chips rarely accuse
+    could gain positive evidence but never lose it. Measured on 104 production
+    labels, `ai_slop` reached **+0.429 while sitting on six downvoted tweets**.
     """
     model = FlagModel()
     for sample in samples:
@@ -216,7 +255,7 @@ def fit_flags(samples: Iterable[LabeledFlags]) -> FlagModel:
         weight = LABEL_WEIGHT.get(sample.verdict, 1.0)
         if sample.verdict != 'down':
             for flag in flags:
-                model.up[flag] = model.up.get(flag, 0.0) + weight
+                model.up[flag] = model.up.get(flag, 0.0) + weight / len(flags)
             continue
         for flag, share in _charged(flags, sample.reason).items():
             model.down[flag] = model.down.get(flag, 0.0) + weight * share
@@ -229,12 +268,15 @@ def _charged(flags: list[str], reason: Optional[str]) -> dict[str, float]:
     Three cases, and the middle one was bought with real data. Measured on 59
     production labels under the first, simpler rule ("a chip that matches nothing
     charges nobody"), ``humblebrag`` scored **+0.600 while sitting on seven
-    downvoted tweets**: upvotes are credited to every flag in full — an upvote has
-    no chip and cannot have one — so any flag the chips never reach could only ever
-    accumulate positive evidence. The fix is to fall back rather than discard: the
-    reader did dislike *something*, and if the chip they chose does not match how
-    the extractor described the tweet, that is a disagreement about the
-    description, not a reason to drop the label.
+    downvoted tweets**. The fix is to fall back rather than discard: the reader did
+    dislike *something*, and if the chip they chose does not match how the extractor
+    described the tweet, that is a disagreement about the description, not a reason
+    to drop the label.
+
+    That fix was incomplete, which 104 labels then showed: it only reaches a down
+    whose chip matches *nothing*, so a flag riding alongside an accused one still
+    took no share. The rest of the answer is on the other side — ``fit_flags`` now
+    spreads upvotes the same way this spreads an unattributed down.
     """
     if reason is None:
         # bag-level: the label is real but unattributed, so it convicts nothing on

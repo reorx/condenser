@@ -170,11 +170,21 @@ class Settings(BaseSettings):
     # does not get to decide anything. The plan's estimate is ~20 per flag before a
     # flag means much, so at today's label count the channel abstains on almost
     # everything — which is the correct answer, not a failure.
-    # 6 -> 4 on 2026-07-29, to hold the vocabulary steady after upvotes stopped being
-    # credited to every flag in full (fit_flags): the same labels now carry less
-    # attributable mass, and at 6 the gate dropped `thread_bait` for that reason alone.
-    # Measured on the same 104 labels: obs>=4 and obs>=6 give identical precision.
-    condenser_verdict_c_min_observations: int = 4
+    # Briefly 4 on 2026-07-29 and **put back**: lowering it was meant to hold the
+    # vocabulary steady after upvotes stopped being credited to every flag in full
+    # (fit_flags spreads them now, so a multi-flag tweet contributes less mass and
+    # `thread_bait` fell from 6.0 to 5.0 observations for that reason alone). The
+    # qwen3.7-flash@v2 re-extraction then made the whole question moot — nothing but
+    # `promo_cta` (23.0) clears *any* gate, everything else sits at 1–3 — so 4 bought
+    # no measurable difference while loosening the one thing standing between a
+    # thinly-observed flag and a verdict. `score_flags` takes the *most negative*
+    # flag, so a flag that has only just cleared the gate can decide a tweet on its
+    # own; that is exactly how step 3's `thread_bait` (-0.600 off three sightings)
+    # outranked `promo_cta` (-0.405 off eighteen). An unmeasurable change to a safety
+    # gate belongs at the conservative value. Revisit when a second flag accumulates
+    # real observations — and note the units shrank, so 6 now demands *more* real
+    # sightings than it did before the credit change.
+    condenser_verdict_c_min_observations: int = 6
     # Channel C's own vote thresholds (each channel classifies on its own scale —
     # that is why the combiner is a vote, see channels.resolve). The negative
     # default is the widest backtested point (80.8% over 26 calls, 2026-07-28) —
