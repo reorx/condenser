@@ -37,10 +37,7 @@ struct SavedScreen: View {
         .refreshable { await reader.records.refresh() }
         .navigationTitle("收藏")
         .navigationBarTitleDisplayMode(.inline)
-        .environment(\.openURL, OpenURLAction { url in
-            safariItem = SafariItem(url: url)
-            return .handled
-        })
+        .externalLinks(safari: $safariItem)
         .sheet(item: $selectedItem) { item in
             detailSheet(item)
         }

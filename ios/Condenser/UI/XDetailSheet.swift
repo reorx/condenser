@@ -44,14 +44,17 @@ struct XDetailSheet: View {
         .readingFontScale()
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
-        .environment(\.openURL, OpenURLAction { url in
-            safariItem = SafariItem(url: url)
-            return .handled
-        })
+        .externalLinks(safari: $safariItem)
         .sheet(item: $safariItem) { item in
             SafariView(url: item.url)
                 .ignoresSafeArea()
         }
+    }
+
+    /// sheet 自己的按钮不走 openURL 环境（那是给子树用的，读到的是外层列表的
+    /// 那份，Safari 会从这张 sheet 背后弹出来），所以直接调统一出口
+    private func open(_ url: URL) {
+        openExternalURL(url) { safariItem = SafariItem(url: $0) }
     }
 
     private var header: some View {
@@ -182,16 +185,17 @@ struct XDetailSheet: View {
     private var actions: some View {
         ItemActionRow {
             ItemActionButtons(item: item, onToggleSaved: onToggleSaved)
+            // 装了 X app 就直接进 app（那里才点得了赞、回得了复），没装才回落 Safari
             Button {
-                safariItem = SafariItem(url: tweet.tweetURL)
+                open(tweet.tweetURL)
             } label: {
-                Label("在 X 上打开", systemImage: "safari")
+                Label("在 X 上打开", systemImage: "arrow.up.forward.app")
                     .font(.footnote)
             }
             .buttonStyle(.bordered)
             if let profile = tweet.profileURL {
                 Button {
-                    safariItem = SafariItem(url: profile)
+                    open(profile)
                 } label: {
                     Label("作者主页", systemImage: "person")
                         .font(.footnote)
