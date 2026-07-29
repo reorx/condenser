@@ -47,6 +47,18 @@ down）都走同一个 `write(_:verdict:reason:)`，一次请求写完整条标�
 chip 行（手机上一行摆不下这些中文标签），只在「这一下确实标成了踩」时弹；已选理由只在
 `XDetailSheet` 的「反馈」行回显，卡片上不画。
 
+**外链统一出口（2026-07-29）**：所有外链都过 `ExternalLink.swift` 的
+`openExternalURL(_:fallback:)`——X 的推文 / 主页链接先试 `twitter://` 深链进 X app
+（scheme 是改名前注册的，X 一直认；打不开再试一次 x.com 的 universal link），
+两条都不成才回落 in-app Safari，其余链接直接 Safari。「在 X 上打开」要的是能点赞、
+能回复、已经登录好的原生界面，SFSafariViewController 里的 x.com 只是个逼你登录的壳。
+网页链接 → 深链的映射在 Kit 的 `xAppURL(for:)`（纯逻辑，有测试）：只认单条推文与
+作者主页两种确定形态，认不出就返回 nil 走网页——把人送进 app 的错误界面比留在 Safari 更糟。
+列表/详情用 `.externalLinks(safari:)` 接管子树链接；sheet 自己的按钮直接调
+`openExternalURL`，因为 `@Environment(\.openURL)` 在 sheet 的 body 里读到的是**外层列表**
+那份，Safari 会从这张 sheet 背后弹出来。深链有没有真的落进 X app 只能在装了 X 的真机上
+验（`make device`），模拟器没有 X app，走的永远是回落分支。
+
 ## 技术栈
 
 - iOS 18+，SwiftUI App lifecycle，Swift 5 语言模式（非 Swift 6 strict concurrency）

@@ -34,14 +34,17 @@ struct HnDetailSheet: View {
         .readingFontScale()
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
-        .environment(\.openURL, OpenURLAction { url in
-            safariItem = SafariItem(url: url)
-            return .handled
-        })
+        .externalLinks(safari: $safariItem)
         .sheet(item: $safariItem) { item in
             SafariView(url: item.url)
                 .ignoresSafeArea()
         }
+    }
+
+    /// sheet 自己的按钮不走 openURL 环境（那是给子树用的，读到的是外层列表的
+    /// 那份，Safari 会从这张 sheet 背后弹出来），所以直接调统一出口
+    private func open(_ url: URL) {
+        openExternalURL(url) { safariItem = SafariItem(url: $0) }
     }
 
     private var header: some View {
@@ -110,7 +113,7 @@ struct HnDetailSheet: View {
         .contentShape(RoundedRectangle(cornerRadius: 10))
         .onTapGesture {
             if let url = story.externalURL {
-                safariItem = SafariItem(url: url)
+                open(url)
             }
         }
     }
@@ -120,7 +123,7 @@ struct HnDetailSheet: View {
             ItemActionButtons(item: item, onToggleSaved: onToggleSaved)
             if let url = story.externalURL {
                 Button {
-                    safariItem = SafariItem(url: url)
+                    open(url)
                 } label: {
                     Label("打开原文", systemImage: "safari")
                         .font(.footnote)
@@ -128,7 +131,7 @@ struct HnDetailSheet: View {
                 .buttonStyle(.bordered)
             }
             Button {
-                safariItem = SafariItem(url: story.commentsURL)
+                open(story.commentsURL)
             } label: {
                 Label("HN 评论", systemImage: "bubble.left.and.bubble.right")
                     .font(.footnote)

@@ -69,11 +69,8 @@ struct MessageListView: View {
                 }
             }
         }
-        // 卡片正文/预览卡里的链接点击 → in-app Safari
-        .environment(\.openURL, OpenURLAction { url in
-            safariItem = SafariItem(url: url)
-            return .handled
-        })
+        // 卡片正文/预览卡里的链接点击 → X 链接进 X app，其余 in-app Safari
+        .externalLinks(safari: $safariItem)
         .sheet(item: $selectedItem) { item in
             detailSheet(currentVersion(of: item))
         }

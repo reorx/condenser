@@ -1,5 +1,4 @@
 import SwiftUI
-import SafariServices
 import CondenserKit
 
 /// 详情 bottom sheet（Telegram 条目）：全文（链接可点 → SFSafariViewController）、
@@ -47,10 +46,7 @@ struct MessageDetailSheet: View {
         }
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
-        .environment(\.openURL, OpenURLAction { url in
-            safariItem = SafariItem(url: url)
-            return .handled
-        })
+        .externalLinks(safari: $safariItem)
         .sheet(item: $safariItem) { item in
             SafariView(url: item.url)
                 .ignoresSafeArea()
@@ -151,19 +147,4 @@ struct MessageDetailSheet: View {
             4 / 3
         }
     }
-}
-
-struct SafariItem: Identifiable {
-    let url: URL
-    var id: String { url.absoluteString }
-}
-
-struct SafariView: UIViewControllerRepresentable {
-    let url: URL
-
-    func makeUIViewController(context: Context) -> SFSafariViewController {
-        SFSafariViewController(url: url)
-    }
-
-    func updateUIViewController(_ controller: SFSafariViewController, context: Context) {}
 }
