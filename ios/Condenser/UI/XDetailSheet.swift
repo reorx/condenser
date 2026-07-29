@@ -228,7 +228,8 @@ struct XDetailSheet: View {
 }
 
 /// ensemble 的一行通道投票：通道名（reader 的语言）+ 投票 + 分数，
-/// 证据（D 的词 / C 的属性）作小字第二行——B 的证据就是上面的近邻列表，不重复画。
+/// 证据（A 的账号记录 / C 的属性 / D 的词）作小字第二行——B 的证据就是上面的近邻列表，
+/// 不重复画。
 struct XVerdictChannelRow: View {
     let key: String
     let channel: XVerdictChannel
@@ -250,7 +251,12 @@ struct XVerdictChannelRow: View {
                     .foregroundStyle(.secondary)
                     .monospacedDigit()
             }
-            if !channel.evidence.isEmpty {
+            if let record = channel.record {
+                Text(record)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            } else if !channel.evidence.isEmpty {
                 Text(channel.evidence.map { "\($0.name) \(String(format: "%+.2f", $0.weight))" }
                     .joined(separator: " · "))
                     .font(.caption2)
@@ -263,6 +269,7 @@ struct XVerdictChannelRow: View {
 
     private var name: String {
         switch key {
+        case "a": "作者记录"
         case "b": "话题相似"
         case "c": "内容属性"
         case "d": "词面特征"

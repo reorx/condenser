@@ -31,7 +31,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Awaitable, Callable, Optional
 
-from . import attributes, db, embedding, ngram, vectors
+from . import attributes, authors, db, embedding, ngram, vectors
 from .channels import NEGATIVE, NEUTRAL, POSITIVE, ChannelScore, resolve
 from .config import Settings, get_settings
 
@@ -176,6 +176,12 @@ def topic_score(neighbours: list[Neighbour], settings: Settings) -> Optional[Cha
     )
 
 
+# Every channel that can be configured to vote or shadow. One tuple rather than a
+# literal at each site: a new channel that reaches `channel_policy` but not this
+# list would be silently unconfigurable.
+CHANNEL_KEYS = ('a', 'b', 'c', 'd')
+
+
 @dataclass(frozen=True)
 class ChannelPolicy:
     """One channel's thresholds and its negative admission, resolved from settings.
@@ -195,6 +201,12 @@ class ChannelPolicy:
 
 def channel_policy(key: str, settings: Settings) -> ChannelPolicy:
     master = settings.condenser_verdict_negative_enabled
+    if key == 'a':
+        return ChannelPolicy(
+            settings.condenser_verdict_a_positive_score,
+            settings.condenser_verdict_a_negative_score,
+            master and settings.condenser_verdict_a_negative_enabled,
+        )
     if key == 'b':
         return ChannelPolicy(
             settings.condenser_verdict_positive_score,
@@ -221,7 +233,7 @@ def enabled_channels(settings: Settings) -> list[str]:
     dropped rather than raised: a typo in an env var must degrade, not crash the
     judging loop."""
     keys = [key.strip() for key in settings.condenser_verdict_channels.split(',')]
-    return [key for key in keys if key in ('b', 'c', 'd')]
+    return [key for key in keys if key in CHANNEL_KEYS]
 
 
 def shadow_channels(settings: Settings) -> list[str]:
@@ -238,7 +250,7 @@ def shadow_channels(settings: Settings) -> list[str]:
     """
     voting = set(enabled_channels(settings))
     keys = [key.strip() for key in settings.condenser_verdict_shadow_channels.split(',')]
-    return [key for key in keys if key in ('b', 'c', 'd') and key not in voting]
+    return [key for key in keys if key in CHANNEL_KEYS and key not in voting]
 
 
 def classify(channel: ChannelScore, policy: ChannelPolicy) -> str:
@@ -471,32 +483,45 @@ class VerdictManager:
         keys = enabled_channels(self.settings)
         shadows = shadow_channels(self.settings)
         scoring = keys + shadows
-        fitted = self._fit_channels(samples, scoring)
+        handles = db.x_author_handles(set(samples))
+        fitted = self._fit_channels(samples, handles, scoring)
         flags = (
             db.x_attributes_for({row['tweet_id'] for row, _ in pending}, attributes.model_tag(self.settings))
             if 'c' in scoring
             else {}
         )
-        handles = db.x_author_handles(set(samples))
         for row, text in pending:
             vec = vecs.get(row['tweet_id'])
             if vec is None:
                 continue
             judgement = self._judge_one(
-                vec, text, flags.get(row['tweet_id'], []), samples, handles, keys, shadows, fitted
+                vec,
+                text,
+                row.get('author_handle'),
+                flags.get(row['tweet_id'], []),
+                samples,
+                handles,
+                keys,
+                shadows,
+                fitted,
             )
             db.set_x_verdict(row['channel_id'], row['tweet_id'], judgement.verdict, judgement.meta)
             result.judged += 1
 
-    def _fit_channels(self, samples: dict[int, str], keys: list[str]) -> dict:
+    def _fit_channels(self, samples: dict[int, str], handles: dict[int, str], keys: list[str]) -> dict:
         """Refit the cheap channels from the live labels, once per round.
 
         Channel D's counts rebuild from ``x_tweets.text`` in milliseconds at a few
         hundred labels (the no-table decision from step 1); channel C's counts come
-        from the stored attributes plus the reader's chips. Channel B's "model" is
-        the KNN index, which ``_index_missing`` has already reconciled.
+        from the stored attributes plus the reader's chips; channel A's are a tally
+        over handles the round has already loaded for channel B's evidence. Channel
+        B's "model" is the KNN index, which ``_index_missing`` has already reconciled.
         """
         fitted: dict = {}
+        if 'a' in keys:
+            fitted['a'] = authors.fit(
+                authors.LabeledAuthor(handle=handles.get(tid), verdict=samples[tid]) for tid in samples
+            )
         if 'd' in keys:
             texts = {row['tweet_id']: judge_text(row) for row in db.x_tweet_judge_rows(sorted(samples))}
             fitted['d'] = ngram.fit((texts[tid], samples[tid] != 'down') for tid in samples if texts.get(tid))
@@ -513,6 +538,7 @@ class VerdictManager:
         self,
         vector: list[float],
         text: str,
+        handle: Optional[str],
         flags: list[str],
         samples: dict[int, str],
         handles: dict[int, str],
@@ -522,7 +548,9 @@ class VerdictManager:
     ) -> Judgement:
         scores: dict[str, Optional[ChannelScore]] = {}
         for key in keys + shadows:
-            if key == 'b':
+            if key == 'a':
+                scores['a'] = authors.score(fitted['a'], handle, self.settings)
+            elif key == 'b':
                 hits = vectors.knn(vector, self.settings.condenser_verdict_k)
                 neighbours = [
                     Neighbour(tweet_id, distance, samples[tweet_id], handles.get(tweet_id))

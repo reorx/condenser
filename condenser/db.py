@@ -1272,6 +1272,7 @@ def x_pending_verdict_rows(since: datetime, limit: int) -> list[dict]:
     return _rows(
         tdb.db.execute_sql(
             'SELECT f.channel_id AS channel_id, f.tweet_id AS tweet_id, t.text AS text, '
+            't.author_handle AS author_handle, '
             't.rt_of_handle AS rt_of_handle, t.article AS article, q.text AS quote_text '
             'FROM x_feed_items f JOIN x_tweets t ON t.id = f.tweet_id '
             'LEFT JOIN x_tweets q ON q.id = t.quote_of '

@@ -430,9 +430,19 @@ public struct XVerdictChannel: Codable, Equatable, Sendable {
     public let flags: [XVerdictEvidencePair]?
     /// 通道 D：最强证据 token 及其对数几率
     public let tokens: [XVerdictEvidencePair]?
+    /// 通道 A：这个账号，以及你对它的记录——不需要任何度量就能读懂的证据
+    public let handle: String?
+    public let up: Double?
+    public let down: Double?
 
     /// 渲染用证据：D 给词、C 给属性；B 在这里没有第二份近邻
     public var evidence: [XVerdictEvidencePair] { tokens ?? flags ?? [] }
+
+    /// 通道 A 的证据是一句话，不是权重对，所以单独给一行
+    public var record: String? {
+        guard let handle else { return nil }
+        return "@\(handle) · 你踩过 \(Int(down ?? 0)) 次，赞过 \(Int(up ?? 0)) 次"
+    }
 }
 
 /// 判定为什么是这个结果。reason 标记两种「没判」：离所有标注都太远、没有可判的文本

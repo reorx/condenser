@@ -95,13 +95,13 @@ def setup_db(monkeypatch, **overrides) -> None:
     db.init_db(os.environ['CONDENSER_DB_PATH'])
 
 
-def bird_entry(tweet_id: int, text: str, minutes: int = 0) -> dict:
+def bird_entry(tweet_id: int, text: str, minutes: int = 0, handle: str = 'someone') -> dict:
     created = NOW - timedelta(minutes=minutes)
     return {
         'id': str(tweet_id),
         'text': text,
         'createdAt': created.strftime('%a %b %d %H:%M:%S +0000 %Y'),
-        'author': {'username': 'someone', 'name': 'Some One'},
+        'author': {'username': handle, 'name': handle.title()},
         'authorId': '12345',
     }
 
@@ -532,6 +532,152 @@ async def test_the_prospective_monitor_scores_a_shadow_channel_without_crediting
     assert prospective.summarize(sample).by_channel.get('d') is None
     replay = prospective.shadow(sample, 'd', positive_score=0.25, negative_score=-0.45)
     assert (replay.scored, replay.negative.calls, replay.negative.hits) == (1, 1, 1)
+
+
+# --- channel A: the author prior --------------------------------------------------
+#
+# Added 2026-07-29, out of the Interactive Brokers measurement: 14 @IBKR tweets in
+# the archive, every one an ad, 6 downvoted — and production had judged all 14
+# neutral. The text channels each had a hole where it mattered (B out-of-domain on
+# 6, D silent on 4, C blind wherever the extractor had not run). The author was
+# there every time, which is the one thing this channel needs.
+
+
+AD_TWEETS = (
+    'trade smarter with our platform',
+    'what interest rate does your broker pay',
+    'discover our new desktop trading platform',
+    'trade worldwide with a broker you can trust',
+    'position around macro events with interest rate futures',
+    'seek more from your shares with our yield program',
+)
+LIKED_TWEETS = ('notes on rust borrow checking', 'more notes on rust async runtimes')
+
+
+def seed_ad_account(monkeypatch, embedder=None, **overrides):
+    """The @IBKR label set at its real size: six downs on one account.
+
+    Six rather than a token two on purpose — this channel's whole claim is that a
+    *record* is evidence where a single tweet is not, so the fixture has to carry a
+    record. The ads are deliberately off every axis the reader has labeled, which
+    is what an out-of-domain broker ad is and why the topic channel cannot help.
+    """
+    setup_db(monkeypatch, **overrides)
+    db.add_x_subscription('foryou', name=x.FORYOU_NAME, config={'kind': 'home'})
+    ingest(
+        'foryou',
+        *[bird_entry(101 + i, text, 200 - i, handle='IBKR') for i, text in enumerate(AD_TWEETS)],
+        *[bird_entry(201 + i, text, 180 - i, handle='rustacean') for i, text in enumerate(LIKED_TWEETS)],
+    )
+    for tweet_id in range(101, 101 + len(AD_TWEETS)):
+        label(tweet_id, 'down', 'promo')
+    for tweet_id in range(201, 201 + len(LIKED_TWEETS)):
+        label(tweet_id, 'up')
+    return make_manager(embedder=embedder)
+
+
+async def test_the_author_prior_condemns_an_ad_account_the_topic_channel_cannot_see(env, monkeypatch):
+    """The IBKR case end to end, in the form that actually defeated channel B.
+
+    An ad account rotates its subject — the real @IBKR ads ran through futures,
+    FX, gold, oil, equities and interest rates — and every new subject is a
+    neighbourhood the kNN has no labels in. That is where 6 of the 14 production
+    verdicts came out `out_of_domain`. The author prior does not care what the ad
+    is about this time: you have said no to this account six times."""
+    mgr = seed_ad_account(
+        monkeypatch,
+        CONDENSER_VERDICT_CHANNELS='a,b',
+        CONDENSER_VERDICT_NEGATIVE_ENABLED='1',
+        CONDENSER_VERDICT_A_NEGATIVE_ENABLED='1',
+    )
+    ingest('foryou', bird_entry(301, 'trade cooking oil futures around the clock', 5, handle='IBKR'))
+
+    await mgr.run_once()
+
+    assert feed_verdict(301) == 'negative'
+    meta = verdict_meta(301)
+    assert meta['reason'] == 'out_of_domain'  # channel B abstained, as it always did
+    assert meta['channels']['a']['verdict'] == 'negative'
+
+
+async def test_the_author_evidence_names_the_account_and_its_record(env, monkeypatch):
+    """The most readable evidence trail any channel produces — no distance metric,
+    no token weights, just "you have downed this account twice"."""
+    mgr = seed_ad_account(monkeypatch, CONDENSER_VERDICT_CHANNELS='a,b')
+    ingest('foryou', bird_entry(301, 'explore agricultural futures around the clock', 5, handle='IBKR'))
+
+    await mgr.run_once()
+
+    evidence = verdict_meta(301)['channels']['a']
+    assert evidence['handle'] == 'ibkr'
+    assert (evidence['down'], evidence['up']) == (len(AD_TWEETS), 0)
+
+
+async def test_an_author_you_have_never_labeled_leaves_the_channel_silent(env, monkeypatch):
+    """The blind spot, wired: a first-time ad account gets no vote from this channel
+    — abstention, not a neutral score — so it cannot drag the others toward neutral."""
+    mgr = seed_ad_account(
+        monkeypatch,
+        CONDENSER_VERDICT_CHANNELS='a,b',
+        CONDENSER_VERDICT_NEGATIVE_ENABLED='1',
+        CONDENSER_VERDICT_A_NEGATIVE_ENABLED='1',
+    )
+    ingest('foryou', bird_entry(301, 'trade smarter with our platform', 5, handle='SomeOtherBroker'))
+
+    await mgr.run_once()
+
+    assert 'a' not in verdict_meta(301).get('channels', {})
+
+
+async def test_the_author_prior_needs_its_own_admission_to_vote_negative(env, monkeypatch):
+    """Double-gated like every other channel: the score is archived either way."""
+    mgr = seed_ad_account(monkeypatch, CONDENSER_VERDICT_CHANNELS='a,b', CONDENSER_VERDICT_NEGATIVE_ENABLED='1')
+    ingest('foryou', bird_entry(301, 'explore agricultural futures around the clock', 5, handle='IBKR'))
+
+    await mgr.run_once()
+
+    assert feed_verdict(301) == 'neutral'
+    assert verdict_meta(301)['channels']['a']['score'] < 0
+
+
+async def test_the_author_prior_can_run_as_a_shadow_channel(env, monkeypatch):
+    """How it earns admission on production traffic: scored and archived every
+    round, casting nothing, until the prospective monitor has enough pairs."""
+    mgr = seed_ad_account(
+        monkeypatch,
+        CONDENSER_VERDICT_SHADOW_CHANNELS='a',
+        CONDENSER_VERDICT_NEGATIVE_ENABLED='1',
+        CONDENSER_VERDICT_A_NEGATIVE_ENABLED='1',
+    )
+    ingest('foryou', bird_entry(301, 'explore agricultural futures around the clock', 5, handle='IBKR'))
+
+    await mgr.run_once()
+
+    assert feed_verdict(301) == 'neutral'
+    shadow = verdict_meta(301)['channels']['a']
+    assert (shadow['verdict'], shadow['shadow']) == (None, True)
+    assert shadow['score'] < 0
+
+
+async def test_the_author_prior_reads_no_text_and_costs_no_embedding_call(env, monkeypatch):
+    """Its defining property, asserted where it pays off: the channel adds no
+    request of any kind. Every text embedded this round is one judging needed
+    anyway — the training set plus the tweet under judgement — so running channel A
+    alone costs exactly what running no channel at all would."""
+    embedder = FakeEmbedder()
+    mgr = seed_ad_account(
+        monkeypatch,
+        embedder=embedder,
+        CONDENSER_VERDICT_CHANNELS='a',
+        CONDENSER_VERDICT_NEGATIVE_ENABLED='1',
+        CONDENSER_VERDICT_A_NEGATIVE_ENABLED='1',
+    )
+    ingest('foryou', bird_entry(301, 'explore agricultural futures around the clock', 5, handle='IBKR'))
+
+    await mgr.run_once()
+
+    assert feed_verdict(301) == 'negative'
+    assert sum(len(call) for call in embedder.calls) == len(AD_TWEETS) + len(LIKED_TWEETS) + 1
 
 
 # --- visibility ------------------------------------------------------------------

@@ -67,6 +67,23 @@ describe('XVerdictDetail', () => {
     expect(screen.getByText('判负')).toBeInTheDocument();
   });
 
+  it('renders the author prior as a record rather than as weights', () => {
+    // Channel A (2026-07-29) reads the account, never the tweet, so its evidence is
+    // neither words nor attributes — it is "your record with this account", the one
+    // piece of evidence in the whole pane that needs no metric to interpret.
+    const authorPrior: XVerdictMeta = {
+      reason: 'out_of_domain',
+      score: 0,
+      neighbors: [],
+      channels: { a: { verdict: 'negative', score: -0.5625, handle: 'ibkr', down: 6, up: 0 } },
+      algo: 'vote-v1',
+    };
+    render(<XVerdictDetail verdict="negative" meta={authorPrior} />);
+
+    expect(screen.getByText('作者记录')).toBeInTheDocument();
+    expect(screen.getByText('@ibkr · 你踩过 6 次，赞过 0 次')).toBeInTheDocument();
+  });
+
   it('marks a shadow channel so its score is not read as a vote', () => {
     // Step 5b: a channel measured on real traffic without being allowed to badge
     // anyone. Its score is real evidence, its silence is not an opinion — and the

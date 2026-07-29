@@ -116,6 +116,31 @@ struct XModelsDecodingTests {
         #expect(c.evidence.map(\.name) == ["promo_cta"])
     }
 
+    @Test("通道 A 的证据是账号记录，不是权重对——单独渲染成一句话")
+    func authorChannelRecord() throws {
+        // 通道 A（2026-07-29）不读推文，只读作者，所以它的证据既不是词也不是属性，
+        // 而是「你对这个账号的记录」——四个通道里唯一不需要任何度量就能读懂的一条。
+        let json = #"""
+        {"source": "x", "key": "x:1", "datetime": "2026-07-28T10:00:00Z",
+         "is_read": false, "is_saved": false,
+         "x": {"id": "1", "author_id": null, "author_handle": "IBKR", "author_name": null,
+               "text": "trade smarter", "created_at": null, "first_seen_at": "2026-07-28T10:00:00Z",
+               "media": null, "metrics": null, "quote": null, "rt_of_handle": null,
+               "reply_to_id": null, "article": null, "feed": "foryou", "feed_kind": "home",
+               "verdict": "neutral",
+               "verdict_meta": {"reason": "out_of_domain", "neighbors": [], "score": 0.0,
+                 "channels": {"a": {"verdict": null, "score": -0.5625, "shadow": true,
+                                    "handle": "ibkr", "down": 6.0, "up": 0.0}},
+                 "model": "text-embedding-v4@256", "algo": "vote-v1"}}}
+        """#
+        let item = try decoder.decode(TimelineItem.self, from: Data(json.utf8))
+        let a = try #require(item.x?.verdictMeta?.channels?["a"])
+
+        #expect(a.record == "@ibkr · 你踩过 6 次，赞过 0 次")
+        #expect(a.evidence.isEmpty)  // 没有权重对可画，这一行由 record 顶上
+        #expect(a.shadow == true)
+    }
+
     @Test("旧 meta 没有 channels 块照常解码；channels 块坏了整块降级为 nil 而不炸整页")
     func ensembleForwardCompatibility() throws {
         // 步骤 4 之前写下的判定：没有 channels 键

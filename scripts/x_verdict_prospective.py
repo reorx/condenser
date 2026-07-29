@@ -28,8 +28,10 @@ Two biases that no flag here can remove, so read them into every figure:
 
 - a badge may change whether a tweet gets read and labeled at all (badge-only and
   no re-ranking keeps this small, not zero);
-- ``corroborated`` is not fully archived, so shadow negatives are an upper bound
-  on what the channel would really have cast.
+- channel B's ``corroborated`` is not fully archived (it counted every close
+  neighbour; only the nearest five are stored), so B's shadow negatives are an
+  upper bound on what it would really have cast. Channel A's rule is the down
+  count sitting in its own evidence, so A's replay is exact.
 
 Usage::
 

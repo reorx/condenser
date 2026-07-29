@@ -21,6 +21,7 @@ TG/HN），订阅 tab 的 X 分组行是它唯一入口 → `XFeedTimelineScreen
 `XFeedbackButtons`），详情是 `XDetailSheet`（判定证据用中文展开，卡片徽标沿用 web 的英文）。
 推文媒体走 `/api/preview/image`、作者头像走 `/api/x/avatar/{handle}`，客户端从不直连 X。
 `XVerdict` / `ItemFeedback` 都有 `other` 兜底值——后端先行升级出新值时降级渲染而不是炸解码。
+通道字母是开放字典（`[String: XVerdictChannel]`），所以后端 2026-07-29 加通道 A（作者先验）只需补一行中文名与它的证据渲染：A 的证据不是权重对而是一句话（`XVerdictChannel.record`，「@ibkr · 你踩过 6 次，赞过 0 次」），因为这个通道根本不读推文，只读账号。
 计划见 `../kb/plans/2026-07-24-x-source-local-probe.md`。
 
 **转发源通用化（2026-07-27）**：转发不再是 Telegram 专属。Kit 的

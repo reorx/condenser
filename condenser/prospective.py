@@ -22,16 +22,18 @@ Two things it reports that the backtest structurally cannot:
 
 Two biases to carry while reading it, neither of them fixable here: a badge may
 influence whether a tweet gets read and labeled at all (badge-only and no
-re-ranking keeps it small, not zero), and ``corroborated`` was computed over
-every close neighbour while only the nearest five are archived — so a shadow
-negative count is an upper bound.
+re-ranking keeps it small, not zero), and for channel B ``corroborated`` was
+computed over every close neighbour while only the nearest five are archived — so
+B's shadow negative count is an upper bound. Channel A is the exception worth
+knowing: its rule *is* the down count in its archived evidence, so its replay is
+exact.
 """
 
 import json
 from dataclasses import dataclass, field
 from typing import Iterable, Optional
 
-from . import db
+from . import authors, db
 from .channels import NEGATIVE, POSITIVE
 from .config import Settings, get_settings
 
@@ -256,6 +258,7 @@ def shadow(
     settings = settings or get_settings()
     result = Shadow(channel=key, positive_score=positive_score, negative_score=negative_score)
     corroborated = 0
+    replayable = False
     for pair in sample:
         if key not in pair.scores:
             continue  # the channel abstained, or was not running that round
@@ -265,7 +268,30 @@ def shadow(
             result.positive.record(pair, POSITIVE)
         elif score <= negative_score:
             result.negative.record(pair, NEGATIVE)
-            corroborated += pair.down_neighbours >= settings.condenser_verdict_min_down_neighbors
-    if key == 'b':
+            backing = _corroboration(key, pair, settings)
+            replayable = replayable or backing is not None
+            corroborated += bool(backing)
+    if replayable or key in CORROBORATION_KEYS:
         result.corroborated_negatives = corroborated
     return result
+
+
+# The channels whose corroboration rule the archive can replay at all. B's is an
+# upper bound (it counted every close neighbour; only the nearest five are stored);
+# A's is exact, because its rule *is* the down count that sits in the evidence.
+CORROBORATION_KEYS = ('a', 'b')
+
+
+def _corroboration(key: str, pair: Pair, settings: Settings) -> Optional[bool]:
+    """Would this channel's negative have been corroborated, as far as the archive says?
+
+    None where the evidence cannot answer — which is not the same as False, and is
+    why a channel with no replayable rule reports ``corroborated_negatives=None``
+    rather than a count of zero.
+    """
+    if key == 'b':
+        return pair.down_neighbours >= settings.condenser_verdict_min_down_neighbors
+    if key == 'a':
+        down = (pair.evidence.get('a') or {}).get('down')
+        return None if down is None else down >= authors.MIN_DOWN_FOR_NEGATIVE
+    return None

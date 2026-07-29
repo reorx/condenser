@@ -16,6 +16,7 @@ const VERDICT_LABEL: Record<XVerdict, string> = {
 // The channels in the reader's terms. Keyed by the backend's channel letters; an
 // unknown key (a future channel) degrades to the letter rather than hiding the row.
 const CHANNEL_LABEL: Record<string, string> = {
+  a: '作者记录',
   b: '话题相似',
   c: '内容属性',
   d: '词面特征',
@@ -58,8 +59,12 @@ function NeighborRow({ neighbor }: { neighbor: XVerdictNeighbor }) {
 }
 
 function evidenceLine(channel: XVerdictChannel): string | null {
-  // Channel D names words, channel C names attributes; channel B's neighbours are
-  // rendered above from the meta's top level, so its row is just the vote.
+  // Channel D names words, channel C names attributes, channel A names the account
+  // and your record with it; channel B's neighbours are rendered above from the
+  // meta's top level, so its row is just the vote.
+  if (channel.handle) {
+    return `@${channel.handle} · 你踩过 ${channel.down ?? 0} 次，赞过 ${channel.up ?? 0} 次`;
+  }
   const pairs = channel.tokens ?? channel.flags ?? [];
   if (pairs.length === 0) return null;
   return pairs.map(([name, weight]) => `${name} ${weight > 0 ? '+' : ''}${weight.toFixed(2)}`).join(' · ');

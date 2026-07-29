@@ -257,6 +257,29 @@ def test_shadow_skips_pairs_where_the_channel_never_spoke(env, monkeypatch):
     assert (result.negative.calls, result.negative.hits) == (1, 1)
 
 
+def test_shadow_corroborates_the_author_prior_exactly(env, monkeypatch):
+    """Channel A is the one channel whose corroboration replays *exactly*.
+
+    B's rule counts close neighbours and only the nearest five are archived, so its
+    replay is an upper bound. A's rule is "two downs on this account", and the down
+    count is right there in the archived evidence — so the shadow can say what the
+    channel would really have done, which is what admitting it turns on."""
+    setup_db(monkeypatch)
+    meta = vote_meta({'a': ('neutral', -0.56)})
+    meta['channels']['a'].update({'handle': 'ibkr', 'down': 6, 'up': 0, 'shadow': True})
+    judged(1, 'neutral', meta)
+    label(1, 'down')
+    thin = vote_meta({'a': ('neutral', -0.5)})
+    thin['channels']['a'].update({'handle': 'someone', 'down': 1, 'up': 0, 'shadow': True})
+    judged(2, 'neutral', thin)
+    label(2, 'down')
+
+    result = prospective.shadow(prospective.pairs(), 'a', positive_score=0.25, negative_score=-0.25)
+
+    assert (result.negative.calls, result.negative.hits) == (2, 2)
+    assert result.corroborated_negatives == 1  # only the six-down account clears the rule
+
+
 def test_shadow_reports_how_many_negatives_the_archive_can_corroborate(env, monkeypatch):
     """Honesty about what a replay cannot know: ``corroborated`` was computed over
     every close neighbour, and only the nearest five are archived. So a shadow

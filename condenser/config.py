@@ -96,11 +96,13 @@ class Settings(BaseSettings):
     condenser_verdict_negative_score: float = -0.55
     condenser_verdict_min_down_neighbors: int = 2
     # --- the ensemble (plan v2 step 4, 2026-07-28) ---
-    # Which channels vote: 'b' (topic kNN), 'c' (LLM attributes), 'd' (n-gram).
+    # Which channels vote: 'a' (author prior), 'b' (topic kNN), 'c' (LLM
+    # attributes), 'd' (n-gram).
     # Comma-separated; default is channel B alone, i.e. exactly the pre-ensemble
     # behavior — enabling more channels is a config decision backed by a backtest,
     # never a side effect of deploying this code.
     condenser_verdict_channels: str = 'b'
+    # ('a' — the author prior — joined the set 2026-07-29; see below.)
     # Channels that score and archive but never vote (plan v2 step 5b). The revised
     # §9 validates a channel prospectively — on tweets judged before they were
     # labeled — but doing that by *enabling* the channel means badging the reader
@@ -122,17 +124,44 @@ class Settings(BaseSettings):
     condenser_verdict_window_hours: int = 48
     condenser_verdict_batch: int = 100
 
+    # --- verdict channel A: author prior (condenser/authors.py) ---
+    # The cheapest channel by far — no API call, no table, no index, just a tally
+    # over the labels already in the database. It reads the account, never the
+    # tweet, so it is the only channel that never abstains on someone you have
+    # already judged (measured on the @IBKR ads: B abstained on 6 of 14, D on 4).
+    # An author with fewer labels than this is an anecdote about a tweet, not a
+    # record: 2 is both the observation floor and the corroboration rule, since a
+    # single mis-tap must not condemn an account.
+    condenser_verdict_a_min_observations: int = 2
+    # Its own vote thresholds, on its own scale (see channels.resolve), from the
+    # 2026-07-29 leave-one-out backtest over 104 real labels (base rate 53.8% neg):
+    #   neg <= -0.25 -> 92.9% over 14 calls   <- widest, and the most precise
+    #   neg <= -0.35 -> 90.9% over 11 calls
+    #   neg <= -0.45 ->  100% over  6 calls
+    # No saved tweet is condemned at any of them, which no other channel manages
+    # (the b,c,d vote condemns five). It still falls one call short of §9's 15, and
+    # a backtest is selection-biased by construction, so the admission flag stays
+    # off and the channel earns its way in as a shadow — the step-5b protocol.
+    # The positive side has only 3 calls behind it: 100%, and far too few to read.
+    condenser_verdict_a_positive_score: float = 0.25
+    condenser_verdict_a_negative_score: float = -0.25
+    condenser_verdict_a_negative_enabled: bool = False
+
     # --- verdict channel C: LLM attribute extraction (condenser/attributes.py) ---
     # The project's first per-item billed component, so it is fenced three ways: a
     # switch, a hard per-round cap, and a count on /api/x/status. It also needs its
     # **own** API key — deliberately not falling back to the embedding one, so
     # deploying this code cannot start spending on its own; setting the key is the
-    # act of turning it on. Same OpenAI-compatible shape as embeddings; qwen-flash
-    # is ~$0.05/$0.4 per 1M tokens, i.e. ~$0.01/day at 400 tweets.
+    # act of turning it on. Same OpenAI-compatible shape as embeddings; a flash-tier
+    # model is ~$0.05/$0.4 per 1M tokens, i.e. ~$0.01/day at 400 tweets.
     condenser_attr_enabled: bool = True
     condenser_attr_base_url: str = 'https://dashscope.aliyuncs.com/compatible-mode/v1'
     condenser_attr_api_key: str = ''
-    condenser_attr_model: str = 'qwen-flash'
+    # qwen3.7-flash since 2026-07-29 (was qwen-flash). The extractor is the one place
+    # where a weak model costs accuracy nothing downstream can recover: the counts can
+    # only learn rates for attributes it actually reports. Changing this re-reads the
+    # archive rather than migrating it — `model_tag` is `model@taxonomy`.
+    condenser_attr_model: str = 'qwen3.7-flash'
     # Hard ceiling on tweets described per round — the spend bound. A first run
     # against a full archive would otherwise be an unbounded bill.
     condenser_attr_batch: int = 40
@@ -141,7 +170,11 @@ class Settings(BaseSettings):
     # does not get to decide anything. The plan's estimate is ~20 per flag before a
     # flag means much, so at today's label count the channel abstains on almost
     # everything — which is the correct answer, not a failure.
-    condenser_verdict_c_min_observations: int = 6
+    # 6 -> 4 on 2026-07-29, to hold the vocabulary steady after upvotes stopped being
+    # credited to every flag in full (fit_flags): the same labels now carry less
+    # attributable mass, and at 6 the gate dropped `thread_bait` for that reason alone.
+    # Measured on the same 104 labels: obs>=4 and obs>=6 give identical precision.
+    condenser_verdict_c_min_observations: int = 4
     # Channel C's own vote thresholds (each channel classifies on its own scale —
     # that is why the combiner is a vote, see channels.resolve). The negative
     # default is the widest backtested point (80.8% over 26 calls, 2026-07-28) —

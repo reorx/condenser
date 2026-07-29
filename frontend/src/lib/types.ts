@@ -180,6 +180,11 @@ export interface XVerdictChannel {
   flags?: [string, number][];
   /** Channel D: the strongest evidence tokens with their log-odds. */
   tokens?: [string, number][];
+  /** Channel A: the account and its record with you — the most readable evidence
+   *  any channel produces, and the only one that needs no metric to interpret. */
+  handle?: string;
+  up?: number;
+  down?: number;
 }
 
 /** Why the verdict came out the way it did. `reason` marks the two "did not judge"

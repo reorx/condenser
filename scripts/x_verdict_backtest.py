@@ -23,7 +23,7 @@ Read the numbers in this order:
 Usage::
 
     uv run python scripts/x_verdict_backtest.py                       # current settings, channel b
-    uv run python scripts/x_verdict_backtest.py --channels b,d        # per-channel + combined
+    uv run python scripts/x_verdict_backtest.py --channels a,b,d      # per-channel + combined
     uv run python scripts/x_verdict_backtest.py --channels b,d --sweep
     uv run python scripts/x_verdict_backtest.py --negatives topic     # drop style downs from training
     uv run python scripts/x_verdict_backtest.py --embed-missing       # embed labeled gaps first
@@ -59,7 +59,7 @@ from typing import Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from condenser import attributes, db, embedding, ngram, vectors, verdict  # noqa: E402
+from condenser import attributes, authors, db, embedding, ngram, vectors, verdict  # noqa: E402
 from condenser.channels import ChannelScore, combine, resolve  # noqa: E402
 from condenser.config import Settings, get_settings  # noqa: E402
 from condenser.db import ItemFeedback  # noqa: E402
@@ -90,6 +90,7 @@ class Sample:
     text: str  # what the judge reads (same text that got embedded)
     vector: Optional[list[float]]
     flags: list[str]  # the LLM's style flags (channel C); empty when undescribed
+    author: Optional[str] = None  # the handle (channel A); None when bird sent none
 
     @property
     def positive(self) -> bool:
@@ -107,6 +108,35 @@ class Sample:
 # never run. Each one is asked to `prepare` on the fold's training set, to capture
 # threshold-independent `evidence` about the held-out tweet, and then to `score`
 # that evidence under as many settings cells as the sweep wants (cheap, pure).
+
+
+class AuthorChannel:
+    """Channel A — how this account has fared with the reader before.
+
+    The one channel that reads no text, so the only one that never abstains on an
+    account already judged. Its blind spot is the mirror image: a first sighting of
+    a new account is invisible to it.
+    """
+
+    key = 'a'
+    title = 'author prior (who wrote it)'
+    needs_vector = False
+
+    def __init__(self, settings: Settings):
+        self._model = authors.AuthorModel()
+
+    def prepare(self, train: list[Sample]) -> None:
+        self._model = authors.fit(authors.LabeledAuthor(handle=sample.author, verdict=sample.label) for sample in train)
+
+    def evidence(self, sample: Sample) -> tuple[authors.AuthorModel, Optional[str]]:
+        return self._model, sample.author
+
+    def score(self, evidence, settings: Settings) -> Optional[ChannelScore]:
+        model, handle = evidence
+        return authors.score(model, handle, settings)
+
+    def grid(self) -> list[tuple[str, dict]]:
+        return [(f'obs>={minimum}', {'condenser_verdict_a_min_observations': minimum}) for minimum in (1, 2, 3, 4)]
 
 
 class TopicChannel:
@@ -214,8 +244,8 @@ class NgramChannel:
         ]
 
 
-CHANNELS = {'b': TopicChannel, 'c': AttributeChannel, 'd': NgramChannel}
-DEFAULT_WEIGHTS = {'b': 1.0, 'c': 1.0, 'd': 0.5}
+CHANNELS = {'a': AuthorChannel, 'b': TopicChannel, 'c': AttributeChannel, 'd': NgramChannel}
+DEFAULT_WEIGHTS = {'a': 1.0, 'b': 1.0, 'c': 1.0, 'd': 0.5}
 
 
 # --- data ---------------------------------------------------------------------
@@ -231,6 +261,7 @@ def load_samples(settings: Settings) -> list[Sample]:
     blobs = db.x_embedding_vectors(set(labels), embedding.model_tag(settings))
     texts = {row['tweet_id']: verdict.judge_text(row) for row in db.x_tweet_judge_rows(list(labels))}
     described = db.x_attributes_for(set(labels), attributes.model_tag(settings))
+    handles = db.x_author_handles(set(labels))
     return [
         Sample(
             tweet_id=tweet_id,
@@ -239,6 +270,7 @@ def load_samples(settings: Settings) -> list[Sample]:
             text=texts.get(tweet_id) or '',
             vector=vectors.unpack(blobs[tweet_id]) if tweet_id in blobs else None,
             flags=described.get(tweet_id, []),
+            author=handles.get(tweet_id),
         )
         for tweet_id, label in sorted(labels.items())
     ]
