@@ -462,6 +462,163 @@ def test_avatar_endpoint_404s_so_clients_fall_back_to_a_letter(env, monkeypatch)
         assert client.get('/api/x/avatar/not a handle').status_code == 422
 
 
+# --- For You in the aggregate, gated by the verdict (2026-07-29) ----------------
+#
+# The capacity decision above assumed the whole firehose. Filtering by the
+# verdict changes the arithmetic: measured on production, For You arrives at
+# 57–136 tweets/day of which ~13% are judged positive, against ~50 Telegram
+# messages/day — so admitting the recommendations is a fifth more reading, not a
+# flood. The mode lives in the subscription's config, like HN's `display_mode`,
+# because the right setting depends on how good the classifier currently is and
+# that changes with every label.
+#
+# The two halves that must never disagree: what the aggregate *shows* and what
+# "mark all read" in the aggregate *burns*.
+
+
+def _set_aggregate(client, mode):
+    r = client.patch('/api/sources/x/subscriptions/foryou', json={'config': {'aggregate': mode}})
+    assert r.status_code == 200, r.text
+
+
+def _judge(tweet_id, verdict):
+    db.set_x_verdict('foryou', tweet_id, verdict, {'score': 0.9 if verdict == 'positive' else 0.0})
+
+
+def test_the_aggregate_admits_nothing_from_foryou_by_default(env, monkeypatch):
+    """Deploying this must not change what the aggregate shows — the mode is opt-in,
+    and an absent/garbled config reads as 'none' rather than as permission."""
+    from condenser.sources import x as x_source
+
+    with _client() as client:
+        _login(client)
+        _seed_both(client, monkeypatch)
+        _judge(PHOTO_TWEET, 'positive')
+
+        assert x_source.aggregate_mode() == 'none'
+        assert x_key(PHOTO_TWEET) not in keys_of(_timeline(client, all=1)['items'])
+
+        db.update_x_subscription('foryou', config={'kind': 'home', 'aggregate': 'sometimes'})
+        assert x_source.aggregate_mode() == 'none'
+
+
+def test_positive_mode_admits_only_the_recommended_tweets(env, monkeypatch):
+    with _client() as client:
+        _login(client)
+        _seed_both(client, monkeypatch)
+        _set_aggregate(client, 'positive')
+        _judge(PHOTO_TWEET, 'positive')
+        _judge(QUOTE_TWEET, 'neutral')
+
+        keys = keys_of(_timeline(client, all=1)['items'])
+        assert x_key(PHOTO_TWEET) in keys
+        assert x_key(QUOTE_TWEET) not in keys
+        # an unjudged tweet is not a recommendation: no verdict, no admission
+        assert x_key(OLD_TWEET) not in keys
+
+
+def test_the_foryou_view_still_shows_everything(env, monkeypatch):
+    """The mode governs the aggregate only. Its own view is the archive, unfiltered —
+    that is where the reader goes to label, and hiding candidates there would starve
+    the classifier of exactly the negatives it needs."""
+    with _client() as client:
+        _login(client)
+        _seed_both(client, monkeypatch)
+        _set_aggregate(client, 'positive')
+        _judge(PHOTO_TWEET, 'positive')
+
+        assert len(_timeline(client, source='x', feed='foryou')['items']) == 8
+
+
+def test_all_mode_lets_the_whole_feed_into_the_aggregate(env, monkeypatch):
+    """The escape hatch in the other direction: once the verdict is trusted (or when
+    the reader wants everything), no verdict predicate at all."""
+    with _client() as client:
+        _login(client)
+        _seed_both(client, monkeypatch)
+        _set_aggregate(client, 'all')
+
+        feeds = {i['x']['feed'] for i in x_items(_timeline(client, all=1))}
+        assert feeds == {'foryou', USER_HANDLE}
+
+
+def test_aggregate_bulk_read_burns_only_what_the_aggregate_showed(env, monkeypatch):
+    """The dangerous half. With For You admitted, "mark all read" in the All view
+    must still leave the un-admitted tweets unread — they were never on screen, and
+    burning them would silently destroy the labeling backlog."""
+    with _client() as client:
+        _login(client)
+        _seed_both(client, monkeypatch)
+        _set_aggregate(client, 'positive')
+        _judge(PHOTO_TWEET, 'positive')
+
+        assert client.post('/api/read/bulk', json={}).status_code == 200
+        assert _timeline(client, all=1, unread_only=True)['items'] == []
+        unread = keys_of(_timeline(client, source='x', feed='foryou', unread_only=True)['items'])
+        assert x_key(PHOTO_TWEET) not in unread
+        assert len(unread) == 7  # the other 7 For You tweets were never shown
+
+
+def test_day_counts_and_the_new_poll_follow_the_same_rule(env, monkeypatch):
+    """Every surface that counts has to count the same set, or the calendar and the
+    "N new" banner promise items the timeline will not produce."""
+    with _client() as client:
+        _login(client)
+        _seed_both(client, monkeypatch)
+        _set_aggregate(client, 'positive')
+        _judge(PHOTO_TWEET, 'positive')
+        _judge(QUOTE_TWEET, 'neutral')
+
+        page = _timeline(client, all=1)
+        days = client.get('/api/timeline/days').json()
+
+        # the calendar counts exactly what the page can produce
+        assert sum(d['count'] for d in days) == len(page['items'])
+        # and the banner does not promise a tweet the aggregate would not show
+        assert client.get('/api/timeline/new', params={'after': page['head_cursor']}).json()['count'] == 0
+
+
+def test_a_tweet_in_both_feeds_keeps_one_position(env, monkeypatch):
+    """Dedup prefers the followed appearance, and the admission predicate must not
+    change that: filtering the For You row of a tweet you also follow would be a
+    no-op, not a disappearance."""
+    with _client() as client:
+        _login(client)
+        _subscribe(client, 'foryou')
+        _subscribe(client, USER_HANDLE)
+        # the same tweets pushed into both feeds; For You's copies stay unjudged
+        _ingest(client, monkeypatch, USER_HANDLE, user_fixture(), datetime(2026, 7, 24, 9, 0))
+        _ingest(client, monkeypatch, 'foryou', user_fixture(), datetime(2026, 7, 24, 9, 1))
+        _set_aggregate(client, 'positive')
+
+        items = x_items(_timeline(client, all=1))
+        assert keys_of(items).count(x_key(USER_NEWEST)) == 1
+        assert {i['x']['feed'] for i in items} == {USER_HANDLE}
+
+
+def test_the_sidebar_total_counts_only_what_the_aggregate_shows(env, monkeypatch):
+    """`unread` is the feed's own view (what you see when you open For You);
+    `aggregate_unread` is its contribution to the All/Unread badge. They differ for
+    exactly one feed, and conflating them made the badge promise 37 items where the
+    aggregate had 5."""
+    with _client() as client:
+        _login(client)
+        _seed_both(client, monkeypatch)
+        _judge(PHOTO_TWEET, 'positive')
+
+        def foryou_sub():
+            groups = client.get('/api/sources').json()
+            x_group = next(g for g in groups if g['source'] == 'x')
+            return next(s for s in x_group['subscriptions'] if s['channel_id'] == 'foryou')
+
+        sub = foryou_sub()
+        assert sub['unread'] == 8 and sub['aggregate_unread'] == 0  # mode 'none'
+
+        _set_aggregate(client, 'positive')
+        sub = foryou_sub()
+        assert sub['unread'] == 8 and sub['aggregate_unread'] == 1
+
+
 # --- probe capacity default ----------------------------------------------------
 
 

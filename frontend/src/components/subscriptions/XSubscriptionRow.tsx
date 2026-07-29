@@ -1,5 +1,6 @@
 import { Trash2 } from 'lucide-react';
 
+import { XAggregateMenu } from '@/components/subscriptions/XAggregateMenu';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { XGlyph } from '@/components/XGlyph';
@@ -41,6 +42,9 @@ export function XSubscriptionRow({
         <div className="truncate text-xs text-muted-foreground">{parts.join(' · ')}</div>
       </div>
       <div className="ml-auto flex items-center gap-2">
+        {/* only For You has a choice to make: a followed account is one you already
+            picked, so it is always in the aggregate */}
+        {sub.kind === 'home' && sub.enabled && <XAggregateMenu mode={sub.aggregate} />}
         <Switch
           checked={sub.enabled}
           disabled={busy}

@@ -241,9 +241,21 @@ def describe_subscription(sub: db.Subscription) -> dict:
         'name': sub.name,
         'enabled': bool(sub.enabled),
         'n': config.get('n'),
+        # How much of this feed joins the aggregate timeline. Only For You can be
+        # anything but 'all' — a followed account is a choice already made.
+        'aggregate': _aggregate_mode(sub),
         'added_at': str(sub.added_at) if sub.added_at else None,
         'tweets': db.x_feed_item_count(sub.channel_id),
     }
+
+
+def _aggregate_mode(sub: db.Subscription) -> str:
+    # deferred: condenser.sources.x imports this module
+    from .sources import x as x_source
+
+    if sub.channel_id != FORYOU_FEED:
+        return 'all'
+    return x_source.aggregate_mode()
 
 
 # --- ingest -------------------------------------------------------------------

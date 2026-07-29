@@ -13,9 +13,12 @@ import { useSources } from '@/hooks/useSources';
 export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   const { data: sources } = useSources();
   const { collapsed, toggle } = useCollapsedSources();
+  // aggregate_unread, not unread: this badge stands above the All/Unread links, so
+  // it must promise what those views can produce. They differ for X's For You,
+  // which contributes only the tweets its aggregate mode admits.
   const totalUnread = (sources ?? [])
     .flatMap((g) => g.subscriptions)
-    .reduce((n, s) => n + (s.enabled ? s.unread : 0), 0);
+    .reduce((n, s) => n + (s.enabled ? s.aggregate_unread : 0), 0);
 
   const [settingsOpen, setSettingsOpen] = useState(false);
   const location = useLocation();

@@ -268,7 +268,11 @@ export interface SourceSub {
   name: string | null;
   username: string | null;
   enabled: boolean;
+  /** Unread in this subscription's own view. */
   unread: number;
+  /** Its contribution to the aggregate All/Unread badge — the same number except
+   *  for X's For You, where the aggregate only admits what the verdict let in. */
+  aggregate_unread: number;
   config: Record<string, unknown> | null;
 }
 
@@ -296,6 +300,10 @@ export interface HnStatus {
 /** One X subscription, from GET /api/sources/x/subscriptions.
  *  `channel_id` is 'foryou' (the algorithmic feed) or a followed account's lowercased handle;
  *  `user_id` is the rename-stable numeric id, learned from the first probe push. */
+/** For You is a firehose, so how much of it reaches the main timeline is a setting:
+ *  nothing, only the tweets the verdict recommends, or everything. */
+export type XAggregateMode = 'none' | 'positive' | 'all';
+
 export interface XSubscription {
   source: 'x';
   channel_id: string;
@@ -306,6 +314,9 @@ export interface XSubscription {
   enabled: boolean;
   /** Per-feed fetch-count override handed to the probe; null = the server default. */
   n: number | null;
+  /** How much of this feed joins the aggregate timeline (For You only; a followed
+   *  account is always 'all'). */
+  aggregate: XAggregateMode;
   added_at: string | null;
   /** Archived appearances of tweets in this feed. */
   tweets: number;

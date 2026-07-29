@@ -47,7 +47,7 @@ Two conventions this list exists to protect:
 | `SidebarSourceGroup` | One collapsible source section (collapse persisted via `useCollapsedSources`): the full-width header row links to `/s/:source` (+ unread badge when collapsed) with the collapse chevron as its own right-edge target, rows = the source's enabled subscriptions |
 | `SidebarChannelLink` + `navLinkClass` | One Telegram channel link in a sidebar source group; also exports the shared nav-row className used by the top-level links |
 | `SidebarHnFeedLink` | One HN feed link in the sidebar's Hacker News group (routes to `/s/hn` — v1 has a single feed) |
-| `SidebarXFeedLink` | One X feed link in the sidebar's X group, routing to `/s/x/:feed` (X has many feeds, unlike HN): `XGlyph` for For You, the author's `XAvatar` for a followed account. For You never appears in the aggregate timeline, so this is its only entry point |
+| `SidebarXFeedLink` | One X feed link in the sidebar's X group, routing to `/s/x/:feed` (X has many feeds, unlike HN): `XGlyph` for For You, the author's `XAvatar` for a followed account. For You's full feed is only ever here — the aggregate shows at most what its `XAggregateMenu` mode admits |
 | `XAvatar` | An X author's avatar via `/api/x/avatar/{handle}` (unavatar proxy — bird carries no avatar URL); 404 falls back to a handle-seeded colored initial, ChannelAvatar-style |
 | `Spinner` + `FullScreenSpinner` | Loading spinner (inline + full-screen) |
 | `UnreadBadge` | Unread-count pill; renders nothing at 0, caps display at `999+` |
@@ -106,7 +106,8 @@ Two conventions this list exists to protect:
 | `TelegramSection` | The Telegram tab on the Subscriptions page: browse/add-by-handle actions + the `SubscriptionRow` channel list |
 | `HackerNewsSection` | The Hacker News tab on the Subscriptions page: Front Page subscribe/unsubscribe, sampling pause switch, display-mode menu, status line (`/api/hn/status`) |
 | `XSection` | The X tab on the Subscriptions page: add For You / an account by handle, the `XSubscriptionRow` list, and a two-line `/api/x/status` block — archive size + last probe push + parse errors (the data is pushed by the local probe, so this is where you find out the probe went quiet), plus an `XVerdictLine` explaining why the For You verdict is quiet: not configured, no sqlite-vec, or still counting down how many 👍/👎 remain before the cold-start gate opens |
-| `XSubscriptionRow` | One X feed row: For You or a followed account (handle chip only once a real display name has been learned), archive size + last push, pause switch, unsubscribe |
+| `XSubscriptionRow` | One X feed row: For You or a followed account (handle chip only once a real display name has been learned), archive size + last push, `XAggregateMenu` (For You only), pause switch, unsubscribe |
+| `XAggregateMenu` | How much of For You joins the aggregate timeline — 不进 / 只进推荐的 / 全部并入 → PATCH the feed's `config.aggregate` (`HnDisplayModeMenu`'s sibling). Only For You gets one: a followed account is a choice already made. A setting rather than a constant because the right answer tracks how good the verdict currently is |
 
 > `components/ui/` holds generated shadcn/ui (new-york) primitives — intentionally **excluded**
 > from this inventory. Don't list them here. Import `Button` from `@/components/ui/button`.
@@ -119,6 +120,9 @@ Two conventions this list exists to protect:
 - `hooks/` — data + behavior hooks (`useTimeline`, `useSources`, `useSubscriptions`,
   `useChannelFilter`, `useScrollToRead`, `useNewContent`, `useRefresh`, `useCollapsedSources`
   (sidebar collapse persistence), `useHnDisplayMode` (mode helpers + PATCH mutation),
+  `useXAggregate` (For You's aggregate-mode labels + PATCH mutation; invalidates the
+  timeline, the calendar and both unread badges, since the admitted set is computed at
+  query time on the backend),
   `useMessageStats` (live pane stats, staleTime 0), `useAppMeta` + `useSetForwardChannel`
   (runtime app settings incl. the forward target channel), `useHideItem` + `useUnhideItem`
   (hide an item from every timeline via `POST /api/hidden`; optimistic removal + undo),

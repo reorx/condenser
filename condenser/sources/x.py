@@ -5,10 +5,19 @@ Two feed kinds share the source and they behave very differently:
 * **For You** (``foryou``) is a firehose. bird's ``home`` endpoint re-samples on
   every call (Phase 1 measurement: three consecutive calls, zero overlap), so the
   archive grows by ~2400 tweets/day. Dumping that into the aggregate timeline
-  would bury Telegram and Hacker News, so For You is **opt-in**: it only appears
-  in the X-scoped views (``?source=x``). Sorted by ``first_seen_at`` — the
-  algorithm resurfaces days-old tweets and ``created_at`` would splice them into
-  timeline history (same reasoning as the HN front page).
+  would bury Telegram and Hacker News, so For You is **opt-in**: by default it
+  only appears in the X-scoped views (``?source=x``). Sorted by ``first_seen_at``
+  — the algorithm resurfaces days-old tweets and ``created_at`` would splice them
+  into timeline history (same reasoning as the HN front page).
+
+  Since 2026-07-29 the subscription's ``aggregate`` mode can let some of it
+  through, because the verdict changed the arithmetic the capacity decision was
+  made on: measured on production, For You arrives at 57–136 tweets/day of which
+  ~13% are judged positive, against ~50 Telegram messages a day. ``positive``
+  therefore adds about a fifth to the aggregate rather than burying it. The mode
+  lives in the subscription config (HN's ``display_mode`` pattern) because the
+  right setting depends on how good the classifier currently is, and that changes
+  with every label — it must be a click, not a deploy.
 * **A followed account** is an ordinary time series, like a TG channel: it joins
   the aggregate merge and sorts by the tweet's own ``created_at``.
 
@@ -17,6 +26,7 @@ query de-duplicates by tweet id, preferring the followed appearance — the card
 then keeps the same position whichever view you open it from.
 """
 
+import json
 from typing import Optional
 
 from telememo import db as tdb
@@ -24,6 +34,12 @@ from telememo import db as tdb
 from .. import db
 from ..items import FORYOU_FEED, norm_ts, x_envelope
 from .base import NEW_COUNT_BUFFER, SourcePage, SourceUnit, pack_pos, unpack_pos
+
+# How much of For You joins the *aggregate* timeline. Its own view is never
+# filtered by this — that is where the reader labels, and hiding candidates there
+# would starve the classifier of the negatives it needs.
+AGGREGATE_MODES = ('none', 'positive', 'all')
+DEFAULT_AGGREGATE_MODE = 'none'
 
 # The feed-dependent sort key, as SQL over (x_feed_items f JOIN x_tweets t).
 # COALESCE guards a tweet whose timestamp failed to parse (stored NULL, raw kept
@@ -110,18 +126,55 @@ def normalize_feed(feed: Optional[str]) -> Optional[str]:
     return cleaned or None
 
 
+def aggregate_mode() -> str:
+    """The For You subscription's aggregate mode, or 'none' when it cannot say.
+
+    Unknown values fall back to the default rather than raising: this reads a
+    JSON blob the user can PATCH, and a typo must not decide that the firehose
+    joins the main timeline.
+    """
+    sub = db.get_x_subscription(FORYOU_FEED)
+    if sub is None or not sub.enabled:
+        return DEFAULT_AGGREGATE_MODE
+    try:
+        config = json.loads(sub.config) if sub.config else {}
+    except ValueError:
+        return DEFAULT_AGGREGATE_MODE
+    mode = config.get('aggregate')
+    return mode if mode in AGGREGATE_MODES else DEFAULT_AGGREGATE_MODE
+
+
+def is_aggregate(feed: Optional[str], include_foryou: bool) -> bool:
+    """Is this the everything-merged view, rather than an X-scoped one?
+
+    The distinction the admission rule turns on: only the aggregate filters For
+    You, and only the aggregate's "mark all read" may sweep it.
+    """
+    return normalize_feed(feed) is None and not include_foryou
+
+
 def scope(feed: Optional[str], include_foryou: bool) -> list[str]:
     """The enabled feed keys this query reads (empty = nothing to show)."""
-    return db.enabled_x_feeds(normalize_feed(feed), include_foryou)
+    normalized = normalize_feed(feed)
+    admitted = is_aggregate(feed, include_foryou) and aggregate_mode() != 'none'
+    return db.enabled_x_feeds(normalized, include_foryou or admitted)
 
 
 def active(feed: Optional[str] = None, include_foryou: bool = False) -> bool:
     return bool(scope(feed, include_foryou))
 
 
-def _scope_where(channels: list[str]) -> tuple[list[str], list]:
-    """The subquery's feed filter — see the note on ``_visible``."""
-    return [f'f.channel_id IN ({",".join("?" for _ in channels)})'], list(channels)
+def _scope_where(channels: list[str], aggregate: bool = False) -> tuple[list[str], list]:
+    """The subquery's feed filter — see the note on ``_visible``.
+
+    The admission predicate rides along inside it for the same reason the scope
+    filter does: dedup ranking must only see the rows this query may show, or a
+    tweet whose For You copy is filtered out could rank second and vanish.
+    """
+    where = [f'f.channel_id IN ({",".join("?" for _ in channels)})']
+    if aggregate and FORYOU_FEED in channels and aggregate_mode() == 'positive':
+        where.append(f"(f.channel_id <> '{FORYOU_FEED}' OR f.verdict = 'positive')")
+    return where, list(channels)
 
 
 def _dedup_needed(channels: list[str]) -> bool:
@@ -193,7 +246,7 @@ def fetch_page(
     channels = scope(feed, include_foryou)
     if not channels:
         return SourcePage(units=[], has_more=False)
-    scope_where, scope_params = _scope_where(channels)
+    scope_where, scope_params = _scope_where(channels, is_aggregate(feed, include_foryou))
     where, params = _base_where(date, unread_only)
     if cursor:
         cts, cid = unpack_pos(cursor)
@@ -218,7 +271,7 @@ def fetch_new(
     if not channels:
         return []
     cts, cid = unpack_pos(after)
-    scope_where, scope_params = _scope_where(channels)
+    scope_where, scope_params = _scope_where(channels, is_aggregate(feed, include_foryou))
     where, params = _base_where(None, unread_only)
     where.append('((v.sort_at > ?) OR (v.sort_at = ? AND v.tweet_id > ?))')
     params.extend([cts, cts, cid])
@@ -240,7 +293,7 @@ def days(feed: Optional[str] = None, include_foryou: bool = False) -> dict[str, 
     channels = scope(feed, include_foryou)
     if not channels:
         return {}
-    scope_where, scope_params = _scope_where(channels)
+    scope_where, scope_params = _scope_where(channels, is_aggregate(feed, include_foryou))
     where, params = _base_where(None, False)
     sql = _select(
         'substr(v.sort_at, 1, 10) AS day, COUNT(*)',
@@ -257,16 +310,47 @@ def days(feed: Optional[str] = None, include_foryou: bool = False) -> dict[str, 
 def unread_counts() -> dict[str, int]:
     """Per-feed unread counts for the subscription listing (For You included —
     it is hidden from the aggregate, not from its own view)."""
-    channels = scope(None, include_foryou=True)
+    return _unread_counts(include_foryou=True)
+
+
+def aggregate_unread_counts() -> dict[str, int]:
+    """Per-feed unread counts **as the aggregate timeline would show them**.
+
+    A second number rather than a replacement, because the two mean different
+    things and both are on screen: the sidebar row opens the feed's own view (all
+    8 unread), while the All/Unread badge above it promises what the aggregate
+    holds (the 1 that was recommended). Summing the first into the second is how
+    that badge came to advertise a backlog no view could produce.
+    """
+    return _unread_counts(include_foryou=False)
+
+
+def _unread_counts(include_foryou: bool) -> dict[str, int]:
+    channels = scope(None, include_foryou)
     if not channels:
         return {}
-    scope_where, scope_params = _scope_where(channels)
+    scope_where, scope_params = _scope_where(channels, is_aggregate(None, include_foryou))
     where, params = _base_where(None, unread_only=True)
     sql = _select(
         'v.feed, COUNT(*)', scope_where, where, ' GROUP BY v.feed', _dedup_needed(channels), _sort_at(channels)
     )
     cur = tdb.db.execute_sql(sql, (*scope_params, *params))
     return {row[0]: row[1] for row in cur.fetchall()}
+
+
+def bulk_read_scope(feed: Optional[str], include_foryou: bool) -> tuple[list[str], list, list[str]]:
+    """(feeds, params, extra WHERE) for the "mark all read" sweep.
+
+    Lives here rather than in db.py for the same reason ``SORT_AT_SQL`` does: the
+    sweep must burn exactly what the timeline showed, and the moment those two
+    definitions live apart, "mark all read" in the aggregate silently destroys the
+    For You backlog the classifier is still learning from.
+    """
+    channels = scope(feed, include_foryou)
+    if not channels:
+        return [], [], []
+    where, params = _scope_where(channels, is_aggregate(feed, include_foryou))
+    return channels, params, where
 
 
 def get_row(tweet_id: int) -> Optional[dict]:

@@ -38,6 +38,8 @@ def _telegram_entries(subs: list[db.Subscription]) -> list[dict]:
                 'username': username,
                 'enabled': bool(s.enabled),
                 'unread': counts.get(cid, 0),
+                # every Telegram channel is in the aggregate, so the two agree
+                'aggregate_unread': counts.get(cid, 0),
                 'config': None,
             }
         )
@@ -53,6 +55,7 @@ def _hn_entries(subs: list[db.Subscription]) -> list[dict]:
             'enabled': bool(s.enabled),
             # v1: only the 'front' feed exists, so the source-wide count is the feed's
             'unread': hn_source.unread_count() if s.enabled else 0,
+            'aggregate_unread': hn_source.unread_count() if s.enabled else 0,
             'config': json.loads(s.config) if s.config else None,
         }
         for s in subs
@@ -61,6 +64,10 @@ def _hn_entries(subs: list[db.Subscription]) -> list[dict]:
 
 def _x_entries(subs: list[db.Subscription]) -> list[dict]:
     counts = x_source.unread_counts()
+    # For You is the one feed whose own view and whose contribution to the
+    # aggregate differ (see sources/x.py's aggregate mode), and both numbers are
+    # on screen at once — the row's badge and the All/Unread badge above it.
+    aggregate = x_source.aggregate_unread_counts()
     out = []
     for s in subs:
         config = x.sub_config(s)
@@ -73,6 +80,7 @@ def _x_entries(subs: list[db.Subscription]) -> list[dict]:
                 'username': config.get('handle'),
                 'enabled': bool(s.enabled),
                 'unread': counts.get(s.channel_id, 0) if s.enabled else 0,
+                'aggregate_unread': aggregate.get(s.channel_id, 0) if s.enabled else 0,
                 'config': config,
             }
         )

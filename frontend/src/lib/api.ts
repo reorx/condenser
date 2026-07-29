@@ -160,6 +160,12 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify({ enabled }),
     }),
+  // config is merged server-side, so a partial patch can't drop the learned handle/user_id
+  xSetConfig: (channelId: string, config: Record<string, unknown>) =>
+    request<XSubscription>(`/api/sources/x/subscriptions/${channelId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ config }),
+    }),
   xUnsubscribe: (channelId: string) => del<{ ok: true }>(`/api/sources/x/subscriptions/${channelId}`),
 
   // ---- sources (two-level source -> subscriptions listing, Phase 2) ----

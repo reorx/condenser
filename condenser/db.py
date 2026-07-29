@@ -759,15 +759,14 @@ def mark_read_bulk(
 
 
 def _mark_x_read_bulk(before_date: Optional[str], feed: Optional[str], include_foryou: bool) -> None:
-    # deferred: condenser.sources.x imports this module (the SQL sort key lives with
-    # the provider so the sweep and the timeline agree on which day a tweet is on)
-    from .sources.x import SORT_AT_SQL
+    # deferred: condenser.sources.x imports this module (the scope, the admission
+    # rule and the SQL sort key all live with the provider, so the sweep burns
+    # exactly the rows the timeline showed — and no others)
+    from .sources.x import SORT_AT_SQL, bulk_read_scope
 
-    feeds = enabled_x_feeds(feed, include_foryou=include_foryou)
+    feeds, params, where = bulk_read_scope(feed, include_foryou)
     if not feeds:
         return
-    where = ['f.channel_id IN ({})'.format(','.join('?' for _ in feeds))]
-    params: list = list(feeds)
     if before_date:
         where.append(f'substr({SORT_AT_SQL}, 1, 10) < ?')
         params.append(before_date)
