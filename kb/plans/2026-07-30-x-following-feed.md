@@ -11,7 +11,8 @@ tags:
 
 # X Following 时间线接入
 
-> **状态：六个步骤全部完成（2026-07-30），未部署。**
+> **状态：六个步骤全部完成，已部署（2026-07-30，image `9cdbfe4`，线上 schema v11）。**
+> 还没订阅 Following —— 界面上要点一下订阅页才会有东西；launchd 仍是每小时一次。
 > 435 backend + 27 probe + 87 frontend 绿；端到端验收（真实 bird → dev backend，六个场景全过）
 > 在 `tmp/2026-07-30-x-following/`，那里的 `README.md` 有逐条对照和可重跑的脚本。
 > 实现与本文的偏差、以及落地后才知道的事，记在文末 §13「实施记录」。
@@ -464,7 +465,10 @@ Following `aggregate=none` 时不进聚合但自己的视图照常 ／ 未读归
 
 ### 13.4 仍然待办
 
-- **部署**（`git push` 到 master 即部署，见 §12）
+- **在订阅页点「Add Following」** —— 服务端已经有能力，但不订阅界面上什么都不变
+- **launchd 从每小时改成每 15 分钟** —— `~/Library/LaunchAgents/com.condenser.probe.plist`
+  是安装时的拷贝，repo 里改的只是 `.example`。注意 agent 的 `WorkingDirectory` 指向工作树，
+  所以新代码（含 seen 缓存）在下一次触发就已生效，不需要任何「更新」动作
 - §11 的四项 future work 一项没动：互动数刷新接口、关注名单喂给 channel A、线程渲染、`list-timeline`
 - 关注名单现在只有 Following 的广告过滤在用。`authors.py` 拿它当先验是**最便宜的一个补丁**，
   数据已经在库里了

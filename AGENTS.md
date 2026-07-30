@@ -1022,7 +1022,14 @@ a stable window is that re-pushing it every 15 minutes is nearly all waste. 435 
 27 probe + 87 frontend green; **no iOS change** (envelopes are generic and `feed_kind`
 degrades — both clients only test `== 'home'`). End-to-end acceptance against real bird +
 the dev backend, all six plan scenarios, in `tmp/2026-07-30-x-following/` (read its
-`README.md` — the scripts there are re-runnable). **Not deployed.**
+`README.md` — the scripts there are re-runnable).
+**Deployed 2026-07-30**, image revision `9cdbfe4`, schema v11 on the box, restarts=0.
+Nothing changes on screen until the **Following subscription is added** (which is a click on
+the Subscriptions page, not a deploy) — but the follow-list crawl starts on the next probe
+round regardless, because `sync_following` only needs *some* enabled feed, so the ad filter
+is armed before the feed exists. The local launchd agent still fires **hourly**; the 15-min
+cadence Following was sized for needs the installed plist edited (the repo only carries the
+`.example`).
 
 **Forward is source-generic** (2026-07-27, BDD): `POST /api/forward {key, comment?}` joins
 the key-driven family (`/api/read`, `/api/hidden`, `/api/feedback`, `/api/records`);
