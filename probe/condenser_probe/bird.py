@@ -24,12 +24,27 @@ def build_command(feed: dict, bird_bin: str = 'bird') -> list[str]:
     kind = feed.get('kind')
     if kind == 'home':
         return [bird_bin, 'home', '-n', n, '--json']
+    if kind == 'following':
+        # Same endpoint, same output shape — the flag switches X's algorithmic feed
+        # for the chronological "accounts you follow" one.
+        return [bird_bin, 'home', '-n', n, '--following', '--json']
     if kind == 'user':
         handle = feed.get('handle') or feed.get('channel_id')
         if not handle:
             raise BirdError(f'user feed without a handle: {feed!r}')
         return [bird_bin, 'user-tweets', str(handle), '-n', n, '--json']
     raise BirdError(f'unknown feed kind: {kind!r}')
+
+
+# `bird following` caps a page at 50 accounts (`-n 200` still returns 50), so the
+# full list needs --all — which also switches the output from a bare array to a
+# {users, nextCursor} envelope. 40 pages covered 732 accounts with the cursor
+# exhausted, in ~15 requests.
+FOLLOWING_MAX_PAGES = 40
+
+
+def following_command(bird_bin: str = 'bird', max_pages: int = FOLLOWING_MAX_PAGES) -> list[str]:
+    return [bird_bin, 'following', '--all', '--max-pages', str(max_pages), '--json']
 
 
 def _run(cmd: list[str], timeout: float) -> str:
@@ -54,6 +69,26 @@ def fetch_feed(feed: dict, bird_bin: str = 'bird', timeout: float = 120.0) -> li
         raise BirdError(f'bird did not return JSON ({e}); first bytes: {out[:200]!r}')
     if not isinstance(data, list):
         raise BirdError(f'bird returned {type(data).__name__}, expected a list of tweets')
+    return data
+
+
+def fetch_following_users(bird_bin: str = 'bird', timeout: float = 300.0) -> list:
+    """The accounts the logged-in user follows, as bird's raw user objects.
+
+    Both output shapes are accepted: a bare array (no ``--all``) and the
+    ``{users, nextCursor}`` envelope ``--all`` switches to. The probe always asks
+    for ``--all``, but pinning only one shape would make a bird upgrade that moves
+    the envelope a silent wipe of the server's ad filter.
+    """
+    out = _run(following_command(bird_bin), timeout)
+    try:
+        data = json.loads(out)
+    except ValueError as e:
+        raise BirdError(f'bird did not return JSON ({e}); first bytes: {out[:200]!r}')
+    if isinstance(data, dict):
+        data = data.get('users')
+    if not isinstance(data, list):
+        raise BirdError(f'bird returned {type(data).__name__}, expected a list of accounts')
     return data
 
 

@@ -51,7 +51,7 @@ export function XSection() {
     onSettled: invalidate,
   });
 
-  const hasForYou = (subs ?? []).some((s) => s.kind === 'home');
+  const has = (kind: XSubscription['kind']) => (subs ?? []).some((s) => s.kind === kind);
   const disabled = !status?.source_enabled;
 
   return (
@@ -59,8 +59,9 @@ export function XSection() {
       <div className="space-y-3 border-b px-4 py-3 sm:px-5">
         <p className="text-xs text-muted-foreground">
           X 数据只存在于本机登录态里 —— 由跑在你电脑上的 <span className="font-medium">probe</span>（bird
-          CLI）按这里的订阅抓取并推送到服务端。 订阅 <span className="font-medium">For You</span> 算法流，或按 @handle
-          订阅关注的人。
+          CLI）按这里的订阅抓取并推送到服务端。 订阅 <span className="font-medium">Following</span>
+          （关注的人的时间线，默认并入主时间线）、<span className="font-medium">For You</span> 算法流，或按 @handle
+          单独订阅某个人。
         </p>
         {disabled && (
           <p className="text-xs text-destructive">
@@ -71,7 +72,16 @@ export function XSection() {
           <Button
             variant="outline"
             size="sm"
-            disabled={hasForYou || disabled || subscribe.isPending}
+            disabled={has('following') || disabled || subscribe.isPending}
+            onClick={() => subscribe.mutate('following')}
+          >
+            <Plus className="size-4" />
+            Add Following
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={has('home') || disabled || subscribe.isPending}
             onClick={() => subscribe.mutate('foryou')}
           >
             <Plus className="size-4" />

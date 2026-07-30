@@ -495,11 +495,11 @@ def test_the_aggregate_admits_nothing_from_foryou_by_default(env, monkeypatch):
         _seed_both(client, monkeypatch)
         _judge(PHOTO_TWEET, 'positive')
 
-        assert x_source.aggregate_mode() == 'none'
+        assert x_source.aggregate_mode('foryou') == 'none'
         assert x_key(PHOTO_TWEET) not in keys_of(_timeline(client, all=1)['items'])
 
         db.update_x_subscription('foryou', config={'kind': 'home', 'aggregate': 'sometimes'})
-        assert x_source.aggregate_mode() == 'none'
+        assert x_source.aggregate_mode('foryou') == 'none'
 
 
 def test_positive_mode_admits_only_the_recommended_tweets(env, monkeypatch):

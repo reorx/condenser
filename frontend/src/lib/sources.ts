@@ -24,8 +24,24 @@ export const FEEDBACK_REASON_LABELS: Record<ItemFeedbackReason, string> = Object
   FEEDBACK_REASONS.map((r) => [r.value, r.label]),
 ) as Record<ItemFeedbackReason, string>;
 
-/** The X algorithmic feed's subscription key (a followed account's key is its handle). */
+/** The X feed keys that are not account handles: the algorithmic For You timeline
+ *  and the chronological "accounts you follow" one. */
 export const X_FORYOU_FEED = 'foryou';
+export const X_FOLLOWING_FEED = 'following';
+
+/** Is this one of the two whole-timeline feeds rather than a single account? They
+ *  have no avatar, no profile and (unlike an account you chose to subscribe to) a
+ *  say in how much of them reaches the aggregate timeline. */
+export function isXSyntheticFeed(feed: string): boolean {
+  return feed === X_FORYOU_FEED || feed === X_FOLLOWING_FEED;
+}
+
+/** Display name for an X feed row (a followed account falls back to its handle). */
+export function xFeedLabel(feed: string, name?: string | null): string {
+  if (feed === X_FORYOU_FEED) return 'For You';
+  if (feed === X_FOLLOWING_FEED) return 'Following';
+  return name || `@${feed}`;
+}
 
 export function isSource(v: string | undefined | null): v is Source {
   return v === 'telegram' || v === 'hn' || v === 'x';

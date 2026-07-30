@@ -84,6 +84,18 @@ loop. Shares **one SQLite file** with [telememo](https://pypi.org/project/teleme
   `topics` / `style_flags` per tweet, keyed by `model@taxonomy`. A new table, so the
   upgrade is plain `create_tables` — and a rebuildable cache in the `x_embeddings` spirit,
   since the text is still in `x_tweets` and a taxonomy edit re-reads rather than migrates.
+  **SCHEMA_VERSION 11** (2026-07-30, X Following) adds `x_following`: the accounts the
+  user follows, pushed by the probe (`bird following --all`) and replaced whole on every
+  sync — an unfollowed account has to *disappear*, which no incremental merge expresses.
+  A new table, so again plain `create_tables`. It exists because the Following timeline
+  carries injected ads that are structurally indistinguishable from ordinary tweets (bird
+  dumps the tweet result, not the timeline entry, so `promotedMetadata` never arrives;
+  `promoted`/`advertiser`/`socialContext` hit 0/20), while the author caught 7 of 7 with
+  no false positive. A table rather than an `app_meta` blob because every ingest round
+  reads it — and because "is this author someone I follow" is a zero-cost prior channel A
+  is currently blind to (`authors.py`, still a TODO). The sync *timestamp* lives in
+  `app_meta` (`x_following_synced_at`), not in `max(synced_at)`: a sync that produced zero
+  rows is still a sync, and reading the rows would re-crawl forever.
 
 condenser's peewee models bind to telememo's `db` instance, so everything is one connection.
 `condenser/db.py:init_db()` initializes telememo tables (+ `is_filtered`) then condenser tables.
@@ -109,7 +121,7 @@ condenser's peewee models bind to telememo's `db` instance, so everything is one
 | `forward.py` | rendering a **non-Telegram** item into a message for the user's own channel (2026-07-27). Telegram is the only outbound channel, so "forward" is two different things: a TG item is natively forwardable (that path, plus the bare t.me link Telegram itself expands into a full message card, stays in `tg.py`), while an HN story or a tweet has to be *written out*. Two shapes, because the two sources give Telegram different things to work with. **HN** is written out: a bold title line hyperlinked to the article, then a source line hyperlinked to the discussion — two links on two lines, because Telegram builds its preview card from the *first* URL, so the card shows the article while the discussion stays one tap away (a self-post has no article, so both lines point at the discussion). **X** is *just a link*, with the host rewritten to `X_EMBED_HOST` (`fixupx.com`): x.com serves Telegram no embed, but FixTweet's x.com-branded mirror does, so the card carries the author, text, media and even the quoted tweet — writing any of that into the body would print every tweet twice. Both hosts key off the status id, so an unknown handle falls back to X's own `i` placeholder. Everything interpolated is `html.escape`d, comment included |
 | `preview.py` | source-agnostic link previews: fetch a URL (async httpx) + extract metadata (`metadata_parser`), `link_previews` cache, per-message batch w/ Telegram-bonus fill, image fetch for the proxy |
 | `hn.py` | `HNManager` (on `app.state.hn`, peer of `TgManager`): subscription-driven HN front-page sampling loop (`topstories` diff → `hn_stories`, sticky `first_seen_at`, peak_rank, 48h snapshot refresh) + serial rate-limited hckrnews history backfill w/ pending-day set in `app_meta` (`threading.Lock` + per-day read-modify-write — `schedule_backfill` runs on the threadpool while the loop rewrites the set); HTTP via injectable `fetch_json` (tests need no network). Hardened per `kb/plans/2026-07-19-hn-phase1-review-fixes.md`: `_loop` has a catch-all guard (DB errors outside `poll_once`'s try must not kill the task); **null item ≠ dead** — refresh only marks dead on explicit `dead`/`deleted` (Firebase transiently nulls live items), while a *never-seen* front-page id that fetches null gets a dead placeholder row so it isn't re-pulled every round; `kick()` marshals via `call_soon_threadsafe` (no-op before startup / when source disabled). **Link-preview prefetch** (2026-07-20): `_fill_previews` at the tail of `poll_once` sweeps linkable stories without a stored preview newest-first (`CONDENSER_HN_PREVIEW_BATCH`/round, 0=off; covers fresh, backfilled *and* pre-feature rows) through `preview.get_preview` (warming the shared pane cache) into `hn_stories.preview`; ≤3 real attempts per story (`PREVIEW_MAX_ATTEMPTS`) — a still-fresh negative cache entry skips *without* bumping (the 1h neg-TTL < poll interval would otherwise eat every retry), empty-but-ok results are terminal; injectable `fetch_preview` for tests. `routers/hn.py` = `/api/sources/hn/subscriptions*` + `/api/hn/status` (incl. `source_enabled`); POST = subscribe-and-enable (re-enables a paused row, `schedule_backfill` only on first create), POST/PATCH-enable → 503 when `CONDENSER_HN_ENABLED=false`. Multi-source plan Phase 1: `kb/plans/2026-07-19-multi-source-hn.md` |
-| `x.py` | X (Twitter) source, **push model** — the server never talks to X; a local probe (`probe/`) reads the user's logged-in session through the bird CLI and pushes raw JSON. Owns tolerant `parse_tweet` (string ids → int64, legacy `'%a %b %d %H:%M:%S %z %Y'` timestamps, media/metrics/article passthrough, `quotedTweet` → a self-referential archive row, retweets only recoverable as `rt_of_handle` from bird's `RT @x:` text prefix), `ingest_tweets` (idempotent by tweet id: tweet rows refresh so metrics move, feed rows are insert-only so `first_seen_at` stays sticky; embedded quotes use insert-if-absent so a depth-limited copy can't downgrade a richer row; unkeyable entries are counted and dropped, a drifted field is counted *and* stored since `raw` is archived), `probe_config` (subscription-driven, like HN sampling), `_learn_user_identity` (a followed account's numeric `user_id` + display `name` come from its first push — the handle is the subscription key because that is what bird takes, the numeric id is what survives a rename), and `status` (push activity from `app_meta` `x_*` keys). `routers/x.py` = `/api/sources/x/subscriptions*` + `probe-config` + `ingest` (Bearer or cookie — the probe is just a device) + `/api/x/status` + `/api/x/avatar/{handle}` (unavatar proxy, `fallback=false` so a miss 404s into the client's letter avatar — bird carries no avatar URL); 503 when `CONDENSER_X_ENABLED=false`, 404 on a push to an unknown/paused feed. `sources/x.py` is the **Phase 2 timeline provider**: `x_feed_items JOIN x_tweets` (+ a self-join for the quoted tweet), read/saved/hidden anti-joins, and a feed-dependent `SORT_AT_SQL` — For You by `first_seen_at`, a followed account by `created_at`. **For You is opt-in**: bird's `home` re-samples every call (~2400 tweets/day at the old n=50), so by default it is excluded from the aggregate timeline and only appears under `?source=x` / `?source=x&feed=…`; since 2026-07-29 the subscription's `config.aggregate` (`none` | `positive` | `all`, HN's `display_mode` pattern) can admit it — `positive` lets through only what the verdict recommends, measured at ~13% of arrivals, i.e. about a fifth added to a ~50-item day rather than a flood. The predicate lives inside the scoped subquery (with the feed filter, so dedup only ranks admissible rows) and `bulk_read_scope` hands the same rule to the bulk-read sweep, because "mark all read" in the aggregate must burn exactly what the aggregate showed and not the For You labeling backlog; `CONDENSER_X_HOME_COUNT` dropped 50 → 20 as the second capacity lever. A tweet in both feeds de-duplicates to the followed appearance (`ROW_NUMBER()`), so it keeps one position across views. Plan: `kb/plans/2026-07-24-x-source-local-probe.md` |
+| `x.py` | X (Twitter) source, **push model** — the server never talks to X; a local probe (`probe/`) reads the user's logged-in session through the bird CLI and pushes raw JSON. Owns tolerant `parse_tweet` (string ids → int64, legacy `'%a %b %d %H:%M:%S %z %Y'` timestamps, media/metrics/article passthrough, `quotedTweet` → a self-referential archive row, retweets only recoverable as `rt_of_handle` from bird's `RT @x:` text prefix), `ingest_tweets` (idempotent by tweet id: tweet rows refresh so metrics move, feed rows are insert-only so `first_seen_at` stays sticky; embedded quotes use insert-if-absent so a depth-limited copy can't downgrade a richer row; unkeyable entries are counted and dropped, a drifted field is counted *and* stored since `raw` is archived), `probe_config` (subscription-driven, like HN sampling), `_learn_user_identity` (a followed account's numeric `user_id` + display `name` come from its first push — the handle is the subscription key because that is what bird takes, the numeric id is what survives a rename), and `status` (push activity from `app_meta` `x_*` keys). Since 2026-07-30 it also owns the **Following** feed (`FOLLOWING_FEED`, a third `x_feed_kind` beside `home`/`user`) and the two filters only it needs (`_apply_following_rules`, plan §6.3): ① an entry whose author is not in `x_following` is dropped **whole**, body included — X injects ads with no structural marker, so the follow list is the only test, and an ad is noise all the way down; ② an entry older than `CONDENSER_X_FOLLOWING_MAX_AGE_HOURS` (24) gets its **body archived but no feed row**, reusing the path a quoted tweet already takes — X pads the feed with a thread's own ancestors (measured: one 2025-09 root arriving in a 2026-07 page) and a feed row would land them in timeline history, invisible but counted as unread. Order matters: ① first, so an ad that is *also* old is not merely archived; and both run on feed entries only, never on `_embedded_quotes`. **An empty follow list disables ① entirely** — the deliberate failure mode, since the alternative on a never-synced install is silently discarding every tweet as advertising. `IngestResult` carries `filtered_ads`/`filtered_old` so the subscription row can show them. `routers/x.py` = `/api/sources/x/subscriptions*` + `probe-config` (now also `sync_following`, the server-side staleness decision, so the probe stays stateless) + `following` (whole-list replace; refuses an empty push over a non-empty list, because a transient bird `[]` would otherwise disable the ad filter for a whole sync interval) + `ingest` (Bearer or cookie — the probe is just a device) + `/api/x/status` + `/api/x/avatar/{handle}` (unavatar proxy, `fallback=false` so a miss 404s into the client's letter avatar — bird carries no avatar URL); 503 when `CONDENSER_X_ENABLED=false`, 404 on a push to an unknown/paused feed. `sources/x.py` is the **Phase 2 timeline provider**: `x_feed_items JOIN x_tweets` (+ a self-join for the quoted tweet), read/saved/hidden anti-joins, and a feed-dependent `SORT_AT_SQL` — For You by `first_seen_at`, a followed account by `created_at`. **For You is opt-in**: bird's `home` re-samples every call (~2400 tweets/day at the old n=50), so by default it is excluded from the aggregate timeline and only appears under `?source=x` / `?source=x&feed=…`; since 2026-07-29 the subscription's `config.aggregate` (`none` | `positive` | `all`, HN's `display_mode` pattern) can admit it — `positive` lets through only what the verdict recommends, measured at ~13% of arrivals, i.e. about a fifth added to a ~50-item day rather than a flood. The predicate lives inside the scoped subquery (with the feed filter, so dedup only ranks admissible rows) and `bulk_read_scope` hands the same rule to the bulk-read sweep, because "mark all read" in the aggregate must burn exactly what the aggregate showed and not the For You labeling backlog; `CONDENSER_X_HOME_COUNT` dropped 50 → 20 as the second capacity lever. **Following joins the aggregate in full by default** (2026-07-30) — it is a *stable window*, not a firehose (two consecutive bird calls overlapped 19/20, ~100-200 tweets/day), and it is never judged, so its `aggregate` modes are `none`/`all` with no `positive`: a recommended-only mode would silently hide the whole feed. The admission rule generalized with it — `aggregate_mode(feed)` + `scope()` now drop any feed set to `none`, replacing the hardcoded "everything except For You" that used to live in `db.enabled_x_feeds`. A tweet in several feeds de-duplicates under an **explicit** `ROW_NUMBER()` priority (account subscription > following > For You), no longer "earliest sighting wins": with three feeds a tweet by an account you also subscribe to sits in two non-For-You feeds, and the winner decides its sort timestamp, its admission rule, its verdict badge *and* which sidebar row owns its unread count — which would otherwise drift with whichever push landed first. Plans: `kb/plans/2026-07-24-x-source-local-probe.md`, `kb/plans/2026-07-30-x-following-feed.md` |
 | `tg.py` | `TgManager`: lifecycle (C1), step-login→encrypted storage, realtime ingest, backfill scheduling, subscription orchestration |
 | `auth.py` + `routers/*` | C2 endpoints behind `require_auth` = app-password cookie **or** device Bearer token (`devices` table, sha256 hash only, issued via the web `/authorize` page for the iOS app; management endpoints are cookie-only — see `kb/plans/2026-07-16-mobile-client-api-device-token.md`); `routers/channels.py` = avatar proxy, `routers/preview.py` = link-preview + image proxy; `routers/common.py` = `parse_key_or_422`, shared by every key-driven endpoint; `/api/tg/status` carries `phone` |
 | `app.py` / `__main__.py` | FastAPI factory + lifespan; uvicorn entry; serves a static frontend dir if present via `SPAStaticFiles` (index.html fallback for client routes — `/authorize` cold-load depends on it; unknown `/api/*` still 404) |
@@ -290,14 +302,28 @@ Full reasoning: `kb/notes/2026-07-27-engagement-farming-chip.md`.
 
 Independent uv package (`condenser-probe`) that runs on the user's own machine — the X
 source's fetch half, since X data only exists inside a logged-in browser session. Each
-round: `GET /api/sources/x/probe-config` → `bird home -n N --json` / `bird user-tweets
-<handle> -n N --json` per feed → `POST /api/sources/x/ingest`. **Stateless and
-configless** beyond a server URL + device token (env or
-`~/.config/condenser-probe/config.json`): the feed list lives on the server, and the
-server dedupes by tweet id, so a probe that crashed or slept has nothing to recover. One
-feed's failure never sinks the others (`runner.FeedOutcome`). CLI: `condenser-probe
-check | run | watch --interval`; scheduling is external (launchd example in the package,
-`run` = one round). Tests stub bird + the server, so `uv run pytest` needs no X account.
+round: `GET /api/sources/x/probe-config` → `bird home -n N --json` / `bird home -n N
+--following --json` / `bird user-tweets <handle> -n N --json` per feed → `POST
+/api/sources/x/ingest`, plus a follow-list re-crawl (`bird following --all`, ~15 requests)
+whenever probe-config's `sync_following` says so — the *server* decides, so the probe keeps
+no schedule. That sync runs **before** the feeds: the server drops Following entries whose
+author is not in the list, so a first round that ingested first would read its own empty
+list. **Configless** beyond a server URL + device token (env or
+`~/.config/condenser-probe/config.json`): the feed list lives on the server, and the server
+dedupes by tweet id, so a probe that crashed or slept has nothing to recover. One feed's
+failure never sinks the others (`runner.FeedOutcome`), and neither does the follow sync.
+The one piece of local state is `cache.SeenCache`
+(`~/.cache/condenser-probe/seen/<feed>.json`, pruned to 24h, opt-out via `--no-cache`):
+Following is a stable window, so a 15-minute round would otherwise re-upload almost the same
+50 tweets — measured on a real second round, 41 of 50 skipped and a followed account pushed
+nothing at all, while For You skipped 0 (it re-samples, which is the control). Two
+consequences, both accepted (plan decision 2): a tweet's metrics **freeze at first sighting**
+(the server refreshes them per push; an on-demand refresh is the follow-up), and if the
+server's data is ever wiped the cache would suppress the restoring re-push — hence
+`--no-cache`. Recording happens *after* a successful push, never before. CLI:
+`condenser-probe check | run [--no-cache] | watch --interval`; scheduling is external
+(launchd example in the package, now every 15 min; `run` = one round). Tests stub bird + the
+server, so `uv run pytest` needs no X account.
 
 ## iOS app (`ios/`, monorepo)
 
@@ -771,8 +797,10 @@ The proposed unblock is a **shadow-channel mode** — score and archive into `ve
 cast no vote — which makes §9's prospective validation cost nothing at all.
 ⚠️ **Both blockers are closed — do not read the struck clause as current.** It stood here
 unmarked for a day after the step-5b block below recorded the deploy, and cost a later session a
-confidently wrong answer about production. Measured on the box 2026-07-29: schema **v10**, image
-revision `6143621`, `x_attributes` filling, shadow `c,d` live. **Check, don't infer**:
+confidently wrong answer about production. Measured on the box 2026-07-29 **15:59 UTC** (a reading
+this precise goes stale by design — re-measure rather than quote it): schema **v10**, image revision
+**`10daa6d`**, `x_attributes` re-extracting under `qwen3.7-flash@v2`, shadow **`c,d,a`** live.
+**Check, don't infer**:
 `ssh -p 1122 root@<PROD-HOST>` → `docker inspect ghcr.io/reorx/condenser:latest --format
 '{{index .Config.Labels "org.opencontainers.image.revision"}}'`, and read
 `app_meta.schema_version` out of `/data/condenser.db`, and `GET /api/x/status` for which channels
@@ -879,8 +907,11 @@ lowered 6 → 4 and then **put back**: it was measured under v1, where symmetric
 `thread_bait` the gate, but under v2 nothing except `promo_cta` clears *any* gate, so 4 bought
 no measurable difference while loosening the only thing between a thinly-observed flag and a
 verdict — and `score_flags` lets the most negative flag decide alone. Revisit when a second flag
-accumulates real observations. 402 backend green. ⚠️ **Not deployed**: on deploy, `model_tag` changes and all 256
-production attribute rows re-extract at `condenser_attr_batch`=40/round (~7 rounds, pennies).
+accumulates real observations. 402 backend green. **Deployed 2026-07-29 15:59 UTC** — image revision
+`10daa6d`, container recreated, restarts=0. As predicted, the `model_tag` change requeued every v1
+attribute row: measured on the box right after, `x_attributes` held `qwen-flash@v1` 251 +
+`qwen3.7-flash@v2` 40, i.e. one `condenser_attr_batch` round done and ~6 to go (pennies). Both
+flavours coexisting until it drains is the `model_tag` contract working, not a migration bug.
 
 **判定 v2 步骤 6 — 通道 A（作者先验）落地** (2026-07-29, BDD; `condenser/authors.py`). The plan
 listed this channel first and then deferred it — of the first 29 downs only **one** carried the
@@ -928,9 +959,70 @@ Verified end-to-end on a production-snapshot copy with real DashScope: the same 
 spoke on 9 of 100 (91 abstentions are accounts never labeled — the blind spot, working as
 designed), 6 of them the @IBKR rows at −0.5625, and @yibie at −0.222 below the line.
 399 backend + 83 frontend + 175 Kit green; artifacts in `tmp/2026-07-29-ib-check/`.
-**To turn it on in production**: `CONDENSER_VERDICT_SHADOW_CHANNELS: c,d,a` first (free, changes no
-badge), then read `scripts/x_verdict_prospective.py --shadow a --sweep` before considering
+**Shadow mode is live in production since 2026-07-29 15:59 UTC**: the ansible role template
+(`roles/condenser/templates/docker-compose.yml.j2:34`) and the running container both carry
+`CONDENSER_VERDICT_SHADOW_CHANNELS: c,d,a`, on image revision `10daa6d` — so A scores and archives
+and badges nobody. **There is nothing to configure; the next step is reading, not deploying.** No
+`a` entry existed in `verdict_meta` yet at deploy time (the 69 blocks then present were the previous
+build's `b/vote` 67, `c/shadow` 32, `d/shadow` 60) — expected, since A abstains on every account you
+have never labeled (9 of 100 in the offline run). Let the probe push for a while, then read
+`scripts/x_verdict_prospective.py --shadow a --sweep` before considering
 `CONDENSER_VERDICT_CHANNELS: b,a` + `CONDENSER_VERDICT_A_NEGATIVE_ENABLED`.
+
+**X Following 时间线** (2026-07-30, BDD; plan `kb/plans/2026-07-30-x-following-feed.md`,
+schema **v11**). `bird home --following` gives the chronological "accounts you follow"
+timeline, and the measurement that made it worth doing is that **it is not a firehose**:
+two consecutive calls overlapped 19/20 where For You's overlapped 0/60. So the ingest
+volume stops depending on probe cadence — it is just what the people you follow posted,
+~100-200/day — and it joins the aggregate timeline in full by default rather than being
+isolated the way For You was.
+
+X pads that feed with two things nothing else in the project has to handle, and each got a
+rule (`x._apply_following_rules`; both Following-only, both on feed entries only):
+
+* **Injected ads, 7 per 100.** They carry no structural marker at all — `--json-full`'s
+  `_raw` has no `promotedMetadata` because bird dumps the tweet result, not the timeline
+  entry, and `promoted`/`advertiser`/`socialContext` hit 0/20. Filtering by author against
+  the follow list caught **7 of 7 with no false positive**, so that is the rule, and the
+  list lives on the server (schema v11 `x_following`, pushed by the probe) because the
+  server owns the archive: a rule applied probe-side throws away data nothing can recover.
+  Ads are dropped **whole**, body included. **An empty list disables the filter** — the
+  deliberate failure mode, since on a never-synced install the alternative is silently
+  discarding every tweet as advertising (its own behaviour test).
+* **A thread's own ancestors.** X drags them in for context and bird flattens them into
+  ordinary entries; one measured chain reached back to 2025-09 inside a 2026-07 page. Those
+  get their **body archived but no feed row** — the path a quoted tweet already takes — so
+  they cannot land in timeline history where they are invisible but still counted as
+  unread. `CONDENSER_X_FOLLOWING_MAX_AGE_HOURS` = 24, and the measurement says the line sits
+  in a gap: 12h and 24h discard *exactly the same* entries.
+  **A rejected condition, do not put it back**: "older than 24h **and** a duplicate id".
+  It is backwards — ancestors are first sightings, so the id clause waves through precisely
+  the case being treated, while "an old tweet we already have" is a no-op anyway
+  (`x_feed_items` is insert-only).
+
+The dedup tie-break became explicit with the third feed (account > following > For You).
+Not cosmetic: the winning row decides the sort timestamp, the aggregate-admission rule, the
+verdict badge and which sidebar row owns the unread count — under the old "earliest sighting
+wins" all four would drift between two rows depending on which push landed first. And the
+aggregate admission generalized: `aggregate_mode(feed)` + `scope()` now drop any feed set to
+`none`, retiring the hardcoded "everything except For You" in `db.enabled_x_feeds`.
+Following's modes are `none`/`all` — **no `positive`**, because it is never judged and a
+recommended-only mode would silently hide the whole feed.
+
+Consequence worth stating, because it is a feature and not an oversight: **the verdict now
+has no say over accounts you follow.** A measured 25% of For You is people you follow, and
+those tweets reach the aggregate through Following instead, badge-free. That is the right
+reading of "Following" — the verdict exists to filter strangers the algorithm picked. Two
+good side effects: the aggregate total is *less* than the sum of the feeds (Following
+absorbs part of For You), and labels collected on un-badged cards are the unbiased sample
+`prospective.py` currently cannot get.
+
+The probe gained its first local state, `SeenCache` (see the probe section) — the price of
+a stable window is that re-pushing it every 15 minutes is nearly all waste. 435 backend +
+27 probe + 87 frontend green; **no iOS change** (envelopes are generic and `feed_kind`
+degrades — both clients only test `== 'home'`). End-to-end acceptance against real bird +
+the dev backend, all six plan scenarios, in `tmp/2026-07-30-x-following/` (read its
+`README.md` — the scripts there are re-runnable). **Not deployed.**
 
 **Forward is source-generic** (2026-07-27, BDD): `POST /api/forward {key, comment?}` joins
 the key-driven family (`/api/read`, `/api/hidden`, `/api/feedback`, `/api/records`);

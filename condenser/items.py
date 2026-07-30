@@ -15,10 +15,20 @@ from pydantic import BaseModel
 
 SOURCES = ('telegram', 'hn', 'x')
 
-# The X algorithmic feed's subscription key; a followed account's key is its handle.
-# Lives here because the envelope's sort timestamp depends on which one an item
-# came from (see ``x_envelope``).
+# The X feed keys that are not account handles. They live here rather than in x.py
+# because the envelope's sort timestamp depends on which feed an item came from
+# (see ``x_envelope``) and this module is the one everything can import.
 FORYOU_FEED = 'foryou'
+FOLLOWING_FEED = 'following'
+
+
+def x_feed_kind(feed: Optional[str]) -> str:
+    """'home' (For You) | 'following' | 'user' (one followed account)."""
+    if feed == FORYOU_FEED:
+        return 'home'
+    if feed == FOLLOWING_FEED:
+        return 'following'
+    return 'user'
 
 
 class ItemKey(BaseModel):
@@ -189,7 +199,7 @@ def x_payload(row: dict) -> dict:
         'reply_to_id': _sid(row.get('reply_to_id')),
         'article': _json_field(row.get('article')),
         'feed': feed,
-        'feed_kind': 'home' if feed == FORYOU_FEED else 'user',
+        'feed_kind': x_feed_kind(feed),
         'verdict': row.get('verdict'),  # Phase 4
         'verdict_meta': _json_field(row.get('verdict_meta')),
     }

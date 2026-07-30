@@ -8,11 +8,27 @@ timeline through the [bird](https://github.com/steipete/bird) CLI (which borrows
 your browser's X cookies), and pushes the raw JSON to the server, which parses and
 archives it.
 
-The probe is **stateless** and holds **no feed list**: each round it asks the
-server what to fetch (`/api/sources/x/probe-config`, driven by your subscriptions
-in the web UI) and pushes back the most recent N tweets per feed. The server
-deduplicates by tweet id, so a probe that crashed, slept for a week, or was
-reinstalled just resumes — nothing to recover.
+The probe holds **no feed list**: each round it asks the server what to fetch
+(`/api/sources/x/probe-config`, driven by your subscriptions in the web UI) and
+pushes back the most recent N tweets per feed. The server deduplicates by tweet
+id, so a probe that crashed, slept for a week, or was reinstalled just resumes.
+
+The one piece of local state is a **seen cache**
+(`~/.cache/condenser-probe/seen/<feed>.json`, pruned to 24h). The Following
+timeline is a stable window rather than a fresh sample — two consecutive bird
+calls overlapped 19/20 — so without it a 15-minute round re-uploads almost the
+same 50 tweets every time. It only decides what to *skip*, so its failure modes
+are dull: a missing or unreadable cache means a full re-push (which the server
+deduplicates), and an unwritable one costs a re-push later but never a round.
+
+Two consequences worth knowing:
+
+- A tweet's like/RT/reply counts are **frozen at first sighting**, because the
+  server refreshes metrics on every push and the cache stops the re-pushes. At a
+  15-minute cadence that is usually near zero.
+- If the server's data is ever **wiped or rolled back**, the cache would suppress
+  exactly the re-push that would restore it. Run one round with
+  `condenser-probe run --no-cache`.
 
 > ⚠️ Automated reading of X is against its ToS and X enforces more aggressively
 > than Telegram does. Keep the interval low-frequency, use one account, and accept
@@ -50,17 +66,28 @@ Env equivalents (they win over the file): `CONDENSER_PROBE_SERVER_URL`,
 ```bash
 uv run condenser-probe check      # verify bird's session + the server token
 uv run condenser-probe run        # one round (what launchd/cron should call)
-uv run condenser-probe watch --interval 3600   # foreground loop, for setup
+uv run condenser-probe run --no-cache          # ignore the seen cache, push everything
+uv run condenser-probe watch --interval 900    # foreground loop, for setup
 ```
 
 Subscribe to feeds on the server's Subscriptions page (X block): **For You**
-(`foryou`) and/or individual accounts by handle. `probe-config` reflects that
-immediately — no probe restart, no local config.
+(`foryou`), **Following** (the chronological "accounts you follow" timeline)
+and/or individual accounts by handle. `probe-config` reflects that immediately —
+no probe restart, no local config.
+
+When the server says so, a round also re-crawls your followed-accounts list
+(`bird following --all`, ~15 requests) and pushes it. The server needs it as the
+Following feed's ad filter: X injects promoted tweets there with no structural
+marker at all, and "is this author someone I follow" is the only reliable test.
+The list is refreshed about once a day; the server decides, so nothing schedules
+it here.
 
 ## Scheduling (launchd)
 
 `run` is a single round that exits, which is what you want on a laptop: sleeping
-just misses rounds. Suggested cadence: one round per hour.
+just misses rounds. Suggested cadence: **one round every 15 minutes** — Following
+arrives at ~100-200 tweets/day, and the seen cache makes a quiet round nearly
+free.
 
 ```bash
 cp com.condenser.probe.plist.example ~/Library/LaunchAgents/com.condenser.probe.plist
@@ -69,7 +96,7 @@ launchctl load ~/Library/LaunchAgents/com.condenser.probe.plist
 tail -f ~/Library/Logs/condenser-probe.log
 ```
 
-cron works equally well: `0 * * * * cd /path/to/probe && uv run condenser-probe run >> ~/condenser-probe.log 2>&1`
+cron works equally well: `*/15 * * * * cd /path/to/probe && uv run condenser-probe run >> ~/condenser-probe.log 2>&1`
 
 ## Tests
 

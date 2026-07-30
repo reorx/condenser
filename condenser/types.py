@@ -85,6 +85,17 @@ class XIngestBody(BaseModel):
     tweets: list[Any]
 
 
+class XFollowingBody(BaseModel):
+    """One follow-list sync: bird's ``following --all`` user objects, untouched.
+
+    Untyped like ``XIngestBody.tweets``, and for the same reason — a drifted field
+    on one of 732 accounts must not reject the whole list at the door. Extraction
+    happens in ``x.parse_following_users``, which drops what it cannot key.
+    """
+
+    users: list[Any]
+
+
 class ReadBody(BaseModel):
     """Item keys to mark read (multi-source: 'tg:{cid}:{mid}' / 'hn:{sid}')."""
 

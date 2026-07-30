@@ -5,11 +5,18 @@ only exists inside the bird CLI's logged-in cookie session on the user's own
 machine, so a **local probe** pushes it here (see ``probe/``). The server owns
 the subscriptions (probe-config tells the probe what to fetch) and the archive.
 
-Two feed kinds share one source: ``foryou`` (the algorithmic For You timeline,
+Three feed kinds share one source: ``foryou`` (the algorithmic For You timeline,
 sorted by ``first_seen_at`` like the HN front page — the algorithm resurfaces old
 tweets and sorting those by ``created_at`` would insert them into timeline
-history) and one feed per followed account (``kind='user'``, sorted by
-``created_at``, like a TG channel).
+history), ``following`` (the chronological "accounts you follow" timeline, i.e.
+one subscription standing in for all of them) and one feed per followed account
+(``kind='user'``) — the latter two sorted by ``created_at``, like a TG channel.
+
+Following needs two filters nothing else does, because X pads it: injected ads
+(dropped by author, against the follow list the probe syncs — they carry no
+structural marker) and a thread's own ancestors (archived, but given no feed row
+so months-old tweets cannot land in timeline history). See
+``_apply_following_rules``.
 
 bird's JSON follows X's internal API and its own flattening on top; neither is a
 stable contract, so parsing is deliberately tolerant and every entry's raw JSON
@@ -20,16 +27,21 @@ import json
 import logging
 import re
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
 from . import db
 from .config import Settings
+from .items import FOLLOWING_FEED, FORYOU_FEED, x_feed_kind
 
 log = logging.getLogger('condenser.x')
 
-FORYOU_FEED = 'foryou'
 FORYOU_NAME = 'X For You'
+# The "Following" timeline — one subscription standing in for every account you
+# follow. Unlike For You it is *not* a firehose: two consecutive calls overlapped
+# 19/20, i.e. a stable time window rather than a fresh sample, which is what makes
+# it cheap enough to join the aggregate timeline in full (~100-200 tweets/day).
+FOLLOWING_NAME = 'X Following'
 
 # X handles: 1-15 chars of [A-Za-z0-9_]. Stored lowercased so a handle is one
 # subscription no matter how the user typed it.
@@ -94,6 +106,11 @@ class IngestResult:
     new_tweets: int = 0  # tweet rows created (includes embedded quoted tweets)
     new_items: int = 0  # feed appearances registered for this channel
     parse_errors: int = 0
+    # Following-only (see _apply_following_rules): entries dropped whole because
+    # their author is not someone you follow, and entries archived without a feed
+    # row because they fell outside the age window.
+    filtered_ads: int = 0
+    filtered_old: int = 0
 
     def as_dict(self) -> dict:
         return {
@@ -102,6 +119,8 @@ class IngestResult:
             'new_tweets': self.new_tweets,
             'new_items': self.new_items,
             'parse_errors': self.parse_errors,
+            'filtered_ads': self.filtered_ads,
+            'filtered_old': self.filtered_old,
         }
 
 
@@ -181,17 +200,31 @@ def normalize_channel_id(value: str) -> str:
     learned from the first push and kept in the subscription config.
     """
     handle = (value or '').strip().lstrip('@').lower()
-    if handle == FORYOU_FEED:
-        return FORYOU_FEED
+    # Both feed keys would survive HANDLE_RE unchanged, so the early return is not
+    # about the value — it is about never letting a feed key take the account path,
+    # where it would be handed to `bird user-tweets` as a handle.
+    if handle in (FORYOU_FEED, FOLLOWING_FEED):
+        return handle
     if not HANDLE_RE.match(handle):
         raise ValueError(f'invalid x handle: {value!r}')
     return handle
 
 
+def default_name(channel_id: str) -> Optional[str]:
+    """The display name to store at subscribe time.
+
+    A followed account's real name is only known once the first push arrives
+    (`_learn_user_identity`), so it stays NULL and clients fall back to the handle
+    rather than rendering a placeholder next to the same handle.
+    """
+    return {FORYOU_FEED: FORYOU_NAME, FOLLOWING_FEED: FOLLOWING_NAME}.get(channel_id)
+
+
 def default_config(channel_id: str) -> dict:
-    if channel_id == FORYOU_FEED:
-        return {'kind': 'home'}
-    return {'kind': 'user', 'handle': channel_id}
+    kind = x_feed_kind(channel_id)
+    if kind == 'user':
+        return {'kind': kind, 'handle': channel_id}
+    return {'kind': kind}
 
 
 def sub_config(sub: db.Subscription) -> dict:
@@ -206,19 +239,21 @@ def feed_count(config: dict, channel_id: str, settings: Settings) -> int:
     n = config.get('n')
     if isinstance(n, int) and n > 0:
         return n
-    if channel_id == FORYOU_FEED:
-        return settings.condenser_x_home_count
-    return settings.condenser_x_user_count
+    defaults = {
+        FORYOU_FEED: settings.condenser_x_home_count,
+        FOLLOWING_FEED: settings.condenser_x_following_count,
+    }
+    return defaults.get(channel_id, settings.condenser_x_user_count)
 
 
 def probe_config(settings: Settings) -> dict:
     """What the probe should fetch this round — driven purely by enabled subscriptions."""
     if not settings.condenser_x_enabled:
-        return {'feeds': []}
+        return {'feeds': [], 'sync_following': False}
     feeds = []
     for sub in db.enabled_x_subscriptions():
         config = sub_config(sub)
-        kind = 'home' if sub.channel_id == FORYOU_FEED else 'user'
+        kind = x_feed_kind(sub.channel_id)
         feeds.append(
             {
                 'channel_id': sub.channel_id,
@@ -227,7 +262,66 @@ def probe_config(settings: Settings) -> dict:
                 'n': feed_count(config, sub.channel_id, settings),
             }
         )
-    return {'feeds': feeds}
+    return {'feeds': feeds, 'sync_following': bool(feeds) and following_sync_due(settings)}
+
+
+# --- followed accounts --------------------------------------------------------
+
+
+def following_sync_due(settings: Settings) -> bool:
+    """Should the probe re-crawl the follow list this round?
+
+    The decision lives here rather than in the probe so the probe stays stateless:
+    it asks what to do and does it. Gated on there being at least one feed —
+    crawling ~15 pages for a source with nothing subscribed is pure cost.
+    """
+    synced_at = db.x_following_synced_at()
+    if synced_at is None:
+        return True
+    return _now() - synced_at >= timedelta(hours=settings.condenser_x_following_sync_hours)
+
+
+def parse_following_users(entries: list) -> list[dict]:
+    """bird's follow-list objects -> storable rows, dropping what cannot be keyed.
+
+    Tolerant for the same reason ``parse_tweet`` is: bird's output follows X's
+    internal API, and one drifted entry must not reject a 732-account list. The
+    handle is lowercased because it is matched against a feed entry's author
+    handle, and X preserves each account's own capitalization in both places.
+    """
+    rows: dict[str, dict] = {}
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        handle = (entry.get('username') or '').strip().lstrip('@').lower()
+        if not handle:
+            continue
+        user_id = entry.get('id')
+        rows[handle] = {
+            'handle': handle,
+            'user_id': str(user_id) if user_id is not None else None,
+            'name': entry.get('name') or None,
+        }
+    return list(rows.values())
+
+
+def sync_following(entries: list) -> dict:
+    """Store one follow-list crawl. Raises ValueError on a push we refuse to apply."""
+    rows = parse_following_users(entries)
+    if not rows and db.x_following_count():
+        # An empty list disables the ad filter entirely (see ``ingest_tweets``), so a
+        # transient bird failure yielding `[]` would silently let a whole sync
+        # interval of ads through. Refusing is the visible failure, and the stored
+        # list stays usable in the meantime.
+        raise ValueError('refusing to replace a non-empty follow list with an empty one')
+    synced_at = _now()
+    db.replace_x_following(rows, synced_at)
+    log.info('x following: stored %d accounts (from %d entries)', len(rows), len(entries))
+    return {
+        'received': len(entries),
+        'stored': len(rows),
+        'synced_at': synced_at.isoformat(sep=' ', timespec='seconds'),
+    }
 
 
 def describe_subscription(sub: db.Subscription) -> dict:
@@ -235,14 +329,14 @@ def describe_subscription(sub: db.Subscription) -> dict:
     return {
         'source': 'x',
         'channel_id': sub.channel_id,
-        'kind': config.get('kind') or ('home' if sub.channel_id == FORYOU_FEED else 'user'),
+        'kind': config.get('kind') or x_feed_kind(sub.channel_id),
         'handle': config.get('handle'),
         'user_id': config.get('user_id'),
         'name': sub.name,
         'enabled': bool(sub.enabled),
         'n': config.get('n'),
-        # How much of this feed joins the aggregate timeline. Only For You can be
-        # anything but 'all' — a followed account is a choice already made.
+        # How much of this feed joins the aggregate timeline (sources/x.py owns the
+        # rule). A followed account has no choice to make — subscribing is the setting.
         'aggregate': _aggregate_mode(sub),
         'added_at': str(sub.added_at) if sub.added_at else None,
         'tweets': db.x_feed_item_count(sub.channel_id),
@@ -253,9 +347,7 @@ def _aggregate_mode(sub: db.Subscription) -> str:
     # deferred: condenser.sources.x imports this module
     from .sources import x as x_source
 
-    if sub.channel_id != FORYOU_FEED:
-        return 'all'
-    return x_source.aggregate_mode()
+    return x_source.aggregate_mode(sub.channel_id, sub)
 
 
 # --- ingest -------------------------------------------------------------------
@@ -298,24 +390,83 @@ def _embedded_quotes(parsed: list[ParsedTweet]) -> list[ParsedTweet]:
     return out
 
 
-def ingest_tweets(channel_id: str, entries: list) -> IngestResult:
+@dataclass
+class FollowingFilter:
+    """What the two Following rules did to one push (plan §6.3)."""
+
+    kept: list[ParsedTweet] = field(default_factory=list)  # body + feed row
+    body_only: list[ParsedTweet] = field(default_factory=list)  # body, no feed row
+    ads: int = 0  # dropped whole
+    old: int = 0  # = len(body_only), named for the counter it feeds
+
+
+def _apply_following_rules(channel_id: str, parsed: list[ParsedTweet], now: datetime, settings: Settings):
+    """Split a Following push into kept / body-only / dropped (plan §6.3).
+
+    Two rules, in this order, and only for the Following feed:
+
+    ① **The author is not someone you follow** -> drop the entry whole. X injects
+      ads into this timeline with no structural marker at all (bird dumps the tweet
+      result, not the timeline entry, so ``promotedMetadata`` never reaches us), and
+      the follow list caught 7 of 7 in a 100-entry sample with no false positive.
+      An ad is noise all the way down, so not even its body is archived.
+
+    ② **The tweet is older than the window** -> archive the body, build no feed row.
+      X drags a thread's ancestors in for context and bird flattens them into
+      ordinary entries; stored as feed items they would land in 2025-09 timeline
+      history — invisible, but counted as unread. Keeping the body costs a few
+      hundred bytes, keeps the ``reply_to_id`` chain complete for a future thread
+      view, and reuses the path a quoted tweet already takes.
+
+    An empty follow list disables ① entirely. That is the deliberate failure mode:
+    before the probe has ever synced, the alternative is discarding every tweet as
+    advertising, silently.
+    """
+    if channel_id != FOLLOWING_FEED:
+        return FollowingFilter(kept=parsed)
+
+    followed = db.x_following_handles()
+    cutoff = now - timedelta(hours=settings.condenser_x_following_max_age_hours)
+    out = FollowingFilter()
+    for tweet in parsed:
+        if followed and (tweet.author_handle or '').lower() not in followed:
+            out.ads += 1
+            continue
+        if tweet.created_at is not None and tweet.created_at < cutoff:
+            out.body_only.append(tweet)
+            continue
+        out.kept.append(tweet)
+    out.old = len(out.body_only)
+    if out.ads or out.old:
+        log.info('x following: dropped %d ad(s), archived %d out-of-window tweet(s)', out.ads, out.old)
+    return out
+
+
+def ingest_tweets(channel_id: str, entries: list, settings: Optional[Settings] = None) -> IngestResult:
     """Store one probe push into the archive. Idempotent by tweet id.
 
-    The probe is stateless — every round pushes the feed's most recent N tweets —
-    so re-pushes are the norm: tweet rows refresh (metrics move), feed rows are
+    Re-pushes are the norm (the probe's incremental cache only shrinks them, never
+    guarantees they stop): tweet rows refresh so metrics move, feed rows are
     insert-only so ``first_seen_at`` stays the moment we first saw the tweet.
     """
+    from .config import get_settings
+
+    settings = settings or get_settings()
     now = _now()
     parsed, errors = _parse_batch(entries)
-    embedded = _embedded_quotes(parsed)
+    filtered = _apply_following_rules(channel_id, parsed, now, settings)
+    # After the filter, so an ad's quoted tweet is dropped with it — a body-only
+    # entry keeps its quote, since that path is exactly what it lands in itself.
+    embedded = _embedded_quotes(filtered.kept + filtered.body_only)
 
-    feed_ids = [t.id for t in parsed]
-    known_tweets = db.existing_x_tweet_ids(feed_ids + [t.id for t in embedded])
+    feed_ids = [t.id for t in filtered.kept]
+    body_only = filtered.body_only + embedded
+    known_tweets = db.existing_x_tweet_ids(feed_ids + [t.id for t in body_only])
     known_items = db.existing_x_feed_item_ids(channel_id, feed_ids)
 
-    for tweet in parsed:
+    for tweet in filtered.kept:
         db.upsert_x_tweet(tweet.row(now))
-    for tweet in embedded:
+    for tweet in body_only:
         db.insert_x_tweet_if_absent(tweet.row(now))
     db.insert_x_feed_items(
         [
@@ -327,12 +478,14 @@ def ingest_tweets(channel_id: str, entries: list) -> IngestResult:
 
     result = IngestResult(
         received=len(entries),
-        stored=len(parsed),
-        new_tweets=len({t.id for t in parsed + embedded} - known_tweets),
+        stored=len(filtered.kept),
+        new_tweets=len({t.id for t in filtered.kept + body_only} - known_tweets),
         new_items=len(set(feed_ids) - known_items),
         parse_errors=errors,
+        filtered_ads=filtered.ads,
+        filtered_old=filtered.old,
     )
-    _learn_user_identity(channel_id, parsed)
+    _learn_user_identity(channel_id, filtered.kept)
     _record_push(channel_id, result, now)
     return result
 
@@ -343,8 +496,12 @@ def _learn_user_identity(channel_id: str, parsed: list[ParsedTweet]) -> None:
     The subscription is keyed by handle (that is what the probe hands to bird), but
     the numeric id is what survives a rename — so we keep it as soon as a push
     reveals it, together with the account's current display name.
+
+    Only a followed-account feed has an identity to learn. The early return is
+    explicit rather than incidental: 'foryou'/'following' are not handles, so the
+    first entry whose author happened to match would otherwise rename the feed.
     """
-    if channel_id == FORYOU_FEED:
+    if channel_id in (FORYOU_FEED, FOLLOWING_FEED):
         return
     sub = db.get_x_subscription(channel_id)
     if sub is None:

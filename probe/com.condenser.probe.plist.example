@@ -1,14 +1,14 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  launchd agent for condenser-probe: one round every hour.
+  launchd agent for condenser-probe: one round every 15 minutes.
 
   Copy to ~/Library/LaunchAgents/com.condenser.probe.plist, replace the two
   /PATH/TO paths (and the uv location if it is not in /opt/homebrew/bin), then:
     launchctl load ~/Library/LaunchAgents/com.condenser.probe.plist
 
-  RunAtLoad fires a round on login; StartCalendarInterval fires at a fixed
-  minute every hour. Firings missed while the Mac sleeps coalesce into one
-  catch-up round at wake — the probe is stateless, so that is all it needs.
+  RunAtLoad fires a round on login; StartCalendarInterval with four entries
+  fires at :00/:15/:30/:45. Firings missed while the Mac sleeps coalesce into
+  one catch-up round at wake, which the probe needs nothing extra to handle.
   (Deliberately NOT StartInterval: its timer can get pended across a sleep
   cycle and never fire again — observed 2026-07-26, runs=1 with a stuck
   "pended nondemand spawn = interval" while the Mac was awake for hours.)
@@ -38,10 +38,12 @@
     </dict>
 
     <key>StartCalendarInterval</key>
-    <dict>
-        <key>Minute</key>
-        <integer>15</integer>
-    </dict>
+    <array>
+        <dict><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Minute</key><integer>15</integer></dict>
+        <dict><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Minute</key><integer>45</integer></dict>
+    </array>
 
     <key>RunAtLoad</key>
     <true/>

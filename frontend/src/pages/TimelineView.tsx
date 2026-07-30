@@ -20,7 +20,7 @@ import { useSources } from '@/hooks/useSources';
 import { useChannelLabels, useSubscriptions } from '@/hooks/useSubscriptions';
 import { useTimeline } from '@/hooks/useTimeline';
 import { channelName } from '@/lib/format';
-import { isSource, sourceLabel, sourceSubLabel, X_FORYOU_FEED } from '@/lib/sources';
+import { isSource, isXSyntheticFeed, sourceLabel, sourceSubLabel } from '@/lib/sources';
 import type { TimelineItem } from '@/lib/types';
 import { cn } from '@/lib/utils';
 
@@ -118,7 +118,7 @@ export function TimelineView() {
   const icon =
     cid != null ? (
       <ChannelAvatar channelId={cid} name={title} className="size-9 text-sm" />
-    ) : source === 'x' && feed && feed !== X_FORYOU_FEED ? (
+    ) : source === 'x' && feed && !isXSyntheticFeed(feed) ? (
       <XAvatar handle={feed} name={title} className="size-9 text-sm" />
     ) : source === 'x' ? (
       <XGlyph className="size-9 rounded-full text-base" />

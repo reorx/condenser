@@ -144,7 +144,7 @@ export interface XTweet {
   article: XArticle | null;
   /** The subscription this appearance belongs to: 'foryou' or a followed handle. */
   feed: string;
-  feed_kind: 'home' | 'user';
+  feed_kind: 'home' | 'following' | 'user';
   /** Feedback-driven judgement (plan Phase 4). null = not judged (no labels yet, or
    *  outside For You); 'neutral' = judged and deliberately non-committal. */
   verdict: XVerdict | null;
@@ -303,24 +303,26 @@ export interface HnStatus {
 }
 
 /** One X subscription, from GET /api/sources/x/subscriptions.
- *  `channel_id` is 'foryou' (the algorithmic feed) or a followed account's lowercased handle;
+ *  `channel_id` is 'foryou' (the algorithmic feed), 'following' (the chronological
+ *  accounts-you-follow timeline) or a followed account's lowercased handle;
  *  `user_id` is the rename-stable numeric id, learned from the first probe push. */
-/** For You is a firehose, so how much of it reaches the main timeline is a setting:
- *  nothing, only the tweets the verdict recommends, or everything. */
+/** How much of a synthetic feed reaches the main timeline. For You is a firehose,
+ *  so its middle setting is "only what the verdict recommends"; Following is never
+ *  judged, so it only has none/all. */
 export type XAggregateMode = 'none' | 'positive' | 'all';
 
 export interface XSubscription {
   source: 'x';
   channel_id: string;
-  kind: 'home' | 'user';
+  kind: 'home' | 'following' | 'user';
   handle: string | null;
   user_id: string | null;
   name: string | null;
   enabled: boolean;
   /** Per-feed fetch-count override handed to the probe; null = the server default. */
   n: number | null;
-  /** How much of this feed joins the aggregate timeline (For You only; a followed
-   *  account is always 'all'). */
+  /** How much of this feed joins the aggregate timeline. Settable on For You and
+   *  Following; a followed account is always 'all' (subscribing *is* the setting). */
   aggregate: XAggregateMode;
   added_at: string | null;
   /** Archived appearances of tweets in this feed. */
@@ -335,6 +337,11 @@ export interface XPushCount {
   new_tweets: number;
   new_items: number;
   parse_errors: number;
+  /** Following only: entries dropped as injected ads (author not in the follow list)
+   *  and entries archived without a feed row because they fell outside the age window
+   *  (X pads the feed with a thread's own ancestors). */
+  filtered_ads: number;
+  filtered_old: number;
 }
 
 export interface XStatus {

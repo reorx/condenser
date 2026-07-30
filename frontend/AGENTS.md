@@ -47,7 +47,7 @@ Two conventions this list exists to protect:
 | `SidebarSourceGroup` | One collapsible source section (collapse persisted via `useCollapsedSources`): the full-width header row links to `/s/:source` (+ unread badge when collapsed) with the collapse chevron as its own right-edge target, rows = the source's enabled subscriptions |
 | `SidebarChannelLink` + `navLinkClass` | One Telegram channel link in a sidebar source group; also exports the shared nav-row className used by the top-level links |
 | `SidebarHnFeedLink` | One HN feed link in the sidebar's Hacker News group (routes to `/s/hn` — v1 has a single feed) |
-| `SidebarXFeedLink` | One X feed link in the sidebar's X group, routing to `/s/x/:feed` (X has many feeds, unlike HN): `XGlyph` for For You, the author's `XAvatar` for a followed account. For You's full feed is only ever here — the aggregate shows at most what its `XAggregateMenu` mode admits |
+| `SidebarXFeedLink` | One X feed link in the sidebar's X group, routing to `/s/x/:feed` (X has many feeds, unlike HN): `XGlyph` for a whole-timeline feed (For You / Following — no account behind it, so no avatar), the author's `XAvatar` for a followed account. A feed's *full* contents are only ever here — the aggregate shows at most what its `XAggregateMenu` mode admits |
 | `XAvatar` | An X author's avatar via `/api/x/avatar/{handle}` (unavatar proxy — bird carries no avatar URL); 404 falls back to a handle-seeded colored initial, ChannelAvatar-style |
 | `Spinner` + `FullScreenSpinner` | Loading spinner (inline + full-screen) |
 | `UnreadBadge` | Unread-count pill; renders nothing at 0, caps display at `999+` |
@@ -105,9 +105,9 @@ Two conventions this list exists to protect:
 | `SubscriptionRow` | One channel row on the Manage channels page: enable switch + actions menu + confirm dialogs |
 | `TelegramSection` | The Telegram tab on the Subscriptions page: browse/add-by-handle actions + the `SubscriptionRow` channel list |
 | `HackerNewsSection` | The Hacker News tab on the Subscriptions page: Front Page subscribe/unsubscribe, sampling pause switch, display-mode menu, status line (`/api/hn/status`) |
-| `XSection` | The X tab on the Subscriptions page: add For You / an account by handle, the `XSubscriptionRow` list, and a two-line `/api/x/status` block — archive size + last probe push + parse errors (the data is pushed by the local probe, so this is where you find out the probe went quiet), plus an `XVerdictLine` explaining why the For You verdict is quiet: not configured, no sqlite-vec, or still counting down how many 👍/👎 remain before the cold-start gate opens |
-| `XSubscriptionRow` | One X feed row: For You or a followed account (handle chip only once a real display name has been learned), archive size + last push, `XAggregateMenu` (For You only), pause switch, unsubscribe |
-| `XAggregateMenu` | How much of For You joins the aggregate timeline — 不进 / 只进推荐的 / 全部并入 → PATCH the feed's `config.aggregate` (`HnDisplayModeMenu`'s sibling). Only For You gets one: a followed account is a choice already made. A setting rather than a constant because the right answer tracks how good the verdict currently is |
+| `XSection` | The X tab on the Subscriptions page: add Following / For You / an account by handle, the `XSubscriptionRow` list, and a two-line `/api/x/status` block — archive size + last probe push + parse errors (the data is pushed by the local probe, so this is where you find out the probe went quiet), plus an `XVerdictLine` explaining why the For You verdict is quiet: not configured, no sqlite-vec, or still counting down how many 👍/👎 remain before the cold-start gate opens |
+| `XSubscriptionRow` | One X feed row: For You, Following or a followed account (handle chip only once a real display name has been learned), archive size + last push, plus Following's two filter counts (ads dropped, out-of-window entries archived only — a 0 where you expected some means a filter stopped working), `XAggregateMenu` (whole-timeline feeds only), pause switch, unsubscribe |
+| `XAggregateMenu` | How much of a whole-timeline X feed joins the aggregate → PATCH the feed's `config.aggregate` (`HnDisplayModeMenu`'s sibling). Only For You and Following get one, and not with the same options: For You offers 不进 / 只进推荐的 / 全部并入, Following only 不进 / 全部并入 — it is never judged, so a recommended-only mode would silently hide the whole feed. A setting rather than a constant because the right answer tracks how good the verdict currently is |
 
 > `components/ui/` holds generated shadcn/ui (new-york) primitives — intentionally **excluded**
 > from this inventory. Don't list them here. Import `Button` from `@/components/ui/button`.
@@ -120,7 +120,7 @@ Two conventions this list exists to protect:
 - `hooks/` — data + behavior hooks (`useTimeline`, `useSources`, `useSubscriptions`,
   `useChannelFilter`, `useScrollToRead`, `useNewContent`, `useRefresh`, `useCollapsedSources`
   (sidebar collapse persistence), `useHnDisplayMode` (mode helpers + PATCH mutation),
-  `useXAggregate` (For You's aggregate-mode labels + PATCH mutation; invalidates the
+  `useXAggregate` (a whole-timeline X feed's aggregate-mode options + PATCH mutation; invalidates the
   timeline, the calendar and both unread badges, since the admitted set is computed at
   query time on the backend),
   `useMessageStats` (live pane stats, staleTime 0), `useAppMeta` + `useSetForwardChannel`
@@ -135,7 +135,8 @@ Two conventions this list exists to protect:
   (the `/s/:source/:feed` route — X's For You / one followed account).
 - `lib/` — `api.ts` (typed fetch client), `types.ts` (backend JSON mirror), `format.ts`,
   `sources.ts` (source labels, `hnCommentsUrl`, `xTweetUrl` / `xProfileUrl` / `xPreviewUrls`,
-  `X_FORYOU_FEED`, sub-row labels, `FEEDBACK_REASONS` + `FEEDBACK_REASON_LABELS` — shared by
+  `X_FORYOU_FEED` / `X_FOLLOWING_FEED` + `isXSyntheticFeed` / `xFeedLabel`, sub-row labels,
+  `FEEDBACK_REASONS` + `FEEDBACK_REASON_LABELS` — shared by
   the card that asks and the pane that reports the answer, so the two can't drift),
   `sanitize.ts` (DOMPurify
   wrapper for HN self-post HTML), `linkify.tsx`, `extractUrls.ts` (shared URL

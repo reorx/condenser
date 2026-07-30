@@ -15,7 +15,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from .. import db, preview, x
 from ..auth import require_auth
 from ..config import Settings, get_settings
-from ..types import XIngestBody, XSubscribeBody, XSubscriptionPatch
+from ..types import XFollowingBody, XIngestBody, XSubscribeBody, XSubscriptionPatch
 
 log = logging.getLogger('condenser.routers.x')
 
@@ -53,10 +53,7 @@ def add_x_subscription(body: XSubscribeBody, settings: Settings = Depends(get_se
     config = x.default_config(channel_id)
     if body.n is not None:
         config['n'] = body.n
-    # `name` means "the display name X shows"; for a followed account that is only
-    # known once the first push arrives (_learn_user_identity), so it stays NULL and
-    # clients fall back to the handle instead of rendering a placeholder twice.
-    name = body.name or (x.FORYOU_NAME if channel_id == x.FORYOU_FEED else None)
+    name = body.name or x.default_name(channel_id)
     sub, _ = db.add_x_subscription(channel_id, name=name, config=config)
     return x.describe_subscription(sub)
 
@@ -87,6 +84,20 @@ def delete_x_subscription(channel_id: str):
     return {'ok': True}
 
 
+@router.post('/sources/x/following')
+def push_following(body: XFollowingBody, settings: Settings = Depends(get_settings)):
+    """Replace the followed-accounts list (the Following feed's ad filter).
+
+    Whole-list semantics: the probe crawls ``bird following --all`` and pushes what
+    it found, so an unfollowed account disappears by not being mentioned.
+    """
+    _require_source_enabled(settings)
+    try:
+        return x.sync_following(body.users)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+
 @router.get('/sources/x/probe-config')
 def get_probe_config(settings: Settings = Depends(get_settings)):
     return x.probe_config(settings)
@@ -101,7 +112,7 @@ def ingest(request: Request, body: XIngestBody, settings: Settings = Depends(get
         # the probe fetches strictly what probe-config listed; this means the
         # subscription went away mid-round (or the probe is misconfigured)
         raise HTTPException(status_code=404, detail='no enabled x subscription for this channel_id')
-    result = x.ingest_tweets(channel_id, body.tweets)
+    result = x.ingest_tweets(channel_id, body.tweets, settings)
     _kick_verdict(request)
     return {'channel_id': channel_id, **result.as_dict()}
 

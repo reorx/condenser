@@ -42,9 +42,14 @@ class ProbeClient:
             raise ServerError(f'{method} {path} -> {resp.status_code}: {resp.text[:300]}')
         return resp.json()
 
-    def probe_config(self) -> list[dict]:
-        """The feeds to fetch this round (empty when nothing is subscribed/enabled)."""
-        return self._request('GET', '/api/sources/x/probe-config').get('feeds', [])
+    def probe_config(self) -> dict:
+        """What to do this round: ``feeds`` to fetch + whether to re-crawl the
+        follow list. The server owns both decisions, so the probe stays stateless."""
+        return self._request('GET', '/api/sources/x/probe-config')
 
     def ingest(self, channel_id: str, tweets: list) -> dict:
         return self._request('POST', '/api/sources/x/ingest', json={'channel_id': channel_id, 'tweets': tweets})
+
+    def push_following(self, users: list) -> dict:
+        """Replace the server's followed-accounts list (whole-list semantics)."""
+        return self._request('POST', '/api/sources/x/following', json={'users': users})

@@ -1,6 +1,6 @@
 """X (Twitter) timeline source provider (plan Phase 2).
 
-Two feed kinds share the source and they behave very differently:
+Three feed kinds share the source and they behave very differently:
 
 * **For You** (``foryou``) is a firehose. bird's ``home`` endpoint re-samples on
   every call (Phase 1 measurement: three consecutive calls, zero overlap), so the
@@ -18,12 +18,20 @@ Two feed kinds share the source and they behave very differently:
   lives in the subscription config (HN's ``display_mode`` pattern) because the
   right setting depends on how good the classifier currently is, and that changes
   with every label — it must be a click, not a deploy.
+* **Following** (``following``) is the chronological "accounts you follow"
+  timeline — one feed standing in for all of them. Measured, it is *not* a
+  firehose: two consecutive calls overlapped 19/20, i.e. a stable window rather
+  than a fresh sample, at ~100-200 tweets/day. So it joins the aggregate in full
+  by default, and sorts by ``created_at`` like any ordinary time series. The
+  entries X pads it with (ads, thread ancestors) are filtered at ingest, not here
+  — see ``x._apply_following_rules``.
 * **A followed account** is an ordinary time series, like a TG channel: it joins
   the aggregate merge and sorts by the tweet's own ``created_at``.
 
-One tweet can appear in both feeds (For You includes people you follow), so the
-query de-duplicates by tweet id, preferring the followed appearance — the card
-then keeps the same position whichever view you open it from.
+One tweet can appear in several feeds (For You includes people you follow;
+Following overlaps every account subscription), so the query de-duplicates by
+tweet id under an explicit priority — the card then keeps the same position, the
+same badge and the same unread owner whichever view you open it from.
 """
 
 import json
@@ -32,14 +40,26 @@ from typing import Optional
 from telememo import db as tdb
 
 from .. import db
-from ..items import FORYOU_FEED, norm_ts, x_envelope
+from ..items import FOLLOWING_FEED, FORYOU_FEED, norm_ts, x_envelope
 from .base import NEW_COUNT_BUFFER, SourcePage, SourceUnit, pack_pos, unpack_pos
 
-# How much of For You joins the *aggregate* timeline. Its own view is never
-# filtered by this — that is where the reader labels, and hiding candidates there
-# would starve the classifier of the negatives it needs.
-AGGREGATE_MODES = ('none', 'positive', 'all')
-DEFAULT_AGGREGATE_MODE = 'none'
+# How much of a feed joins the *aggregate* timeline. A feed's own view is never
+# filtered by this — For You's view is where the reader labels, and hiding
+# candidates there would starve the classifier of the negatives it needs.
+#
+# Only the two synthetic feeds have a choice to make, and they have different
+# ones. For You is a firehose of strangers, so its useful middle setting is "only
+# what the verdict recommends" and its default is to stay out. Following is a set
+# the reader curated by hand and is never judged at all (the verdict exists to
+# filter strangers the algorithm picked), so 'positive' is not offered — it would
+# silently hide the whole feed — and the default is to merge in.
+AGGREGATE_MODES = {
+    FORYOU_FEED: ('none', 'positive', 'all'),
+    FOLLOWING_FEED: ('none', 'all'),
+}
+DEFAULT_AGGREGATE_MODE = {FORYOU_FEED: 'none', FOLLOWING_FEED: 'all'}
+# A followed account is a choice already made — subscribing to it *is* the setting.
+ACCOUNT_AGGREGATE_MODE = 'all'
 
 # The feed-dependent sort key, as SQL over (x_feed_items f JOIN x_tweets t).
 # COALESCE guards a tweet whose timestamp failed to parse (stored NULL, raw kept
@@ -62,12 +82,23 @@ def _sort_at(channels: list[str]) -> str:
     return SORT_AT_SQL
 
 
-# Same tweet in two feeds -> one row, the followed appearance winning (0 sorts
-# before 1); ties inside a kind break on the earliest sighting.
+# Same tweet in several feeds -> one row. The winner is not cosmetic: it decides
+# the sort timestamp (SORT_AT_SQL), whether the tweet may join the aggregate
+# (_scope_where), and which feed owns its verdict badge and unread count.
+#
+# Explicitly ranked rather than "earliest sighting wins", which is what it was
+# while For You and one account were the only pair that could collide. With
+# Following in the mix, a tweet by an account you *also* subscribe to sits in two
+# non-For-You feeds, and first-sighting would let its unread count drift between
+# the two rows depending on which push happened to land first.
 _DEDUP_RANK = f"""
     ROW_NUMBER() OVER (
         PARTITION BY f.tweet_id
-        ORDER BY (f.channel_id = '{FORYOU_FEED}') ASC, f.first_seen_at ASC
+        ORDER BY CASE f.channel_id
+                   WHEN '{FORYOU_FEED}' THEN 2
+                   WHEN '{FOLLOWING_FEED}' THEN 1
+                   ELSE 0 END ASC,
+                 f.first_seen_at ASC
     )
 """
 
@@ -126,38 +157,55 @@ def normalize_feed(feed: Optional[str]) -> Optional[str]:
     return cleaned or None
 
 
-def aggregate_mode() -> str:
-    """The For You subscription's aggregate mode, or 'none' when it cannot say.
+def aggregate_mode(feed: str, sub: Optional[db.Subscription] = None) -> str:
+    """How much of ``feed`` joins the aggregate timeline.
 
-    Unknown values fall back to the default rather than raising: this reads a
-    JSON blob the user can PATCH, and a typo must not decide that the firehose
-    joins the main timeline.
+    Unknown values fall back to the feed's default rather than raising: this reads
+    a JSON blob the user can PATCH, and a typo must not decide that the firehose
+    joins the main timeline — nor that Following, whose only sensible middle
+    setting does not exist, disappears from it.
     """
-    sub = db.get_x_subscription(FORYOU_FEED)
+    allowed = AGGREGATE_MODES.get(feed)
+    if allowed is None:
+        return ACCOUNT_AGGREGATE_MODE
+    if sub is None:
+        sub = db.get_x_subscription(feed)
     if sub is None or not sub.enabled:
-        return DEFAULT_AGGREGATE_MODE
+        return DEFAULT_AGGREGATE_MODE[feed]
     try:
         config = json.loads(sub.config) if sub.config else {}
     except ValueError:
-        return DEFAULT_AGGREGATE_MODE
+        return DEFAULT_AGGREGATE_MODE[feed]
     mode = config.get('aggregate')
-    return mode if mode in AGGREGATE_MODES else DEFAULT_AGGREGATE_MODE
+    return mode if mode in allowed else DEFAULT_AGGREGATE_MODE[feed]
+
+
+def aggregate_modes() -> dict[str, str]:
+    """Every enabled feed's aggregate mode, read in one pass."""
+    return {sub.channel_id: aggregate_mode(sub.channel_id, sub) for sub in db.enabled_x_subscriptions()}
 
 
 def is_aggregate(feed: Optional[str], include_foryou: bool) -> bool:
     """Is this the everything-merged view, rather than an X-scoped one?
 
-    The distinction the admission rule turns on: only the aggregate filters For
-    You, and only the aggregate's "mark all read" may sweep it.
+    The distinction the admission rule turns on: only the aggregate applies the
+    per-feed modes, and only the aggregate's "mark all read" obeys them.
     """
     return normalize_feed(feed) is None and not include_foryou
 
 
 def scope(feed: Optional[str], include_foryou: bool) -> list[str]:
-    """The enabled feed keys this query reads (empty = nothing to show)."""
-    normalized = normalize_feed(feed)
-    admitted = is_aggregate(feed, include_foryou) and aggregate_mode() != 'none'
-    return db.enabled_x_feeds(normalized, include_foryou or admitted)
+    """The enabled feed keys this query reads (empty = nothing to show).
+
+    The aggregate drops whatever is set to ``none`` — For You's default, and the
+    rule that used to be a hardcoded "not For You" inside ``db.enabled_x_feeds``.
+    An X-scoped or feed-scoped view reads everything that is subscribed.
+    """
+    channels = db.enabled_x_feeds(normalize_feed(feed))
+    if not is_aggregate(feed, include_foryou):
+        return channels
+    modes = aggregate_modes()
+    return [c for c in channels if modes.get(c, ACCOUNT_AGGREGATE_MODE) != 'none']
 
 
 def active(feed: Optional[str] = None, include_foryou: bool = False) -> bool:
@@ -172,9 +220,14 @@ def _scope_where(channels: list[str], aggregate: bool = False) -> tuple[list[str
     tweet whose For You copy is filtered out could rank second and vanish.
     """
     where = [f'f.channel_id IN ({",".join("?" for _ in channels)})']
-    if aggregate and FORYOU_FEED in channels and aggregate_mode() == 'positive':
-        where.append(f"(f.channel_id <> '{FORYOU_FEED}' OR f.verdict = 'positive')")
-    return where, list(channels)
+    params = list(channels)
+    if aggregate:
+        modes = aggregate_modes()
+        for channel in channels:
+            if modes.get(channel) == 'positive':
+                where.append('(f.channel_id <> ? OR f.verdict = ?)')
+                params.extend([channel, 'positive'])
+    return where, params
 
 
 def _dedup_needed(channels: list[str]) -> bool:

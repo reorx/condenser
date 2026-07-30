@@ -2,8 +2,7 @@ import { type QueryClient, useMutation, useQueryClient } from '@tanstack/react-q
 import { toast } from 'sonner';
 
 import { api, errorMessage } from '@/lib/api';
-import { X_FORYOU_FEED } from '@/lib/sources';
-import type { Source, SourceGroup, Subscription, TimelineItem, TimelinePage } from '@/lib/types';
+import type { Source, SourceGroup, SourceSub, Subscription, TimelineItem, TimelinePage } from '@/lib/types';
 
 export interface BulkReadArgs {
   channel_id?: number | null;
@@ -14,13 +13,21 @@ export interface BulkReadArgs {
   feed?: string | null;
 }
 
-/** Does this sweep cover the given subscription row? Mirrors db.mark_read_bulk:
- *  an unscoped sweep skips X's For You, which the aggregate view never showed. */
-function coversSub(args: BulkReadArgs, source: string, channelId: number | string): boolean {
+/** Does this sweep clear the whole of the given subscription row?
+ *
+ *  Mirrors db.mark_read_bulk, which burns exactly what the timeline showed. For an
+ *  unscoped sweep that is the *aggregate's* share of each X feed, and how big that
+ *  share is depends on a per-feed setting: a feed set to 不进主时间线 contributes
+ *  nothing, and For You in 只进推荐的 contributes only what the verdict admitted.
+ *  Rather than duplicating that rule here, compare the two counts the server
+ *  already sends — equal means the aggregate showed everything this feed had, so
+ *  the badge can be zeroed on the spot; otherwise leave it to the refetch. */
+function coversSub(args: BulkReadArgs, source: string, sub: SourceSub): boolean {
+  const channelId = sub.channel_id;
   if (args.channel_id != null) return channelId === args.channel_id;
   if (args.source && source !== args.source) return false;
   if (args.feed) return String(channelId) === args.feed;
-  if (!args.source && source === 'x' && channelId === X_FORYOU_FEED) return false;
+  if (!args.source && source === 'x') return sub.aggregate_unread === sub.unread;
   return true;
 }
 
@@ -57,7 +64,9 @@ function zeroUnread(qc: QueryClient, args: BulkReadArgs): void {
   qc.setQueryData<SourceGroup[]>(['sources'], (groups) =>
     groups?.map((g) => ({
       ...g,
-      subscriptions: g.subscriptions.map((s) => (coversSub(args, g.source, s.channel_id) ? { ...s, unread: 0 } : s)),
+      subscriptions: g.subscriptions.map((s) =>
+        coversSub(args, g.source, s) ? { ...s, unread: 0, aggregate_unread: 0 } : s,
+      ),
     })),
   );
 }

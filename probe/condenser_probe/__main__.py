@@ -11,6 +11,7 @@ import sys
 import time
 
 from .bird import BirdError, check_auth
+from .cache import SeenCache
 from .client import ProbeClient, ServerError
 from .config import ConfigError, load_settings
 from .runner import run_round
@@ -36,27 +37,30 @@ def _check(settings) -> int:
         failures += 1
     with ProbeClient(settings.api_base, settings.token, settings.timeout) as client:
         try:
-            feeds = client.probe_config()
+            config = client.probe_config()
+            feeds = config.get('feeds') or []
             log.info('server: ok, %d enabled feed(s): %s', len(feeds), ', '.join(f['channel_id'] for f in feeds))
+            if config.get('sync_following'):
+                log.info('server: the follow list is stale — the next run will re-crawl it')
         except ServerError as e:
             log.error('server check failed: %s', e)
             failures += 1
     return 1 if failures else 0
 
 
-def _run_once(settings) -> int:
+def _run_once(settings, cache=None) -> int:
     with ProbeClient(settings.api_base, settings.token, settings.timeout) as client:
         try:
-            outcomes = run_round(client, bird_bin=settings.bird_bin, timeout=settings.timeout)
+            outcomes = run_round(client, bird_bin=settings.bird_bin, timeout=settings.timeout, cache=cache)
         except ServerError as e:
             log.error('could not read probe-config: %s', e)
             return 1
     return 1 if any(not o.ok for o in outcomes) else 0
 
 
-def _watch(settings, interval: int) -> int:
+def _watch(settings, interval: int, cache=None) -> int:
     while True:
-        _run_once(settings)
+        _run_once(settings, cache)
         log.info('sleeping %ds', interval)
         time.sleep(interval)
 
@@ -64,8 +68,15 @@ def _watch(settings, interval: int) -> int:
 def main() -> int:
     parser = argparse.ArgumentParser(prog='condenser-probe', description=__doc__)
     parser.add_argument('command', choices=('check', 'run', 'watch'), nargs='?', default='run')
-    parser.add_argument('--interval', type=int, default=3600, help='seconds between rounds in watch mode')
+    parser.add_argument('--interval', type=int, default=900, help='seconds between rounds in watch mode')
     parser.add_argument('--log-level', default=None)
+    parser.add_argument(
+        '--no-cache',
+        action='store_true',
+        help='push everything bird returns, ignoring what earlier rounds already sent. '
+        "Use it after the server's data was wiped or rolled back — the cache would "
+        'otherwise suppress exactly the re-push that restores it.',
+    )
     args = parser.parse_args()
 
     try:
@@ -78,9 +89,10 @@ def main() -> int:
 
     if args.command == 'check':
         return _check(settings)
+    cache = None if args.no_cache else SeenCache()
     if args.command == 'watch':
-        return _watch(settings, args.interval)
-    return _run_once(settings)
+        return _watch(settings, args.interval, cache)
+    return _run_once(settings, cache)
 
 
 if __name__ == '__main__':

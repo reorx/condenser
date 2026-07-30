@@ -142,11 +142,11 @@ def test_parse_tweet_rejects_entries_without_a_usable_id(env):
 def test_probe_config_is_empty_without_enabled_subscriptions(env):
     with _client() as client:
         _login(client)
-        assert client.get('/api/sources/x/probe-config').json() == {'feeds': []}
+        assert client.get('/api/sources/x/probe-config').json() == {'feeds': [], 'sync_following': False}
 
         _subscribe(client, 'foryou')
         client.patch('/api/sources/x/subscriptions/foryou', json={'enabled': False})
-        assert client.get('/api/sources/x/probe-config').json() == {'feeds': []}
+        assert client.get('/api/sources/x/probe-config').json() == {'feeds': [], 'sync_following': False}
 
 
 def test_probe_config_lists_enabled_feeds(env):
@@ -220,7 +220,7 @@ def test_unsubscribe_keeps_the_archive(env):
         _ingest(client, 'foryou', home_fixture())
 
         assert client.delete('/api/sources/x/subscriptions/foryou').status_code == 200
-        assert client.get('/api/sources/x/probe-config').json() == {'feeds': []}
+        assert client.get('/api/sources/x/probe-config').json() == {'feeds': [], 'sync_following': False}
         # tweets + feed rows survive (same semantics as a TG/HN unsubscribe)
         assert db.XTweet.select().count() > 0
         assert db.XFeedItem.select().where(db.XFeedItem.channel_id == 'foryou').count() > 0
@@ -235,7 +235,7 @@ def test_source_disabled_by_config_refuses_subscribe_and_ingest(env, monkeypatch
         _login(client)
         assert _subscribe(client, 'foryou').status_code == 503
         assert _ingest(client, 'foryou', home_fixture()).status_code == 503
-        assert client.get('/api/sources/x/probe-config').json() == {'feeds': []}
+        assert client.get('/api/sources/x/probe-config').json() == {'feeds': [], 'sync_following': False}
 
 
 # --- ingest ------------------------------------------------------------------

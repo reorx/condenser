@@ -1,0 +1,82 @@
+{
+  "users": [
+    {
+      "id": "2870102861",
+      "username": "thdxr",
+      "name": "dax",
+      "description": "building @opencode at @anomalyco\nnot the ceo",
+      "followersCount": 150385,
+      "followingCount": 455,
+      "isBlueVerified": true,
+      "profileImageUrl": "https://pbs.twimg.com/profile_images/1602333093485891584/mmVqjFNI_normal.jpg",
+      "createdAt": "Mon Nov 10 04:50:37 +0000 2014"
+    },
+    {
+      "id": "345437084",
+      "username": "iamcheyan",
+      "name": "徹言",
+      "description": "程序员・作家・编剧 / 東京在住 🗼",
+      "followersCount": 44289,
+      "followingCount": 7244,
+      "isBlueVerified": true,
+      "profileImageUrl": "https://pbs.twimg.com/profile_images/1752946036358909952/o_vVoTim_normal.jpg",
+      "createdAt": "Sat Jul 30 16:05:20 +0000 2011"
+    },
+    {
+      "id": "714044918813986816",
+      "username": "zdyxry",
+      "name": "yiran",
+      "description": "我是依然/SRE/哇哇哇",
+      "followersCount": 1603,
+      "followingCount": 1155,
+      "isBlueVerified": false,
+      "profileImageUrl": "https://pbs.twimg.com/profile_images/902692244183855104/9BQCMb7T_normal.jpg",
+      "createdAt": "Sun Mar 27 11:02:29 +0000 2016"
+    },
+    {
+      "id": "69778259",
+      "username": "_____cv_e__",
+      "name": "A|I",
+      "description": "Arcane Implant",
+      "followersCount": 659,
+      "followingCount": 901,
+      "isBlueVerified": false,
+      "profileImageUrl": "https://pbs.twimg.com/profile_images/1123567311258939392/2CcWuUDv_normal.jpg",
+      "createdAt": "Sat Aug 29 03:35:29 +0000 2009"
+    },
+    {
+      "id": "854722070101360641",
+      "username": "ZaynHao",
+      "name": "Zayn Hao",
+      "description": "design engineer & building solo products.\n\nbuilding @minttrapp\n\nbuilding https://t.co/7YqgBaMTjv\n\nfounder of @getgridea\n\nsharing design & dev tips",
+      "followersCount": 17509,
+      "followingCount": 1747,
+      "isBlueVerified": true,
+      "profileImageUrl": "https://pbs.twimg.com/profile_images/1490844347721342981/_vcCNxRm_normal.jpg",
+      "createdAt": "Wed Apr 19 15:43:16 +0000 2017"
+    },
+    {
+      "id": "798478",
+      "username": "scavin",
+      "name": "scavin",
+      "description": "小众软件作者，私信开放",
+      "followersCount": 162098,
+      "followingCount": 1761,
+      "isBlueVerified": false,
+      "profileImageUrl": "https://pbs.twimg.com/profile_images/555221394741407744/WQ885j8m_normal.png",
+      "createdAt": "Tue Feb 27 16:14:40 +0000 2007"
+    },
+    {
+      "id": "8956502",
+      "username": "StarKnight",
+      "name": "StarKnight",
+      "description": "人们对我说：你不过是尘与土。可是他们忘了告诉我，那其实是星星的尘埃。時々日本語。两个小朋友的爸爸。",
+      "followersCount": 91556,
+      "followingCount": 3103,
+      "isBlueVerified": true,
+      "profileImageUrl": "https://pbs.twimg.com/profile_images/2014879396814061569/D9PxYnO-_normal.jpg",
+      "createdAt": "Tue Sep 18 17:50:58 +0000 2007"
+    }
+  ],
+  "nextCursor": null
+}

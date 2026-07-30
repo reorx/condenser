@@ -8,18 +8,21 @@ import {
   DropdownMenuLabel,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { X_AGGREGATE_MODES, useSetXAggregate, xAggregateLabel } from '@/hooks/useXAggregate';
+import { useSetXAggregate, xAggregateLabel, xAggregateModes } from '@/hooks/useXAggregate';
+import { xFeedLabel } from '@/lib/sources';
 import type { XAggregateMode } from '@/lib/types';
 
-/** How much of For You joins the aggregate timeline (`HnDisplayModeMenu`'s sibling).
+/** How much of a synthetic X feed joins the aggregate timeline (`HnDisplayModeMenu`'s
+ *  sibling).
  *
  *  For You alone is a firehose, which is why it was kept out of the main timeline
  *  entirely. Filtering by the verdict changes that: only the recommended tweets
  *  come through, which is a fifth more reading rather than a flood. A setting and
  *  not a constant, because the right answer tracks how good the classifier is —
- *  and that moves with every label. */
-export function XAggregateMenu({ mode }: { mode: XAggregateMode }) {
-  const setMode = useSetXAggregate();
+ *  and that moves with every label. Following gets the same control with a shorter
+ *  option list (it is never judged, so there is nothing to recommend). */
+export function XAggregateMenu({ feed, mode }: { feed: string; mode: XAggregateMode }) {
+  const setMode = useSetXAggregate(feed);
 
   return (
     <DropdownMenu>
@@ -29,15 +32,15 @@ export function XAggregateMenu({ mode }: { mode: XAggregateMode }) {
           size="sm"
           className="h-8 gap-1 px-2 text-xs text-muted-foreground"
           disabled={setMode.isPending}
-          title="For You 有多少并入主时间线"
+          title={`${xFeedLabel(feed)} 有多少并入主时间线`}
         >
-          {xAggregateLabel(mode)}
+          {xAggregateLabel(feed, mode)}
           <ChevronDown className="size-3.5" />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="max-w-72">
         <DropdownMenuLabel className="text-xs text-muted-foreground">并入主时间线</DropdownMenuLabel>
-        {X_AGGREGATE_MODES.map((m) => (
+        {xAggregateModes(feed).map((m) => (
           <DropdownMenuItem
             key={m.value}
             className="items-start"

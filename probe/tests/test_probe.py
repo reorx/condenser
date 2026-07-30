@@ -5,10 +5,13 @@ is what these pin down.
 """
 
 import json
+import shutil
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
 from condenser_probe import bird
+from condenser_probe.cache import SeenCache
 from condenser_probe.client import ServerError
 from condenser_probe.config import ConfigError, load_settings
 from condenser_probe.runner import run_round
@@ -20,19 +23,28 @@ USER = {'channel_id': 'novoreorx', 'kind': 'user', 'handle': 'novoreorx', 'n': 1
 class FakeClient:
     """Stands in for ProbeClient: canned probe-config, recorded ingests."""
 
-    def __init__(self, feeds, fail_on=()):
+    def __init__(self, feeds, fail_on=(), sync_following=False, following_fails=False):
         self.feeds = feeds
         self.fail_on = set(fail_on)
+        self.sync_following = sync_following
+        self.following_fails = following_fails
         self.pushed = []
+        self.followed = None
 
     def probe_config(self):
-        return self.feeds
+        return {'feeds': self.feeds, 'sync_following': self.sync_following}
 
     def ingest(self, channel_id, tweets):
         if channel_id in self.fail_on:
             raise ServerError('boom')
         self.pushed.append((channel_id, tweets))
         return {'new_tweets': len(tweets), 'new_items': len(tweets), 'parse_errors': 0}
+
+    def push_following(self, users):
+        if self.following_fails:
+            raise ServerError('nope')
+        self.followed = users
+        return {'received': len(users), 'stored': len(users)}
 
 
 def tweets(n):
@@ -52,6 +64,13 @@ def test_build_command_per_feed_kind():
         '10',
         '--json',
     ]
+
+
+def test_build_command_for_the_following_timeline():
+    """Same endpoint as For You — the flag swaps the algorithmic feed for the
+    chronological one, and the JSON shape is identical."""
+    following = {'channel_id': 'following', 'kind': 'following', 'handle': None, 'n': 50}
+    assert bird.build_command(following) == ['bird', 'home', '-n', '50', '--following', '--json']
 
 
 def test_build_command_rejects_unusable_feeds():
@@ -116,6 +135,167 @@ def test_empty_fetch_is_not_pushed():
     client = FakeClient([HOME])
     outcomes = run_round(client, fetch=lambda feed: [])
     assert outcomes[0].ok and client.pushed == []
+
+
+# --- the follow list ----------------------------------------------------------
+
+
+def test_fetch_following_users_accepts_both_bird_shapes(monkeypatch):
+    """`bird following` returns a bare array, but `--all` (which the probe needs —
+    without it every page caps at 50) switches to a {users, nextCursor} envelope."""
+    users = [{'id': '1', 'username': 'alice'}, {'id': '2', 'username': 'bob'}]
+    monkeypatch.setattr(bird, '_run', lambda cmd, timeout: json.dumps(users))
+    assert bird.fetch_following_users() == users
+    monkeypatch.setattr(bird, '_run', lambda cmd, timeout: json.dumps({'users': users, 'nextCursor': None}))
+    assert bird.fetch_following_users() == users
+
+
+def test_following_command_pages_through_everything():
+    assert bird.following_command() == ['bird', 'following', '--all', '--max-pages', '40', '--json']
+
+
+def test_round_syncs_the_follow_list_only_when_the_server_asks():
+    users = [{'id': '1', 'username': 'alice'}]
+    client = FakeClient([USER], sync_following=True)
+    run_round(client, fetch=lambda feed: tweets(2), fetch_following=lambda: users)
+    assert client.followed == users
+
+    quiet = FakeClient([USER])
+    run_round(quiet, fetch=lambda feed: tweets(2), fetch_following=lambda: users)
+    assert quiet.followed is None
+
+
+def test_the_follow_list_is_synced_before_the_feeds_are_pushed():
+    """The server drops entries by unknown authors, so a first round that ingested
+    before syncing would filter the whole feed away as advertising."""
+    order = []
+    client = FakeClient([USER], sync_following=True)
+
+    def ingest(channel_id, tweets_):
+        order.append('ingest')
+        return {}
+
+    def push_following(users):
+        order.append('following')
+        return {}
+
+    client.ingest = ingest
+    client.push_following = push_following
+    run_round(client, fetch=lambda feed: tweets(2), fetch_following=lambda: [{'username': 'a'}])
+    assert order == ['following', 'ingest']
+
+
+def test_a_failed_follow_sync_does_not_sink_the_round():
+    client = FakeClient([USER], sync_following=True, following_fails=True)
+    outcomes = run_round(client, fetch=lambda feed: tweets(2), fetch_following=lambda: [{'username': 'a'}])
+    assert [o.ok for o in outcomes] == [True]
+    assert client.pushed == [('novoreorx', tweets(2))]
+
+
+def test_a_bird_failure_while_listing_follows_does_not_sink_the_round():
+    client = FakeClient([USER], sync_following=True)
+
+    def boom():
+        raise bird.BirdError('cookies expired')
+
+    outcomes = run_round(client, fetch=lambda feed: tweets(2), fetch_following=boom)
+    assert [o.ok for o in outcomes] == [True] and client.followed is None
+
+
+def test_the_follow_list_is_synced_even_with_nothing_to_fetch():
+    """probe-config only asks when there are feeds, but if it asks, obeying it must
+    not depend on a feed succeeding."""
+    client = FakeClient([], sync_following=True)
+    run_round(client, fetch=lambda feed: [], fetch_following=lambda: [{'username': 'a'}])
+    assert client.followed == [{'username': 'a'}]
+
+
+# --- the incremental cache ----------------------------------------------------
+
+
+def _cache(tmp_path, **kwargs):
+    return SeenCache(root=tmp_path / 'seen', **kwargs)
+
+
+def test_already_seen_tweets_are_not_pushed_again(tmp_path):
+    """Following is a stable window (19/20 overlap between consecutive calls), so
+    without this every 15-minute round re-pushes almost the same 50 tweets."""
+    cache = _cache(tmp_path)
+    client = FakeClient([USER])
+    run_round(client, fetch=lambda feed: tweets(3), cache=cache)
+    assert [len(t) for _, t in client.pushed] == [3]
+
+    run_round(client, fetch=lambda feed: tweets(4), cache=cache)
+    assert [cid for cid, _ in client.pushed] == ['novoreorx', 'novoreorx']
+    assert [t['id'] for t in client.pushed[1][1]] == ['1003']  # only the new one
+
+
+def test_a_feed_that_returns_nothing_new_is_not_pushed_at_all(tmp_path):
+    cache = _cache(tmp_path)
+    client = FakeClient([USER])
+    run_round(client, fetch=lambda feed: tweets(3), cache=cache)
+    outcomes = run_round(client, fetch=lambda feed: tweets(3), cache=cache)
+    assert len(client.pushed) == 1
+    assert outcomes[0].ok and outcomes[0].fetched == 3 and outcomes[0].skipped == 3
+
+
+def test_entries_are_only_remembered_once_the_server_took_them(tmp_path):
+    """Recording before the push would lose a tweet permanently on a 500."""
+    cache = _cache(tmp_path)
+    failing = FakeClient([USER], fail_on=['novoreorx'])
+    run_round(failing, fetch=lambda feed: tweets(3), cache=cache)
+
+    client = FakeClient([USER])
+    run_round(client, fetch=lambda feed: tweets(3), cache=cache)
+    assert [len(t) for _, t in client.pushed] == [3]
+
+
+def test_the_cache_is_pruned_to_its_window(tmp_path):
+    """A few hundred ints, bounded by time rather than by count."""
+    cache = _cache(tmp_path, max_age_hours=24)
+    old = datetime(2026, 7, 28, 0, 0, tzinfo=timezone.utc)
+    cache.record('novoreorx', tweets(2), now=old)
+    cache.record('novoreorx', [{'id': '2000'}], now=old + timedelta(hours=30))
+
+    assert set(cache.load('novoreorx')) == {'2000'}
+
+
+def test_a_lost_cache_just_means_a_full_repush(tmp_path):
+    """The server dedupes by tweet id, so the recovery path is "do nothing"."""
+    cache = _cache(tmp_path)
+    client = FakeClient([USER])
+    run_round(client, fetch=lambda feed: tweets(3), cache=cache)
+    shutil.rmtree(tmp_path / 'seen')
+    run_round(client, fetch=lambda feed: tweets(3), cache=cache)
+    assert [len(t) for _, t in client.pushed] == [3, 3]
+
+
+def test_an_unwritable_cache_does_not_break_the_round(tmp_path, monkeypatch):
+    cache = _cache(tmp_path)
+
+    def boom(*args, **kwargs):
+        raise OSError('read-only file system')
+
+    monkeypatch.setattr(SeenCache, '_write', boom)
+    client = FakeClient([USER])
+    outcomes = run_round(client, fetch=lambda feed: tweets(3), cache=cache)
+    assert outcomes[0].ok and [len(t) for _, t in client.pushed] == [3]
+
+
+def test_no_cache_means_the_old_stateless_behavior():
+    client = FakeClient([USER])
+    run_round(client, fetch=lambda feed: tweets(3), cache=None)
+    run_round(client, fetch=lambda feed: tweets(3), cache=None)
+    assert [len(t) for _, t in client.pushed] == [3, 3]
+
+
+def test_feeds_have_separate_caches(tmp_path):
+    """The same tweet legitimately arrives through For You, Following and its
+    author's own feed — each appearance is a separate row on the server."""
+    cache = _cache(tmp_path)
+    client = FakeClient([HOME, USER])
+    run_round(client, fetch=lambda feed: tweets(2), cache=cache)
+    assert [(cid, len(t)) for cid, t in client.pushed] == [('foryou', 2), ('novoreorx', 2)]
 
 
 # --- config -------------------------------------------------------------------

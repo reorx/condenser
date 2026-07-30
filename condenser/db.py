@@ -38,7 +38,7 @@ MESSAGES_OPTIONAL_FIELDS = {
 # Bumped when condenser's own table shapes change; recorded in app_meta on init so a
 # future startup can detect an upgrade and run a migration. Telememo manages its own
 # table migrations separately (init_db optional_fields / ALTER TABLE).
-SCHEMA_VERSION = 10
+SCHEMA_VERSION = 11
 
 
 class CondenserBaseModel(Model):
@@ -344,6 +344,30 @@ class XAttribute(CondenserBaseModel):
         table_name = 'x_attributes'
 
 
+class XFollowing(CondenserBaseModel):
+    """The accounts the user follows on X (v11), as pushed by the probe.
+
+    The Following timeline carries injected ads that are structurally
+    indistinguishable from ordinary tweets — bird dumps the tweet result object,
+    not the timeline entry, so ``promotedMetadata`` never reaches us (measured:
+    ``promoted`` / ``advertiser`` / ``socialContext`` hit 0/20). What *is* reliable
+    is the author: in a 100-entry sample the follow list caught 7 of 7 ads with no
+    false positive.
+
+    A table rather than a JSON blob in ``app_meta`` because every ingest round
+    reads it, and because "is this author someone I follow" is a zero-cost prior
+    channel A (``authors.py``) is currently blind to.
+    """
+
+    handle = CharField(primary_key=True)  # lowercased — the feed's author handle is matched against this
+    user_id = CharField(null=True)  # numeric id; survives a rename, unlike the handle
+    name = TextField(null=True)  # display name
+    synced_at = DateTimeField()  # when this row was last confirmed present
+
+    class Meta:
+        table_name = 'x_following'
+
+
 CONDENSER_TABLES = [
     Subscription,
     KeywordFilter,
@@ -360,6 +384,7 @@ CONDENSER_TABLES = [
     ItemFeedback,
     XEmbedding,
     XAttribute,
+    XFollowing,
 ]
 
 
@@ -1090,17 +1115,16 @@ def enabled_x_subscriptions() -> list[Subscription]:
     )
 
 
-def enabled_x_feeds(feed: Optional[str] = None, include_foryou: bool = False) -> list[str]:
-    """Enabled X feed keys for a query scope (empty = nothing to read).
+def enabled_x_feeds(feed: Optional[str] = None) -> list[str]:
+    """Enabled X feed keys, optionally narrowed to one (empty = nothing to read).
 
-    For You is opt-in: it only joins when the caller asks for it by name or sets
-    ``include_foryou`` (the X-scoped views) — see condenser/sources/x.py for why.
+    Which of them the *aggregate* timeline admits is a per-feed setting the user
+    can change, so that rule lives with the provider (``sources/x.py:scope``) and
+    not here — this used to hardcode "everything except For You".
     """
     ids = [s.channel_id for s in enabled_x_subscriptions()]
     if feed is not None:
         return [c for c in ids if c == feed]
-    if not include_foryou:
-        return [c for c in ids if c != FORYOU_FEED]
     return ids
 
 
@@ -1160,6 +1184,51 @@ def x_counts() -> tuple[int, int]:
 
 def x_feed_item_count(channel_id: str) -> int:
     return XFeedItem.select().where(XFeedItem.channel_id == channel_id).count()
+
+
+# --- x followed accounts (v11) ------------------------------------------------
+
+# When the last follow-list sync happened. Deliberately *not* derived from
+# max(synced_at): a sync that produced zero rows is still a sync, and reading the
+# rows would make an empty list look permanently stale and re-crawl every round.
+FOLLOWING_SYNCED_META_KEY = 'x_following_synced_at'
+
+
+def replace_x_following(rows: list[dict], synced_at: datetime) -> int:
+    """Swap the whole follow list for this one, in one transaction.
+
+    Full replacement rather than a merge because the point of the list is who you
+    follow *now* — an account you unfollowed has to disappear, and no incremental
+    update can express a deletion the probe never mentions.
+    """
+    with tdb.db.atomic():
+        XFollowing.delete().execute()
+        if rows:
+            XFollowing.insert_many([{**r, 'synced_at': synced_at} for r in rows]).execute()
+        set_meta(FOLLOWING_SYNCED_META_KEY, synced_at.isoformat(sep=' ', timespec='seconds'))
+    return len(rows)
+
+
+def x_following_handles() -> set[str]:
+    return {row.handle for row in XFollowing.select(XFollowing.handle)}
+
+
+def x_following_user(handle: str) -> Optional[XFollowing]:
+    return XFollowing.get_or_none(XFollowing.handle == handle)
+
+
+def x_following_count() -> int:
+    return XFollowing.select().count()
+
+
+def x_following_synced_at() -> Optional[datetime]:
+    raw = get_meta(FOLLOWING_SYNCED_META_KEY)
+    if not raw:
+        return None
+    try:
+        return datetime.fromisoformat(raw)
+    except ValueError:
+        return None
 
 
 # --- x embeddings + verdicts (v8) --------------------------------------------

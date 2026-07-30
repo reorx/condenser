@@ -1,0 +1,249 @@
+[
+  {
+    "id": "2082295609198023119",
+    "text": "我wifi ssid就是8011",
+    "createdAt": "Wed Jul 29 02:42:15 +0000 2026",
+    "replyCount": 0,
+    "retweetCount": 0,
+    "likeCount": 0,
+    "conversationId": "2082295609198023119",
+    "author": {
+      "username": "_____cv_e__",
+      "name": "A|I"
+    },
+    "authorId": "69778259",
+    "quotedTweet": {
+      "id": "2082045432658858381",
+      "text": "와이파이 비밀번호를\n'11333355555577777777' 으로\n정하고 누가 물어보면 '하나 둘 셋 넷 다섯\n여섯 일곱 여덟'이라고 하기",
+      "createdAt": "Tue Jul 28 10:08:08 +0000 2026",
+      "replyCount": 13,
+      "retweetCount": 3680,
+      "likeCount": 23911,
+      "conversationId": "2082045432658858381",
+      "author": {
+        "username": "Ed5JelrpAd93177",
+        "name": "해줘"
+      },
+      "authorId": "1773119589062418432"
+    }
+  },
+  {
+    "id": "2082295499621638490",
+    "text": "SLOP COP https://t.co/HW8mLzOB0K",
+    "createdAt": "Wed Jul 29 02:41:48 +0000 2026",
+    "replyCount": 5,
+    "retweetCount": 0,
+    "likeCount": 25,
+    "conversationId": "2082295499621638490",
+    "author": {
+      "username": "thdxr",
+      "name": "dax"
+    },
+    "authorId": "2870102861",
+    "media": [
+      {
+        "type": "photo",
+        "url": "https://pbs.twimg.com/media/HOXMt8mXoAAFGEz.jpg",
+        "width": 2040,
+        "height": 726,
+        "previewUrl": "https://pbs.twimg.com/media/HOXMt8mXoAAFGEz.jpg:small"
+      }
+    ]
+  },
+  {
+    "id": "2082295326610956305",
+    "text": "我之前一直很烦 macOS 这样的操作：双击压缩包直接在旁边解压缩完成。因为习惯了想要先看一眼压缩包内容。 后来被强迫了很久，居然习惯了，现在觉得这样挺好 https://t.co/ZVu06YxLdv",
+    "createdAt": "Wed Jul 29 02:41:07 +0000 2026",
+    "replyCount": 0,
+    "retweetCount": 0,
+    "likeCount": 0,
+    "conversationId": "2082295326610956305",
+    "author": {
+      "username": "scavin",
+      "name": "scavin"
+    },
+    "authorId": "798478",
+    "media": [
+      {
+        "type": "video",
+        "url": "https://pbs.twimg.com/amplify_video_thumb/2082295229433151488/img/iRnWvVWjD4d2gpSu.jpg",
+        "width": 1040,
+        "height": 528,
+        "previewUrl": "https://pbs.twimg.com/amplify_video_thumb/2082295229433151488/img/iRnWvVWjD4d2gpSu.jpg:small",
+        "videoUrl": "https://video.twimg.com/amplify_video/2082295229433151488/vid/avc1/1040x528/0sdSIYRMI5AWT7as.mp4?tag=14",
+        "durationMs": 6640
+      }
+    ]
+  },
+  {
+    "id": "2082294996087246945",
+    "text": "引用作为公开回复下：\n\n一个人是如何发展到同时支持 5 个端的软件开发的，希望对各位独立开发者有所启发。\n\n其实很长时间 Minttr 只有 Web 端，而且对于我自己也够用了。我这样使用了近一年。随着使用时间的越来越多，会遇到越来越多次地想要使用 iOS 端（我是 iPhone 用户）\n\n因为总会遇到一些下班路上、周末地铁时间等场景想要记录下一些东西。无论是自己的想法，还是看到的某个有意思的网站或文章。\n\n于是就自然而然地开发了 iOS 端。\n\n但随着用户的增多，我们有了一些使用 Android 的用户。Mac app 也是一直在路线图中，因为桌面是个很核心的使用场景（于我自己来说）。\n\n于是就有了这么多的端。\n\n这在以前对于一个人来说，需要花费很多的精力，而我在周末只能利用几个小时的时间迭代两三个个小 feature 和体验优化，更不用说这么多端的开发了。\n\n但随着 AI Coding 的能力越来越强，更明显地，有了 Claude Fable 5 之后，再加上多端技术同构，但又针对不同端进行单独的体验优化（这也是我更感兴趣和擅长的），于是一个人开发并迭代这些端，完全可行。\n\n最近的日常迭代和 Fable 5 的合作也是越来越熟练，经常是一个优化需求，它就帮我把三端都做好了。当然，技术同构也帮了很大的忙。",
+    "createdAt": "Wed Jul 29 02:39:48 +0000 2026",
+    "replyCount": 0,
+    "retweetCount": 0,
+    "likeCount": 0,
+    "conversationId": "2082294996087246945",
+    "author": {
+      "username": "ZaynHao",
+      "name": "Zayn Hao"
+    },
+    "authorId": "854722070101360641",
+    "quotedTweet": {
+      "id": "2082101359776858360",
+      "text": "@ZaynHao @minttrapp 很猛，想要了解下你同时支持 Mac 端和 Web 应用的考虑是什么？一般来说只要用原生应用(Mac / iOS / Android)，加上 Chrome 扩展就够了吧",
+      "createdAt": "Tue Jul 28 13:50:22 +0000 2026",
+      "replyCount": 0,
+      "retweetCount": 0,
+      "likeCount": 2,
+      "conversationId": "2082068951413199031",
+      "inReplyToStatusId": "2082068951413199031",
+      "author": {
+        "username": "kevinma_dev_zh",
+        "name": "Kevin Ma"
+      },
+      "authorId": "1783506872290664448"
+    }
+  },
+  {
+    "id": "2082294787416416330",
+    "text": "@StarKnight 就是个马屁精，小嘴叭叭的，活却干得一般般",
+    "createdAt": "Wed Jul 29 02:38:59 +0000 2026",
+    "replyCount": 0,
+    "retweetCount": 0,
+    "likeCount": 0,
+    "conversationId": "2082266678499627490",
+    "inReplyToStatusId": "2082266678499627490",
+    "author": {
+      "username": "iamcheyan",
+      "name": "徹言"
+    },
+    "authorId": "345437084"
+  },
+  {
+    "id": "2082266678499627490",
+    "text": "Gemini在回答问题时有过于乐观、偏向附和的倾向。怪不得被人叫做美国豆包……",
+    "createdAt": "Wed Jul 29 00:47:17 +0000 2026",
+    "replyCount": 3,
+    "retweetCount": 1,
+    "likeCount": 6,
+    "conversationId": "2082266678499627490",
+    "author": {
+      "username": "StarKnight",
+      "name": "StarKnight"
+    },
+    "authorId": "8956502"
+  },
+  {
+    "id": "2082260430425358626",
+    "text": "2026 的 1000km https://t.co/VpEMr9HC3I",
+    "createdAt": "Wed Jul 29 00:22:27 +0000 2026",
+    "replyCount": 0,
+    "retweetCount": 0,
+    "likeCount": 0,
+    "conversationId": "1964259519556686186",
+    "inReplyToStatusId": "2048332765767291222",
+    "author": {
+      "username": "zdyxry",
+      "name": "yiran"
+    },
+    "authorId": "714044918813986816",
+    "media": [
+      {
+        "type": "photo",
+        "url": "https://pbs.twimg.com/media/HOWsvgdaMAE6W4q.jpg",
+        "width": 2040,
+        "height": 1656,
+        "previewUrl": "https://pbs.twimg.com/media/HOWsvgdaMAE6W4q.jpg:small"
+      }
+    ]
+  },
+  {
+    "id": "2081743431383294094",
+    "text": "KBW2026 with Upbit: Asia's Premier Crypto Event. \n🇰🇷 Seoul: Sep 29 - Oct 1",
+    "createdAt": "Mon Jul 27 14:08:05 +0000 2026",
+    "replyCount": 0,
+    "retweetCount": 0,
+    "likeCount": 3,
+    "conversationId": "2081743431383294094",
+    "author": {
+      "username": "kbwofficial",
+      "name": "KBW2026"
+    },
+    "authorId": "1175951294915178496"
+  },
+  {
+    "id": "2056311171083379106",
+    "text": "小地球儀VPN\n你的隐私 · 我的守护\n一键开通 · 全球无界畅连",
+    "createdAt": "Mon May 18 09:49:22 +0000 2026",
+    "replyCount": 127,
+    "retweetCount": 66,
+    "likeCount": 1228,
+    "conversationId": "2056311171083379106",
+    "author": {
+      "username": "PalantirVPN",
+      "name": "PalantirVPN"
+    },
+    "authorId": "1977572736915660801"
+  },
+  {
+    "id": "2048332765767291222",
+    "text": "2000km 🏃‍♂️🏃‍♂️ https://t.co/5S79TsiF8Y",
+    "createdAt": "Sun Apr 26 09:26:02 +0000 2026",
+    "replyCount": 2,
+    "retweetCount": 0,
+    "likeCount": 1,
+    "conversationId": "1964259519556686186",
+    "inReplyToStatusId": "1984401636601839841",
+    "author": {
+      "username": "zdyxry",
+      "name": "yiran"
+    },
+    "authorId": "714044918813986816",
+    "media": [
+      {
+        "type": "photo",
+        "url": "https://pbs.twimg.com/media/HG0jymubYAAF4Xp.jpg",
+        "width": 922,
+        "height": 2048,
+        "previewUrl": "https://pbs.twimg.com/media/HG0jymubYAAF4Xp.jpg:small"
+      }
+    ]
+  },
+  {
+    "id": "2045235707002720385",
+    "text": "Express your view on gold, copper, and more with CME Group futures and options, available for trading around-the-clock.",
+    "createdAt": "Fri Apr 17 20:19:25 +0000 2026",
+    "replyCount": 169,
+    "retweetCount": 171,
+    "likeCount": 1587,
+    "conversationId": "2045235707002720385",
+    "author": {
+      "username": "IBKR",
+      "name": "Interactive Brokers"
+    },
+    "authorId": "264153788"
+  },
+  {
+    "id": "1964259519556686186",
+    "text": "锚点啊 https://t.co/8CqK8Afx4Z",
+    "createdAt": "Sat Sep 06 09:28:58 +0000 2025",
+    "replyCount": 2,
+    "retweetCount": 0,
+    "likeCount": 5,
+    "conversationId": "1964259519556686186",
+    "author": {
+      "username": "zdyxry",
+      "name": "yiran"
+    },
+    "authorId": "714044918813986816",
+    "media": [
+      {
+        "type": "photo",
+        "url": "https://pbs.twimg.com/media/G0JznqWawAA4nmW.jpg",
+        "width": 984,
+        "height": 1749,
+        "previewUrl": "https://pbs.twimg.com/media/G0JznqWawAA4nmW.jpg:small"
+      }
+    ]
+  }
+]

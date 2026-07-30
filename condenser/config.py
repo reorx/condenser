@@ -49,6 +49,20 @@ class Settings(BaseSettings):
     # the probe's cadence *is* the archive growth rate — the capacity lever.
     condenser_x_home_count: int = 20
     condenser_x_user_count: int = 10
+    # Following is a stable window, not a firehose, so this is a *ceiling* rather
+    # than a growth rate: measured at ~100-200 tweets/day, i.e. 1-2 per 15-minute
+    # round with a morning peak around 7. 50 is ~7x headroom.
+    condenser_x_following_count: int = 50
+    # A Following entry older than this gets its body archived but no feed row.
+    # X pads the timeline with a thread's ancestors (months old, flattened into
+    # ordinary entries by bird) and they would otherwise land in timeline history
+    # where nobody sees them and the unread badge still counts them. Measured on a
+    # 100-entry sample: 12h and 24h discard exactly the same entries, so the line
+    # sits in a gap rather than through the middle of the feed.
+    condenser_x_following_max_age_hours: int = 24
+    # How often the probe re-crawls the followed-accounts list (~15 bird requests
+    # for 732 accounts, so daily is plenty — people do not follow in bursts).
+    condenser_x_following_sync_hours: int = 24
 
     # --- embeddings (condenser/embedding.py) ---
     # OpenAI-compatible endpoint; the provider lives entirely in these four vars so
