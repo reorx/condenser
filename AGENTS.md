@@ -321,9 +321,13 @@ consequences, both accepted (plan decision 2): a tweet's metrics **freeze at fir
 (the server refreshes them per push; an on-demand refresh is the follow-up), and if the
 server's data is ever wiped the cache would suppress the restoring re-push — hence
 `--no-cache`. Recording happens *after* a successful push, never before. CLI:
-`condenser-probe check | run [--no-cache] | watch --interval`; scheduling is external
-(launchd example in the package, now every 15 min; `run` = one round). Tests stub bird + the
-server, so `uv run pytest` needs no X account.
+`condenser-probe check | run [--no-cache] | watch`; **scheduling is in-process since
+2026-07-30** (`scheduler.py`, APScheduler): `watch` is the long-running mode launchd merely
+keeps alive (KeepAlive plist example in the package), running For You hourly at :05 and
+Following + account feeds at :00/:15/:30/:45 — staggered minute lanes plus a one-worker
+executor, so two bird calls never overlap, and missed firings coalesce into one catch-up
+round per task at wake. On start `watch` runs one full round; `run` = one full round for
+cron-style setups. Tests stub bird + the server, so `uv run pytest` needs no X account.
 
 ## iOS app (`ios/`, monorepo)
 

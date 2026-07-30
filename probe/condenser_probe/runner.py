@@ -8,7 +8,7 @@ what to *skip* — losing it costs a redundant push, never data. See cache.py.
 
 import logging
 from dataclasses import dataclass
-from typing import Callable, Optional
+from typing import Callable, Iterable, Optional
 
 from .bird import BirdError, fetch_feed, fetch_following_users
 from .cache import SeenCache
@@ -37,12 +37,20 @@ def run_round(
     timeout: float = 120.0,
     fetch_following: Callable[[], list] = None,
     cache: Optional[SeenCache] = None,
+    kinds: Optional[Iterable[str]] = None,
 ):
-    """Fetch + push every enabled feed. One feed's failure never sinks the others."""
+    """Fetch + push every enabled feed. One feed's failure never sinks the others.
+
+    ``kinds`` scopes the round to a slice of probe-config (the scheduler runs
+    For You and the rest on different cadences); None means every feed.
+    """
     fetch = fetch or (lambda feed: fetch_feed(feed, bird_bin=bird_bin, timeout=timeout))
     fetch_following = fetch_following or (lambda: fetch_following_users(bird_bin=bird_bin))
     config = client.probe_config()
     feeds = config.get('feeds') or []
+    if kinds is not None:
+        kinds = set(kinds)
+        feeds = [f for f in feeds if f.get('kind') in kinds]
 
     # Before the feeds, not after: the server drops Following entries whose author
     # is not in this list, so a first round that ingested first would read its own
@@ -51,7 +59,8 @@ def run_round(
         _sync_following(client, fetch_following)
 
     if not feeds:
-        log.info('nothing subscribed on the server — idle round')
+        scope = f' for kinds {sorted(kinds)}' if kinds is not None else ' on the server'
+        log.info('nothing subscribed%s — idle round', scope)
         return []
 
     outcomes = []

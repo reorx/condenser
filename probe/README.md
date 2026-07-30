@@ -65,9 +65,9 @@ Env equivalents (they win over the file): `CONDENSER_PROBE_SERVER_URL`,
 
 ```bash
 uv run condenser-probe check      # verify bird's session + the server token
-uv run condenser-probe run        # one round (what launchd/cron should call)
-uv run condenser-probe run --no-cache          # ignore the seen cache, push everything
-uv run condenser-probe watch --interval 900    # foreground loop, for setup
+uv run condenser-probe run        # one full round (all feeds), then exit
+uv run condenser-probe run --no-cache   # ignore the seen cache, push everything
+uv run condenser-probe watch      # long-running scheduler (what launchd keeps alive)
 ```
 
 Subscribe to feeds on the server's Subscriptions page (X block): **For You**
@@ -82,12 +82,20 @@ marker at all, and "is this author someone I follow" is the only reliable test.
 The list is refreshed about once a day; the server decides, so nothing schedules
 it here.
 
-## Scheduling (launchd)
+## Scheduling (launchd + in-process)
 
-`run` is a single round that exits, which is what you want on a laptop: sleeping
-just misses rounds. Suggested cadence: **one round every 15 minutes** — Following
-arrives at ~100-200 tweets/day, and the seen cache makes a quiet round nearly
-free.
+The feeds don't share one cadence, so `watch` schedules them itself (APScheduler)
+and launchd only keeps the process alive:
+
+| task | feeds | when |
+|---|---|---|
+| `foryou` | For You (`home`) | hourly at :05 — every call is ~n brand-new tweets, so the cadence *is* the ingest volume |
+| `feeds` | Following + accounts | every 15 min at :00/:15/:30/:45 — stable windows, the seen cache makes a quiet round nearly free |
+
+The minute lanes are staggered, and a one-worker executor serializes the tasks,
+so two bird calls never run at the same time — including right after wake, when
+the missed firings coalesce into one catch-up round per task. On start, `watch`
+runs one full round so For You doesn't wait for its first :05.
 
 ```bash
 cp com.condenser.probe.plist.example ~/Library/LaunchAgents/com.condenser.probe.plist
@@ -96,7 +104,8 @@ launchctl load ~/Library/LaunchAgents/com.condenser.probe.plist
 tail -f ~/Library/Logs/condenser-probe.log
 ```
 
-cron works equally well: `*/15 * * * * cd /path/to/probe && uv run condenser-probe run >> ~/condenser-probe.log 2>&1`
+`run` is still a single full round that exits, for cron-style setups:
+`*/15 * * * * cd /path/to/probe && uv run condenser-probe run >> ~/condenser-probe.log 2>&1`
 
 ## Tests
 

@@ -1,17 +1,21 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  launchd agent for condenser-probe: one round every 15 minutes.
+  launchd agent for condenser-probe: keep `condenser-probe watch` running.
+
+  launchd only supervises the process; the timing lives inside the probe
+  (scheduler.py — For You hourly at :05, the other feeds at :00/:15/:30/:45,
+  staggered and serialized so two bird calls never run at once).
 
   Copy to ~/Library/LaunchAgents/com.condenser.probe.plist, replace the two
   /PATH/TO paths (and the uv location if it is not in /opt/homebrew/bin), then:
     launchctl load ~/Library/LaunchAgents/com.condenser.probe.plist
 
-  RunAtLoad fires a round on login; StartCalendarInterval with four entries
-  fires at :00/:15/:30/:45. Firings missed while the Mac sleeps coalesce into
-  one catch-up round at wake, which the probe needs nothing extra to handle.
-  (Deliberately NOT StartInterval: its timer can get pended across a sleep
-  cycle and never fire again — observed 2026-07-26, runs=1 with a stuck
-  "pended nondemand spawn = interval" while the Mac was awake for hours.)
+  Sleep/wake needs nothing here: the process survives sleep, and APScheduler
+  coalesces the missed firings into one catch-up round per task at wake.
+  ThrottleInterval keeps a misconfigured probe (exit 2) from restart-looping
+  every 10 seconds. (History: this used to be StartCalendarInterval firing
+  `run` every 15 minutes — deliberately not StartInterval, whose timer can get
+  pended across a sleep cycle and never fire again, observed 2026-07-26.)
 -->
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -24,7 +28,7 @@
         <string>/opt/homebrew/bin/uv</string>
         <string>run</string>
         <string>condenser-probe</string>
-        <string>run</string>
+        <string>watch</string>
     </array>
 
     <key>WorkingDirectory</key>
@@ -37,16 +41,14 @@
         <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
     </dict>
 
-    <key>StartCalendarInterval</key>
-    <array>
-        <dict><key>Minute</key><integer>0</integer></dict>
-        <dict><key>Minute</key><integer>15</integer></dict>
-        <dict><key>Minute</key><integer>30</integer></dict>
-        <dict><key>Minute</key><integer>45</integer></dict>
-    </array>
-
     <key>RunAtLoad</key>
     <true/>
+
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>ThrottleInterval</key>
+    <integer>60</integer>
 
     <key>StandardOutPath</key>
     <string>/PATH/TO/Library/Logs/condenser-probe.log</string>

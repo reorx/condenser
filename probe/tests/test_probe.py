@@ -137,6 +137,43 @@ def test_empty_fetch_is_not_pushed():
     assert outcomes[0].ok and client.pushed == []
 
 
+# --- per-kind rounds (the scheduler's view) -------------------------------------
+
+
+FOLLOWING = {'channel_id': 'following', 'kind': 'following', 'handle': None, 'n': 50}
+
+
+def test_a_round_can_be_scoped_to_feed_kinds():
+    """The scheduler runs For You and the rest on different cadences, so a round
+    must be able to fetch only its own slice of probe-config."""
+    client = FakeClient([HOME, FOLLOWING, USER])
+    outcomes = run_round(client, fetch=lambda feed: tweets(2), kinds={'following', 'user'})
+    assert [o.channel_id for o in outcomes] == ['following', 'novoreorx']
+    assert [cid for cid, _ in client.pushed] == ['following', 'novoreorx']
+
+
+def test_no_kind_filter_means_every_feed():
+    client = FakeClient([HOME, FOLLOWING, USER])
+    outcomes = run_round(client, fetch=lambda feed: tweets(2))
+    assert [o.channel_id for o in outcomes] == ['foryou', 'following', 'novoreorx']
+
+
+def test_a_scoped_round_with_no_matching_feeds_is_idle():
+    client = FakeClient([USER])
+    calls = []
+    assert run_round(client, fetch=lambda feed: calls.append(feed) or [], kinds={'home'}) == []
+    assert calls == []
+
+
+def test_a_scoped_round_still_obeys_a_follow_sync_request():
+    """The server decides when the list is stale; whichever round sees the flag
+    first should honor it rather than wait for the following round's slot."""
+    users = [{'id': '1', 'username': 'alice'}]
+    client = FakeClient([HOME, FOLLOWING], sync_following=True)
+    run_round(client, fetch=lambda feed: tweets(2), fetch_following=lambda: users, kinds={'home'})
+    assert client.followed == users
+
+
 # --- the follow list ----------------------------------------------------------
 
 

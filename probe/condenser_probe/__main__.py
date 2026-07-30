@@ -1,20 +1,21 @@
 """CLI entry point: ``condenser-probe check | run | watch``.
 
-Timing is intentionally external (launchd / cron calling ``run``) so a laptop that
-sleeps just misses rounds instead of drifting; ``watch`` exists for a foreground
-run while setting things up.
+``watch`` is the long-running mode launchd keeps alive: an in-process scheduler
+(see scheduler.py) runs For You hourly and the other feeds every 15 minutes, on
+staggered minutes. ``run`` stays a single full round for cron-style setups and
+manual pushes (e.g. ``run --no-cache`` after a server rollback).
 """
 
 import argparse
 import logging
 import sys
-import time
 
 from .bird import BirdError, check_auth
 from .cache import SeenCache
 from .client import ProbeClient, ServerError
 from .config import ConfigError, load_settings
 from .runner import run_round
+from .scheduler import TASKS, build_scheduler
 
 log = logging.getLogger('condenser_probe')
 
@@ -48,27 +49,36 @@ def _check(settings) -> int:
     return 1 if failures else 0
 
 
-def _run_once(settings, cache=None) -> int:
+def _run_once(settings, cache=None, kinds=None) -> int:
     with ProbeClient(settings.api_base, settings.token, settings.timeout) as client:
         try:
-            outcomes = run_round(client, bird_bin=settings.bird_bin, timeout=settings.timeout, cache=cache)
+            outcomes = run_round(client, bird_bin=settings.bird_bin, timeout=settings.timeout, cache=cache, kinds=kinds)
         except ServerError as e:
             log.error('could not read probe-config: %s', e)
             return 1
     return 1 if any(not o.ok for o in outcomes) else 0
 
 
-def _watch(settings, interval: int, cache=None) -> int:
-    while True:
-        _run_once(settings, cache)
-        log.info('sleeping %ds', interval)
-        time.sleep(interval)
+def _watch(settings, cache=None) -> int:
+    def run_task(task):
+        log.info('task %s: round for kinds %s', task.name, ','.join(task.kinds))
+        _run_once(settings, cache, kinds=set(task.kinds))
+
+    for task in TASKS:
+        log.info('schedule: %s (%s) at minutes %s', task.name, ','.join(task.kinds), task.minutes)
+    # One full round up front: the process just (re)started — possibly at login —
+    # and For You should not wait up to an hour for its first slot.
+    _run_once(settings, cache)
+    try:
+        build_scheduler(run_task).start()
+    except KeyboardInterrupt:
+        pass
+    return 0
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(prog='condenser-probe', description=__doc__)
     parser.add_argument('command', choices=('check', 'run', 'watch'), nargs='?', default='run')
-    parser.add_argument('--interval', type=int, default=900, help='seconds between rounds in watch mode')
     parser.add_argument('--log-level', default=None)
     parser.add_argument(
         '--no-cache',
@@ -91,7 +101,7 @@ def main() -> int:
         return _check(settings)
     cache = None if args.no_cache else SeenCache()
     if args.command == 'watch':
-        return _watch(settings, args.interval, cache)
+        return _watch(settings, cache)
     return _run_once(settings, cache)
 
 
