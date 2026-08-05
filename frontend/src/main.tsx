@@ -6,6 +6,7 @@ import { BrowserRouter } from 'react-router-dom';
 import App from './App';
 import './index.css';
 import { Toaster } from './components/ui/sonner';
+import { initPwaWindow } from './lib/pwa';
 import { queryClient } from './lib/queryClient';
 import { ThemeProvider } from './lib/theme';
 import { UnreadIndicatorProvider } from './lib/unreadIndicator';
@@ -15,6 +16,9 @@ import { UnreadIndicatorProvider } from './lib/unreadIndicator';
 if (import.meta.env.DEV) {
   import('react-grab');
 }
+
+// Installed as a desktop PWA → snap the window to a phone-sized column.
+initPwaWindow();
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
