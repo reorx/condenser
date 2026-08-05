@@ -31,13 +31,13 @@ function makeTweet(over: Partial<XTweet> = {}): XTweet {
   };
 }
 
-function makeItem(over: Partial<XTweet> = {}): TimelineItem {
+function makeItem(over: Partial<XTweet> = {}, read = true): TimelineItem {
   const x = makeTweet(over);
   return {
     source: 'x',
     key: `x:${x.id}`,
     datetime: x.feed_kind === 'home' ? x.first_seen_at : (x.created_at ?? x.first_seen_at),
-    is_read: true,
+    is_read: read,
     is_saved: false,
     x,
   };
@@ -113,6 +113,24 @@ describe('XCard', () => {
     wrap(<XCard item={makeItem({ metrics: null })} />);
 
     expect(screen.getByLabelText('More like this')).toBeInTheDocument();
+  });
+
+  it('marks the three read states: unread = sky dot, pending sync = green dot, read = no dot', () => {
+    const unread = wrap(<XCard item={makeItem({}, false)} />);
+    expect(unread.container.querySelector('span.rounded-full')).toHaveClass('bg-sky-500');
+    unread.unmount();
+
+    const item = makeItem({}, false);
+    const pending = wrap(<XCard item={item} pendingKeys={new Set([item.key])} />);
+    const pendingDot = pending.container.querySelector('span.rounded-full');
+    expect(pendingDot).toHaveClass('bg-emerald-500');
+    expect(pendingDot).not.toHaveClass('bg-sky-500');
+    pending.unmount();
+
+    const read = wrap(<XCard item={makeItem()} />);
+    const readDot = read.container.querySelector('span.rounded-full');
+    expect(readDot).not.toHaveClass('bg-sky-500');
+    expect(readDot).not.toHaveClass('bg-emerald-500');
   });
 
   it('renders an X article as a titled card (bird only exposes title + preview text)', () => {

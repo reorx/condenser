@@ -19,6 +19,8 @@ interface Props {
   channelLabel: string;
   /** Attach for scroll-past-to-read; omit in the saved view. Returns a ref cleanup. */
   observe?: (el: Element | null, target: ReadTarget) => (() => void) | void;
+  /** Keys judged read but awaiting server confirmation (green "syncing" state). */
+  pendingKeys?: Set<string>;
 }
 
 function forwardSourceName(msg: DisplayMessage): string | null {
@@ -27,7 +29,7 @@ function forwardSourceName(msg: DisplayMessage): string | null {
   return f?.from_channel_name || f?.from_user_name || f?.post_author || null;
 }
 
-function MessageCardImpl({ item, channelLabel, observe }: Props) {
+function MessageCardImpl({ item, channelLabel, observe, pendingKeys }: Props) {
   const msg = item.telegram!;
   const save = useSaveToggle();
   const { mode } = useUnreadIndicator();
@@ -35,6 +37,8 @@ function MessageCardImpl({ item, channelLabel, observe }: Props) {
   const fwdName = forwardSourceName(msg);
 
   const isActive = open?.key === item.key;
+  // Three read states: pending (judged read, sync unconfirmed) > unread > read.
+  const isPending = pendingKeys?.has(item.key) ?? false;
 
   const attach = useCallback(
     (el: HTMLElement | null) => {
@@ -61,7 +65,13 @@ function MessageCardImpl({ item, channelLabel, observe }: Props) {
       data-read={item.is_read ? '' : undefined}
       className={cn(
         'group relative border-b px-4 py-3 transition-colors duration-500 sm:px-5',
-        mode === 'divider' && !item.is_read ? 'border-sky-500 dark:border-sky-400' : 'border-border/50',
+        mode !== 'divider'
+          ? 'border-border/50'
+          : isPending
+            ? 'border-emerald-500 dark:border-emerald-400'
+            : !item.is_read
+              ? 'border-sky-500 dark:border-sky-400'
+              : 'border-border/50',
         isActive && 'bg-muted/40',
       )}
     >
@@ -75,7 +85,7 @@ function MessageCardImpl({ item, channelLabel, observe }: Props) {
               aria-hidden
               className={cn(
                 'absolute top-1/2 right-full mr-1.5 size-2 -translate-y-1/2 rounded-full transition-colors duration-500',
-                !item.is_read && 'bg-sky-500 dark:bg-sky-400',
+                isPending ? 'bg-emerald-500 dark:bg-emerald-400' : !item.is_read && 'bg-sky-500 dark:bg-sky-400',
               )}
             />
           )}

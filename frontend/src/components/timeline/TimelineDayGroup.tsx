@@ -12,10 +12,12 @@ interface TimelineDayGroupProps {
   labels: Map<number, string>;
   /** Scroll-past-to-read observer, threaded down to each card. */
   observe?: (el: Element | null, target: ReadTarget) => (() => void) | void;
+  /** Keys judged read but awaiting server confirmation (green "syncing" state). */
+  pendingKeys?: Set<string>;
 }
 
 /** A day's worth of timeline items under a static date divider, dispatched by source. */
-export function TimelineDayGroup({ items, labels, observe }: TimelineDayGroupProps) {
+export function TimelineDayGroup({ items, labels, observe, pendingKeys }: TimelineDayGroupProps) {
   return (
     <section>
       {/* Date divider: a full-width rule between days (not a floating sticky bar) with the
@@ -36,11 +38,12 @@ export function TimelineDayGroup({ items, labels, observe }: TimelineDayGroupPro
               item={it}
               channelLabel={labels.get(it.telegram.channel_id) ?? `Channel ${it.telegram.channel_id}`}
               observe={observe}
+              pendingKeys={pendingKeys}
             />
           ) : it.hn ? (
-            <HnCard key={it.key} item={it} observe={observe} />
+            <HnCard key={it.key} item={it} observe={observe} pendingKeys={pendingKeys} />
           ) : it.x ? (
-            <XCard key={it.key} item={it} observe={observe} />
+            <XCard key={it.key} item={it} observe={observe} pendingKeys={pendingKeys} />
           ) : null,
         )}
       </div>

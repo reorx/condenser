@@ -177,8 +177,19 @@ React Router v7, **pnpm**. Backend `app.py` auto-serves `frontend/dist` at `/` i
 - **Auth gate** = the `tg-status` query: 401 → AppLogin, else `status` drives TgLogin/main
   (`App.tsx`, `useTgStatus`). Global 401 handler re-runs tg-status but **must skip tg-status
   itself** or the gate refetch-loops (`lib/queryClient.ts`).
-- **Scroll-past-to-read** via IntersectionObserver + debounced batch `POST /api/read` +
-  optimistic cache (`useScrollToRead`); window is the scroll container (IO root = viewport).
+- **Scroll-past-to-read** via IntersectionObserver + debounced batch `POST /api/read`
+  (`useScrollToRead`); window is the scroll container (IO root = viewport). Since 2026-08-05
+  ("看过即读", both platforms): a card is judged read once the user has scrolled in the view
+  (armed) AND its **bottom edge is at/above the viewport bottom** — fully seen, not scrolled
+  away. Three states: unread = sky dot / **pending sync = emerald dot** (`pendingKeys`, also
+  the divider-mode border colors) / read = none. The cache flip + badge decrement run only on
+  server confirmation; a failed batch stays green and retries at debounce×5 (the lit green dot
+  IS the "sync is stuck" signal). Arming does a one-shot manual `getBoundingClientRect` sweep
+  of observed elements (IO won't re-fire without an intersection change), and the IO uses a
+  dense 0→1/0.05 threshold ladder so cards taller than the viewport still fire on the
+  bottom-edge crossing. `disarm()` re-gates after `jumpToNewest`; a page unload drops the
+  unsynced queue — honest by design, those items reload as unread. iOS mirrors the semantics
+  (Kit `ScrollReadModel` + `ReadReporter.unsyncedKeys`).
 - Timeline items carry only `channel_id` → joined to titles client-side (`useChannelLabels`).
 - **Reading-view shell**: `PageHeader` (`components/PageHeader.tsx`) is the unified top bar for
   TimelineView + RecordsView — leading icon (`ChannelAvatar` for a channel, `IconBadge`-wrapped

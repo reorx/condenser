@@ -66,6 +66,24 @@ function wrap(ui: ReactNode) {
 }
 
 describe('HnCard', () => {
+  it('marks the three read states: unread = sky dot, pending sync = green dot, read = no dot', () => {
+    const unread = wrap(<HnCard item={makeItem({}, false)} />);
+    expect(unread.container.querySelector('span.rounded-full')).toHaveClass('bg-sky-500');
+    unread.unmount();
+
+    const item = makeItem({}, false);
+    const pending = wrap(<HnCard item={item} pendingKeys={new Set([item.key])} />);
+    const pendingDot = pending.container.querySelector('span.rounded-full');
+    expect(pendingDot).toHaveClass('bg-emerald-500');
+    expect(pendingDot).not.toHaveClass('bg-sky-500');
+    pending.unmount();
+
+    const read = wrap(<HnCard item={makeItem()} />);
+    const readDot = read.container.querySelector('span.rounded-full');
+    expect(readDot).not.toHaveClass('bg-sky-500');
+    expect(readDot).not.toHaveClass('bg-emerald-500');
+  });
+
   it('links the title to the story URL and shows meta with the day rank', () => {
     wrap(<HnCard item={makeItem()} />);
     const title = screen.getByRole('link', { name: 'A story' });

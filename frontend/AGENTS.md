@@ -118,7 +118,9 @@ Two conventions this list exists to protect:
   `AppShell`, `AppLogin`, `TgLogin`, `AuthorizeView` — the device-authorization page cold-loaded
   by the iOS app; only needs the cookie session, so `App.tsx` renders it before the TG gate).
 - `hooks/` — data + behavior hooks (`useTimeline`, `useSources`, `useSubscriptions`,
-  `useChannelFilter`, `useScrollToRead`, `useNewContent`, `useRefresh`, `useCollapsedSources`
+  `useChannelFilter`, `useScrollToRead` (armed "看过即读" judgement + `pendingKeys` green
+  sync state + confirm-then-flip cache writes — see the root AGENTS.md bullet),
+  `useNewContent`, `useRefresh`, `useCollapsedSources`
   (sidebar collapse persistence), `useHnDisplayMode` (mode helpers + PATCH mutation),
   `useXAggregate` (a whole-timeline X feed's aggregate-mode options + PATCH mutation; invalidates the
   timeline, the calendar and both unread badges, since the admitted set is computed at
@@ -142,7 +144,13 @@ Two conventions this list exists to protect:
   wrapper for HN self-post HTML), `linkify.tsx`, `extractUrls.ts` (shared URL
   regex/extraction for linkify + the detail pane), `itemDetailPane.tsx` (the detail pane's
   context: the open `TimelineItem` envelope), `theme.tsx`, `unreadIndicator.tsx`,
-  `queryClient.ts`, `utils.ts`.
+  `queryClient.ts`, `utils.ts`, `pwa.ts` (standalone-window resize), `swUpdate.ts`
+  (PWA background-update flow: vite-plugin-pwa prompt mode — the SW precaches the app
+  shell so the installed app opens instantly from local cache, a new build found in the
+  background raises a persistent「发现新版本」toast, and confirming activates + reloads;
+  update checks run hourly and on visibilitychange. Wired in `main.tsx` via
+  `virtual:pwa-register`; the SW only exists in production builds, dev is a no-op. The
+  workbox config in `vite.config.ts` denylists `/api` from the SPA navigation fallback).
 
 ## Debugging
 

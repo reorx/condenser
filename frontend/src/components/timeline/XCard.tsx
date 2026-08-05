@@ -25,6 +25,8 @@ interface Props {
   item: TimelineItem;
   /** Attach for scroll-past-to-read; omit in the saved view. Returns a ref cleanup. */
   observe?: (el: Element | null, target: ReadTarget) => (() => void) | void;
+  /** Keys judged read but awaiting server confirmation (green "syncing" state). */
+  pendingKeys?: Set<string>;
 }
 
 /** The text to print as the tweet body, or null when there is nothing left to print.
@@ -48,7 +50,7 @@ function MetricChip({ icon, value }: { icon: React.ReactNode; value: number }) {
   );
 }
 
-function XCardImpl({ item, observe }: Props) {
+function XCardImpl({ item, observe, pendingKeys }: Props) {
   const tweet = item.x!;
   const save = useSaveToggle();
   const { mode } = useUnreadIndicator();
@@ -63,6 +65,8 @@ function XCardImpl({ item, observe }: Props) {
   );
 
   const isActive = open?.key === item.key;
+  // Three read states: pending (judged read, sync unconfirmed) > unread > read.
+  const isPending = pendingKeys?.has(item.key) ?? false;
   const name = tweet.author_name || (tweet.author_handle ? `@${tweet.author_handle}` : 'Unknown');
   const shownAt = tweet.created_at ?? item.datetime;
   // For You sorts by the sighting, not the tweet time — say so in the tooltip so a
@@ -80,7 +84,13 @@ function XCardImpl({ item, observe }: Props) {
       data-read={item.is_read ? '' : undefined}
       className={cn(
         'group relative border-b px-4 py-3 transition-colors duration-500 sm:px-5',
-        mode === 'divider' && !item.is_read ? 'border-sky-500 dark:border-sky-400' : 'border-border/50',
+        mode !== 'divider'
+          ? 'border-border/50'
+          : isPending
+            ? 'border-emerald-500 dark:border-emerald-400'
+            : !item.is_read
+              ? 'border-sky-500 dark:border-sky-400'
+              : 'border-border/50',
         isActive && 'bg-muted/40',
       )}
     >
@@ -91,7 +101,7 @@ function XCardImpl({ item, observe }: Props) {
               aria-hidden
               className={cn(
                 'absolute top-1/2 right-full mr-1.5 size-2 -translate-y-1/2 rounded-full transition-colors duration-500',
-                !item.is_read && 'bg-sky-500 dark:bg-sky-400',
+                isPending ? 'bg-emerald-500 dark:bg-emerald-400' : !item.is_read && 'bg-sky-500 dark:bg-sky-400',
               )}
             />
           )}

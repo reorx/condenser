@@ -70,7 +70,7 @@ export function Timeline({
   emptyLabel,
 }: TimelineProps) {
   const qc = useQueryClient();
-  const observe = useScrollToRead(viewKey);
+  const { observe, pendingKeys, disarm } = useScrollToRead(viewKey);
   const { data: subs } = useSubscriptions();
   const labels = useChannelLabels(subs);
 
@@ -83,6 +83,9 @@ export function Timeline({
 
   function jumpToNewest() {
     window.scrollTo(0, 0);
+    // Back at the top with fresh content: re-gate mark-as-read until the user
+    // scrolls again, or the new first screen would be swept read instantly.
+    disarm();
     // Trim this view's cache to its first page before refetching: refetch then re-pulls
     // just the fresh head instead of replaying every loaded page, and the updated
     // head_cursor re-keys the poll query, which dismisses the banner.
@@ -152,7 +155,7 @@ export function Timeline({
         </button>
       )}
       {groups.map((g) => (
-        <TimelineDayGroup key={g.day} items={g.items} labels={labels} observe={observe} />
+        <TimelineDayGroup key={g.day} items={g.items} labels={labels} observe={observe} pendingKeys={pendingKeys} />
       ))}
 
       <div ref={sentinel} />
