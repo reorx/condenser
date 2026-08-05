@@ -113,9 +113,7 @@ struct XCard: View {
                     .font(.subheadline.weight(.semibold))
                     .lineLimit(1)
                 HStack(spacing: 4) {
-                    if isUnread {
-                        Circle().fill(.tint).frame(width: 6, height: 6)
-                    }
+                    ReadStateDot(item: item, showsUnread: showsUnread)
                     Text(captionText)
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -165,12 +163,6 @@ struct XCard: View {
             return "@\(handle) · \(stamp)"
         }
         return stamp
-    }
-
-    private var isUnread: Bool {
-        showsUnread
-            && !item.isRead
-            && !reader.readReporter.readKeys.contains(item.key)
     }
 }
 

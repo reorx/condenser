@@ -48,6 +48,47 @@ struct ReadReporterTests {
         #expect(api.markReadCalls[0] == ["tg:1:1"])
     }
 
+    @Test("待同步集合：入队即进，服务器确认后才出")
+    func unsyncedUntilConfirmed() async throws {
+        let api = StubAPI()
+        let reporter = ReadReporter(api: api, debounce: .milliseconds(40))
+        reporter.enqueue("tg:1:1")
+        #expect(reporter.unsyncedKeys.contains("tg:1:1"), "还没发出去，绿点亮着")
+        try await Task.sleep(for: .milliseconds(150))
+        #expect(api.markReadCalls.count == 1)
+        #expect(reporter.unsyncedKeys.isEmpty, "服务器确认后熄灭")
+    }
+
+    @Test("同步失败保持待同步，重试成功后才消失")
+    func unsyncedSurvivesFailure() async throws {
+        let api = StubAPI()
+        api.markReadError = APIError.http(status: 500, detail: nil)
+        let reporter = ReadReporter(api: api, debounce: .milliseconds(20))
+        reporter.enqueue("tg:1:1")
+        try await Task.sleep(for: .milliseconds(80))
+        #expect(reporter.unsyncedKeys.contains("tg:1:1"), "失败不熄灭")
+
+        api.markReadError = nil
+        try await Task.sleep(for: .milliseconds(300))
+        #expect(api.markReadCalls.count == 1)
+        #expect(reporter.unsyncedKeys.isEmpty, "退避重试成功后熄灭")
+    }
+
+    @Test("发送期间新入队的条目不被本批的成功误清")
+    func laterEnqueueSurvivesBatchSuccess() async throws {
+        let api = StubAPI()
+        api.markReadDelay = .milliseconds(80)
+        let reporter = ReadReporter(api: api, debounce: .milliseconds(20))
+        reporter.enqueue("tg:1:1")
+        try await Task.sleep(for: .milliseconds(50))  // 首批在途
+        reporter.enqueue("tg:1:2")
+        try await Task.sleep(for: .milliseconds(80))  // 首批已确认
+        #expect(!reporter.unsyncedKeys.contains("tg:1:1"), "本批已确认")
+        #expect(reporter.unsyncedKeys.contains("tg:1:2"), "在途期间新入队的还没发出去")
+        try await Task.sleep(for: .milliseconds(250))
+        #expect(reporter.unsyncedKeys.isEmpty, "下一批也确认后全部熄灭")
+    }
+
     @Test("flushNow 立即发送，不等 debounce")
     func flushNow() async throws {
         let api = StubAPI()

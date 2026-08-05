@@ -27,7 +27,6 @@ struct HnCard: View {
     var showsUnread = true
     var onToggleSaved: () -> Void
 
-    @Environment(ReaderSession.self) private var reader
     @Environment(\.openURL) private var openURL
 
     var body: some View {
@@ -50,9 +49,7 @@ struct HnCard: View {
                     .font(.subheadline.weight(.semibold))
                     .lineLimit(1)
                 HStack(spacing: 4) {
-                    if isUnread {
-                        Circle().fill(.tint).frame(width: 6, height: 6)
-                    }
+                    ReadStateDot(item: item, showsUnread: showsUnread)
                     Text(captionText)
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -121,12 +118,6 @@ struct HnCard: View {
         case .absolute:
             item.datetime.formatted(date: .abbreviated, time: .shortened)
         }
-    }
-
-    private var isUnread: Bool {
-        showsUnread
-            && !item.isRead
-            && !reader.readReporter.readKeys.contains(item.key)
     }
 }
 

@@ -51,9 +51,7 @@ struct MessageCard: View {
                     .font(.subheadline.weight(.semibold))
                     .lineLimit(1)
                 HStack(spacing: 4) {
-                    if isUnread {
-                        Circle().fill(.tint).frame(width: 6, height: 6)
-                    }
+                    ReadStateDot(item: item, showsUnread: showsUnread)
                     Text(source != nil
                         ? "Forwarded by \(reader.channelTitle(for: message)) · \(timestampText)"
                         : timestampText)
@@ -82,12 +80,6 @@ struct MessageCard: View {
     }
 
     private var isSaved: Bool { item.isSaved }
-
-    private var isUnread: Bool {
-        showsUnread
-            && !item.isRead
-            && !reader.readReporter.readKeys.contains(item.key)
-    }
 }
 
 /// 8 行截断正文：隐藏的不限行副本测高判断是否截断，截断时末尾追加蓝色 more；

@@ -57,6 +57,8 @@ final class StubAPI: CondenserAPI, @unchecked Sendable {
     var feedbackError: Error?
     var markReadCalls: [[String]] = []
     var markReadError: Error?
+    /// 模拟在途请求（测「本批成功不误清在途期间新入队的 key」）
+    var markReadDelay: Duration?
     var saveCalls: [String] = []
     var deleteCalls: [String] = []
     var recordError: Error?
@@ -90,6 +92,7 @@ final class StubAPI: CondenserAPI, @unchecked Sendable {
     }
 
     func markRead(keys: [String]) async throws {
+        if let markReadDelay { try? await Task.sleep(for: markReadDelay) }
         if let markReadError { throw markReadError }
         markReadCalls.append(keys)
     }

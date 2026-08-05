@@ -18,6 +18,8 @@ struct MessageListView: View {
     @State private var viewerItem: ImageViewerItem?
     @State private var pullOlderModel = PullToLoadOlderModel()
     @State private var isUserDragging = false
+    /// 滚过即已读的武装闸：用户在本视图滚动过才开始判读，刷新时解除
+    @State private var scrollReadModel = ScrollReadModel()
     /// 灰 toast 的计数；nil = 不显示
     @State private var toastCount: Int?
     /// 冷启动 toast 只在 app 本次运行的首次加载弹（信源/未读切换重建 store 时不弹）
@@ -37,6 +39,11 @@ struct MessageListView: View {
             .autoHideBars()
             .onScrollPhaseChange { _, newPhase in
                 isUserDragging = newPhase == .tracking || newPhase == .interacting
+                // 武装只认真实位移（interacting / 惯性减速）：手指刚按下（tracking）
+                // 与程序化回顶（animating）都不算滚动，否则一次点击就把整个首屏判读了
+                if newPhase == .interacting || newPhase == .decelerating {
+                    scrollReadModel.noteUserScroll()
+                }
             }
             .onScrollGeometryChange(for: CGFloat.self) { geo in
                 PullToLoadOlderModel.bottomOverscroll(
@@ -82,6 +89,9 @@ struct MessageListView: View {
             ImageViewerScreen(item: item)
         }
         .task(id: ObjectIdentifier(store)) {
+            // 换 store（切信源 / 未读开关）也是整列表替换，同样要解除武装，
+            // 否则上一个列表滚出来的 armed 会把新首屏瞬间判读
+            scrollReadModel.reset()
             let newCount = await store.loadInitial()
             // 冷启动：快照先渲染、网络静默换新，有新内容只弹灰 toast 事后告知
             if checker != nil, !didHandleLaunch, newCount > 0 {
@@ -104,10 +114,19 @@ struct MessageListView: View {
                         .onTapGesture { selectedItem = item }
                     Divider().padding(.leading, 16)
                 }
+                // 判读线是视口下边界：卡片下边界进到视口里就算看过。
+                // armed 必须参与取值而不是只在 action 里判断——首屏卡片一渲染就满足
+                // 判读线，Bool 一直是 true，onGeometryChange 便再也不会回调；
+                // 把 armed 揉进取值，用户第一次滚动（滚动本身就在重算几何）时
+                // false→true 才有这一跳，「首屏看过的、滚一下就算读过」才成立。
                 .onGeometryChange(for: Bool.self) { geo in
-                    geo.frame(in: .scrollView).maxY < 0
-                } action: { passedTop in
-                    if passedTop, !item.isRead {
+                    scrollReadModel.armed && ScrollReadModel.hasPassedReadLine(
+                        frameMaxY: geo.frame(in: .scrollView).maxY,
+                        // 拿不到视口高度就退化成旧规则（移出视口上方），
+                        // 绝不能用 .infinity —— 那会把整屏瞬间判成已读
+                        viewportHeight: geo.bounds(of: .scrollView)?.height ?? 0)
+                } action: { passedReadLine in
+                    if passedReadLine, !item.isRead {
                         reader.readReporter.enqueue(item.key)
                     }
                 }
@@ -252,6 +271,9 @@ struct MessageListView: View {
     private func refresh() async {
         // 先冲刷已读队列（debounce 可能还没发出去），未读视图重载才会真正剔除已读项
         await reader.readReporter.flushNow()
+        // 列表要被整体替换：解除武装，新首屏得等用户再滚一次才判读
+        // （回前台的静默刷新也走这里）
+        scrollReadModel.reset()
         await store.refresh()
     }
 
