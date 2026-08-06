@@ -4,7 +4,7 @@
 
   launchd only supervises the process; the timing lives inside the probe
   (scheduler.py — For You hourly at :05, the other feeds at :00/:15/:30/:45,
-  staggered and serialized so two bird calls never run at once).
+  staggered and serialized so two X crawls never run at once).
 
   Copy to ~/Library/LaunchAgents/com.condenser.probe.plist, replace the two
   /PATH/TO paths (and the uv location if it is not in /opt/homebrew/bin), then:
@@ -36,7 +36,8 @@
 
     <key>EnvironmentVariables</key>
     <dict>
-        <!-- bird needs a PATH that contains node/bird -->
+        <!-- /usr/bin for the `security` binary: reading Chrome's cookies means
+             decrypting them with a key that lives in the macOS Keychain -->
         <key>PATH</key>
         <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
     </dict>

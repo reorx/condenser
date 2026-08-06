@@ -15,7 +15,7 @@ from typing import Optional
 DEFAULT_CONFIG_PATH = Path.home() / '.config' / 'condenser-probe' / 'config.json'
 
 # Env var <- JSON key mapping (JSON keys are the env names, lowercased, sans prefix).
-_KEYS = ('server_url', 'token', 'bird_bin', 'timeout', 'log_level')
+_KEYS = ('server_url', 'token', 'x_timeout_ms', 'timeout', 'log_level')
 
 
 class ConfigError(RuntimeError):
@@ -26,8 +26,10 @@ class ConfigError(RuntimeError):
 class ProbeSettings:
     server_url: str
     token: str
-    bird_bin: str = 'bird'
-    timeout: float = 120.0  # per bird invocation / per HTTP request, seconds
+    # Two different clocks: the X API is called through xbird per request (a follow
+    # crawl makes ~15 of them), the condenser server through one httpx client.
+    x_timeout_ms: int = 20000
+    timeout: float = 120.0  # per condenser HTTP request, seconds
     log_level: str = 'INFO'
 
     @property
@@ -65,7 +67,7 @@ def load_settings(config_path: Optional[Path] = None) -> ProbeSettings:
     return ProbeSettings(
         server_url=str(values['server_url']),
         token=str(values['token']),
-        bird_bin=str(values.get('bird_bin') or 'bird'),
+        x_timeout_ms=int(values.get('x_timeout_ms') or 20000),
         timeout=float(values.get('timeout') or 120.0),
         log_level=str(values.get('log_level') or 'INFO'),
     )

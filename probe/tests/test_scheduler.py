@@ -22,7 +22,7 @@ def test_every_feed_kind_belongs_to_exactly_one_task():
 
 def test_the_two_cadences_are_staggered():
     """For You is hourly, the rest every 15 minutes — on minute lanes that never
-    coincide, so the bird calls stay spread out even before serialization."""
+    coincide, so the X calls stay spread out even before serialization."""
     foryou = next(t for t in TASKS if 'home' in t.kinds)
     others = next(t for t in TASKS if 'following' in t.kinds)
     assert _minutes(others.minutes) == {0, 15, 30, 45}
@@ -50,7 +50,7 @@ def test_build_scheduler_registers_one_cron_job_per_task():
 def test_tasks_can_never_run_concurrently():
     """Staggering spreads the load; this is the hard guarantee. After a sleep
     both tasks can misfire due at the same instant — a one-worker executor makes
-    them queue instead of racing bird and the server."""
+    them queue instead of racing X and the server."""
     scheduler = build_scheduler(lambda task: None)
     executor = scheduler._executors['default']
     assert executor._pool._max_workers == 1

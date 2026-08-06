@@ -4,9 +4,14 @@ Pushes X (Twitter) data into a condenser server from **your own machine**.
 
 X data only exists inside a logged-in browser session, so unlike the Telegram and
 Hacker News sources the server cannot fetch it: this probe runs locally, reads the
-timeline through the [bird](https://github.com/steipete/bird) CLI (which borrows
-your browser's X cookies), and pushes the raw JSON to the server, which parses and
+timeline through the [xbird](https://github.com/reorx/xbird) library (which borrows
+your browser's X cookies), and pushes the JSON to the server, which parses and
 archives it.
+
+xbird is imported, not shelled out to — but what goes over the wire is still its
+`--json` CLI shape (`xbird.types.to_json`), because the server parses those
+camelCase keys and archives every entry verbatim as `raw`. That shape is a
+contract with the archive, not an implementation detail.
 
 The probe holds **no feed list**: each round it asks the server what to fetch
 (`/api/sources/x/probe-config`, driven by your subscriptions in the web UI) and
@@ -15,8 +20,8 @@ id, so a probe that crashed, slept for a week, or was reinstalled just resumes.
 
 The one piece of local state is a **seen cache**
 (`~/.cache/condenser-probe/seen/<feed>.json`, pruned to 24h). The Following
-timeline is a stable window rather than a fresh sample — two consecutive bird
-calls overlapped 19/20 — so without it a 15-minute round re-uploads almost the
+timeline is a stable window rather than a fresh sample — two consecutive calls
+overlapped 19/20 — so without it a 15-minute round re-uploads almost the
 same 50 tweets every time. It only decides what to *skip*, so its failure modes
 are dull: a missing or unreadable cache means a full re-push (which the server
 deduplicates), and an unwritable one costs a re-push later but never a round.
@@ -37,13 +42,17 @@ Two consequences worth knowing:
 ## Setup
 
 ```bash
-# 1. bird, logged in via your browser's cookies
-brew install steipete/tap/bird     # or: npm i -g @steipete/bird
-bird whoami                        # must print your account
-
-# 2. the probe itself
 cd probe && uv sync
 ```
+
+That is the whole install — xbird comes in as a dependency, so there is no CLI to
+install separately and nothing to keep on your `PATH`. Credentials come from your
+browser: stay logged in to x.com in Safari, Chrome or Firefox (Chrome is the
+best-supported source), or export `AUTH_TOKEN` / `CT0` to skip browser extraction
+entirely. `uv run condenser-probe check` reports which one answered.
+
+> xbird is not on PyPI, so `pyproject.toml` points at its git remote and `uv.lock`
+> pins the commit. Upgrade with `uv lock --upgrade-package xbird`.
 
 Create a device token in condenser's web UI (Settings → Devices → add one named
 e.g. `x-probe`; the token is shown exactly once), then either export the two
@@ -57,14 +66,15 @@ settings or write them to `~/.config/condenser-probe/config.json`:
 ```
 
 Env equivalents (they win over the file): `CONDENSER_PROBE_SERVER_URL`,
-`CONDENSER_PROBE_TOKEN`, plus optional `CONDENSER_PROBE_BIRD_BIN`,
-`CONDENSER_PROBE_TIMEOUT`, `CONDENSER_PROBE_LOG_LEVEL`, `CONDENSER_PROBE_CONFIG`
-(alternate config path).
+`CONDENSER_PROBE_TOKEN`, plus optional `CONDENSER_PROBE_X_TIMEOUT_MS` (per X API
+request, default 20000 — a follow crawl makes ~15 of them),
+`CONDENSER_PROBE_TIMEOUT` (per condenser HTTP request, seconds),
+`CONDENSER_PROBE_LOG_LEVEL`, `CONDENSER_PROBE_CONFIG` (alternate config path).
 
 ## Use
 
 ```bash
-uv run condenser-probe check      # verify bird's session + the server token
+uv run condenser-probe check      # verify the X session + the server token
 uv run condenser-probe run        # one full round (all feeds), then exit
 uv run condenser-probe run --no-cache   # ignore the seen cache, push everything
 uv run condenser-probe watch      # long-running scheduler (what launchd keeps alive)
@@ -76,7 +86,7 @@ and/or individual accounts by handle. `probe-config` reflects that immediately �
 no probe restart, no local config.
 
 When the server says so, a round also re-crawls your followed-accounts list
-(`bird following --all`, ~15 requests) and pushes it. The server needs it as the
+(~15 requests, paced a second apart) and pushes it. The server needs it as the
 Following feed's ad filter: X injects promoted tweets there with no structural
 marker at all, and "is this author someone I follow" is the only reliable test.
 The list is refreshed about once a day; the server decides, so nothing schedules
@@ -93,7 +103,7 @@ and launchd only keeps the process alive:
 | `feeds` | Following + accounts | every 15 min at :00/:15/:30/:45 — stable windows, the seen cache makes a quiet round nearly free |
 
 The minute lanes are staggered, and a one-worker executor serializes the tasks,
-so two bird calls never run at the same time — including right after wake, when
+so two X crawls never run at the same time — including right after wake, when
 the missed firings coalesce into one catch-up round per task. On start, `watch`
 runs one full round so For You doesn't wait for its first :05.
 
@@ -107,8 +117,26 @@ tail -f ~/Library/Logs/condenser-probe.log
 `run` is still a single full round that exits, for cron-style setups:
 `*/15 * * * * cd /path/to/probe && uv run condenser-probe run >> ~/condenser-probe.log 2>&1`
 
+## Co-developing xbird locally
+
+The committed dependency is the git remote, so `uv sync` on any machine gets the
+commit `uv.lock` pins. To work against a local xbird checkout instead, overlay an
+editable install and keep it alive across `uv run` (which otherwise re-syncs to
+the lock and restores the git build) — the same npm-link-style trick the server
+uses for telememo:
+
+```bash
+uv pip install -e ../../xbird
+export UV_NO_SYNC=1
+uv sync                            # unlink: back to the pinned git commit
+```
+
 ## Tests
 
 ```bash
-uv run pytest      # bird + server are stubbed; no network, no X account needed
+uv run pytest      # X + server are stubbed; no network, no X account needed
 ```
+
+`test_xsource.py` covers the adapter (which feed kind reads which timeline, how a
+returned-not-raised xbird failure becomes a failed feed, the wire shape the server
+parses); `test_probe.py` covers orchestration on top of a stubbed fetch.

@@ -2,7 +2,7 @@
 
 Why the timing moved in-process (it used to be launchd StartCalendarInterval
 firing ``run``): the feeds stopped sharing one interval. For You is a firehose
-sample — every bird call returns ~n brand-new tweets, so its cadence *is* the
+sample — every call returns ~n brand-new tweets, so its cadence *is* the
 ingest volume and wants to stay low — while Following and the account feeds are
 stable windows where a 15-minute round costs almost nothing past the seen cache.
 launchd can't express two cadences in one agent, so it now only keeps the
@@ -10,11 +10,11 @@ launchd can't express two cadences in one agent, so it now only keeps the
 
 Two guarantees, in order of strength:
 
-* the minute lanes are staggered (:05 vs :00/:15/:30/:45), so the bird calls
+* the minute lanes are staggered (:05 vs :00/:15/:30/:45), so the X calls
   spread out in normal operation;
 * the executor has one worker, so even when both tasks come due at the same
   instant — a laptop waking from hours of sleep misfires everything at once —
-  they queue instead of racing bird and the server. ``coalesce`` turns those
+  they queue instead of racing X and the server. ``coalesce`` turns those
   hours of missed firings into a single catch-up round per task.
 """
 

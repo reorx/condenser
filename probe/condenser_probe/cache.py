@@ -1,7 +1,7 @@
 """Per-feed "already pushed" cache — the one piece of local state the probe keeps.
 
 Why it exists: the Following timeline is a *stable window*, not a fresh sample
-(two consecutive bird calls overlapped 19/20). At a 15-minute cadence that means
+(two consecutive calls overlapped 19/20). At a 15-minute cadence that means
 each round re-uploads almost exactly the same 50 tweets, all of which the server
 already has. The cache turns a full re-push into the handful of genuinely new
 entries.

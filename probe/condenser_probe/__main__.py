@@ -10,12 +10,12 @@ import argparse
 import logging
 import sys
 
-from .bird import BirdError, check_auth
 from .cache import SeenCache
 from .client import ProbeClient, ServerError
 from .config import ConfigError, load_settings
 from .runner import run_round
 from .scheduler import TASKS, build_scheduler
+from .xsource import XSourceError, check_auth
 
 log = logging.getLogger('condenser_probe')
 
@@ -29,12 +29,12 @@ def _configure_logging(level: str) -> None:
 
 
 def _check(settings) -> int:
-    """Verify both halves of the setup: bird's X session and the server token."""
+    """Verify both halves of the setup: the X session and the server token."""
     failures = 0
     try:
-        log.info('bird: %s', check_auth(settings.bird_bin) or 'authenticated')
-    except BirdError as e:
-        log.error('bird check failed: %s', e)
+        log.info('x: %s', check_auth(settings.x_timeout_ms))
+    except XSourceError as e:
+        log.error('x check failed: %s', e)
         failures += 1
     with ProbeClient(settings.api_base, settings.token, settings.timeout) as client:
         try:
@@ -52,7 +52,7 @@ def _check(settings) -> int:
 def _run_once(settings, cache=None, kinds=None) -> int:
     with ProbeClient(settings.api_base, settings.token, settings.timeout) as client:
         try:
-            outcomes = run_round(client, bird_bin=settings.bird_bin, timeout=settings.timeout, cache=cache, kinds=kinds)
+            outcomes = run_round(client, timeout_ms=settings.x_timeout_ms, cache=cache, kinds=kinds)
         except ServerError as e:
             log.error('could not read probe-config: %s', e)
             return 1
@@ -83,7 +83,7 @@ def main() -> int:
     parser.add_argument(
         '--no-cache',
         action='store_true',
-        help='push everything bird returns, ignoring what earlier rounds already sent. '
+        help='push everything X returns, ignoring what earlier rounds already sent. '
         "Use it after the server's data was wiped or rolled back — the cache would "
         'otherwise suppress exactly the re-push that restores it.',
     )

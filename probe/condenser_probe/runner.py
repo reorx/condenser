@@ -1,4 +1,4 @@
-"""One probe round: ask the server what to fetch, run bird per feed, push it back.
+"""One probe round: ask the server what to fetch, read X per feed, push it back.
 
 Almost stateless: the server owns the feed list and deduplicates by tweet id, so
 a crashed, sleeping or reinstalled probe has nothing to recover. The one piece of
@@ -10,9 +10,9 @@ import logging
 from dataclasses import dataclass
 from typing import Callable, Iterable, Optional
 
-from .bird import BirdError, fetch_feed, fetch_following_users
 from .cache import SeenCache
 from .client import ProbeClient, ServerError
+from .xsource import DEFAULT_TIMEOUT_MS, XSourceError, fetch_feed, fetch_following_users
 
 log = logging.getLogger('condenser_probe.runner')
 
@@ -33,8 +33,7 @@ class FeedOutcome:
 def run_round(
     client: ProbeClient,
     fetch: Callable[[dict], list] = None,
-    bird_bin: str = 'bird',
-    timeout: float = 120.0,
+    timeout_ms: int = DEFAULT_TIMEOUT_MS,
     fetch_following: Callable[[], list] = None,
     cache: Optional[SeenCache] = None,
     kinds: Optional[Iterable[str]] = None,
@@ -44,8 +43,8 @@ def run_round(
     ``kinds`` scopes the round to a slice of probe-config (the scheduler runs
     For You and the rest on different cadences); None means every feed.
     """
-    fetch = fetch or (lambda feed: fetch_feed(feed, bird_bin=bird_bin, timeout=timeout))
-    fetch_following = fetch_following or (lambda: fetch_following_users(bird_bin=bird_bin))
+    fetch = fetch or (lambda feed: fetch_feed(feed, timeout_ms=timeout_ms))
+    fetch_following = fetch_following or (lambda: fetch_following_users(timeout_ms=timeout_ms))
     config = client.probe_config()
     feeds = config.get('feeds') or []
     if kinds is not None:
@@ -76,8 +75,8 @@ def _sync_following(client: ProbeClient, fetch_following: Callable[[], list]) ->
     filters, and the server asks again next round."""
     try:
         users = fetch_following()
-    except BirdError as e:
-        log.error('follow list: bird failed: %s', e)
+    except XSourceError as e:
+        log.error('follow list: %s', e)
         return
     try:
         result = client.push_following(users)
@@ -94,13 +93,13 @@ def _run_feed(
     outcome = FeedOutcome(channel_id=channel_id)
     try:
         tweets = fetch(feed)
-    except BirdError as e:
-        log.error('%s: bird failed: %s', channel_id, e)
+    except XSourceError as e:
+        log.error('%s: fetch failed: %s', channel_id, e)
         outcome.error = str(e)
         return outcome
     outcome.fetched = len(tweets)
     if not tweets:
-        log.warning('%s: bird returned no tweets', channel_id)
+        log.warning('%s: no tweets returned', channel_id)
         return outcome
 
     fresh = cache.filter_new(channel_id, tweets) if cache else tweets

@@ -1,7 +1,8 @@
-"""Behavior tests for the probe: command building, round isolation, config loading.
+"""Behavior tests for the probe: round isolation, the seen cache, config loading.
 
-bird and the server are both stubbed — the probe's job is orchestration, and that
-is what these pin down.
+X and the server are both stubbed — the probe's job is orchestration, and that is
+what these pin down. How a feed entry becomes an X API call lives in
+``test_xsource.py``.
 """
 
 import json
@@ -10,7 +11,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from condenser_probe import bird
+from condenser_probe import xsource
 from condenser_probe.cache import SeenCache
 from condenser_probe.client import ServerError
 from condenser_probe.config import ConfigError, load_settings
@@ -51,47 +52,6 @@ def tweets(n):
     return [{'id': str(1000 + i), 'text': f't{i}'} for i in range(n)]
 
 
-# --- bird command building ----------------------------------------------------
-
-
-def test_build_command_per_feed_kind():
-    assert bird.build_command(HOME) == ['bird', 'home', '-n', '50', '--json']
-    assert bird.build_command(USER, bird_bin='/opt/bin/bird') == [
-        '/opt/bin/bird',
-        'user-tweets',
-        'novoreorx',
-        '-n',
-        '10',
-        '--json',
-    ]
-
-
-def test_build_command_for_the_following_timeline():
-    """Same endpoint as For You — the flag swaps the algorithmic feed for the
-    chronological one, and the JSON shape is identical."""
-    following = {'channel_id': 'following', 'kind': 'following', 'handle': None, 'n': 50}
-    assert bird.build_command(following) == ['bird', 'home', '-n', '50', '--following', '--json']
-
-
-def test_build_command_rejects_unusable_feeds():
-    with pytest.raises(bird.BirdError):
-        bird.build_command({'channel_id': 'x', 'kind': 'lists'})
-    with pytest.raises(bird.BirdError):
-        bird.build_command({'kind': 'user', 'n': 10})
-
-
-def test_fetch_feed_rejects_non_json_output(monkeypatch):
-    monkeypatch.setattr(bird, '_run', lambda cmd, timeout: 'Error: not logged in\n')
-    with pytest.raises(bird.BirdError, match='did not return JSON'):
-        bird.fetch_feed(HOME)
-
-
-def test_fetch_feed_returns_birds_entries_untouched(monkeypatch):
-    payload = tweets(3)
-    monkeypatch.setattr(bird, '_run', lambda cmd, timeout: json.dumps(payload))
-    assert bird.fetch_feed(HOME) == payload
-
-
 # --- one round ----------------------------------------------------------------
 
 
@@ -99,7 +59,7 @@ def test_round_is_a_no_op_without_server_side_feeds():
     client = FakeClient([])
     calls = []
     assert run_round(client, fetch=lambda feed: calls.append(feed) or []) == []
-    assert calls == []  # nothing subscribed -> bird is never invoked
+    assert calls == []  # nothing subscribed -> X is never touched
 
 
 def test_round_fetches_and_pushes_every_feed():
@@ -116,7 +76,7 @@ def test_one_failing_feed_does_not_stop_the_others():
 
     def fetch(feed):
         if feed['channel_id'] == 'foryou':
-            raise bird.BirdError('cookies expired')
+            raise xsource.XSourceError('cookies expired')
         return tweets(4)
 
     outcomes = run_round(client, fetch=fetch)
@@ -177,20 +137,6 @@ def test_a_scoped_round_still_obeys_a_follow_sync_request():
 # --- the follow list ----------------------------------------------------------
 
 
-def test_fetch_following_users_accepts_both_bird_shapes(monkeypatch):
-    """`bird following` returns a bare array, but `--all` (which the probe needs —
-    without it every page caps at 50) switches to a {users, nextCursor} envelope."""
-    users = [{'id': '1', 'username': 'alice'}, {'id': '2', 'username': 'bob'}]
-    monkeypatch.setattr(bird, '_run', lambda cmd, timeout: json.dumps(users))
-    assert bird.fetch_following_users() == users
-    monkeypatch.setattr(bird, '_run', lambda cmd, timeout: json.dumps({'users': users, 'nextCursor': None}))
-    assert bird.fetch_following_users() == users
-
-
-def test_following_command_pages_through_everything():
-    assert bird.following_command() == ['bird', 'following', '--all', '--max-pages', '40', '--json']
-
-
 def test_round_syncs_the_follow_list_only_when_the_server_asks():
     users = [{'id': '1', 'username': 'alice'}]
     client = FakeClient([USER], sync_following=True)
@@ -229,11 +175,11 @@ def test_a_failed_follow_sync_does_not_sink_the_round():
     assert client.pushed == [('novoreorx', tweets(2))]
 
 
-def test_a_bird_failure_while_listing_follows_does_not_sink_the_round():
+def test_an_x_failure_while_listing_follows_does_not_sink_the_round():
     client = FakeClient([USER], sync_following=True)
 
     def boom():
-        raise bird.BirdError('cookies expired')
+        raise xsource.XSourceError('cookies expired')
 
     outcomes = run_round(client, fetch=lambda feed: tweets(2), fetch_following=boom)
     assert [o.ok for o in outcomes] == [True] and client.followed is None
@@ -340,13 +286,13 @@ def test_feeds_have_separate_caches(tmp_path):
 
 def test_settings_come_from_a_file_and_env_wins(tmp_path, monkeypatch):
     path = tmp_path / 'config.json'
-    path.write_text(json.dumps({'server_url': 'https://from-file/', 'token': 'file-token', 'bird_bin': '/bin/bird'}))
-    for key in ('SERVER_URL', 'TOKEN', 'BIRD_BIN', 'TIMEOUT', 'LOG_LEVEL'):
+    path.write_text(json.dumps({'server_url': 'https://from-file/', 'token': 'file-token', 'x_timeout_ms': 45000}))
+    for key in ('SERVER_URL', 'TOKEN', 'X_TIMEOUT_MS', 'TIMEOUT', 'LOG_LEVEL'):
         monkeypatch.delenv(f'CONDENSER_PROBE_{key}', raising=False)
 
     settings = load_settings(path)
     assert settings.api_base == 'https://from-file' and settings.token == 'file-token'
-    assert settings.bird_bin == '/bin/bird'
+    assert settings.x_timeout_ms == 45000
 
     monkeypatch.setenv('CONDENSER_PROBE_TOKEN', 'env-token')
     assert load_settings(path).token == 'env-token'
