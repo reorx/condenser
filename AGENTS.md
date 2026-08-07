@@ -352,14 +352,21 @@ a local checkout with the telememo-style overlay (`uv pip install -e ../../xbird
 `UV_NO_SYNC=1`). `bird_bin` is gone from the settings; `x_timeout_ms` (per X API request,
 20000) joined `timeout` (per condenser HTTP request).
 
-**Live on the probe machine since 2026-08-07 00:08** — one real round against production
-(`foryou` 20 fetched / 5 new tweets / 9 new items, `following` 50 fetched, **0 parse errors
-on both**) and the launchd agent restarted onto it. Note the probe deploys by *restarting
-the launchd agent*, not by `git push` — a `watch` process keeps its code in memory, so
-editing the source changes nothing until `launchctl kickstart -k gui/$(id -u)/com.condenser.probe`.
-Two things measured before going live, both worth re-checking rather than assuming: the SSH
-git dependency resolves with **no `SSH_AUTH_SOCK`** (which launchd does not provide), and the
-seen-cache file format is unchanged, so old and new code share it.
+**Live on the probe machine since 2026-08-07 00:08**, and soaked: **74 unattended rounds in
+the first 8 hours, 0 errors, 0 tracebacks, 0 parse errors**, both cadences firing on time.
+(Re-measure rather than quote — `grep -c "round done" ~/Library/Logs/condenser-probe.log`.)
+
+Note the probe deploys by **restarting the launchd agent**, not by `git push` — `watch` holds
+its code in memory, so editing the source changes nothing until
+`launchctl kickstart -k gui/$(id -u)/com.condenser.probe`. This bites in a specific way worth
+knowing: edit a file *after* a kickstart and the agent silently keeps running the older code,
+with nothing on screen to say so (it happened during this very migration — two cleanup edits
+landed 35s after the restart). To check rather than assume, compare the process start time
+against the source mtimes: `ps -o lstart -p $(launchctl list | awk '/condenser.probe/{print $1}')`.
+
+Two more things measured before going live, both worth re-checking rather than assuming: the
+SSH git dependency resolves with **no `SSH_AUTH_SOCK`** (which launchd does not provide), and
+the seen-cache file format is unchanged, so old and new code share it.
 
 **Configless** beyond a server URL + device token (env or
 `~/.config/condenser-probe/config.json`): the feed list lives on the server, and the server
