@@ -80,6 +80,9 @@ class Settings(BaseSettings):
     # An unlabeled tweet's vector is used once (at judge time) and is re-derivable
     # from x_tweets.text, so it expires. Labeled vectors are the training set and
     # are never pruned. 0 disables pruning.
+    # Read by cleanup.XRetentionRule since 2026-08-07, not by the verdict round:
+    # it used to prune at the tail of run_once, *inside* the cold-start gate, so
+    # an install with too few labels to judge anything never pruned at all.
     condenser_embedding_retention_days: int = 90
 
     # --- For You verdict (condenser/verdict.py) ---
@@ -238,6 +241,36 @@ class Settings(BaseSettings):
     condenser_verdict_d_positive_score: float = 0.25
     condenser_verdict_d_negative_score: float = -0.45
     condenser_verdict_d_negative_enabled: bool = False
+
+    # --- daily cleanup (condenser/cleanup.py) ---
+    # Master switch for the loop itself: off means the task is never spawned, not
+    # that each round no-ops.
+    condenser_cleanup_enabled: bool = True
+    # How often the loop wakes to *check* the breakpoint below. Short relative to
+    # a day on purpose: `git push` to master is a deploy here, so the process
+    # restarts often, and this bounds how late a round can land after one.
+    condenser_cleanup_check_interval: int = 3600
+    # The actual cadence, enforced by app_meta's `cleanup_last_run_at` rather
+    # than by any in-memory timer — which is the whole point, since a timer
+    # resets on every restart and a daily one might never fire.
+    condenser_cleanup_interval_hours: int = 24
+    # VACUUM hands freed pages back to the OS but takes an exclusive lock, and
+    # production runs auto_vacuum=0 so there is no incremental alternative. Only
+    # worth the lock once a round has actually freed a meaningful slice of the
+    # file; in steady state the next day's inserts reuse the freelist instead, so
+    # this rarely fires — which is correct. The file stops growing either way.
+    condenser_cleanup_vacuum_threshold: float = 0.20
+
+    # --- cleanup rule: x retention (condenser/cleanup.py: XRetentionRule) ---
+    # Each rule owns its own switch, independent of the loop's master one and of
+    # condenser_x_enabled — ingest and retention are separate decisions.
+    condenser_cleanup_x_enabled: bool = True
+    # How long an X row nobody engaged with is kept, by x_feed_items.first_seen_at
+    # (how long it sat in the backlog) rather than by the timeline's sort key —
+    # a followed account's backfill can hand us months-old tweets, and deleting
+    # those the next morning is not what "15 days" means. Read, hidden, labeled
+    # and saved tweets are exempt and kept indefinitely, as TG and HN archives are.
+    condenser_cleanup_x_retention_days: int = 15
 
     # --- link preview fetching (condenser/preview.py) ---
     # Total per-request timeout (seconds) for fetching a URL/its image.

@@ -9,12 +9,14 @@ from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from . import db
+from .cleanup import CleanupManager
 from .config import get_settings
 from .hn import HNManager
 from .logconf import configure_logging
 from .routers import (
     auth,
     channels,
+    cleanup,
     hn,
     media,
     messages,
@@ -66,7 +68,11 @@ def create_app() -> FastAPI:
         # For You verdicts; inert until labels exist (and until an embedding key does)
         app.state.verdict = VerdictManager(settings)
         await app.state.verdict.startup()
+        # daily retention sweep; the cadence lives in app_meta, not in the loop
+        app.state.cleanup = CleanupManager(settings)
+        await app.state.cleanup.startup()
         yield
+        await app.state.cleanup.shutdown()
         await app.state.verdict.shutdown()
         await app.state.hn.shutdown()
         await app.state.tg.shutdown()
@@ -90,6 +96,7 @@ def create_app() -> FastAPI:
     app.include_router(hn.router)
     app.include_router(x.router)
     app.include_router(sources.router)
+    app.include_router(cleanup.router)
 
     # 4. serve the React build (if present) as static assets at '/'
     static_dir = os.getenv('CONDENSER_STATIC_DIR', str(Path(__file__).resolve().parent.parent / 'frontend' / 'dist'))

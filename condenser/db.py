@@ -1471,6 +1471,131 @@ def x_verdict_label_coverage() -> list[dict]:
     )
 
 
+# --- daily cleanup (condenser/cleanup.py) -------------------------------------
+
+
+def _x_untouched(tweet_id_column: str) -> str:
+    """The "the reader never did anything with this" test, as SQL.
+
+    Four markers, all triple-keyed with ``ref2 = 0`` for X, so matching ``ref1``
+    alone is both sufficient and index-friendly. Every one of them is a user
+    asset or a user decision, and this schema has no foreign keys anywhere — so
+    a missed exemption does not raise, it silently destroys something.
+    """
+    return ' '.join(
+        f"AND NOT EXISTS (SELECT 1 FROM {table} m WHERE m.source = 'x' AND m.ref1 = {tweet_id_column})"
+        for table in ('read_items', 'hidden_items', 'item_feedback', 'saved_items')
+    )
+
+
+# `first_seen_at`, not the timeline's sort key: the question is how long the row
+# has sat in the reader's backlog, not what date the card shows. The two differ
+# for a followed account, whose backfill can hand us months-old tweets -- sorting
+# those into history is right, deleting them the next morning is not.
+#
+# The second clause keeps a row whose tweet the probe is *still pushing*
+# (`fetched_at` is refreshed by every `upsert_x_tweet`). Without it, deleting the
+# appearance only invites `insert_x_feed_items` to recreate it on the next push
+# with a fresh `first_seen_at` -- i.e. a long-ignored tweet would resurface at the
+# top of the unread list. Measured on production it costs nothing: at the 15-day
+# default it spares 0 rows, and 1-3% at windows short enough to bite (the widest
+# observed gap between the two timestamps is 11.9 days, on For You).
+_DELETE_X_FEED_ITEMS = (
+    'DELETE FROM x_feed_items WHERE first_seen_at < ? '
+    'AND NOT EXISTS (SELECT 1 FROM x_tweets t WHERE t.id = x_feed_items.tweet_id AND t.fetched_at >= ?) '
+    f'{_x_untouched("x_feed_items.tweet_id")}'
+)
+
+# `fetched_at` means *last* seen, not first archived -- `upsert_x_tweet` refreshes
+# it on every re-push so metrics can move. Gating the body on it is deliberate
+# rather than incidental: a tweet the probe still hands us is still live in some
+# feed window, and reclaiming its body would only have it re-ingested. The clock
+# on a body therefore starts when the probe stops seeing it, which is exactly
+# when it becomes garbage.
+_DELETE_X_TWEETS = (
+    'DELETE FROM x_tweets WHERE fetched_at < ? '
+    'AND NOT EXISTS (SELECT 1 FROM x_feed_items f WHERE f.tweet_id = x_tweets.id) '
+    'AND NOT EXISTS (SELECT 1 FROM x_tweets q WHERE q.quote_of = x_tweets.id) '
+    f'{_x_untouched("x_tweets.id")}'
+)
+
+
+def sweep_x_retention(feed_cutoff: datetime, embedding_cutoff: Optional[datetime]) -> dict[str, int]:
+    """The X archive's daily prune, in one transaction. Returns rows per table.
+
+    Reads backwards on purpose, so state it plainly: an **unread** old row is
+    what gets deleted and a **read** one is kept forever, exactly like Telegram
+    messages and HN stories never expire. This is not cache eviction — it
+    reclaims a firehose backlog nobody will ever scroll back to (measured on
+    production: 92% of archived tweets were never opened).
+
+    Intentionally preserved, in the spirit of ``delete_channel_messages``:
+    everything the reader read, hid, labeled or saved, plus every tweet body a
+    surviving tweet still quotes. The labels are the verdict's training set and
+    channels A and D re-read ``author_handle`` / ``text`` on *every* round, so a
+    deleted labeled body would not error — it would quietly stop teaching.
+
+    Step order matters: feed rows first, so the body sweep can ask the simple
+    question "is anything still showing this?". The body sweep then repeats
+    until it comes up empty, because one ``DELETE`` evaluates its ``WHERE``
+    against the pre-statement state: in a chain where A quotes B quotes C, B
+    still sees A and survives the pass that removes A. One pass a day would
+    drain such a chain one link at a time — measured on a production snapshot,
+    it left 17.5% of the deletable bodies behind. The loop terminates because a
+    quote always points at an older tweet, so the graph is acyclic, and because
+    every iteration but the last strictly shrinks the table.
+    """
+    stamp = feed_cutoff.strftime('%Y-%m-%d %H:%M:%S')
+    counts = {'feed_items': 0, 'tweets': 0, 'embeddings_orphaned': 0, 'embeddings_expired': 0, 'attributes_orphaned': 0}
+    with tdb.db.atomic():
+        counts['feed_items'] = tdb.db.execute_sql(_DELETE_X_FEED_ITEMS, (stamp, stamp)).rowcount
+        while True:
+            removed = tdb.db.execute_sql(_DELETE_X_TWEETS, (stamp,)).rowcount
+            if not removed:
+                break
+            counts['tweets'] += removed
+        # An anti-join rather than the ids just deleted, so the sweep also heals
+        # whatever went orphaned before this rule existed. Both tables are caches
+        # keyed by tweet id (the `messages.is_filtered` contract) and neither can
+        # be rebuilt once the text is gone. `x_vec_labeled` needs no equivalent:
+        # it holds only labeled tweets, and those are exempt above.
+        counts['embeddings_orphaned'] = tdb.db.execute_sql(
+            'DELETE FROM x_embeddings WHERE tweet_id NOT IN (SELECT id FROM x_tweets)'
+        ).rowcount
+        counts['attributes_orphaned'] = tdb.db.execute_sql(
+            'DELETE FROM x_attributes WHERE tweet_id NOT IN (SELECT id FROM x_tweets)'
+        ).rowcount
+        if embedding_cutoff is not None:
+            # A living tweet's vector expires on its own, longer clock: it is read
+            # once (at judge time) and re-derivable from the text that is still here.
+            counts['embeddings_expired'] = prune_x_embeddings(embedding_cutoff, set(x_labeled_samples()))
+    return counts
+
+
+def sqlite_freelist_ratio() -> float:
+    """Fraction of the file's pages that VACUUM could hand back to the OS.
+
+    Reads correctly through the WAL — verified, rather than assumed: a fresh
+    connection sees the same number immediately after a delete, and a passive
+    checkpoint does not change it by a single page.
+    """
+    pages = tdb.db.execute_sql('PRAGMA page_count').fetchone()[0]
+    if not pages:
+        return 0.0
+    return tdb.db.execute_sql('PRAGMA freelist_count').fetchone()[0] / pages
+
+
+def vacuum() -> None:
+    """Rewrite the file to reclaim freed pages.
+
+    Production runs ``auto_vacuum=0``, so nothing returns pages to the OS on its
+    own and ``PRAGMA incremental_vacuum`` is unavailable without a full rewrite
+    first. Takes an exclusive lock, and SQLite refuses outright to run it inside
+    a transaction — so callers must be outside any ``atomic()`` block.
+    """
+    tdb.db.execute_sql('VACUUM')
+
+
 # --- link preview cache -----------------------------------------------------
 
 

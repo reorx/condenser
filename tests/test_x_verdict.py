@@ -618,22 +618,21 @@ async def test_ingest_still_succeeds_when_judging_is_broken(env, monkeypatch):
 # --- storage --------------------------------------------------------------------
 
 
-async def test_unlabelled_vectors_are_pruned_after_retention(env, monkeypatch):
-    """For You embeds ~1000 tweets/day. Their vectors are used once, at judge time,
-    and are re-derivable from x_tweets.text — so they expire."""
+async def test_the_verdict_round_no_longer_prunes_vectors(env, monkeypatch):
+    """Vector expiry moved to the daily cleanup (2026-08-07). It used to run here,
+    at the tail of run_once — but that is *inside* the cold-start gate, so an
+    install with too few labels to judge anything never pruned at all. One owner
+    now, and it is not this one; see tests/test_cleanup.py for the behaviour."""
     mgr = seed_labelled_world(monkeypatch)
     ingest('foryou', bird_entry(301, 'rust trait objects', minutes=5))
     await mgr.run_once()
     assert db.x_embedding_ids({301}) == {301}
 
-    stale = NOW + timedelta(days=100)
-    mgr._now = lambda: stale
-    result = await mgr.run_once()
+    mgr._now = lambda: NOW + timedelta(days=100)
+    await mgr.run_once()
 
-    assert result.pruned == 1
-    assert db.x_embedding_ids({301}) == set()
-    # the labelled ones are the training set — they stay
-    assert db.x_embedding_ids({101, 201}) == {101, 201}
+    assert db.x_embedding_ids({301}) == {301}
+    assert not hasattr(verdict_mod.RunResult(), 'pruned')
 
 
 def test_schema_v8_adds_the_vector_tables_without_touching_data(env, monkeypatch):

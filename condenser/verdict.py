@@ -64,7 +64,6 @@ class RunResult:
     dropped: int = 0  # training vectors removed (label undone / unsaved)
     judged: int = 0  # feed rows given a verdict
     attributed: int = 0  # tweets described by the attribute extractor (channel C's fuel)
-    pruned: int = 0  # expired unlabeled vectors deleted
     skipped_reason: Optional[str] = None  # 'disabled' | 'unavailable' | 'cold_start'
 
 
@@ -328,12 +327,11 @@ class VerdictManager:
             return
         if result.skipped_reason is None:
             log.info(
-                'x verdict round: indexed=%s dropped=%s judged=%s attributed=%s pruned=%s',
+                'x verdict round: indexed=%s dropped=%s judged=%s attributed=%s',
                 result.indexed,
                 result.dropped,
                 result.judged,
                 result.attributed,
-                result.pruned,
             )
 
     # ---- the work ----
@@ -387,7 +385,6 @@ class VerdictManager:
                 # With C not scoring, the old order stands: a slow or failing
                 # provider must not delay the verdicts the reader actually sees.
                 await self._describe(result)
-            result.pruned = self._prune(samples)
             db.set_meta(LAST_RUN_META_KEY, self._now().isoformat(sep=' ', timespec='seconds'))
             return result
 
@@ -642,12 +639,6 @@ class VerdictManager:
                 continue
             db.upsert_x_attributes(tweet_id, cleaned['topics'], cleaned['style_flags'], model, now)
             result.attributed += 1
-
-    def _prune(self, samples: dict[int, str]) -> int:
-        days = self.settings.condenser_embedding_retention_days
-        if days <= 0:
-            return 0
-        return db.prune_x_embeddings(self._now() - timedelta(days=days), set(samples))
 
 
 def rebuild_labeled_index() -> int:
