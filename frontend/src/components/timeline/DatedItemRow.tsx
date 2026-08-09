@@ -4,8 +4,14 @@ import { XCard } from '@/components/timeline/XCard';
 import { channelName, fullDateLabel } from '@/lib/format';
 import type { TimelineItem } from '@/lib/types';
 
-/** A saved item in the Saved view: a full date line above the source's card. */
-export function SavedMessageItem({ item }: { item: TimelineItem }) {
+/**
+ * One item under a full date line, dispatched by source.
+ *
+ * The row shape for the two views that are not a timeline — Saved and Search.
+ * Both list items that jump across days and sources, so each one states its own
+ * date instead of sitting under a shared day divider.
+ */
+export function DatedItemRow({ item }: { item: TimelineItem }) {
   return (
     <div>
       <div className="px-4 pt-2 text-[11px] text-muted-foreground/70 sm:px-5">{fullDateLabel(item.datetime)}</div>

@@ -174,6 +174,45 @@ def days(channel_id: Optional[int] = None) -> dict[str, int]:
     return {row[0]: row[1] for row in cur.fetchall()}
 
 
+# Anchors -> the raw rows of their display units. The album join is why this is a
+# query rather than an `id IN (...)` list: a hit names the unit's anchor, and the
+# card needs every sibling's media alongside it.
+_UNITS_SQL = f"""
+    SELECT a.cid AS anchor_cid, a.mid AS anchor_mid, {_SELECT_COLS}
+    FROM anchors a
+    JOIN messages am ON am.channel_id = a.cid AND am.id = a.mid
+    JOIN messages m ON m.channel_id = a.cid
+      AND (m.id = a.mid OR (am.grouped_id IS NOT NULL AND m.grouped_id = am.grouped_id))
+    LEFT JOIN read_items rm ON rm.source = 'telegram' AND rm.ref1 = m.channel_id AND rm.ref2 = m.id
+    LEFT JOIN saved_items sv ON sv.source = 'telegram' AND sv.ref1 = m.channel_id AND sv.ref2 = m.id
+    ORDER BY a.cid, a.mid, m.id
+"""
+
+
+def units_by_key(anchors: list[tuple[int, int]]) -> dict[tuple[int, int], dict]:
+    """Envelopes for specific display-unit anchors, keyed by ``(channel_id, id)``.
+
+    Deliberately **not** subscription-scoped, unlike every query above it (whose
+    ``_FROM`` joins ``subscriptions``): the caller is full-text search, which reads
+    the archive rather than the reading list, so a paused or unsubscribed channel's
+    messages still render. An anchor whose message is gone is simply absent from
+    the result — the caller drops it rather than rendering a hole.
+    """
+    if not anchors:
+        return {}
+    values = ','.join('(?,?)' for _ in anchors)
+    cur = tdb.db.execute_sql(
+        f'WITH anchors(cid, mid) AS (VALUES {values}) {_UNITS_SQL}',
+        tuple(v for pair in anchors for v in pair),
+    )
+    columns = [c[0] for c in cur.description]
+    units: dict[tuple[int, int], list[dict]] = {}
+    for values_row in cur.fetchall():
+        row = dict(zip(columns, values_row))
+        units.setdefault((row['anchor_cid'], row['anchor_mid']), []).append(row)
+    return {key: _serialize_unit(rows) for key, rows in units.items()}
+
+
 def unread_counts() -> dict[int, int]:
     """Per-channel unread display-unit counts (not filtered, not read), for enabled subs."""
     sql = (

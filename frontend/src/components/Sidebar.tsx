@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Bookmark, Filter, Inbox, Radio, Settings, Sparkles } from 'lucide-react';
+import { Bookmark, Filter, Inbox, Radio, Search, Settings, Sparkles } from 'lucide-react';
 import { NavLink, useLocation } from 'react-router-dom';
 
 import { SettingsDialog } from '@/components/SettingsDialog';
@@ -46,6 +46,10 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
         <NavLink to="/saved" className={navLinkClass} onClick={onNavigate}>
           <Bookmark className="size-4" />
           Saved
+        </NavLink>
+        <NavLink to="/search" className={navLinkClass} onClick={onNavigate}>
+          <Search className="size-4" />
+          Search
         </NavLink>
         <NavLink to="/filters" className={navLinkClass} onClick={onNavigate}>
           <Filter className="size-4" />

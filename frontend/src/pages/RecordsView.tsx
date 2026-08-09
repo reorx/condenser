@@ -5,7 +5,7 @@ import { Bookmark } from 'lucide-react';
 import { AllChannelsHidden, ChannelFilter } from '@/components/ChannelFilter';
 import { IconBadge, PageHeader } from '@/components/PageHeader';
 import { Spinner } from '@/components/Spinner';
-import { SavedMessageItem } from '@/components/timeline/SavedMessageItem';
+import { DatedItemRow } from '@/components/timeline/DatedItemRow';
 import { useChannelFilter } from '@/hooks/useChannelFilter';
 import { api } from '@/lib/api';
 import { channelName } from '@/lib/format';
@@ -70,7 +70,7 @@ export function RecordsView() {
       {filter.visible.length > 0 && (
         <div className="divide-y divide-border/50">
           {filter.visible.map((it) => (
-            <SavedMessageItem key={it.key} item={it} />
+            <DatedItemRow key={it.key} item={it} />
           ))}
         </div>
       )}

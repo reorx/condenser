@@ -406,11 +406,42 @@ def bulk_read_scope(feed: Optional[str], include_foryou: bool) -> tuple[list[str
     return channels, params, where
 
 
-def get_row(tweet_id: int) -> Optional[dict]:
-    """One tweet as a timeline row (for the saved-record snapshot), or None.
+def rows_by_id(tweet_ids: list[int]) -> list[dict]:
+    """Timeline rows for specific tweets, one per tweet under the dedup priority.
 
-    Not feed-scoped: a saved record is the user's asset, so it must still snapshot
-    after the feed it came from was paused or unsubscribed.
+    Not feed-scoped, unlike every query above it: the callers are the saved-record
+    snapshot and the search assembler, and both must still work for a feed that
+    was since paused or unsubscribed.
     """
-    rows = _fetch(['f.tweet_id = ?'], [tweet_id], ['v.dedup_rank = 1'], [], True, 1)
+    if not tweet_ids:
+        return []
+    placeholders = ','.join('?' for _ in tweet_ids)
+    return _fetch([f'f.tweet_id IN ({placeholders})'], list(tweet_ids), ['v.dedup_rank = 1'], [], True, len(tweet_ids))
+
+
+def get_row(tweet_id: int) -> Optional[dict]:
+    """One tweet as a timeline row (for the saved-record snapshot), or None."""
+    rows = rows_by_id([tweet_id])
     return rows[0] if rows else None
+
+
+def sort_positions(tweet_ids: list[int]) -> dict[int, str]:
+    """Each tweet's timeline sort timestamp, for tweets that appear in some feed.
+
+    Ranked by the same feed priority the timeline de-duplicates by, but across
+    **every** feed rather than the enabled scope — because the caller is the search
+    indexer and search reads the archive, so a tweet whose winning feed is later
+    paused keeps the position it was indexed at. The consequence is the one the
+    plan already accepts for re-pushes: a tweet's search position can differ by a
+    few hours from the position a scoped timeline view would give it. Ids with no
+    feed appearance are absent, which is how the indexer tells a card apart from a
+    body it merely archived.
+    """
+    if not tweet_ids:
+        return {}
+    placeholders = ','.join('?' for _ in tweet_ids)
+    sql = (
+        f'SELECT v.tweet_id, v.sort_at FROM ({_visible([f"f.tweet_id IN ({placeholders})"])}) v WHERE v.dedup_rank = 1'
+    )
+    cur = tdb.db.execute_sql(sql, tuple(tweet_ids))
+    return {row[0]: row[1] for row in cur.fetchall()}

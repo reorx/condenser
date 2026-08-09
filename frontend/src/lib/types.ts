@@ -433,6 +433,33 @@ export interface DayCount {
   count: number;
 }
 
+/** Full-text search sort: newest first, or FTS5's bm25 relevance. Time is the
+ *  default — bigram indexing makes relevance weaker for CJK than it looks. */
+export type SearchSort = 'recent' | 'relevance';
+
+/** Narrows results to items in one state; absent = every item in the archive. */
+export type SearchStatus = 'unread' | 'saved';
+
+/** GET /api/search — the same envelopes the timeline returns, so results render
+ *  with the cards that already exist. `total` counts every hit, not just this page. */
+export interface SearchPage {
+  items: TimelineItem[];
+  total: number;
+  has_more: boolean;
+}
+
+export interface SearchParams {
+  q: string;
+  /** Same three scope parameters the timeline takes; channel_id implies telegram. */
+  source?: Source | null;
+  channel_id?: number | null;
+  feed?: string | null;
+  status?: SearchStatus | null;
+  sort?: SearchSort;
+  offset?: number;
+  limit?: number;
+}
+
 export interface TimelineParams {
   cursor?: string | null;
   limit?: number;

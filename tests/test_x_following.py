@@ -94,7 +94,7 @@ def test_existing_v10_database_gains_the_following_table(env):
     db.tdb.db.close()
 
     _init()
-    assert db.get_meta('schema_version') == '11'
+    assert db.get_meta('schema_version') == str(db.SCHEMA_VERSION)
     assert db.get_x_tweet(1).text == 'kept'
     assert db.x_following_handles() == set()
 

@@ -30,7 +30,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
-from . import db
+from . import db, search
 from .config import Settings
 from .items import FOLLOWING_FEED, FORYOU_FEED, x_feed_kind
 
@@ -475,6 +475,12 @@ def ingest_tweets(channel_id: str, entries: list, settings: Optional[Settings] =
             if tid not in known_items
         ]
     )
+    # After the feed rows, never before: the indexer takes each tweet's sort
+    # position from the feed it wins under the dedup priority, and a tweet with no
+    # feed row yet would be read as a body-only archive entry and skipped. Re-pushes
+    # re-index on purpose — an edited retweet's text moves, and so does the
+    # position when a higher-priority feed starts carrying the tweet.
+    search.index_x_tweets(feed_ids)
 
     result = IngestResult(
         received=len(entries),

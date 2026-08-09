@@ -139,6 +139,30 @@ def days() -> dict[str, int]:
     return {row[0]: row[1] for row in cur.fetchall()}
 
 
+def rows_by_id(story_ids: list[int]) -> dict[int, dict]:
+    """Stories by id with read/saved flags, for the full-text search assembler.
+
+    Neither display-mode scoped nor rank-annotated, and both on purpose: search
+    reads the archive, so a story that fell below its day's cut is still a story
+    that was on the front page — and ``day_rank`` is a property of the timeline
+    view, which is why a saved record carries None there too.
+    """
+    if not story_ids:
+        return {}
+    placeholders = ','.join('?' for _ in story_ids)
+    cur = tdb.db.execute_sql(
+        'SELECT h.*, CASE WHEN ri.ref1 IS NOT NULL THEN 1 ELSE 0 END AS is_read, '
+        'CASE WHEN si.ref1 IS NOT NULL THEN 1 ELSE 0 END AS is_saved '
+        'FROM hn_stories h '
+        "LEFT JOIN read_items ri ON ri.source = 'hn' AND ri.ref1 = h.id "
+        "LEFT JOIN saved_items si ON si.source = 'hn' AND si.ref1 = h.id "
+        f'WHERE h.id IN ({placeholders})',
+        tuple(story_ids),
+    )
+    columns = [c[0] for c in cur.description]
+    return {row[0]: dict(zip(columns, row)) for row in cur.fetchall()}
+
+
 def unread_count() -> int:
     """Unread visible stories — must match the display filter or the badge never clears."""
     mode = display_mode()

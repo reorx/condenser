@@ -21,7 +21,7 @@ from urllib.parse import urlsplit
 
 import httpx
 
-from . import db, preview
+from . import db, preview, search
 from .config import Settings
 
 log = logging.getLogger('condenser.hn')
@@ -201,6 +201,20 @@ class HNManager:
             peak_rank=rank,
             is_dead=bool(item.get('dead') or item.get('deleted')),
             backfilled=backfilled,
+        )
+        # The one place a story's *text* enters the archive — sampling and the
+        # hckrnews backfill both land here, and the snapshot refresh only moves
+        # score/comment counts, so there is nothing else to hook. `is_dead` rides
+        # along because Firebase serves already-flagged submissions that are still
+        # in `topstories`, and those were never showable.
+        search.index_hn_story(
+            {
+                'id': item['id'],
+                'title': item.get('title'),
+                'text': item.get('text'),
+                'first_seen_at': first_seen_at,
+                'is_dead': bool(item.get('dead') or item.get('deleted')),
+            }
         )
 
     async def _refresh_snapshots(self, exclude: set[int]) -> None:

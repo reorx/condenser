@@ -1,17 +1,7 @@
 import { type QueryClient, useMutation, useQueryClient } from '@tanstack/react-query';
 
 import { api } from '@/lib/api';
-import type { TimelinePage } from '@/lib/types';
-
-function removeFromTimelines(qc: QueryClient, key: string) {
-  qc.setQueriesData<{ pages: TimelinePage[]; pageParams: unknown[] }>({ queryKey: ['timeline'] }, (data) => {
-    if (!data) return data;
-    return {
-      ...data,
-      pages: data.pages.map((page) => ({ ...page, items: page.items.filter((it) => it.key !== key) })),
-    };
-  });
-}
+import { invalidateItemLists, removeItem } from '@/lib/itemCaches';
 
 function invalidateCounts(qc: QueryClient) {
   qc.invalidateQueries({ queryKey: ['sources'] });
@@ -24,9 +14,9 @@ export function useHideItem() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (key: string) => api.hideItem(key),
-    onMutate: (key) => removeFromTimelines(qc, key),
+    onMutate: (key) => removeItem(qc, key),
     // The optimistic removal can't be restored positionally; refetch instead.
-    onError: () => qc.invalidateQueries({ queryKey: ['timeline'] }),
+    onError: () => invalidateItemLists(qc),
     onSettled: () => invalidateCounts(qc),
   });
 }
@@ -37,7 +27,7 @@ export function useUnhideItem() {
   return useMutation({
     mutationFn: (key: string) => api.unhideItem(key),
     onSettled: () => {
-      qc.invalidateQueries({ queryKey: ['timeline'] });
+      invalidateItemLists(qc);
       invalidateCounts(qc);
     },
   });

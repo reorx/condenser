@@ -96,6 +96,15 @@ loop. Shares **one SQLite file** with [telememo](https://pypi.org/project/teleme
   is currently blind to (`authors.py`, still a TODO). The sync *timestamp* lives in
   `app_meta` (`x_following_synced_at`), not in `max(synced_at)`: a sync that produced zero
   rows is still a sync, and reading the rows would re-crawl forever.
+  **SCHEMA_VERSION 12** (2026-08-09, full-text search) adds `search_index`, an **FTS5
+  virtual table** created with raw SQL in `init_db` after the ordinary tables (the vec0
+  precedent): one indexed `text` column holding the pre-tokenized document, plus the
+  `items.py` triple and a sort timestamp as `UNINDEXED` columns. One row per **item**, keyed
+  the way `saved_items` is — so a Telegram album is indexed once under its display anchor and
+  needs no query-time de-duplication. The upgrade is a **backfill, not a migration**
+  (`search.ensure_index`), because nothing in the table is not derived from the source
+  tables; measured on a real v11 dev database, the whole rebuild is 80ms at 2630 items and
+  ~0.3s extrapolated to production, so it runs inline at startup.
 
 condenser's peewee models bind to telememo's `db` instance, so everything is one connection.
 `condenser/db.py:init_db()` initializes telememo tables (+ `is_filtered`) then condenser tables.
@@ -119,6 +128,7 @@ condenser's peewee models bind to telememo's `db` instance, so everything is one
 | `prospective.py` | the **online** half of the verdict's evidence (v2 plan step 5, 2026-07-28): precision measured only on tweets the judge committed to *before* the reader said anything. Needs no `verdict_at` column and no timestamp comparison — `db.x_pending_verdict_rows` never judges an already-labeled tweet, so a For You row holding both a verdict and a label was judged first by construction, which is what makes these pairs free of the backtest's selection bias (it picks an operating point and scores it on the same labels). `summarize` reports the as-shipped badges plus **per-channel attribution** (a channel's own claim even where the vote resolved against it — §9 kills one channel's negative side, so a wrong negative must name its author), and `shadow` replays the *archived* scores at thresholds nobody ran: because the score is stored even when a channel's negative side is off, a channel's admission case can be built from production data **before** it is admitted. Two limits stated in the output rather than hidden: a badge may bias whether a tweet gets read/labeled at all, and channel B's `corroborated` is not fully archived (it counted every close neighbour; only the nearest five are stored), so B's shadow negatives are an upper bound — channel A is the exception, since its rule *is* the down count in its own evidence and therefore replays exactly |
 | `records.py` | source-decoupled snapshots into `saved_items.raw_data` keyed by item key: TG = album rows + channel info, HN = story JSON, X = the envelope payload itself (quote already nested); rendered back into envelopes without source tables |
 | `forward.py` | rendering a **non-Telegram** item into a message for the user's own channel (2026-07-27). Telegram is the only outbound channel, so "forward" is two different things: a TG item is natively forwardable (that path, plus the bare t.me link Telegram itself expands into a full message card, stays in `tg.py`), while an HN story or a tweet has to be *written out*. Two shapes, because the two sources give Telegram different things to work with. **HN** is written out: a bold title line hyperlinked to the article, then a source line hyperlinked to the discussion — two links on two lines, because Telegram builds its preview card from the *first* URL, so the card shows the article while the discussion stays one tap away (a self-post has no article, so both lines point at the discussion). **X** is *just a link*, with the host rewritten to `X_EMBED_HOST` (`fixupx.com`): x.com serves Telegram no embed, but FixTweet's x.com-branded mirror does, so the card carries the author, text, media and even the quoted tweet — writing any of that into the body would print every tweet twice. Both hosts key off the status id, so an unknown handle falls back to X's own `i` placeholder. Everything interpolated is `html.escape`d, comment included |
+| `search.py` | the **only** module that knows FTS5 exists (`vectors.py`'s arrangement, same rationale): tokenizer, index maintenance, the per-source documents, the query, and hits → envelopes. Its load-bearing decision is that text is tokenized **in Python before FTS5 sees it** — `unicode61` treats a whole CJK run as one token (so 「模型」 only matches a message whose entire run *is* 「模型」) and `trigram` needs three characters, one more than most Chinese words have, while the tool that does this properly (wangfenjin/simple) is a C++ extension with no PyPI wheel, i.e. compiled binaries for two architectures plus a CI step. So a CJK run is indexed as its overlapping **character bigrams** and queried as a **phrase** over them — 「中文搜索」 → `中文 文搜 搜索`, searched as `"中文 文搜 搜索"`, where FTS5's position continuity gives back exactly substring semantics. A single-character query has no bigram to ask for and becomes a **prefix** query (`"猫" *`) — and that rule has one hole, which is why the index and the query are deliberately **asymmetric**. A prefix only reaches tokens that *start* with the character, so a character sitting last in its run had nothing to match at all: 「猫」 could not find 「我买了一只猫」, whose only 猫 token is 「只猫」 (found in review, then confirmed on the real archive — 「大连站日本分站」 was unreachable by 「站」). The index therefore emits each run's **final character as its own token**; the query must *not*, or 「中文搜索」 would become `"中文 文搜 搜索 索"` and match only text whose run ends there, breaking 「中文搜索工具」. Both directions are pinned by tests. Every token is **quoted**, which is the whole injection story: inside quotes `AND` is a word and `*` is nothing. The tokenizer is deliberately lossy in the *opposite* direction from `ngram.py`'s — that one serves a classifier and throws away URLs, @mentions and stopwords; this one serves recall and drops only what cannot be typed into a search box. `TOKENIZER_VERSION` is the `model_tag` contract simplified to one integer: edit `tokenize` → bump it → the next startup rebuilds. Known and accepted cost: substring semantics means 「中文」 also matches 「其**中文**件」 (the way out, if it ever stops being acceptable, is a real segmenter — not a threshold) |
 | `preview.py` | source-agnostic link previews: fetch a URL (async httpx) + extract metadata (`metadata_parser`), `link_previews` cache, per-message batch w/ Telegram-bonus fill, image fetch for the proxy |
 | `hn.py` | `HNManager` (on `app.state.hn`, peer of `TgManager`): subscription-driven HN front-page sampling loop (`topstories` diff → `hn_stories`, sticky `first_seen_at`, peak_rank, 48h snapshot refresh) + serial rate-limited hckrnews history backfill w/ pending-day set in `app_meta` (`threading.Lock` + per-day read-modify-write — `schedule_backfill` runs on the threadpool while the loop rewrites the set); HTTP via injectable `fetch_json` (tests need no network). Hardened per `kb/plans/2026-07-19-hn-phase1-review-fixes.md`: `_loop` has a catch-all guard (DB errors outside `poll_once`'s try must not kill the task); **null item ≠ dead** — refresh only marks dead on explicit `dead`/`deleted` (Firebase transiently nulls live items), while a *never-seen* front-page id that fetches null gets a dead placeholder row so it isn't re-pulled every round; `kick()` marshals via `call_soon_threadsafe` (no-op before startup / when source disabled). **Link-preview prefetch** (2026-07-20): `_fill_previews` at the tail of `poll_once` sweeps linkable stories without a stored preview newest-first (`CONDENSER_HN_PREVIEW_BATCH`/round, 0=off; covers fresh, backfilled *and* pre-feature rows) through `preview.get_preview` (warming the shared pane cache) into `hn_stories.preview`; ≤3 real attempts per story (`PREVIEW_MAX_ATTEMPTS`) — a still-fresh negative cache entry skips *without* bumping (the 1h neg-TTL < poll interval would otherwise eat every retry), empty-but-ok results are terminal; injectable `fetch_preview` for tests. `routers/hn.py` = `/api/sources/hn/subscriptions*` + `/api/hn/status` (incl. `source_enabled`); POST = subscribe-and-enable (re-enables a paused row, `schedule_backfill` only on first create), POST/PATCH-enable → 503 when `CONDENSER_HN_ENABLED=false`. Multi-source plan Phase 1: `kb/plans/2026-07-19-multi-source-hn.md` |
 | `x.py` | X (Twitter) source, **push model** — the server never talks to X; a local probe (`probe/`) reads the user's logged-in session through the `xbird` library (the `bird` CLI until 2026-08-06; the pushed JSON shape is unchanged, and the server is written against that shape) and pushes it. Owns tolerant `parse_tweet` (string ids → int64, legacy `'%a %b %d %H:%M:%S %z %Y'` timestamps, media/metrics/article passthrough, `quotedTweet` → a self-referential archive row, retweets only recoverable as `rt_of_handle` from bird's `RT @x:` text prefix), `ingest_tweets` (idempotent by tweet id: tweet rows refresh so metrics move, feed rows are insert-only so `first_seen_at` stays sticky; embedded quotes use insert-if-absent so a depth-limited copy can't downgrade a richer row; unkeyable entries are counted and dropped, a drifted field is counted *and* stored since `raw` is archived), `probe_config` (subscription-driven, like HN sampling), `_learn_user_identity` (a followed account's numeric `user_id` + display `name` come from its first push — the handle is the subscription key because that is what a reader types, the numeric id is what survives a rename), and `status` (push activity from `app_meta` `x_*` keys). Since 2026-07-30 it also owns the **Following** feed (`FOLLOWING_FEED`, a third `x_feed_kind` beside `home`/`user`) and the two filters only it needs (`_apply_following_rules`, plan §6.3): ① an entry whose author is not in `x_following` is dropped **whole**, body included — X injects ads with no structural marker, so the follow list is the only test, and an ad is noise all the way down; ② an entry older than `CONDENSER_X_FOLLOWING_MAX_AGE_HOURS` (24) gets its **body archived but no feed row**, reusing the path a quoted tweet already takes — X pads the feed with a thread's own ancestors (measured: one 2025-09 root arriving in a 2026-07 page) and a feed row would land them in timeline history, invisible but counted as unread. Order matters: ① first, so an ad that is *also* old is not merely archived; and both run on feed entries only, never on `_embedded_quotes`. **An empty follow list disables ① entirely** — the deliberate failure mode, since the alternative on a never-synced install is silently discarding every tweet as advertising. `IngestResult` carries `filtered_ads`/`filtered_old` so the subscription row can show them. `routers/x.py` = `/api/sources/x/subscriptions*` + `probe-config` (now also `sync_following`, the server-side staleness decision, so the probe stays stateless) + `following` (whole-list replace; refuses an empty push over a non-empty list, because a transient bird `[]` would otherwise disable the ad filter for a whole sync interval) + `ingest` (Bearer or cookie — the probe is just a device) + `/api/x/status` + `/api/x/avatar/{handle}` (unavatar proxy, `fallback=false` so a miss 404s into the client's letter avatar — bird carries no avatar URL); 503 when `CONDENSER_X_ENABLED=false`, 404 on a push to an unknown/paused feed. `sources/x.py` is the **Phase 2 timeline provider**: `x_feed_items JOIN x_tweets` (+ a self-join for the quoted tweet), read/saved/hidden anti-joins, and a feed-dependent `SORT_AT_SQL` — For You by `first_seen_at`, a followed account by `created_at`. **For You is opt-in**: bird's `home` re-samples every call (~2400 tweets/day at the old n=50), so by default it is excluded from the aggregate timeline and only appears under `?source=x` / `?source=x&feed=…`; since 2026-07-29 the subscription's `config.aggregate` (`none` | `positive` | `all`, HN's `display_mode` pattern) can admit it — `positive` lets through only what the verdict recommends, measured at ~13% of arrivals, i.e. about a fifth added to a ~50-item day rather than a flood. The predicate lives inside the scoped subquery (with the feed filter, so dedup only ranks admissible rows) and `bulk_read_scope` hands the same rule to the bulk-read sweep, because "mark all read" in the aggregate must burn exactly what the aggregate showed and not the For You labeling backlog; `CONDENSER_X_HOME_COUNT` dropped 50 → 20 as the second capacity lever. **Following joins the aggregate in full by default** (2026-07-30) — it is a *stable window*, not a firehose (two consecutive bird calls overlapped 19/20, ~100-200 tweets/day), and it is never judged, so its `aggregate` modes are `none`/`all` with no `positive`: a recommended-only mode would silently hide the whole feed. The admission rule generalized with it — `aggregate_mode(feed)` + `scope()` now drop any feed set to `none`, replacing the hardcoded "everything except For You" that used to live in `db.enabled_x_feeds`. A tweet in several feeds de-duplicates under an **explicit** `ROW_NUMBER()` priority (account subscription > following > For You), no longer "earliest sighting wins": with three feeds a tweet by an account you also subscribe to sits in two non-For-You feeds, and the winner decides its sort timestamp, its admission rule, its verdict badge *and* which sidebar row owns its unread count — which would otherwise drift with whichever push landed first. Plans: `kb/plans/2026-07-24-x-source-local-probe.md`, `kb/plans/2026-07-30-x-following-feed.md` |
@@ -1150,6 +1160,75 @@ in `tmp/2026-08-07-x-cleanup/` — re-runnable, see its README.
 ⚠️ **At the 15-day default the first weeks legitimately delete nothing** (the oldest production row
 is 13 days old), so `deleted=0` in the logs is not a fault — that is exactly why
 `GET /api/cleanup/status` exists.
+
+**全文搜索** (2026-08-09, BDD; plan `kb/plans/2026-08-08-full-text-search.md`, schema **v12**).
+Search across every source, on its own `/search` page — sidebar entry between Saved and
+Filters, `GET /api/search`, `condenser/search.py`. The design work was all in one question,
+**how to tokenize Chinese**, and the answer is deliberately dependency-free: see the
+`search.py` row above for why `trigram` and the `simple` C++ extension were both rejected and
+how CJK character bigrams + phrase queries recover substring semantics. Four decisions worth
+not re-deriving:
+
+* **One index row per *item*, keyed like `saved_items`.** The plan said one row per raw
+  Telegram message plus query-time de-duplication; indexing the *display unit* instead
+  (anchor = the album's lowest id, text = whichever sibling carries the caption) honours the
+  same intent — one result per card — and deletes the whole dedup problem, including what it
+  would have done to `total` and to paging.
+  ⚠️ **The unit is resolved from the database, not from the `DisplayMessage` the hook is
+  handed** — the trap that made this land wrong the first time. Backfill yields albums
+  already merged, but the **realtime** handler dispatches one raw row at a time (telememo's
+  `_handle_new_message` groups a single message), so its `dm.id` is a sibling id. Trusting it
+  indexed an album once per photo and made an edit *add* a row beside the stale one instead of
+  replacing it, leaving the pre-edit text findable forever. `search.index_telegram_unit` reads
+  the unit back and also clears any sibling-keyed document, so a wrongly indexed unit heals on
+  its next edit.
+* **Search reads the archive, not the reading list.** No subscription scoping: a paused
+  channel is findable, and so is a For You tweet the aggregate mode keeps out of the timeline
+  (measured in the walkthrough: For You contributes 4 of the 45 hits for 「模型」). The two
+  exceptions are `hidden_items` and `is_filtered` — judgements about the *item*, and a
+  keyword rule is a standing instruction about the very text a search matches on.
+* **Deletion cascades, and one of them is not where the plan put it.** The X sweep's
+  anti-join is against `x_feed_items`, not `x_tweets`: a body can outlive its feed rows (a
+  live tweet still quotes it) and such a tweet is no longer a timeline item, so a hit on it
+  would open onto nothing. `db.delete_channel_messages` drops a channel's documents, and
+  `mark_hn_story_dead` drops a killed story's — the timeline's ranking already excludes dead
+  stories (`sources/hn.py:_RANKED`), and search must not be the one surface still offering
+  them. That policy needs enforcing in **three** places, not one: the deletion, `_rebuild_hn`
+  (which would otherwise resurrect every killed story on the next rebuild) and
+  `index_hn_story` itself, since Firebase serves already-flagged submissions that are still
+  sitting in `topstories`.
+* **A keyword filter is checked against the whole display unit, not the anchor row.**
+  `is_filtered` is materialized per raw row and an album's caption usually lives on a
+  *sibling*, so an anchor-only test let the album through — and the card then rendered the
+  very caption the rule bans, answering a query for the banned word itself. Deliberately
+  stricter than the timeline, which drops the filtered row and still shows the rest of the
+  album: a filter that does not answer a search for its own keyword is not a filter.
+* **The rebuild is cheap enough to run inline, and that was measured, not assumed.**
+  `tmp/search_rebuild_timing.py` on a production snapshot: 80 ms for 2630 items, ~0.3 s
+  extrapolated to production's real row counts. It got there via `executemany` — the naive
+  per-row DELETE+INSERT was 774 ms, which would have forced the background thread the plan's
+  §4 contemplates.
+
+Web: `SearchView` (local draft + 300 ms debounce; the **URL owns** the committed query and
+every filter, so a search is a link), `SearchScopeMenu` (two levels flat, from `GET
+/api/sources`), status chips defaulting to **All** — unlike the timeline, you search for
+something you remember reading as often as for something you haven't — and a sort toggle
+(newest / bm25). Results are `DatedItemRow`s, shared with the Saved view (renamed from
+`SavedMessageItem`), and **not** wired to scroll-to-read: scrolling past an old message while
+hunting for a different one is not reading it. `lib/itemCaches.ts` is new and load-bearing —
+the same card can now be on screen in the timeline, the search results and the saved list at
+once, so save/hide/feedback patch all three through one helper instead of three copies of the
+timeline-only code. 536 backend + 121 frontend green; **no iOS change** (the API is generic,
+its UI is the plan's §8 non-goal). Walkthrough against the real dev database — which was on
+schema 11, so the v11 → v12 backfill is part of the acceptance — in
+`tmp/2026-08-09-full-text-search/` (re-runnable, see its README).
+
+⚠️ **Typecheck the frontend with `pnpm build` / `tsc -b`, never `tsc --noEmit`.** The bare
+form resolves the solution-style root `tsconfig.json`, which lists only project references
+and therefore checks *nothing* — it reports success on code that fails the real build. This
+shipped three `TS2322`s past a "green" typecheck and past 121 passing vitest runs (esbuild
+strips types without checking them), and `git push` to master is a deploy, so the first thing
+that would have noticed was the Docker frontend stage.
 
 **Forward is source-generic** (2026-07-27, BDD): `POST /api/forward {key, comment?}` joins
 the key-driven family (`/api/read`, `/api/hidden`, `/api/feedback`, `/api/records`);

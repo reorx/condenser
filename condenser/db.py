@@ -27,7 +27,7 @@ from peewee import (
 
 from telememo import db as tdb
 
-from . import vectors
+from . import search, vectors
 from .items import FORYOU_FEED, ItemKey
 
 # The condenser is_filtered overlay column declared on telememo's messages table.
@@ -38,7 +38,7 @@ MESSAGES_OPTIONAL_FIELDS = {
 # Bumped when condenser's own table shapes change; recorded in app_meta on init so a
 # future startup can detect an upgrade and run a migration. Telememo manages its own
 # table migrations separately (init_db optional_fields / ALTER TABLE).
-SCHEMA_VERSION = 11
+SCHEMA_VERSION = 12
 
 
 class CondenserBaseModel(Model):
@@ -395,6 +395,11 @@ def init_db(db_path: str, vector_dims: int = 256) -> None:
     has to be created *after* the sqlite-vec extension is loaded, hence the tail
     position. A host that cannot load the extension still gets a working app —
     only the For You verdict goes quiet.
+
+    The v12 search index is the same shape of tail step, minus the extension:
+    FTS5 is compiled into every SQLite this runs on, and the v11 upgrade is a
+    backfill rather than a migration, because nothing in that table is not
+    derived from the source tables (``search.ensure_index``).
     """
     tdb.init_db(db_path, optional_fields=MESSAGES_OPTIONAL_FIELDS)
     _migrate_subscriptions_v3()
@@ -405,6 +410,8 @@ def init_db(db_path: str, vector_dims: int = 256) -> None:
     _enable_wal(db_path)
     set_meta('schema_version', str(SCHEMA_VERSION))
     vectors.setup(vector_dims)
+    search.setup()
+    search.ensure_index()
 
 
 def _migrate_subscriptions_v3() -> None:
@@ -652,14 +659,18 @@ def channel_min_message_id(channel_id: int) -> int:
 
 
 def delete_channel_messages(channel_id: int) -> int:
-    """Wipe a channel's cached messages, comments, and read markers; returns messages deleted.
+    """Wipe a channel's cached messages, comments, read markers and search documents;
+    returns messages deleted.
 
     Saved records (``saved_items``) and keyword filters are intentionally preserved —
-    they are user assets / config, not re-syncable source cache.
+    they are user assets / config, not re-syncable source cache. The search index is
+    *not* in that group: it is derived from the text being deleted here, so leaving
+    it would make a hit open onto a message that no longer exists.
     """
     deleted = tdb.get_message_count(channel_id)
     with tdb.db.atomic():
         ReadItem.delete().where((ReadItem.source == 'telegram') & (ReadItem.ref1 == channel_id)).execute()
+        search.delete_telegram_channel(channel_id)
         tdb.db.execute_sql('DELETE FROM comments WHERE parent_channel_id = ?', (channel_id,))
         tdb.db.execute_sql('DELETE FROM messages WHERE channel_id = ?', (channel_id,))
     return deleted
@@ -1013,7 +1024,11 @@ def update_hn_peak_rank(story_id: int, rank: int) -> None:
 
 
 def mark_hn_story_dead(story_id: int) -> None:
+    """Flag a story HN itself killed. The row stays (the archive is append-only),
+    but its search document goes: the timeline's ranking excludes dead stories, so
+    leaving it findable would make search the one surface that still offers it."""
     HNStory.update(is_dead=True).where(HNStory.id == story_id).execute()
+    search.delete_item('hn', story_id)
 
 
 def hn_stories_to_refresh(first_seen_after: datetime) -> list[HNStory]:
@@ -1546,7 +1561,14 @@ def sweep_x_retention(feed_cutoff: datetime, embedding_cutoff: Optional[datetime
     every iteration but the last strictly shrinks the table.
     """
     stamp = feed_cutoff.strftime('%Y-%m-%d %H:%M:%S')
-    counts = {'feed_items': 0, 'tweets': 0, 'embeddings_orphaned': 0, 'embeddings_expired': 0, 'attributes_orphaned': 0}
+    counts = {
+        'feed_items': 0,
+        'tweets': 0,
+        'embeddings_orphaned': 0,
+        'embeddings_expired': 0,
+        'attributes_orphaned': 0,
+        'search_orphaned': 0,
+    }
     with tdb.db.atomic():
         counts['feed_items'] = tdb.db.execute_sql(_DELETE_X_FEED_ITEMS, (stamp, stamp)).rowcount
         while True:
@@ -1565,6 +1587,10 @@ def sweep_x_retention(feed_cutoff: datetime, embedding_cutoff: Optional[datetime
         counts['attributes_orphaned'] = tdb.db.execute_sql(
             'DELETE FROM x_attributes WHERE tweet_id NOT IN (SELECT id FROM x_tweets)'
         ).rowcount
+        # Same anti-join, one table further out: search documents exist per *feed
+        # appearance*, so this one keys off x_feed_items rather than x_tweets — a
+        # body that survives as somebody's quote is no longer a timeline item.
+        counts['search_orphaned'] = search.sweep_x_orphans()
         if embedding_cutoff is not None:
             # A living tweet's vector expires on its own, longer clock: it is read
             # once (at judge time) and re-derivable from the text that is still here.

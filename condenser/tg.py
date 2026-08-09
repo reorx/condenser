@@ -23,7 +23,7 @@ from telememo.service import TelegramService
 from telememo.telegram import convert_channel_to_info
 from telememo.types import ChannelInfo, DisplayMessage, SignInResult
 
-from . import db, filters, forward
+from . import db, filters, forward, search
 from .config import Settings
 from .crypto import decrypt_session, encrypt_session
 from .items import ItemKey
@@ -342,6 +342,10 @@ class TgManager:
     async def _on_new_message(self, dm: DisplayMessage) -> None:
         ids = dm.raw_message_ids or [dm.id]
         filters.recompute_messages(dm.channel_id, ids)
+        # telememo registers this handler for MessageEdited too, so the search
+        # upsert *is* the edit path — an edited message's old text has to stop
+        # being findable, and there is no second hook that would do it.
+        search.index_display_message(dm)
 
     async def _backfill_channel(self, channel_id: int) -> int:
         """Pull the recent-days window for one channel; returns the number of rows ingested.
@@ -357,6 +361,7 @@ class TgManager:
         try:
             async for dm in service.backfill(handle, since_days=since_days):
                 ids.extend(dm.raw_message_ids or [dm.id])
+                search.index_display_message(dm)
         except Exception as e:
             if self._is_auth_error(e):
                 await self._demote_session()
@@ -402,6 +407,7 @@ class TgManager:
         try:
             async for dm in service.backfill(handle, offset_id=oldest, max_messages=count, persist=True):
                 ids.extend(dm.raw_message_ids or [dm.id])
+                search.index_display_message(dm)
         except Exception as e:
             if self._is_auth_error(e):
                 await self._demote_session()

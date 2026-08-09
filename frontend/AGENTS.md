@@ -43,7 +43,7 @@ Two conventions this list exists to protect:
 | `PageHeader` + `IconBadge` | Unified reading-view top bar (leading icon + title + meta + right-aligned actions); `IconBadge` wraps a lucide icon in a muted circle |
 | `SegmentedOption` | One icon-over-label button in a segmented control; shared by `SettingsDialog`'s theme + unread pickers |
 | `SettingsDialog` | Settings modal: Telegram account, theme, unread-indicator mode, devices, lock app |
-| `Sidebar` | Left navigation: nav links (Unread first, `/` = Unread, `/?all=1` = All), then one `SidebarSourceGroup` per source from `GET /api/sources`, settings |
+| `Sidebar` | Left navigation: nav links (Unread first, `/` = Unread, `/?all=1` = All, then Saved / Search / Filters / Subscriptions), then one `SidebarSourceGroup` per source from `GET /api/sources`, settings |
 | `SidebarSourceGroup` | One collapsible source section (collapse persisted via `useCollapsedSources`): the full-width header row links to `/s/:source` (+ unread badge when collapsed) with the collapse chevron as its own right-edge target, rows = the source's enabled subscriptions |
 | `SidebarChannelLink` + `navLinkClass` | One Telegram channel link in a sidebar source group; also exports the shared nav-row className used by the top-level links |
 | `SidebarHnFeedLink` | One HN feed link in the sidebar's Hacker News group (routes to `/s/hn` — v1 has a single feed) |
@@ -79,7 +79,17 @@ Two conventions this list exists to protect:
 | `ForwardDialog` | "转发到我的频道" modal (deliberately Chinese copy), source-generic since 2026-07-27 — takes the whole `TimelineItem` and posts its key to `POST /api/forward`. Telegram: non-empty comment = quote message (text + t.me link), empty = native forward. Other sources have no Telegram original, so the server renders title + link into a new message and the copy says so ("留空则只发标题和链接…" instead of "留空则原样转发…") — the hint is the only source-conditional bit. Success toast carries an「打开」action opening the landed message |
 | `LinkPreviewCard` | One self-fetched link preview (proxied image / Telegram-image fallback + site/title/description; `channelId` optional — absent for HN targets); shared by the pane and `HnCard`'s embedded preview |
 | `Lightbox` | Fullscreen media viewer with prev/next navigation |
-| `SavedMessageItem` | One saved item in the Saved view: full date line + the source's card (`MessageCard` / `HnCard` / `XCard`) |
+| `DatedItemRow` | One item under a full date line, dispatched by source (`MessageCard` / `HnCard` / `XCard`). The row shape for the two views that are *not* a timeline — Saved and Search — both of which jump across days and sources, so each item states its own date instead of sitting under a shared day divider |
+
+### `components/search/`
+
+| Component | Purpose |
+|---|---|
+| `SearchScopeMenu` | Where to search: All sources / one source / one subscription inside it, built from the same `GET /api/sources` tree the sidebar draws. Two levels in one **flat** menu rather than nested submenus — the whole list is a handful of rows, and a submenu hides the channel you are reaching for behind a hover. A paused subscription is offered too: search reads the archive, and pausing a channel does not unread what it already collected. Also exports `sourceGlyph` |
+| `SearchScopeOption` | One row inside `SearchScopeMenu` (check + glyph + name, indented for a subscription) |
+| `SearchFilters` | The row under the search box: `SearchScopeMenu`, the All/Unread/Saved status chips, and the sort toggle. All three live in the URL, which is what makes a search a link. Status defaults to **All**, unlike the timeline's unread-first default — you search for something you remember reading at least as often as for something you haven't |
+| `SearchFilterChip` | One small icon+label button in that row. Header-scale, unlike `SegmentedOption` (a settings-sized card), so the row does not wrap to a second line on a phone |
+| `SearchResults` | The result list: flat `DatedItemRow`s + offset infinite scroll + the four states (loading / error / empty / results). Deliberately **not** wired to `useScrollToRead` — scrolling past a five-year-old message while hunting for a different one is not reading it. Every other card interaction (save, hide, feedback, the detail pane) works as it does elsewhere. A 422 renders as "nothing searchable", not as a failure: it means the box holds only punctuation or emoji |
 
 ### `components/filters/`
 
@@ -114,9 +124,12 @@ Two conventions this list exists to protect:
 
 ## Where things live (non-components)
 
-- `pages/` — route screens (`TimelineView`, `RecordsView`, `FiltersView`, `SubscriptionsView`,
-  `AppShell`, `AppLogin`, `TgLogin`, `AuthorizeView` — the device-authorization page cold-loaded
-  by the iOS app; only needs the cookie session, so `App.tsx` renders it before the TG gate).
+- `pages/` — route screens (`TimelineView`, `RecordsView`, `SearchView`, `FiltersView`,
+  `SubscriptionsView`, `AppShell`, `AppLogin`, `TgLogin`, `AuthorizeView` — the
+  device-authorization page cold-loaded by the iOS app; only needs the cookie session, so
+  `App.tsx` renders it before the TG gate). `SearchView` owns the box (local draft state,
+  300ms debounce) while the **URL owns the committed query** and every filter, written with
+  `replace` — so a search is shareable and Back leaves the page rather than un-typing a word.
 - `hooks/` — data + behavior hooks (`useTimeline`, `useSources`, `useSubscriptions`,
   `useChannelFilter`, `useScrollToRead` (armed "看过即读" judgement + `pendingKeys` green
   sync state + confirm-then-flip cache writes — see the root AGENTS.md bullet),
@@ -129,9 +142,12 @@ Two conventions this list exists to protect:
   (runtime app settings incl. the forward target channel), `useHideItem` + `useUnhideItem`
   (hide an item from every timeline via `POST /api/hidden`; optimistic removal + undo),
   `useFeedback` (up/down/clear an item's label via `/api/feedback`; optimistic in-place
-  swap across the timeline *and* `['records']` caches, rolled back from the pre-click value.
+  swap across every item cache, rolled back from the pre-click value.
   Verdict + reason move as one `Label` — the reason belongs to the verdict it explains, so
   they are cached, rolled back and cleared together and a correction can't strand a stale one),
+  `useSearch` (the offset-paged `['search']` infinite query, idle until the box has content;
+  also exports `scopeParams` — the one place the picker's source+sub is translated into the
+  API's `source` / `channel_id` / `feed`),
   mutations, …). `useTimeline` / `useTimelineDays` / `useNewContent` / `useBulkRead` accept a
   `source` scope (the `/s/:source` views) plus a `feed` scope for multi-feed sources
   (the `/s/:source/:feed` route — X's For You / one followed account).
@@ -144,6 +160,11 @@ Two conventions this list exists to protect:
   wrapper for HN self-post HTML), `linkify.tsx`, `extractUrls.ts` (shared URL
   regex/extraction for linkify + the detail pane), `itemDetailPane.tsx` (the detail pane's
   context: the open `TimelineItem` envelope), `theme.tsx`, `unreadIndicator.tsx`,
+  `itemCaches.ts` (the three caches that hold item envelopes — the paged timelines,
+  the paged search results, the flat saved list — plus `patchItem` / `removeItem` /
+  `findItem` over all of them. Listed in one place because the same card can be on
+  screen in two of them at once, and patching only the timeline is how one copy ends up
+  showing a filled bookmark while its twin shows an empty one),
   `queryClient.ts`, `utils.ts`, `pwa.ts` (standalone-window resize), `swUpdate.ts`
   (PWA background-update flow: vite-plugin-pwa prompt mode — the SW precaches the app
   shell so the installed app opens instantly from local cache, a new build found in the

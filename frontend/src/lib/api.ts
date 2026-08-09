@@ -14,6 +14,8 @@ import type {
   KeywordFilter,
   LinkPreview,
   MessageStats,
+  SearchPage,
+  SearchParams,
   Source,
   SourceGroup,
   Subscription,
@@ -208,6 +210,24 @@ export const api = {
     request<TimelineNew>(
       '/api/timeline/new' +
         qs({ after, channel_id: channelId, limit, unread_only: unreadOnly || undefined, source, feed }),
+    ),
+
+  // ---- full-text search ----
+  // Offset paging rather than a cursor: search browses an archive instead of
+  // draining a queue, so the drift a cursor exists to prevent doesn't matter here.
+  search: (params: SearchParams) =>
+    request<SearchPage>(
+      '/api/search' +
+        qs({
+          q: params.q,
+          source: params.source,
+          channel_id: params.channel_id,
+          feed: params.feed,
+          status: params.status,
+          sort: params.sort,
+          offset: params.offset,
+          limit: params.limit,
+        }),
     ),
 
   markRead: (keys: string[]) => post<{ ok: true }>('/api/read', { keys }),
