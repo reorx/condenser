@@ -1,11 +1,12 @@
 import { Trash2 } from 'lucide-react';
 
 import { XAggregateMenu } from '@/components/subscriptions/XAggregateMenu';
+import { XLangFilterToggle } from '@/components/subscriptions/XLangFilterToggle';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { XGlyph } from '@/components/XGlyph';
 import { fullDateLabel } from '@/lib/format';
-import { isXSyntheticFeed, xFeedLabel } from '@/lib/sources';
+import { isXSyntheticFeed, X_FORYOU_FEED, xFeedLabel } from '@/lib/sources';
 import type { XPushCount, XSubscription } from '@/lib/types';
 
 /** One X feed row on the Subscriptions page: For You, Following or a followed
@@ -31,6 +32,8 @@ export function XSubscriptionRow({
   // with, and a count of 0 where you expected some means a filter stopped working.
   if (push?.filtered_ads) parts.push(`${push.filtered_ads} 条广告已滤除`);
   if (push?.filtered_old) parts.push(`${push.filtered_old} 条超期（只存档）`);
+  // For You only: the global-language ingest filter's work on the last push.
+  if (push?.filtered_lang) parts.push(`${push.filtered_lang} 条外语已滤除`);
 
   return (
     <div className="flex items-center gap-3 px-4 py-3 sm:px-5">
@@ -47,6 +50,11 @@ export function XSubscriptionRow({
         <div className="truncate text-xs text-muted-foreground">{parts.join(' · ')}</div>
       </div>
       <div className="ml-auto flex items-center gap-2">
+        {/* For You only: language-filter the algorithm's picks — a followed account
+            posting in another language was still chosen by the reader */}
+        {sub.channel_id === X_FORYOU_FEED && sub.enabled && (
+          <XLangFilterToggle feed={sub.channel_id} enabled={sub.lang_filter} />
+        )}
         {/* only the synthetic feeds have a choice to make: a followed account is one
             you already picked, so it is always in the aggregate */}
         {isXSyntheticFeed(sub.channel_id) && sub.enabled && (

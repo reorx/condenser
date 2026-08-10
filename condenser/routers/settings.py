@@ -1,5 +1,8 @@
 """Runtime app settings backed by app_meta (spec B2 — app_meta wiring)."""
 
+import json
+import re
+
 from fastapi import APIRouter, Depends, HTTPException
 
 from .. import db
@@ -19,6 +22,8 @@ def get_app_meta():
         'backfill_days': db.effective_backfill_days(settings.condenser_backfill_days),
         # unset/cleared reads back as null, never ''
         'forward_channel': db.get_meta('forward_channel') or None,
+        # unset and cleared are the same state: an empty whitelist filters nothing
+        'languages': db.get_languages(),
     }
 
 
@@ -31,4 +36,14 @@ def patch_app_meta(body: AppMetaPatch):
         db.set_meta('backfill_days', str(body.backfill_days))
     if body.forward_channel is not None:
         db.set_meta('forward_channel', body.forward_channel.strip())
+    if body.languages is not None:
+        codes = []
+        for code in body.languages:
+            code = code.strip().lower()
+            # primary subtags only ('zh', not 'zh-cn') — the filter matches on them
+            if not re.fullmatch(r'[a-z]{2,3}', code):
+                raise HTTPException(status_code=422, detail=f'invalid language code: {code!r}')
+            if code not in codes:
+                codes.append(code)
+        db.set_meta('languages', json.dumps(codes))
     return get_app_meta()

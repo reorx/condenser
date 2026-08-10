@@ -5,11 +5,12 @@ import { toast } from 'sonner';
 
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { DeviceList } from '@/components/DeviceList';
+import { LanguageOption } from '@/components/LanguageOption';
 import { SegmentedOption } from '@/components/SegmentedOption';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
-import { useAppMeta, useSetForwardChannel } from '@/hooks/useAppMeta';
+import { useAppMeta, useSetForwardChannel, useSetLanguages } from '@/hooks/useAppMeta';
 import { useTgStatus } from '@/hooks/useTgStatus';
 import { api } from '@/lib/api';
 import { queryClient, TG_STATUS_KEY } from '@/lib/queryClient';
@@ -27,6 +28,15 @@ const UNREAD_OPTIONS: { value: UnreadIndicatorMode; label: string; icon: typeof 
   { value: 'dot', label: 'Dot', icon: Circle },
 ];
 
+/** Offered languages (primary subtags). The backend accepts any 2-3 letter code,
+ *  so growing this list is a constant edit, not a schema change. */
+const LANGUAGE_OPTIONS: { value: string; label: string }[] = [
+  { value: 'zh', label: '中文' },
+  { value: 'en', label: 'English' },
+  { value: 'ja', label: '日本語' },
+  { value: 'ko', label: '한국어' },
+];
+
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return <div className="text-xs font-medium tracking-wide text-muted-foreground/70 uppercase">{children}</div>;
 }
@@ -39,6 +49,10 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
 
   const meta = useAppMeta();
   const setForward = useSetForwardChannel();
+  const setLanguages = useSetLanguages();
+  const languages = meta.data?.languages ?? [];
+  const toggleLanguage = (code: string) =>
+    setLanguages.mutate(languages.includes(code) ? languages.filter((c) => c !== code) : [...languages, code]);
   const [forwardChannel, setForwardChannel] = useState('');
   // Sync the input from the server value on load and on every reopen (drops unsaved edits).
   useEffect(() => {
@@ -116,6 +130,21 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
               />
             ))}
           </div>
+        </div>
+
+        <div className="space-y-2">
+          <SectionLabel>语言</SectionLabel>
+          <div className="grid grid-cols-4 gap-1.5">
+            {LANGUAGE_OPTIONS.map((opt) => (
+              <LanguageOption
+                key={opt.value}
+                label={opt.label}
+                selected={languages.includes(opt.value)}
+                onToggle={() => toggleLanguage(opt.value)}
+              />
+            ))}
+          </div>
+          <p className="text-xs text-muted-foreground">全局语言偏好；X For You 开启「按语言过滤」后只保留所选语言。</p>
         </div>
 
         <div className="space-y-2">

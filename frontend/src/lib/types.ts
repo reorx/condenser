@@ -324,6 +324,9 @@ export interface XSubscription {
   /** How much of this feed joins the aggregate timeline. Settable on For You and
    *  Following; a followed account is always 'all' (subscribing *is* the setting). */
   aggregate: XAggregateMode;
+  /** For You's "filter by the global language preference" switch; inert on other
+   *  feeds — only algorithm-picked strangers are language-filtered. */
+  lang_filter: boolean;
   added_at: string | null;
   /** Archived appearances of tweets in this feed. */
   tweets: number;
@@ -342,6 +345,9 @@ export interface XPushCount {
    *  (X pads the feed with a thread's own ancestors). */
   filtered_ads: number;
   filtered_old: number;
+  /** For You only: entries dropped whole because their language is outside the
+   *  global whitelist (Settings → 语言 + the feed's lang_filter switch). */
+  filtered_lang: number;
 }
 
 export interface XStatus {
@@ -515,6 +521,9 @@ export interface AppMeta {
   backfill_days: number;
   /** Target channel for "forward to my channel" (@handle / t.me link); null = unset. */
   forward_channel: string | null;
+  /** Global language whitelist (primary subtags, e.g. ['zh','en']); [] = not set.
+   *  Today only the X For You ingest filter reads it. */
+  languages: string[];
 }
 
 /** An authorized client device (bearer token holder); the token itself is never listed. */

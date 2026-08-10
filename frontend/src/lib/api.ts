@@ -261,7 +261,7 @@ export const api = {
 
   // ---- app meta (runtime settings) ----
   getAppMeta: () => request<AppMeta>('/api/app/meta'),
-  patchAppMeta: (patch: Partial<Pick<AppMeta, 'backfill_days' | 'forward_channel'>>) =>
+  patchAppMeta: (patch: Partial<Pick<AppMeta, 'backfill_days' | 'forward_channel' | 'languages'>>) =>
     request<AppMeta>('/api/app/meta', { method: 'PATCH', body: JSON.stringify(patch) }),
 
   // ---- link previews ----

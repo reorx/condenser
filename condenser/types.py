@@ -158,3 +158,5 @@ class AppMetaPatch(BaseModel):
     backfill_days: Optional[int] = None
     # target for "forward to my channel" (@handle / t.me link / id); '' clears it
     forward_channel: Optional[str] = None
+    # global language whitelist (primary subtags like 'zh'/'en'); [] clears it
+    languages: Optional[list[str]] = None

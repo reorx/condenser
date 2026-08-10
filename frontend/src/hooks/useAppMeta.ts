@@ -21,3 +21,13 @@ export function useSetForwardChannel() {
     onError: (e) => toast.error(errorMessage(e, 'Could not save forward channel')),
   });
 }
+
+/** Save the global language whitelist; [] clears it (= filter nothing). */
+export function useSetLanguages() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (languages: string[]) => api.patchAppMeta({ languages }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['app-meta'] }),
+    onError: (e) => toast.error(errorMessage(e, 'Could not save languages')),
+  });
+}

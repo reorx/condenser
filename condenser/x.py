@@ -75,6 +75,9 @@ class ParsedTweet:
     rt_of_handle: Optional[str] = None
     reply_to_id: Optional[int] = None
     article: Optional[dict] = None
+    # X's own language verdict (xbird >= 1.1.0; None from an older probe). Read
+    # only by the For You language filter — no DB column, the raw archive keeps it.
+    lang: Optional[str] = None
     raw: dict = field(default_factory=dict)
     # non-fatal drift (a field bird emitted in an unexpected shape); the tweet is
     # still stored, the count surfaces in /api/x/status so drift is noticed
@@ -111,6 +114,9 @@ class IngestResult:
     # row because they fell outside the age window.
     filtered_ads: int = 0
     filtered_old: int = 0
+    # For You-only (see _apply_language_filter): entries dropped whole because
+    # their language is outside the global whitelist.
+    filtered_lang: int = 0
 
     def as_dict(self) -> dict:
         return {
@@ -121,6 +127,7 @@ class IngestResult:
             'parse_errors': self.parse_errors,
             'filtered_ads': self.filtered_ads,
             'filtered_old': self.filtered_old,
+            'filtered_lang': self.filtered_lang,
         }
 
 
@@ -184,6 +191,7 @@ def parse_tweet(raw: Any) -> ParsedTweet:
         rt_of_handle=rt.group(1) if rt else None,
         reply_to_id=_as_int(raw.get('inReplyToStatusId')),
         article=raw.get('article') if isinstance(raw.get('article'), dict) else None,
+        lang=raw.get('lang') if isinstance(raw.get('lang'), str) else None,
         raw=raw,
         warnings=warnings,
     )
@@ -338,6 +346,9 @@ def describe_subscription(sub: db.Subscription) -> dict:
         # How much of this feed joins the aggregate timeline (sources/x.py owns the
         # rule). A followed account has no choice to make — subscribing is the setting.
         'aggregate': _aggregate_mode(sub),
+        # For You's "filter by the global language preference" switch (inert on
+        # other feeds — only algorithm-picked strangers are language-filtered).
+        'lang_filter': bool(config.get('lang_filter')),
         'added_at': str(sub.added_at) if sub.added_at else None,
         'tweets': db.x_feed_item_count(sub.channel_id),
     }
@@ -442,6 +453,48 @@ def _apply_following_rules(channel_id: str, parsed: list[ParsedTweet], now: date
     return out
 
 
+# Codes X uses where it decided the tweet has no (determinable) language — media-only
+# tweets, bare links, hashtag piles. Not a language the reader opted out of, so they
+# always pass ('zxx' measured at 2 of 40 on a real home timeline).
+NON_LANGUAGE_CODES = {'und', 'zxx', 'qme', 'qam', 'qct', 'qht', 'qst', 'art'}
+
+
+def _apply_language_filter(channel_id: str, parsed: list[ParsedTweet]) -> tuple[list[ParsedTweet], int]:
+    """Drop For You tweets outside the global language whitelist (dropped whole,
+    the ad filter's semantics: no body, no feed row, no search document).
+
+    Only For You — a followed account posting in another language was still chosen
+    by the reader; only the algorithm's picks are filtered. Armed by two settings
+    at once: the For You subscription's ``config.lang_filter`` switch AND a
+    non-empty global ``languages`` list. Everything unknowable passes (fail-open):
+    a missing ``lang`` (pre-1.1.0 probe) must disarm the filter, not empty the
+    timeline, and a non-language code marks a tweet with nothing to judge.
+    """
+    if channel_id != FORYOU_FEED:
+        return parsed, 0
+    sub = db.get_x_subscription(channel_id)
+    if sub is None or not sub_config(sub).get('lang_filter'):
+        return parsed, 0
+    languages = db.get_languages()
+    if not languages:
+        return parsed, 0
+
+    kept = []
+    dropped = 0
+    for tweet in parsed:
+        if tweet.lang is None:
+            kept.append(tweet)
+            continue
+        primary = tweet.lang.split('-')[0].lower()
+        if primary in languages or primary in NON_LANGUAGE_CODES:
+            kept.append(tweet)
+        else:
+            dropped += 1
+    if dropped:
+        log.info('x foryou: dropped %d tweet(s) outside languages %s', dropped, languages)
+    return kept, dropped
+
+
 def ingest_tweets(channel_id: str, entries: list, settings: Optional[Settings] = None) -> IngestResult:
     """Store one probe push into the archive. Idempotent by tweet id.
 
@@ -455,16 +508,19 @@ def ingest_tweets(channel_id: str, entries: list, settings: Optional[Settings] =
     now = _now()
     parsed, errors = _parse_batch(entries)
     filtered = _apply_following_rules(channel_id, parsed, now, settings)
-    # After the filter, so an ad's quoted tweet is dropped with it — a body-only
-    # entry keeps its quote, since that path is exactly what it lands in itself.
-    embedded = _embedded_quotes(filtered.kept + filtered.body_only)
+    kept, filtered_lang = _apply_language_filter(channel_id, filtered.kept)
+    # After the filters, so a dropped entry's quoted tweet is dropped with it — a
+    # body-only entry keeps its quote, since that path is exactly what it lands in
+    # itself. A *kept* tweet's foreign-language quote is archived normally: the
+    # quote is part of the display unit, never independently recommended.
+    embedded = _embedded_quotes(kept + filtered.body_only)
 
-    feed_ids = [t.id for t in filtered.kept]
+    feed_ids = [t.id for t in kept]
     body_only = filtered.body_only + embedded
     known_tweets = db.existing_x_tweet_ids(feed_ids + [t.id for t in body_only])
     known_items = db.existing_x_feed_item_ids(channel_id, feed_ids)
 
-    for tweet in filtered.kept:
+    for tweet in kept:
         db.upsert_x_tweet(tweet.row(now))
     for tweet in body_only:
         db.insert_x_tweet_if_absent(tweet.row(now))
@@ -484,14 +540,15 @@ def ingest_tweets(channel_id: str, entries: list, settings: Optional[Settings] =
 
     result = IngestResult(
         received=len(entries),
-        stored=len(filtered.kept),
-        new_tweets=len({t.id for t in filtered.kept + body_only} - known_tweets),
+        stored=len(kept),
+        new_tweets=len({t.id for t in kept + body_only} - known_tweets),
         new_items=len(set(feed_ids) - known_items),
         parse_errors=errors,
         filtered_ads=filtered.ads,
         filtered_old=filtered.old,
+        filtered_lang=filtered_lang,
     )
-    _learn_user_identity(channel_id, filtered.kept)
+    _learn_user_identity(channel_id, kept)
     _record_push(channel_id, result, now)
     return result
 

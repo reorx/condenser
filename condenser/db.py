@@ -992,6 +992,24 @@ def effective_backfill_days(env_default: int) -> int:
     return days if days > 0 else env_default
 
 
+def get_languages() -> list[str]:
+    """The global language whitelist (app_meta ``languages``, a JSON array).
+
+    Deliberately a generic key with no ``x_`` prefix: it is the reader's language
+    preference, not an X setting — today only the For You ingest filter reads it,
+    but any source can. Empty/missing/malformed all mean "not set", which every
+    consumer must treat as "do not filter" (fail-open).
+    """
+    raw = get_meta('languages')
+    if not raw:
+        return []
+    try:
+        parsed = json.loads(raw)
+    except ValueError:
+        return []
+    return [code for code in parsed if isinstance(code, str)] if isinstance(parsed, list) else []
+
+
 # --- hn stories (front-page archive) -----------------------------------------
 
 
