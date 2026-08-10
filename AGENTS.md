@@ -105,6 +105,14 @@ loop. Shares **one SQLite file** with [telememo](https://pypi.org/project/teleme
   (`search.ensure_index`), because nothing in the table is not derived from the source
   tables; measured on a real v11 dev database, the whole rebuild is 80ms at 2630 items and
   ~0.3s extrapolated to production, so it runs inline at startup.
+  **SCHEMA_VERSION 13** (2026-08-10, t.co expansion) adds `x_tweets.urls` — a JSON list
+  `[{url, expanded_url, display_url, indices}]`, the metadata X's own UI uses to render the
+  original link in place of the rewritten t.co (xbird 1.2.0 `entities.urls`; shape-based
+  `ALTER TABLE ADD COLUMN`, the v5/v9 pattern). A **rebuildable derived column** in the
+  `is_filtered` spirit: `raw` archives the entities, so any row can be re-extracted
+  (`tmp/backfill_x_urls.py` did exactly that for the 8 probe-upgraded-but-undeployed
+  window rows on 2026-08-10). Historical rows stay NULL, which every renderer treats as
+  "keep the t.co" per entry — the degradation path is per-link, not per-page.
 
 condenser's peewee models bind to telememo's `db` instance, so everything is one connection.
 `condenser/db.py:init_db()` initializes telememo tables (+ `is_filtered`) then condenser tables.
@@ -1255,6 +1263,35 @@ pushes only (SeenCache re-pushes nothing; accepted). 551 backend + 128 frontend 
 hardcoded `NOW = datetime(2026, 7, 25)` aged past the 15-day cleanup retention window on
 2026-08-09 and two tests started failing (the lifespan's cleanup sweep deletes unlabeled
 feed rows); `NOW` is now relative to the wall clock.
+
+**X 推文短链展开** (2026-08-10, BDD; plan `kb/plans/2026-08-10-x-expanded-urls-xbird.md`,
+schema **v13**, xbird **1.2.0**). X rewrites every link in a tweet body to t.co; the
+original lives only in `entities.urls`, which xbird now carries (`TweetData.urls`, the
+`lang` precedent: key omitted when absent, golden suite green with zero changes — probe
+upgrade was `uv lock --upgrade-package xbird` + kickstart, no code). condenser normalizes
+to snake_case at the parse boundary (`x.parse_urls` — wire is camelCase, everything
+downstream is snake_case, convert once), stores per tweet row (refresh path, like
+metrics), and the envelope + nested quote carry it to both clients. Rendering rules,
+identical on web (`lib/xUrls.ts` + `linkify`) and iOS (Kit `XUrlEntity` + `bodyText` +
+app `Linkify`): **match by exact t.co string, never by `indices`** (offsets into X's raw
+text — they misalign once the RT prefix or an article title is stripped); anchor text =
+`display_url`, href = `expanded_url`; an unmatched t.co renders verbatim (old rows,
+un-upgraded probe — per-entry degradation). A **trailing t.co beside media is hidden**
+(X's own UI behavior), with `urls` missing treated as an **empty set**, not "don't
+touch" — caught in the live walkthrough: a media tweet with no outbound links has no
+entities at all, and gating the strip on their presence left exactly the self-link the
+rule exists to hide. `xPreviewUrls` previews the expanded original (better metadata, no
+redirect) and recognizes the quote's own permalink by the quoted status id. Search
+documents append `expanded_url` + `display_url` (a card renders them, so the reader will
+search them) — `TOKENIZER_VERSION` 3, index rebuilt on next start. Acceptance pinned to
+real xbird output (`tests/fixtures/x/urls_tweets.json` via `tmp/make_x_urls_fixture.py`;
+the old fixtures stay as the no-urls degradation sample). 563 backend + 141 frontend +
+197 Kit green; E2E on a real v12 DB copy (migration + rebuild + real home-20 ingest +
+browser screenshots) in `tmp/2026-08-10-x-expanded-urls/`. **Deployed 2026-08-10**
+(revision `f00b7c4`, schema 13 on the box, verified over ssh); `tmp/backfill_x_urls.py`
+filled the 8 window rows and re-indexed them. Walkthrough gotcha worth keeping: the PWA
+service worker serves the pre-rebuild bundle — unregister it before verifying frontend
+changes in a browser session.
 
 **Forward is source-generic** (2026-07-27, BDD): `POST /api/forward {key, comment?}` joins
 the key-driven family (`/api/read`, `/api/hidden`, `/api/feedback`, `/api/records`);
