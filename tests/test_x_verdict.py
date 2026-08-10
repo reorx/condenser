@@ -18,7 +18,7 @@ orthogonal "topic" axes, so every distance in these tests is one we chose.
 import json
 import math
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from fastapi.testclient import TestClient
 
@@ -28,7 +28,11 @@ from condenser.config import get_settings
 from condenser.items import x_key
 from telememo import db as tdb
 
-NOW = datetime(2026, 7, 25, 12, 0)
+# Relative, not a fixed date: TestClient runs the real lifespan, whose cleanup
+# sweep deletes unlabeled feed rows older than the 15-day retention window — a
+# hardcoded NOW starts failing the day it ages past that window (it did, on
+# 2026-08-09, having been datetime(2026, 7, 25) since the file was written).
+NOW = datetime.now(timezone.utc).replace(tzinfo=None, microsecond=0)
 
 # Topic axes the fake embedder places vectors on. Orthogonal, so a tweet on one
 # topic sits at cosine distance 1.0 from a tweet on another — comfortably past
