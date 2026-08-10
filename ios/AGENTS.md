@@ -104,15 +104,21 @@ make clean       # 清理构建产物与生成的 xcodeproj
 
 ## 真机部署
 
-`make device`：xcodegen → 探测 Team ID（钥匙串 Apple Development 证书的 OU，可用
-`TEAM_ID=` 覆盖）→ 选设备（唯一已连接的真机，多台时 `DEVICE="<名称或UDID>"` 指定）→
-device 构建（`-allowProvisioningUpdates` 自动出 profile）→ `devicectl` 安装 + 启动。
+`make device`：xcodegen → Team ID 固定为付费账号的正式 Team `YU3FMV36N2`（Xiao Meng，
+2026-08-10 起；可用 `TEAM_ID=` 覆盖。不再从钥匙串探测——钥匙串里还留着旧免费 Personal
+Team `QFW98B7VB4` 的证书，find-certificate 取首个匹配会探错）→ 选设备（唯一已连接的
+真机，多台时 `DEVICE="<名称或UDID>"` 指定）→ device 构建（`-allowProvisioningUpdates`
+自动出 profile）→ `devicectl` 安装 + 启动。
 产物在 `.build/DerivedData/Build/Products/Debug-iphoneos/`（与模拟器产物不冲突）。
 
-前提（一次性）：Xcode → Settings → Accounts 登录 Apple ID；iPhone 数据线连 Mac 并信任；
-手机开启开发者模式（设置 → 隐私与安全性）。免费 Personal Team 签名 7 天过期，重跑
-`make device` 重装即可（Keychain 里的 token 不丢）；首次安装需在手机上信任开发者证书
-（设置 → 通用 → VPN 与设备管理）。首次 USB 配对后 devicectl 支持同一局域网 Wi-Fi 部署。
+前提（一次性）：Xcode → Settings → Accounts 登录付费 Apple ID；iPhone 数据线连 Mac 并
+信任；手机开启开发者模式（设置 → 隐私与安全性）。付费 Team 的 profile 一年有效，
+**没有免费账号的 7 天重装问题**；首次安装需在手机上信任开发者证书（设置 → 通用 →
+VPN 与设备管理）。首次 USB 配对后 devicectl 支持同一局域网 Wi-Fi 部署。
+⚠️ **从旧免费 Team 切换过来的手机要先删掉旧 app 再装**：Team 变了 →
+`application-identifier` 前缀变了，iOS 拒绝覆盖安装（devicectl 报 mismatch 错）。
+删除会连带丢掉 Keychain 里的 device token，装好后要重走一次 `/authorize` 配对
+（Settings 里旧的 device 行可顺手删掉）。此为一次性迁移成本，之后签名身份稳定。
 
 ## 开发调试：跳过授权直连本地后端
 

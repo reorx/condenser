@@ -2,7 +2,7 @@
 # 真机构建 + 推送安装（make device 的实现，用法见 AGENTS.md「真机部署」）
 #
 # 环境变量：
-#   TEAM_ID  签名用的开发者 Team ID（缺省时从钥匙串的 Apple Development 证书自动探测）
+#   TEAM_ID  签名用的开发者 Team ID（缺省用付费账号的正式 Team）
 #   DEVICE   目标设备（名称 / UDID），缺省时自动选中唯一已连接的设备
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -11,18 +11,11 @@ DERIVED_DATA=.build/DerivedData
 APP=$DERIVED_DATA/Build/Products/Debug-iphoneos/Condenser.app
 BUNDLE_ID=com.reorx.condenser
 
-# ---- Team ID：env 优先，其次从钥匙串证书的 OU 字段探测 ----
-if [[ -z "${TEAM_ID:-}" ]]; then
-  TEAM_ID=$(security find-certificate -c "Apple Development" -p 2>/dev/null \
-    | openssl x509 -noout -subject 2>/dev/null \
-    | sed -n 's/.*OU *= *\([A-Z0-9]\{10\}\).*/\1/p' | head -1)
-fi
-if [[ -z "$TEAM_ID" ]]; then
-  echo "error: 找不到 Team ID。先在 Xcode → Settings → Accounts 登录 Apple ID" >&2
-  echo "       （生成 Apple Development 证书后可自动探测），或手动指定：" >&2
-  echo "       make device TEAM_ID=ABCDE12345" >&2
-  exit 1
-fi
+# ---- Team ID：付费 Apple Developer 账号的正式 Team（Xiao Meng），env 可覆盖 ----
+# 不再从钥匙串自动探测：钥匙串里同时存在旧免费 Personal Team（QFW98B7VB4）的证书，
+# find-certificate 取首个匹配会探错。付费 Team 的 profile 一年有效，没有 7 天重装问题。
+# 证书缺失时不预检——Automatic + -allowProvisioningUpdates 下 Xcode 会自动补证书/给出准确报错。
+TEAM_ID="${TEAM_ID:-YU3FMV36N2}"
 echo "==> Team ID: $TEAM_ID"
 
 # ---- 选设备：解析出 UDID（DEVICE 可传名称或 UDID；缺省取唯一已配对的真机） ----
@@ -62,8 +55,8 @@ echo "==> Device: $UDID"
 
 # ---- 构建：命令行覆盖 project.yml 的模拟器无签名配置 ----
 # destination 必须指到具体设备（而非 generic/platform=iOS），
-# -allowProvisioningDeviceRegistration 才能把这台设备注册进团队、生成 profile
-# （免费 Personal Team 无法在开发者网站手动加设备，只有这条路）
+# -allowProvisioningDeviceRegistration 把新设备自动注册进团队、生成 profile
+# （付费 Team 也可在开发者网站手动加设备，但这条路免去手工步骤）
 set -o pipefail
 xcodebuild -project Condenser.xcodeproj -scheme Condenser \
   -destination "platform=iOS,id=$UDID" \
