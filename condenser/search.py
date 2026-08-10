@@ -50,7 +50,7 @@ VERSION_META_KEY = 'search_index_version'
 # look like missing data — so the version mismatch triggers a full rebuild at
 # startup. One integer rather than embedding.py's ``model_tag`` string, because
 # there is only ever one tokenizer in the process.
-TOKENIZER_VERSION = 2
+TOKENIZER_VERSION = 3
 
 # CJK ideographs (including extension A), kana and hangul — the same ranges
 # ngram.py uses, so the project has one definition of "CJK" even though the two
@@ -345,15 +345,33 @@ def _json_dict(value) -> dict:
     return parsed if isinstance(parsed, dict) else {}
 
 
+def _url_parts(value) -> list[str]:
+    """The expanded + display forms of a tweet's url entities (v13) — what the card
+    renders in place of the t.co, and therefore what the reader will search for."""
+    try:
+        entries = json.loads(value) if isinstance(value, str) else value
+    except (TypeError, ValueError):
+        return []
+    if not isinstance(entries, list):
+        return []
+    parts = []
+    for entry in entries:
+        if isinstance(entry, dict):
+            parts.extend(v for v in (entry.get('expanded_url'), entry.get('display_url')) if v)
+    return parts
+
+
 def x_document(row: dict) -> str:
     """A tweet's searchable text: whatever the card puts on screen.
 
     A long-form post keeps its body in ``article`` (bird sets ``text`` to the
-    title), and a quoted tweet is rendered inside the card — so both are part of
-    the tweet as the reader saw it, and both are searchable.
+    title), a quoted tweet is rendered inside the card, and a t.co is rendered as
+    its original link (v13 ``urls``) — so all of them are part of the tweet as the
+    reader saw it, and all are searchable.
     """
     article = _json_dict(row.get('article'))
     parts = [row.get('text'), article.get('title'), article.get('previewText'), row.get('quote_text')]
+    parts += _url_parts(row.get('urls')) + _url_parts(row.get('quote_urls'))
     return ' '.join(p for p in parts if p)
 
 
@@ -393,7 +411,8 @@ def _x_documents(tweet_ids: list[int]) -> list[dict]:
 def _x_rows(tweet_ids: list[int]) -> list[dict]:
     placeholders = ','.join('?' for _ in tweet_ids)
     cur = tdb.db.execute_sql(
-        'SELECT t.id AS id, t.text AS text, t.article AS article, q.text AS quote_text '
+        'SELECT t.id AS id, t.text AS text, t.article AS article, t.urls AS urls, '
+        'q.text AS quote_text, q.urls AS quote_urls '
         'FROM x_tweets t LEFT JOIN x_tweets q ON q.id = t.quote_of '
         f'WHERE t.id IN ({placeholders})',
         tuple(tweet_ids),

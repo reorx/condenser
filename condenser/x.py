@@ -75,6 +75,11 @@ class ParsedTweet:
     rt_of_handle: Optional[str] = None
     reply_to_id: Optional[int] = None
     article: Optional[dict] = None
+    # t.co expansion metadata (xbird >= 1.2.0; None from an older probe), normalized
+    # to snake_case [{url, expanded_url, display_url, indices}] at this parse
+    # boundary — the wire is camelCase but the DB column, envelope and both clients
+    # speak snake_case, so the one entry point converts once.
+    urls: Optional[list] = None
     # X's own language verdict (xbird >= 1.1.0; None from an older probe). Read
     # only by the For You language filter — no DB column, the raw archive keeps it.
     lang: Optional[str] = None
@@ -97,6 +102,7 @@ class ParsedTweet:
             'rt_of_handle': self.rt_of_handle,
             'reply_to_id': self.reply_to_id,
             'article': json.dumps(self.article, ensure_ascii=False) if self.article else None,
+            'urls': json.dumps(self.urls, ensure_ascii=False) if self.urls else None,
             'raw': json.dumps(self.raw, ensure_ascii=False),
             'fetched_at': fetched_at,
         }
@@ -155,6 +161,33 @@ def parse_created_at(value: Any) -> Optional[datetime]:
     return dt.astimezone(timezone.utc).replace(tzinfo=None)
 
 
+def parse_urls(value: Any) -> Optional[list]:
+    """xbird's camelCase url entities -> snake_case dicts; tolerant like media.
+
+    An entry without a t.co ``url`` string is unusable (nothing to match in the
+    text) and is skipped; missing expansion fields become None so the renderers'
+    fallback path (keep the t.co) stays reachable per entry.
+    """
+    if not isinstance(value, list):
+        return None
+    urls = []
+    for item in value:
+        if not isinstance(item, dict) or not isinstance(item.get('url'), str):
+            continue
+        expanded = item.get('expandedUrl')
+        display = item.get('displayUrl')
+        indices = item.get('indices')
+        urls.append(
+            {
+                'url': item['url'],
+                'expanded_url': expanded if isinstance(expanded, str) else None,
+                'display_url': display if isinstance(display, str) else None,
+                'indices': indices if isinstance(indices, list) else None,
+            }
+        )
+    return urls or None
+
+
 def parse_tweet(raw: Any) -> ParsedTweet:
     """One bird entry -> a storable tweet. Raises XParseError only when unkeyable."""
     if not isinstance(raw, dict):
@@ -191,6 +224,7 @@ def parse_tweet(raw: Any) -> ParsedTweet:
         rt_of_handle=rt.group(1) if rt else None,
         reply_to_id=_as_int(raw.get('inReplyToStatusId')),
         article=raw.get('article') if isinstance(raw.get('article'), dict) else None,
+        urls=parse_urls(raw.get('urls')),
         lang=raw.get('lang') if isinstance(raw.get('lang'), str) else None,
         raw=raw,
         warnings=warnings,

@@ -310,7 +310,7 @@ def test_upgrade_from_v11_backfills_the_index(env):
     conn.close()
 
     _init()
-    assert db.get_meta('schema_version') == str(db.SCHEMA_VERSION) == '12'
+    assert db.get_meta('schema_version') == str(db.SCHEMA_VERSION) == '13'
     assert _find('模型') == ['tg:100:1']
 
 
@@ -465,6 +465,41 @@ def test_x_ingest_indexes_a_pushed_tweet(env):
     db.add_x_subscription('foryou', name='X For You', config={'kind': 'home'})
     x.ingest_tweets('foryou', [_x_entry(9001, '关于模型的推文')])
     assert _find('模型') == ['x:9001']
+
+
+def test_x_expanded_urls_are_searchable(env):
+    """The card shows the original link (v13 urls), so search must match it — the
+    text alone holds only the t.co, and 「haotianzheng」 would find nothing."""
+    _init()
+    db.add_x_subscription('foryou', name='X For You', config={'kind': 'home'})
+    entry = _x_entry(9001, 'https://t.co/qzYxwreb9x')
+    entry['urls'] = [
+        {
+            'url': 'https://t.co/qzYxwreb9x',
+            'expandedUrl': 'https://haotianzheng.com/?t=202607291001',
+            'displayUrl': 'haotianzheng.com/?t=202607291001',
+        }
+    ]
+    x.ingest_tweets('foryou', [entry])
+    assert _find('haotianzheng') == ['x:9001']
+    # and the rebuild path reads the same column (TOKENIZER_VERSION bump replays it)
+    search.rebuild()
+    assert _find('haotianzheng') == ['x:9001']
+
+
+def test_x_quoted_tweet_urls_are_searchable(env):
+    """The quote renders inside the card, links included — same rule as its text."""
+    _init()
+    db.add_x_subscription('foryou', name='X For You', config={'kind': 'home'})
+    entry = _x_entry(9001, 'quoting this')
+    entry['quotedTweet'] = {
+        'id': '9002',
+        'text': 'see https://t.co/q',
+        'author': {'username': 'bob', 'name': 'Bob'},
+        'urls': [{'url': 'https://t.co/q', 'expandedUrl': 'https://quoted-domain.example/deep'}],
+    }
+    x.ingest_tweets('foryou', [entry])
+    assert _find('quoted-domain') == ['x:9001']
 
 
 def test_x_ingest_does_not_index_a_body_without_a_feed_row(env):

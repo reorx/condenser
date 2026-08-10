@@ -1,0 +1,127 @@
+[
+  {
+    "id": "2082693056269029651",
+    "text": "https://t.co/qzYxwreb9x",
+    "createdAt": "Thu Jul 30 05:01:33 +0000 2026",
+    "lang": "zxx",
+    "replyCount": 3,
+    "retweetCount": 0,
+    "likeCount": 11,
+    "conversationId": "2082691966135845151",
+    "inReplyToStatusId": "2082691966135845151",
+    "author": {
+      "username": "JustZht",
+      "name": "JustZht"
+    },
+    "authorId": "2723909239",
+    "urls": [
+      {
+        "url": "https://t.co/qzYxwreb9x",
+        "expandedUrl": "https://haotianzheng.com/?t=202607291001",
+        "displayUrl": "haotianzheng.com/?t=202607291001",
+        "indices": [
+          0,
+          23
+        ]
+      }
+    ]
+  },
+  {
+    "id": "2086616270158627130",
+    "text": "最近发现一个好工具  \n\n如果你做完移动端 App，打算制作AppStore、Google 商店宣传图，市面上很多都是SaaS收费的工具，其实这种工具使用并不频繁，如果开通包月SaaS服务有些浪费\n\n推荐一款免费工具 👉 https://t.co/ojfWZLbZiL\n\n支持iPhone、iWatch、Mac、Google商店屏幕设计，素材非常多、设计精美\n\n对标 theapplaunchpad、previewed、appscreens等付费产品",
+    "createdAt": "Mon Aug 10 00:51:00 +0000 2026",
+    "lang": "zh",
+    "replyCount": 3,
+    "retweetCount": 18,
+    "likeCount": 163,
+    "conversationId": "2086616270158627130",
+    "author": {
+      "username": "ios_1261142602",
+      "name": "sunshineLx"
+    },
+    "authorId": "4746564680",
+    "media": [
+      {
+        "type": "photo",
+        "url": "https://pbs.twimg.com/media/HPUlRjSb0AAth_2.jpg",
+        "width": 1881,
+        "height": 966,
+        "previewUrl": "https://pbs.twimg.com/media/HPUlRjSb0AAth_2.jpg:small"
+      }
+    ],
+    "urls": [
+      {
+        "url": "https://t.co/EJwEmX4Bc6",
+        "expandedUrl": "https://www.openscrgen.app",
+        "displayUrl": "openscrgen.app",
+        "indices": [
+          111,
+          134
+        ]
+      },
+      {
+        "url": "https://t.co/ojfWZLbZiL",
+        "expandedUrl": "https://www.openscrgen.app",
+        "displayUrl": "openscrgen.app",
+        "indices": [
+          111,
+          134
+        ]
+      }
+    ]
+  },
+  {
+    "id": "2086472658145645027",
+    "text": "setting up hermes inside buzz by hand is fiddly. someone turned the whole thing into a skill you just hand to your agent.\n\nit's called buzz-skills. drop it in and your remote hermes handles its own buzz setup:\n\n- hermes-in-buzz: installs the buzz cli, sorts auth, and connects your gateway to a buzz community\n- buzz-media-attachments: teaches the agent to send video and media as native buzz attachments\n- buzz-self-hosting: walks you through standing up your own relay\n\ninstead of following every step yourself, you hand the skill to hermes and it configures itself.\n\ni wrote the full manual walkthrough of the hermes-in-buzz setup in the guide below, this is the shortcut once you understand what it's doing.",
+    "createdAt": "Sun Aug 09 15:20:21 +0000 2026",
+    "lang": "en",
+    "replyCount": 7,
+    "retweetCount": 13,
+    "likeCount": 98,
+    "conversationId": "2086472658145645027",
+    "author": {
+      "username": "oliviscusAI",
+      "name": "Oliver Prompts"
+    },
+    "authorId": "1526717916934176769",
+    "quotedTweet": {
+      "id": "2085306608859648338",
+      "text": "How to Run Hermes Agent Inside Buzz",
+      "createdAt": "Thu Aug 06 10:06:53 +0000 2026",
+      "lang": "zxx",
+      "replyCount": 0,
+      "retweetCount": 0,
+      "likeCount": 12,
+      "conversationId": "2085306608859648338",
+      "author": {
+        "username": "oliviscusAI",
+        "name": "Oliver Prompts"
+      },
+      "authorId": "1526717916934176769",
+      "article": {
+        "title": "How to Run Hermes Agent Inside Buzz",
+        "previewText": "Everything you need to run Hermes inside Buzz, start to finish.\nEvery bot you've ever added to Slack authenticates the same way. One API key, shared across every action it takes, issued by the vendor,"
+      },
+      "urls": [
+        {
+          "url": "https://t.co/PKzWk0mZzU",
+          "expandedUrl": "http://x.com/i/article/2085304425586044928",
+          "displayUrl": "x.com/i/article/2085…",
+          "indices": [
+            0,
+            23
+          ]
+        }
+      ]
+    },
+    "media": [
+      {
+        "type": "photo",
+        "url": "https://pbs.twimg.com/media/HPSjwRfWYAA5doN.jpg",
+        "width": 2048,
+        "height": 1493,
+        "previewUrl": "https://pbs.twimg.com/media/HPSjwRfWYAA5doN.jpg:small"
+      }
+    ]
+  }
+]

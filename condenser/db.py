@@ -38,7 +38,7 @@ MESSAGES_OPTIONAL_FIELDS = {
 # Bumped when condenser's own table shapes change; recorded in app_meta on init so a
 # future startup can detect an upgrade and run a migration. Telememo manages its own
 # table migrations separately (init_db optional_fields / ALTER TABLE).
-SCHEMA_VERSION = 12
+SCHEMA_VERSION = 13
 
 
 class CondenserBaseModel(Model):
@@ -241,6 +241,10 @@ class XTweet(CondenserBaseModel):
     rt_of_handle = TextField(null=True)
     reply_to_id = BigIntegerField(null=True)
     article = TextField(null=True)  # JSON dict: X long-form title + truncated preview
+    # v13: JSON list [{url, expanded_url, display_url, indices}] — the t.co expansion
+    # metadata (xbird >= 1.2.0). A rebuildable derived column in the is_filtered
+    # spirit: any row whose raw carries urls can be re-extracted. NULL pre-upgrade.
+    urls = TextField(null=True)
     raw = TextField(null=True)
     fetched_at = DateTimeField()
 
@@ -407,6 +411,7 @@ def init_db(db_path: str, vector_dims: int = 256) -> None:
     _migrate_read_saved_v4()
     _migrate_hn_previews_v5()
     _migrate_feedback_reason_v9()
+    _migrate_x_urls_v13()
     _enable_wal(db_path)
     set_meta('schema_version', str(SCHEMA_VERSION))
     vectors.setup(vector_dims)
@@ -492,6 +497,19 @@ def _migrate_feedback_reason_v9() -> None:
     if not cols or 'reason' in cols:
         return
     tdb.db.execute_sql('ALTER TABLE item_feedback ADD COLUMN reason VARCHAR(255)')
+
+
+def _migrate_x_urls_v13() -> None:
+    """Add the urls column to a pre-v13 ``x_tweets`` table.
+
+    Shape-based and idempotent, the v5/v9 ADD COLUMN pattern. Historical rows stay
+    NULL — the column is derived, and any row whose ``raw`` carries urls can be
+    re-extracted (tmp/backfill_x_urls.py).
+    """
+    cols = [r[1] for r in tdb.db.execute_sql('PRAGMA table_info(x_tweets)').fetchall()]
+    if not cols or 'urls' in cols:
+        return
+    tdb.db.execute_sql('ALTER TABLE x_tweets ADD COLUMN urls TEXT')
 
 
 def _enable_wal(db_path: str) -> None:

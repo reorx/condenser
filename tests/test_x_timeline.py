@@ -276,6 +276,79 @@ def test_x_envelope_carries_the_tweet_payload(env, monkeypatch):
         assert by_key[x_key(ARTICLE_TWEET)]['x']['article']['title'].startswith('Superrepos')
 
 
+def test_x_envelope_carries_urls_on_payload_and_quote(env, monkeypatch):
+    """The t.co expansion metadata (schema v13) reaches the clients snake_case,
+    on the tweet and on its nested quote alike."""
+    with _client() as client:
+        _login(client)
+        _subscribe(client, 'foryou')
+        entry = {
+            'id': '990',
+            'text': 'go https://t.co/a',
+            'createdAt': 'Fri Jul 24 05:00:00 +0000 2026',
+            'author': {'username': 'alice', 'name': 'Alice'},
+            'urls': [
+                {
+                    'url': 'https://t.co/a',
+                    'expandedUrl': 'https://one.example/page',
+                    'displayUrl': 'one.example/page',
+                    'indices': [3, 26],
+                }
+            ],
+            'quotedTweet': {
+                'id': '991',
+                'text': 'read https://t.co/q',
+                'author': {'username': 'bob', 'name': 'Bob'},
+                'urls': [{'url': 'https://t.co/q', 'expandedUrl': 'https://quoted.example'}],
+            },
+        }
+        _ingest(client, monkeypatch, 'foryou', [entry], datetime(2026, 7, 24, 9, 0))
+
+        item = next(i for i in _timeline(client, source='x', feed='foryou')['items'] if i['key'] == 'x:990')
+        assert item['x']['urls'] == [
+            {
+                'url': 'https://t.co/a',
+                'expanded_url': 'https://one.example/page',
+                'display_url': 'one.example/page',
+                'indices': [3, 26],
+            }
+        ]
+        assert item['x']['quote']['urls'][0]['expanded_url'] == 'https://quoted.example'
+
+
+def test_x_envelope_urls_is_null_for_historical_rows(env, monkeypatch):
+    """Pre-v13 rows (and old-probe pushes — the current fixtures) degrade to null."""
+    with _client() as client:
+        _login(client)
+        _seed_both(client, monkeypatch)
+        by_key = {i['key']: i for i in _timeline(client, source='x', feed='foryou')['items']}
+        assert by_key[x_key(PHOTO_TWEET)]['x']['urls'] is None
+        assert by_key[x_key(QUOTE_TWEET)]['x']['quote']['urls'] is None
+
+
+def test_saved_x_record_replays_urls(env, monkeypatch):
+    with _client() as client:
+        _login(client)
+        _subscribe(client, 'foryou')
+        entry = {
+            'id': '990',
+            'text': 'go https://t.co/a',
+            'createdAt': 'Fri Jul 24 05:00:00 +0000 2026',
+            'author': {'username': 'alice', 'name': 'Alice'},
+            'urls': [
+                {'url': 'https://t.co/a', 'expandedUrl': 'https://one.example/page', 'displayUrl': 'one.example/page'}
+            ],
+        }
+        _ingest(client, monkeypatch, 'foryou', [entry], datetime(2026, 7, 24, 9, 0))
+        assert client.post('/api/records', json={'key': 'x:990'}).status_code == 200
+
+        db.XTweet.delete().execute()
+        db.XFeedItem.delete().execute()
+
+        rec = next(r for r in client.get('/api/records').json() if r['key'] == 'x:990')
+        assert rec['x']['urls'][0]['expanded_url'] == 'https://one.example/page'
+
+
 def test_quoted_tweets_are_not_timeline_items_of_their_own(env, monkeypatch):
     """Embedded quotes are archived rows without a feed appearance — they render
     inside the quoting card, never as a standalone item."""

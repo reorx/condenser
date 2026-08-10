@@ -133,9 +133,10 @@ _COLS = """
     t.id AS id, t.author_id AS author_id, t.author_handle AS author_handle,
     t.author_name AS author_name, t.text AS text, t.created_at AS created_at,
     t.media AS media, t.metrics AS metrics,
-    t.rt_of_handle AS rt_of_handle, t.reply_to_id AS reply_to_id, t.article AS article,
+    t.rt_of_handle AS rt_of_handle, t.reply_to_id AS reply_to_id, t.article AS article, t.urls AS urls,
     q.id AS q_id, q.author_handle AS q_author_handle, q.author_name AS q_author_name,
     q.text AS q_text, q.created_at AS q_created_at, q.media AS q_media, q.metrics AS q_metrics,
+    q.urls AS q_urls,
     CASE WHEN ri.ref1 IS NOT NULL THEN 1 ELSE 0 END AS is_read,
     CASE WHEN si.ref1 IS NOT NULL THEN 1 ELSE 0 END AS is_saved,
     fb.verdict AS feedback, fb.reason AS feedback_reason

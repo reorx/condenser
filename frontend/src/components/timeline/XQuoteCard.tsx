@@ -29,7 +29,9 @@ export function XQuoteCard({ quote }: { quote: XQuote }) {
         )}
       </div>
       {quote.text && (
-        <p className="mt-1 text-sm leading-relaxed whitespace-pre-wrap text-foreground/90">{linkify(quote.text)}</p>
+        <p className="mt-1 text-sm leading-relaxed whitespace-pre-wrap text-foreground/90">
+          {linkify(quote.text, quote.urls)}
+        </p>
       )}
       {quote.media && quote.media.length > 0 && <XMedia items={quote.media} />}
     </a>

@@ -11,6 +11,7 @@ import { compactNumber, fullDateLabel, timeLabel } from '@/lib/format';
 import { useItemDetailPane } from '@/lib/itemDetailPane';
 import { linkify } from '@/lib/linkify';
 import { xProfileUrl } from '@/lib/sources';
+import { stripTrailingMediaTco, urlEntityMap } from '@/lib/xUrls';
 import { useUnreadIndicator } from '@/lib/unreadIndicator';
 import { cn } from '@/lib/utils';
 import type { ReadTarget, TimelineItem, XTweet } from '@/lib/types';
@@ -33,11 +34,15 @@ interface Props {
  *  Two upstream quirks are absorbed here: retweets arrive only as an 'RT @orig: …'
  *  prefix (bird flattens them — the prefix becomes the caption instead), and a
  *  long-form post's `text` *is* its article title, which the article card already
- *  shows. */
+ *  shows. A trailing t.co the url entities don't know stands for the media shown
+ *  right below (X's own UI hides it too). */
 function bodyText(tweet: XTweet): string | null {
   if (!tweet.text) return null;
-  const text = tweet.rt_of_handle ? tweet.text.replace(/^RT @[A-Za-z0-9_]{1,15}:\s*/, '') : tweet.text;
+  let text = tweet.rt_of_handle ? tweet.text.replace(/^RT @[A-Za-z0-9_]{1,15}:\s*/, '') : tweet.text;
   if (tweet.article?.title && tweet.article.title.trim() === text.trim()) return null;
+  // urls null (old rows / a tweet with no outbound links) counts as an empty set:
+  // a trailing t.co beside media is the media's self-link either way.
+  text = stripTrailingMediaTco(text, urlEntityMap(tweet.urls), (tweet.media?.length ?? 0) > 0);
   return text || null;
 }
 
@@ -152,7 +157,9 @@ function XCardImpl({ item, observe, pendingKeys }: Props) {
         </div>
       )}
 
-      {body && <div className="mt-1 text-sm leading-relaxed break-words whitespace-pre-wrap">{linkify(body)}</div>}
+      {body && (
+        <div className="mt-1 text-sm leading-relaxed break-words whitespace-pre-wrap">{linkify(body, tweet.urls)}</div>
+      )}
 
       {tweet.article?.title && (
         <div className="mt-2 rounded-lg border bg-muted/30 p-3">

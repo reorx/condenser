@@ -176,6 +176,7 @@ def _x_quote(row: dict) -> Optional[dict]:
         'created_at': iso_utc(row.get('q_created_at')),
         'media': _json_field(row.get('q_media')),
         'metrics': _json_field(row.get('q_metrics')),
+        'urls': _json_field(row.get('q_urls')),
     }
 
 
@@ -198,6 +199,10 @@ def x_payload(row: dict) -> dict:
         'rt_of_handle': row.get('rt_of_handle'),
         'reply_to_id': _sid(row.get('reply_to_id')),
         'article': _json_field(row.get('article')),
+        # v13: [{url, expanded_url, display_url, indices}] — the renderers replace a
+        # matching t.co by exact string, never by indices (they misalign once the
+        # RT prefix or an article title is stripped from the text)
+        'urls': _json_field(row.get('urls')),
         'feed': feed,
         'feed_kind': x_feed_kind(feed),
         'verdict': row.get('verdict'),  # Phase 4

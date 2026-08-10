@@ -19,7 +19,7 @@ struct XDetailSheet: View {
             VStack(alignment: .leading, spacing: 14) {
                 header
                 if let body = tweet.bodyText {
-                    SelectableTextView(text: body)
+                    SelectableTextView(text: body, urlEntities: tweet.urls)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 if let article = tweet.article, article.title != nil {

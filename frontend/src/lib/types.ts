@@ -112,6 +112,18 @@ export interface XArticle {
   previewText?: string | null;
 }
 
+/** One t.co entry from the tweet's url entities (schema v13): the metadata X's own
+ *  UI uses to render the original link in place of the rewritten t.co. Matched
+ *  against the text by exact t.co string, never by `indices` — those are offsets
+ *  into X's raw text and misalign once the RT prefix or an article title is
+ *  stripped. */
+export interface XUrlEntity {
+  url: string;
+  expanded_url: string | null;
+  display_url: string | null;
+  indices: number[] | null;
+}
+
 /** A quoted tweet, embedded at depth 1 inside the quoting tweet. */
 export interface XQuote {
   id: string;
@@ -121,6 +133,8 @@ export interface XQuote {
   created_at: string | null;
   media: XMediaItem[] | null;
   metrics: XMetrics | null;
+  /** null on rows archived before the metadata existed. */
+  urls: XUrlEntity[] | null;
 }
 
 /** The `x` payload of a TimelineItem: one archived tweet, as it appeared in one feed. */
@@ -142,6 +156,8 @@ export interface XTweet {
   rt_of_handle: string | null;
   reply_to_id: string | null;
   article: XArticle | null;
+  /** t.co expansion metadata; null on rows archived before it existed. */
+  urls: XUrlEntity[] | null;
   /** The subscription this appearance belongs to: 'foryou' or a followed handle. */
   feed: string;
   feed_kind: 'home' | 'following' | 'user';

@@ -86,6 +86,8 @@ struct MessageCard: View {
 /// 链接高亮、可直接点击（由列表层的 openURL 环境接管）。TG 与 X 卡片共用。
 struct TruncatableText: View {
     let text: String
+    /// X 专用（schema v13）：t.co → 原始链接的替换元数据，其他卡片不传
+    var urlEntities: [XUrlEntity]? = nil
 
     @State private var limitedHeight: CGFloat = 0
     @State private var fullHeight: CGFloat = 0
@@ -93,7 +95,7 @@ struct TruncatableText: View {
     private var isTruncated: Bool { fullHeight > limitedHeight + 1 }
 
     var body: some View {
-        let attributed = linkified(text)
+        let attributed = linkified(text, urlEntities: urlEntities)
         VStack(alignment: .leading, spacing: 2) {
             Text(attributed)
                 .font(.subheadline)

@@ -1,3 +1,4 @@
+import CondenserKit
 import SwiftUI
 import UIKit
 
@@ -6,6 +7,8 @@ import UIKit
 /// 环境（→ 应用内 Safari），字号跟随 readingFontScale 设定的 dynamicTypeSize。
 struct SelectableTextView: UIViewRepresentable {
     let text: String
+    /// X 专用（schema v13）：t.co → 原始链接的替换元数据
+    var urlEntities: [XUrlEntity]? = nil
 
     @Environment(\.dynamicTypeSize) private var typeSize
     @Environment(\.openURL) private var openURL
@@ -29,7 +32,7 @@ struct SelectableTextView: UIViewRepresentable {
             forTextStyle: .body,
             compatibleWith: UITraitCollection(
                 preferredContentSizeCategory: typeSize.contentSizeCategory))
-        view.attributedText = linkifiedNS(text, font: font)
+        view.attributedText = linkifiedNS(text, font: font, urlEntities: urlEntities)
     }
 
     func sizeThatFits(

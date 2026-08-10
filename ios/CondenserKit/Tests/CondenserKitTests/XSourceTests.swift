@@ -277,6 +277,46 @@ struct XModelsDecodingTests {
     }
 }
 
+@Suite("X urls 展开元数据（schema v13）")
+struct XUrlEntityTests {
+    private let decoder = JSONDecoder.condenserAPI
+
+    @Test("urls 解码：snake_case 字段齐全，嵌套 quote 一并携带")
+    func decodesUrls() throws {
+        let json = """
+        {"source": "x", "key": "x:990", "datetime": "2026-07-24T09:00:00Z",
+         "is_read": false, "is_saved": false,
+         "x": {"id": "990", "author_id": null, "author_handle": "alice", "author_name": "Alice",
+               "text": "go https://t.co/a", "created_at": "2026-07-24T05:00:00Z",
+               "first_seen_at": "2026-07-24T09:00:00Z", "media": null, "metrics": null,
+               "quote": {"id": "991", "author_handle": "bob", "author_name": "Bob",
+                         "text": "read https://t.co/q", "created_at": null, "media": null, "metrics": null,
+                         "urls": [{"url": "https://t.co/q", "expanded_url": "https://quoted.example",
+                                   "display_url": null, "indices": null}]},
+               "rt_of_handle": null, "reply_to_id": null, "article": null,
+               "urls": [{"url": "https://t.co/a", "expanded_url": "https://one.example/page",
+                         "display_url": "one.example/page", "indices": [3, 26]}],
+               "feed": "foryou", "feed_kind": "home", "verdict": null, "verdict_meta": null}}
+        """
+        let item = try decoder.decode(TimelineItem.self, from: Data(json.utf8))
+        let tweet = try #require(item.x)
+        let entity = try #require(tweet.urls?.first)
+        #expect(entity.url == "https://t.co/a")
+        #expect(entity.expandedURL == "https://one.example/page")
+        #expect(entity.displayURL == "one.example/page")
+        #expect(entity.indices == [3, 26])
+        #expect(tweet.quote?.urls?.first?.expandedURL == "https://quoted.example")
+    }
+
+    @Test("旧 JSON 缺 urls 键 → nil（老服务端 / 历史行不炸解码）")
+    func missingUrlsIsNil() throws {
+        let shapes = try decodeShapes()
+        let tweet = try #require(shapes["quote"]?.x)
+        #expect(tweet.urls == nil)
+        #expect(tweet.quote?.urls == nil)
+    }
+}
+
 @Suite("X 卡片文本逻辑")
 struct XTweetTextTests {
     /// 卡片正文：转推的 "RT @orig:" 前缀由标题行承载，正文里剥掉
@@ -305,6 +345,45 @@ struct XTweetTextTests {
     func emptyBody() {
         #expect(makeTweet(text: nil).bodyText == nil)
         #expect(makeTweet(text: "  ").bodyText == nil)
+    }
+
+    /// 尾部 media t.co：X 官方 UI 隐藏「正文末尾、urls 元数据不认识、且推文带媒体」的
+    /// t.co——它指的就是下面正在显示的那张图/视频
+    @Test("尾部 media t.co：有媒体且不在 urls 里 → 隐藏")
+    func trailingMediaTcoHidden() {
+        let tweet = makeTweet(
+            text: "nice photo https://t.co/mediaXYZ", media: [makePhoto()],
+            urls: [XUrlEntity(url: "https://t.co/a", expandedURL: "https://a.example", displayURL: nil)])
+        #expect(tweet.bodyText == "nice photo")
+    }
+
+    @Test("尾部 t.co 在 urls 里（真实外链）→ 保留")
+    func trailingRealLinkKept() {
+        let tweet = makeTweet(
+            text: "read https://t.co/a", media: [makePhoto()],
+            urls: [XUrlEntity(url: "https://t.co/a", expandedURL: "https://a.example", displayURL: nil)])
+        #expect(tweet.bodyText == "read https://t.co/a")
+    }
+
+    @Test("无媒体 → 保留；t.co 在句中 → 保留")
+    func trailingTcoKeptOtherwise() {
+        let entities = [XUrlEntity(url: "https://t.co/a", expandedURL: "https://a.example", displayURL: nil)]
+        #expect(makeTweet(text: "bare https://t.co/x", urls: entities).bodyText == "bare https://t.co/x")
+        #expect(makeTweet(text: "https://t.co/x then words", media: [makePhoto()], urls: entities).bodyText
+            == "https://t.co/x then words")
+    }
+
+    /// urls 为 nil 不是「别动」而是空集：老数据（或本就没有外链的推）里 media 旁的
+    /// 尾部 t.co 同样是自链接——X 官方 UI 从来不显示它
+    @Test("urls 为 nil + 有媒体 → 尾部 t.co 照样隐藏")
+    func nilUrlsStillStripsMediaTco() {
+        #expect(makeTweet(text: "old https://t.co/x", media: [makePhoto()]).bodyText == "old")
+    }
+
+    @Test("正文只剩 media t.co → nil（纯媒体推）")
+    func mediaOnlyTweetBodyIsNil() {
+        let tweet = makeTweet(text: "https://t.co/mediaXYZ", media: [makePhoto()], urls: [])
+        #expect(tweet.bodyText == nil)
     }
 
     @Test("展示名回落链：name → @handle → Unknown")
@@ -378,6 +457,7 @@ func makeTweet(
     quote: XQuote? = nil,
     rtOfHandle: String? = nil,
     article: XArticle? = nil,
+    urls: [XUrlEntity]? = nil,
     feed: String = XFeed.foryou,
     feedKind: String = "home",
     verdict: XVerdict? = nil,
@@ -388,7 +468,7 @@ func makeTweet(
         text: text, createdAt: Date(timeIntervalSince1970: 1_784_000_000),
         firstSeenAt: Date(timeIntervalSince1970: 1_784_000_100),
         media: media, metrics: nil, quote: quote, rtOfHandle: rtOfHandle,
-        replyToID: nil, article: article, feed: feed, feedKind: feedKind,
+        replyToID: nil, article: article, urls: urls, feed: feed, feedKind: feedKind,
         verdict: verdict, verdictMeta: verdictMeta)
 }
 

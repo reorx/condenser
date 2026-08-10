@@ -343,6 +343,30 @@ public struct XArticle: Codable, Equatable, Sendable {
     }
 }
 
+/// 一条 t.co 的展开元数据（schema v13）：X 把正文里的链接全改写成 t.co，原始链接
+/// 只活在这份元数据里——X 官方 UI 就是拿它做替换渲染的。替换按 t.co 字符串精确匹配，
+/// 永远不用 indices：那是 X 原始 text 的码位偏移，剥掉 RT 前缀 / 长文标题之后就错位了。
+public struct XUrlEntity: Codable, Equatable, Sendable {
+    public let url: String
+    public let expandedURL: String?
+    public let displayURL: String?
+    public let indices: [Int]?
+
+    enum CodingKeys: String, CodingKey {
+        case url
+        case expandedURL = "expanded_url"
+        case displayURL = "display_url"
+        case indices
+    }
+
+    public init(url: String, expandedURL: String?, displayURL: String?, indices: [Int]? = nil) {
+        self.url = url
+        self.expandedURL = expandedURL
+        self.displayURL = displayURL
+        self.indices = indices
+    }
+}
+
 /// 被引用的推文（depth=1 内嵌，不单独成条）
 public struct XQuote: Codable, Equatable, Sendable {
     public let id: String
@@ -352,6 +376,8 @@ public struct XQuote: Codable, Equatable, Sendable {
     public let createdAt: Date?
     public let media: [XMediaItem]?
     public let metrics: XMetrics?
+    /// 元数据出现（2026-08-10）之前归档的行是 nil
+    public let urls: [XUrlEntity]?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -359,7 +385,7 @@ public struct XQuote: Codable, Equatable, Sendable {
         case authorName = "author_name"
         case text
         case createdAt = "created_at"
-        case media, metrics
+        case media, metrics, urls
     }
 
     public var displayName: String {
@@ -492,6 +518,8 @@ public struct XTweet: Codable, Equatable, Sendable {
     public let rtOfHandle: String?
     public let replyToID: String?
     public let article: XArticle?
+    /// t.co 展开元数据；元数据出现（2026-08-10）之前归档的行是 nil
+    public let urls: [XUrlEntity]?
     /// 这次出现属于哪个订阅：'foryou' 或关注人的 handle
     public let feed: String
     /// 'home'（For You）| 'user'（关注人）
@@ -511,7 +539,7 @@ public struct XTweet: Codable, Equatable, Sendable {
         case media, metrics, quote
         case rtOfHandle = "rt_of_handle"
         case replyToID = "reply_to_id"
-        case article, feed
+        case article, urls, feed
         case feedKind = "feed_kind"
         case verdict
         case verdictMeta = "verdict_meta"
@@ -521,7 +549,7 @@ public struct XTweet: Codable, Equatable, Sendable {
         id: String, authorID: String?, authorHandle: String?, authorName: String?,
         text: String?, createdAt: Date?, firstSeenAt: Date?, media: [XMediaItem]?,
         metrics: XMetrics?, quote: XQuote?, rtOfHandle: String?, replyToID: String?,
-        article: XArticle?, feed: String, feedKind: String,
+        article: XArticle?, urls: [XUrlEntity]? = nil, feed: String, feedKind: String,
         verdict: XVerdict?, verdictMeta: XVerdictMeta?
     ) {
         self.id = id
@@ -537,6 +565,7 @@ public struct XTweet: Codable, Equatable, Sendable {
         self.rtOfHandle = rtOfHandle
         self.replyToID = replyToID
         self.article = article
+        self.urls = urls
         self.feed = feed
         self.feedKind = feedKind
         self.verdict = verdict
@@ -553,14 +582,22 @@ public struct XTweet: Codable, Equatable, Sendable {
 
     public var profileURL: URL? { authorHandle.flatMap { URL(string: "https://x.com/\($0)") } }
 
-    /// 卡片正文；nil = 没有可打印的文字。吞掉两个上游怪癖：转推只以
+    /// 卡片正文；nil = 没有可打印的文字。吞掉三个上游怪癖：转推只以
     /// 'RT @orig: …' 前缀存在（前缀改由标题行承载），长文的 text 就是文章标题
-    /// （article 卡已经在显示它了）。
+    /// （article 卡已经在显示它了），末尾那个 urls 元数据不认识的 t.co 指的是
+    /// 下面正在显示的媒体（X 官方 UI 也隐藏它；urls 为 nil——老数据或本就没有
+    /// 外链的推——按空集处理：media 旁的尾部 t.co 反正都是自链接）。
     public var bodyText: String? {
         guard let raw = text else { return nil }
         var body = raw
         if rtOfHandle != nil, let range = body.range(of: #"^RT @[A-Za-z0-9_]{1,15}:\s*"#,
                                                     options: .regularExpression) {
+            body.removeSubrange(range)
+        }
+        if media?.isEmpty == false,
+           let range = body.range(of: #"\s*https?://t\.co/[A-Za-z0-9]+\s*$"#,
+                                  options: .regularExpression),
+           !(urls ?? []).contains(where: { $0.url == body[range].trimmingCharacters(in: .whitespacesAndNewlines) }) {
             body.removeSubrange(range)
         }
         let trimmed = body.trimmingCharacters(in: .whitespacesAndNewlines)

@@ -89,7 +89,7 @@ struct XCard: View {
                     .lineLimit(1)
             }
             if let body = tweet.bodyText {
-                TruncatableText(text: body)
+                TruncatableText(text: body, urlEntities: tweet.urls)
             }
             if let article = tweet.article, article.title != nil {
                 XArticleCard(article: article)
@@ -211,7 +211,7 @@ struct XQuoteCard: View {
                 Spacer(minLength: 0)
             }
             if let text = quote.text, !text.isEmpty {
-                Text(text)
+                Text(linkified(text, urlEntities: quote.urls))
                     .font(.caption)
                     .lineLimit(6)
                     .frame(maxWidth: .infinity, alignment: .leading)

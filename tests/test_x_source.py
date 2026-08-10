@@ -136,6 +136,144 @@ def test_parse_tweet_rejects_entries_without_a_usable_id(env):
         raise AssertionError(f'expected XParseError for {bad!r}')
 
 
+# --- urls (v13: the t.co expansion metadata xbird >= 1.2.0 carries) ----------
+
+
+def test_pre_v13_x_tweets_gains_the_urls_column(env):
+    """v13 is a shape-based ADD COLUMN (the v5/v9 pattern); historical rows stay NULL."""
+    path = os.environ['CONDENSER_DB_PATH']
+    _init()
+    db.set_meta('schema_version', '12')
+    db.tdb.db.execute_sql('ALTER TABLE x_tweets DROP COLUMN urls')  # pre-v13 shape
+    db.XTweet.insert(id=1, text='old row', fetched_at=datetime(2026, 8, 1)).execute()
+    db.close_db()
+
+    db.init_db(path)
+
+    assert db.get_meta('schema_version') == str(db.SCHEMA_VERSION)
+    row = db.get_x_tweet(1)
+    assert row.text == 'old row' and row.urls is None
+
+
+def test_parse_tweet_normalizes_urls_to_snake_case(env):
+    t = x.parse_tweet(
+        {
+            'id': '2082693056269029651',
+            'text': 'https://t.co/qzYxwreb9x',
+            'urls': [
+                {
+                    'url': 'https://t.co/qzYxwreb9x',
+                    'expandedUrl': 'https://haotianzheng.com/?t=202607291001',
+                    'displayUrl': 'haotianzheng.com/?t=202607291001',
+                    'indices': [0, 23],
+                }
+            ],
+        }
+    )
+    assert t.urls == [
+        {
+            'url': 'https://t.co/qzYxwreb9x',
+            'expanded_url': 'https://haotianzheng.com/?t=202607291001',
+            'display_url': 'haotianzheng.com/?t=202607291001',
+            'indices': [0, 23],
+        }
+    ]
+    assert not t.warnings
+
+
+def test_parse_tweet_reads_real_xbird_urls_output(env):
+    """Pinned to real xbird 1.2.0 output (tests/fixtures/x/urls_tweets.json,
+    curated by tmp/make_x_urls_fixture.py) — including the plan's acceptance
+    tweet, whose whole text is one t.co."""
+    entries = json.loads((FIXTURES / 'urls_tweets.json').read_text())
+    by_id = {int(e['id']): x.parse_tweet(e) for e in entries}
+
+    acceptance = by_id[2082693056269029651]
+    assert acceptance.urls == [
+        {
+            'url': 'https://t.co/qzYxwreb9x',
+            'expanded_url': 'https://haotianzheng.com/?t=202607291001',
+            'display_url': 'haotianzheng.com/?t=202607291001',
+            'indices': [0, 23],
+        }
+    ]
+
+    # urls and media coexist; the media's own trailing t.co is *not* among the entities
+    beside_media = by_id[2086616270158627130]
+    assert beside_media.media and len(beside_media.urls) == 2
+    assert all(u['expanded_url'] for u in beside_media.urls)
+
+    # a quoted tweet's urls ride inside its own entry and parse the same way
+    quoting = by_id[2086472658145645027]
+    quoted = x.parse_tweet(quoting.raw['quotedTweet'])
+    assert quoted.urls and quoted.urls[0]['expanded_url']
+
+
+def test_parse_tweet_tolerates_missing_or_malformed_urls(env):
+    assert x.parse_tweet({'id': '1', 'text': 'no urls'}).urls is None
+    assert x.parse_tweet({'id': '1', 'urls': 'bogus'}).urls is None
+    assert x.parse_tweet({'id': '1', 'urls': []}).urls is None
+    t = x.parse_tweet(
+        {
+            'id': '1',
+            'urls': [
+                'not-a-mapping',
+                {'expandedUrl': 'https://no-tco.example'},
+                {'url': 'https://t.co/ok', 'indices': 'bogus'},
+            ],
+        }
+    )
+    assert t.urls == [{'url': 'https://t.co/ok', 'expanded_url': None, 'display_url': None, 'indices': None}]
+
+
+def test_ingest_stores_and_refreshes_urls(env):
+    with _client() as client:
+        _login(client)
+        _subscribe(client, 'foryou')
+        entry = {
+            'id': '900',
+            'text': 'go https://t.co/a',
+            'author': {'username': 'alice', 'name': 'Alice'},
+            'urls': [{'url': 'https://t.co/a', 'expandedUrl': 'https://one.example', 'displayUrl': 'one.example'}],
+        }
+        _ingest(client, 'foryou', [entry])
+        assert json.loads(db.get_x_tweet(900).urls)[0]['expanded_url'] == 'https://one.example'
+
+        # tweet rows refresh on re-push (the media/metrics path), urls with them
+        entry['urls'][0]['expandedUrl'] = 'https://two.example'
+        _ingest(client, 'foryou', [entry])
+        assert json.loads(db.get_x_tweet(900).urls)[0]['expanded_url'] == 'https://two.example'
+
+
+def test_ingest_without_urls_stores_null(env):
+    """Old-probe pushes (the existing fixtures) keep working; the column stays NULL."""
+    with _client() as client:
+        _login(client)
+        _subscribe(client, 'foryou')
+        r = _ingest(client, 'foryou', home_fixture()).json()
+        assert r['parse_errors'] == 0
+        assert db.get_x_tweet(PHOTO_TWEET).urls is None
+
+
+def test_ingest_stores_urls_of_the_embedded_quoted_tweet(env):
+    with _client() as client:
+        _login(client)
+        _subscribe(client, 'foryou')
+        entry = {
+            'id': '901',
+            'text': 'quoting',
+            'author': {'username': 'alice', 'name': 'Alice'},
+            'quotedTweet': {
+                'id': '902',
+                'text': 'read https://t.co/q',
+                'author': {'username': 'bob', 'name': 'Bob'},
+                'urls': [{'url': 'https://t.co/q', 'expandedUrl': 'https://quoted.example'}],
+            },
+        }
+        _ingest(client, 'foryou', [entry])
+        assert json.loads(db.get_x_tweet(902).urls)[0]['expanded_url'] == 'https://quoted.example'
+
+
 # --- probe config (subscription-driven, like HN sampling) --------------------
 
 

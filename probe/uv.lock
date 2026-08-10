@@ -640,8 +640,8 @@ wheels = [
 
 [[package]]
 name = "xbird"
-version = "1.1.0"
-source = { git = "ssh://git@github.com/reorx/xbird?branch=master#097d53ba911c0850ce55d6df22737916c277a8e7" }
+version = "1.2.0"
+source = { git = "ssh://git@github.com/reorx/xbird?branch=master#dfc5040ea0c5f4885ed3102ba282a8188d170278" }
 dependencies = [
     { name = "click" },
     { name = "cryptography" },

@@ -1,4 +1,5 @@
 import { extractUrls } from './extractUrls';
+import { stripTrailingMediaTco, urlEntityMap } from './xUrls';
 import type { ItemFeedbackReason, Source, SourceSub, XTweet } from './types';
 
 const LABELS: Record<Source, string> = {
@@ -69,10 +70,27 @@ export function xProfileUrl(handle: string): string {
 
 /** URLs from a tweet worth previewing. X appends a t.co link to the text for its own
  *  attachments (photos, video, the quoted tweet) — previewing that just renders the
- *  tweet we are already looking at, so the trailing self-link is dropped. */
+ *  tweet we are already looking at, so the self-link is dropped.
+ *
+ *  With url entities (v13) each t.co previews as its expanded original — better
+ *  metadata, and no t.co redirect to chase. A media self-link is recognized
+ *  precisely (a trailing t.co the entities don't know), and the quote's own
+ *  permalink by its expanded form carrying the quoted status id. Rows without
+ *  entities keep the older trailing-self-link heuristic. */
 export function xPreviewUrls(tweet: XTweet): string[] {
-  const urls = extractUrls(tweet.text);
   const hasAttachment = (tweet.media?.length ?? 0) > 0 || !!tweet.quote;
+  if (tweet.urls) {
+    const entities = urlEntityMap(tweet.urls);
+    const body = stripTrailingMediaTco(tweet.text ?? '', entities, (tweet.media?.length ?? 0) > 0);
+    const out: string[] = [];
+    for (const url of extractUrls(body)) {
+      const expanded = entities.get(url)?.expanded_url ?? url;
+      if (tweet.quote && expanded.includes(`/status/${tweet.quote.id}`)) continue;
+      if (!out.includes(expanded)) out.push(expanded);
+    }
+    return out;
+  }
+  const urls = extractUrls(tweet.text);
   if (hasAttachment && urls.length > 0 && /^https?:\/\/t\.co\//i.test(urls[urls.length - 1])) {
     return urls.slice(0, -1);
   }
