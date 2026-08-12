@@ -525,6 +525,22 @@ Debug routes gained `x[/<feed>]`, `detail/x/<feed>[/<id>]` and `tab/subs/<source
 v1 spec complete; remaining polish: end-to-end
 `ASWebAuthenticationSession` verify on device, video playback (non-goal).
 
+**签名与 App Store 就绪（2026-08-12）**: 发布素材已全部就位 —— AppIcon 资产目录
+（`Condenser/Assets.xcassets`，1024 单尺寸/不透明/满幅，由 `tmp/make_ios_appicon.py`
+按 PWA 同款漏斗+水滴设计生成）、`MARKETING_VERSION`/`CURRENT_PROJECT_VERSION`、
+`ITSAppUsesNonExemptEncryption=false`、`PrivacyInfo.xcprivacy`（不追踪不采集，唯一
+required-reason API 是 UserDefaults/CA92.1 —— 新增文件时间戳、磁盘容量一类调用要同步补
+声明），外加 `make archive`（Release 归档 + `exportArchive`，`scripts/ExportOptions.plist`
+method `app-store-connect`）。
+⚠️ **一个阻塞点，两条命令都卡在它上面**：付费 Team `YU3FMV36N2` 下**一台设备都没注册过**
+（2026-08-12 经 ASC API 实测 `devices` 为空），所以 development profile 出不来，`make device`
+与 `make archive` 都报「Your team has no devices」。2026-08-10 那次「换新证书」的 commit 只改了
+Team ID，链路从未跑通过 —— 手机上跑的仍是旧免费 Team 的 7 天版本，而那套证书 2026-04 已过期。
+解法是 **USB 连手机跑一次 `make device`**（`-allowProvisioningDeviceRegistration` 自动注册，
+签发 1 年期 profile）；ASC API 那条路不通，现有 key 是 Developer 角色，`devices register` 403。
+Wi-Fi 对安装够用、对**构建**不够（xcodebuild 的 destination 发现要完整信任隧道）。
+详见 `ios/AGENTS.md` 的「App Store 发布」与本次 session 总结的「遗留问题」。
+
 ## Dev
 
 ```bash

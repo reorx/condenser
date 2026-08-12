@@ -91,6 +91,7 @@ make test        # CondenserKit swift test（宿主 macOS 上跑）
 make run         # boot 模拟器 + 安装 + 启动已构建的 app（不触发构建）
 make dev         # build + run
 make device      # 真机构建 + 推送安装（scripts/device.sh，见下）
+make archive     # App Store 归档 + 导出 ipa（Release，见「App Store 发布」）
 make gen         # 仅重新生成 xcodeproj
 make clean       # 清理构建产物与生成的 xcodeproj
 ```
@@ -115,10 +116,49 @@ Team `QFW98B7VB4` 的证书，find-certificate 取首个匹配会探错）→ �
 信任；手机开启开发者模式（设置 → 隐私与安全性）。付费 Team 的 profile 一年有效，
 **没有免费账号的 7 天重装问题**；首次安装需在手机上信任开发者证书（设置 → 通用 →
 VPN 与设备管理）。首次 USB 配对后 devicectl 支持同一局域网 Wi-Fi 部署。
+⚠️ **设备必须先注册进付费 Team**（Certificates, Identifiers & Profiles → Devices），
+否则 development profile 生成不了，报「Your team has no devices」——连 `make archive`
+的 development 签名也会被它挡住。注册的唯一顺手途径是 **USB 连上手机跑一次
+`make device`**（`-allowProvisioningDeviceRegistration` 自动注册）；ASC API key
+是 Developer 角色，`asc devices register` 会 403（需 Admin）。⚠️ Wi-Fi 部署对
+**构建**不够用：`devicectl` 的按需隧道能查信息，但 xcodebuild 的 destination 发现
+要求完整信任隧道（USB 或手机解锁且在同一局域网），否则报「Unable to find a
+destination」——实测手机锁屏时 poke 保活 + `-destination-timeout` 都救不回来。
 ⚠️ **从旧免费 Team 切换过来的手机要先删掉旧 app 再装**：Team 变了 →
 `application-identifier` 前缀变了，iOS 拒绝覆盖安装（devicectl 报 mismatch 错）。
 删除会连带丢掉 Keychain 里的 device token，装好后要重走一次 `/authorize` 配对
 （Settings 里旧的 device 行可顺手删掉）。此为一次性迁移成本，之后签名身份稳定。
+
+## App Store 发布（2026-08-12 起 Ready）
+
+`make archive`：Release 归档（automatic 签名 + `-allowProvisioningUpdates`，Apple
+Distribution 证书与 App Store profile 由 Xcode 云签名按需补发）→ `exportArchive`
+（`scripts/ExportOptions.plist`，method `app-store-connect`）→ ipa 落在
+`.build/DerivedData/export/Condenser.ipa`。前提同真机部署：团队里至少注册过一台设备
+（archive 的 development 签名也依赖），Xcode 已登录付费账号。
+
+发布素材已就位：
+
+- **App Icon**：`Condenser/Assets.xcassets/AppIcon.appiconset`（1024 单尺寸、不透明、
+  满幅）——由 `../tmp/make_ios_appicon.py` 生成，与 PWA 图标同款设计（漏斗+水滴）；
+  改设计先改 `tmp/make_pwa_icons.py` 再同步这份脚本
+- **版本号**：`project.yml` 的 `MARKETING_VERSION` / `CURRENT_PROJECT_VERSION`
+  （升版本改这里 + `make gen`；Info.plist 由它们插值）
+- **出口合规**：`ITSAppUsesNonExemptEncryption=false`（只用 HTTPS 标准加密），
+  上传后 ASC 不再逐 build 问询
+- **隐私清单**：`Condenser/PrivacyInfo.xcprivacy` —— 不追踪、不采集；唯一
+  required-reason API 是 UserDefaults（CA92.1）。新增用到文件时间戳 / 磁盘容量 /
+  系统启动时间等 API 的代码时要同步补声明
+- **上传**：asc CLI 已装（brew），认证走 `~/Sync/apple-developer/` 的 API key
+  （`ASC_KEY_ID` / `ASC_ISSUER_ID` / `ASC_PRIVATE_KEY_PATH`，值见 secrets.env，
+  用 envops 读）。上传 build：`asc builds upload --path <ipa>`（asc-release-flow
+  sub-skill 有完整编排）
+
+仍需人工的步骤：ASC 创建 app record（名称 / SKU / 主语言——无公开 API，走网页或
+`asc-app-create-ui`）；App 隐私标签（对应 PrivacyInfo：Data Not Collected）；截图
+（6.9" 必填；`asc-shots-pipeline` 可自动化）；描述 / 关键词 / 分级问卷 / 定价。
+注意：这个 app 是自托管单用户阅读器，审核可能问 demo 账号——准备一个可访问的
+demo server + app password 或预生成 device token。
 
 ## 开发调试：跳过授权直连本地后端
 

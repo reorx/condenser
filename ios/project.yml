@@ -30,10 +30,18 @@ targets:
         # 模拟器工作流无需签名；真机部署时再配 DEVELOPMENT_TEAM
         CODE_SIGN_STYLE: Manual
         CODE_SIGN_IDENTITY: "-"
+        # App Store 版本号：市场版本 + 构建号（升版本改这里，make gen 重新生成）
+        MARKETING_VERSION: "1.0.0"
+        CURRENT_PROJECT_VERSION: "1"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
     info:
       path: Condenser/Info.plist
       properties:
         CFBundleDisplayName: Condenser
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        # 只用 HTTPS/ATS 豁免内的标准加密，出口合规免申报（上传 ASC 后不再逐 build 问询）
+        ITSAppUsesNonExemptEncryption: false
         UILaunchScreen: {}
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait

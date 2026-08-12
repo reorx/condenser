@@ -8,7 +8,7 @@ SIM ?= iPhone 17
 XCODEBUILD := xcodebuild -project Condenser.xcodeproj -scheme Condenser \
 	-destination 'generic/platform=iOS Simulator' -derivedDataPath $(DERIVED_DATA)
 
-.PHONY: gen build test run dev device clean
+.PHONY: gen build test run dev device archive clean
 
 # 从 project.yml 重新生成 Condenser.xcodeproj（xcodeproj 不入库）
 gen:
@@ -35,6 +35,22 @@ dev: build run
 # 用法：make device [TEAM_ID=ABCDE12345] [DEVICE="<设备名或UDID>"]
 device: gen
 	./scripts/device.sh
+
+# App Store 归档 + 导出 ipa（Release；签名/导出配置见 scripts/ExportOptions.plist）
+# 产物：.build/DerivedData/export/Condenser.ipa；上传走 asc / Transporter
+TEAM_ID ?= YU3FMV36N2
+ARCHIVE := $(DERIVED_DATA)/Condenser.xcarchive
+archive: gen
+	set -o pipefail && xcodebuild -project Condenser.xcodeproj -scheme Condenser \
+		-destination 'generic/platform=iOS' -derivedDataPath $(DERIVED_DATA) \
+		-configuration Release \
+		DEVELOPMENT_TEAM=$(TEAM_ID) CODE_SIGN_STYLE=Automatic \
+		CODE_SIGN_IDENTITY="Apple Development" \
+		-allowProvisioningUpdates \
+		archive -archivePath $(ARCHIVE) | xcbeautify
+	set -o pipefail && xcodebuild -exportArchive -archivePath $(ARCHIVE) \
+		-exportOptionsPlist scripts/ExportOptions.plist \
+		-exportPath $(DERIVED_DATA)/export -allowProvisioningUpdates | xcbeautify
 
 clean:
 	rm -rf $(DERIVED_DATA) CondenserKit/.build Condenser.xcodeproj
