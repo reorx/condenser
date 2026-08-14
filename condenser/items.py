@@ -128,7 +128,14 @@ def _sid(value: Union[int, str, None]) -> Optional[str]:
 
 
 def hn_payload(row: dict) -> dict:
-    """The `hn` payload from an hn_stories row dict (day_rank present query-time only)."""
+    """The `hn` payload from an hn_stories row dict.
+
+    ``day_rank`` keeps its name on the wire while the column behind it became
+    ``qualified_rank`` in v14 — shipped iOS builds decode this field, and the two
+    mean the same thing to a reader ("which of the day's slots this took"). A
+    replayed saved snapshot carries the payload's own key instead, hence the two
+    lookups; a record saved before v14 has neither and stays null.
+    """
     return {
         'id': row['id'],
         'title': row.get('title'),
@@ -139,9 +146,10 @@ def hn_payload(row: dict) -> dict:
         'text': row.get('text'),
         'submitted_at': iso_utc(row.get('submitted_at')),
         'first_seen_at': iso_utc(row.get('first_seen_at')),
+        'qualified_at': iso_utc(row.get('qualified_at')),
         'score': row.get('score') or 0,
         'comments_count': row.get('comments_count') or 0,
-        'day_rank': row.get('day_rank'),
+        'day_rank': row.get('qualified_rank', row.get('day_rank')),
         'peak_rank': row.get('peak_rank'),
         'backfilled': bool(row.get('backfilled')),
         'preview': _json_field(row.get('preview')),
@@ -153,7 +161,10 @@ def hn_envelope(row: dict, is_read: bool, is_saved: bool) -> dict:
     return {
         'source': 'hn',
         'key': hn_key(row['id']),
-        'datetime': payload['first_seen_at'],
+        # The admission stamp is the timeline position (v14). The fallback is not
+        # optional: search reaches stories that were never admitted, and a record
+        # saved before v14 has no stamp in its snapshot at all.
+        'datetime': payload['qualified_at'] or payload['first_seen_at'],
         'is_read': is_read,
         'is_saved': is_saved,
         'hn': payload,

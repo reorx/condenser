@@ -60,6 +60,7 @@ export function makeHnItem(
     text: null,
     submitted_at: '2026-06-23T01:00:00Z',
     first_seen_at: '2026-06-23T03:09:00Z',
+    qualified_at: '2026-06-23T03:09:00Z',
     score: 100,
     comments_count: 10,
     day_rank: null,
@@ -71,7 +72,9 @@ export function makeHnItem(
   return {
     source: 'hn',
     key: `hn:${hn.id}`,
-    datetime: hn.first_seen_at,
+    // the admission stamp is the timeline position (v14); a story with none was
+    // never admitted, and only search can reach it
+    datetime: hn.qualified_at ?? hn.first_seen_at,
     is_read: flags.is_read ?? false,
     is_saved: flags.is_saved ?? false,
     hn,

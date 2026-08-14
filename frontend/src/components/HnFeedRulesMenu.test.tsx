@@ -55,7 +55,7 @@ describe('HnFeedRulesMenu', () => {
     wrap(<HnFeedRulesMenu rules={rules} />);
     await open();
 
-    expect(screen.getByText('Stories per day')).toBeInTheDocument();
+    expect(screen.getByText('Let in per day')).toBeInTheDocument();
     expect(screen.getByText('Minimum score')).toBeInTheDocument();
     expect(screen.getByText('Front-page peak rank')).toBeInTheDocument();
   });

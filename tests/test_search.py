@@ -310,7 +310,7 @@ def test_upgrade_from_v11_backfills_the_index(env):
     conn.close()
 
     _init()
-    assert db.get_meta('schema_version') == str(db.SCHEMA_VERSION) == '13'
+    assert db.get_meta('schema_version') == str(db.SCHEMA_VERSION) == '14'
     assert _find('模型') == ['tg:100:1']
 
 

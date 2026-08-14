@@ -157,6 +157,7 @@ class HNManager:
             await self._refresh_snapshots(exclude=sampled)
             await self._backfill_eligible_days()
             await self._fill_previews()
+            self._qualify()
         except Exception as e:  # noqa: BLE001 — top-level loop guard (spec: log + skip round)
             log.exception('hn poll round failed')
             db.set_meta('hn_last_error', str(e))
@@ -256,6 +257,20 @@ class HNManager:
                 db.update_hn_snapshot(story.id, item.get('score') or 0, item.get('descendants') or 0, self._now())
 
         await asyncio.gather(*(refresh_one(s) for s in stories))
+
+    # ---- admission (v14) ----
+    def _qualify(self) -> int:
+        """Decide what joins the timeline this round (``sources/hn.qualify``).
+
+        Last step of the round, on purpose. Scores must be fresh — the floors read
+        them — and by running after the preview prefetch a story is usually
+        admitted with its link-preview card already filled, instead of appearing
+        bare for one interval.
+        """
+        stamped = hn_source.qualify(self._now(), self.settings.condenser_hn_refresh_hours)
+        if stamped:
+            log.info('hn admitted %s stories', stamped)
+        return stamped
 
     # ---- link preview prefetch ----
     async def _fill_previews(self) -> None:
@@ -366,6 +381,12 @@ class HNManager:
             first_seen = min(max(submitted, day_start), day_end)
             self._insert_item(item, first_seen_at=first_seen, day=str(day), backfilled=True)
             await self._sleep(self.item_throttle)
+        # An imported day was over before we could judge it live, so its stories are
+        # admitted *where they already sit* rather than at now — a month of history
+        # stamped with today's timestamp would bury the timeline. The live judge
+        # would not admit them at all: they are outside its refresh window by
+        # construction (hckrnews days are >= 2 days old).
+        hn_source.stamp_history(str(day))
 
     # ---- status ----
     def status(self) -> dict:

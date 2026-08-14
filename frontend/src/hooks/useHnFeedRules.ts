@@ -6,11 +6,14 @@ import type { HnDisplayMode, HnFeedConfig, SourceGroup } from '@/lib/types';
 
 /** Which stories reach the timeline. Three independent knobs on one config blob:
  *
- *  - `mode` — how many of a day's top stories are shown. A *relative* bar, and it
- *    does not exist at the start of a UTC day: nine rows in the partition make
- *    "top 10" mean "everything", and UTC midnight is 08:00 Beijing.
- *  - `minScore` — the absolute floor for exactly that window. A mature day cuts
- *    at 243-476 points, so it never binds there.
+ *  - `mode` — how many stories a day admits. Since schema v14 this is a *rate*,
+ *    not a view filter: the server spreads it across the 24 hours and stamps each
+ *    story as it is admitted, permanently. So widening admits more from here on
+ *    and narrowing does not take back what a day already gave you — which is the
+ *    whole point, since the old behaviour let a story vanish after it was read.
+ *  - `minScore` — an absolute floor, aimed at the start of a UTC day when the
+ *    quota's own population is still thin. A mature day cuts at 243-476 points,
+ *    so it never binds there.
  *  - `maxPeakRank` — the best front-page position the story ever reached, aimed at
  *    the second-chance-pool repost. **Off by default**: measured on production it
  *    only ever caught stories the score floor had already taken, plus three of the
@@ -86,17 +89,20 @@ export function hnModeLabel(mode: HnDisplayMode): string {
 }
 
 /** One line naming all three rules — the trigger shows only the day quota, so
- *  this is where the floors stay visible without costing header width. */
+ *  this is where the floors stay visible without costing header width. It also
+ *  says "from now on", because that is the one thing about these rules a reader
+ *  can get wrong: they decide what is *let in*, not what is *shown*. */
 export function hnRulesSummary(rules: HnFeedRules): string {
   const parts = [`${hnModeLabel(rules.mode).toLowerCase()} a day`];
   if (rules.minScore > 0) parts.push(`score ≥ ${rules.minScore}`);
   if (rules.maxPeakRank > 0) parts.push(`peaked at #${rules.maxPeakRank} or better`);
-  return `Which stories reach the timeline: ${parts.join(' · ')}`;
+  return `What gets let in from now on: ${parts.join(' · ')}. Stories already on the timeline stay.`;
 }
 
 /** PATCH one rule. The server merges into the stored config, so sending a single
- *  key is what keeps the other two — and the admitted set is computed query-time,
- *  so the timeline, the calendar and both unread badges must all refetch. */
+ *  key is what keeps the other two. It also decides *future* admissions only, but
+ *  the caches still have to refetch: what is already admitted is unaffected, and
+ *  the reader should see that rather than guess. */
 export function useSetHnFeedRules() {
   const qc = useQueryClient();
   return useMutation({

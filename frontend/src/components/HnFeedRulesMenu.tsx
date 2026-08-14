@@ -20,12 +20,14 @@ import {
 } from '@/hooks/useHnFeedRules';
 import type { HnFeedConfig } from '@/lib/types';
 
-/** Which HN stories reach the timeline: the day quota plus the two floors that
- *  keep an unformed day from admitting anything with a pulse (see `useHnFeedRules`).
+/** Which HN stories are admitted to the timeline: the day quota plus the two
+ *  floors that keep an unformed day from letting in anything with a pulse (see
+ *  `useHnFeedRules`).
  *
  *  One trigger rather than three, because the header has to fit on a phone — and
  *  because the day quota is the knob you actually change while the floors are set
- *  once. The trigger keeps showing the quota; the tooltip names all three. */
+ *  once. The trigger keeps showing the quota; the tooltip names all three and says
+ *  the rules apply going forward, which since v14 they literally do. */
 export function HnFeedRulesMenu({ rules }: { rules: HnFeedRules }) {
   const setRules = useSetHnFeedRules();
   const patch = (key: keyof HnFeedConfig, value: unknown, current: unknown) =>
@@ -46,7 +48,7 @@ export function HnFeedRulesMenu({ rules }: { rules: HnFeedRules }) {
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
-        <DropdownMenuLabel className="text-xs text-muted-foreground">Stories per day</DropdownMenuLabel>
+        <DropdownMenuLabel className="text-xs text-muted-foreground">Let in per day</DropdownMenuLabel>
         {HN_DISPLAY_MODES.map((m) => (
           <RuleOption
             key={m.value}

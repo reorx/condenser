@@ -154,7 +154,7 @@ function HnCardImpl({ item, observe, pendingKeys }: Props) {
 
       <div className={cn('mt-1 flex items-center gap-2 text-xs text-muted-foreground', isJob && 'opacity-70')}>
         {hn.day_rank != null && (
-          <span title="Rank of its archive day, by points" className="font-medium text-orange-600 dark:text-orange-400">
+          <span title="Which of the day's slots it took" className="font-medium text-orange-600 dark:text-orange-400">
             #{hn.day_rank}
           </span>
         )}

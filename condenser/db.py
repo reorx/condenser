@@ -7,6 +7,7 @@ same Peewee database object so everything lives on one connection.
 """
 
 import json
+import logging
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -30,6 +31,8 @@ from telememo import db as tdb
 from . import search, vectors
 from .items import FORYOU_FEED, ItemKey
 
+log = logging.getLogger('condenser.db')
+
 # The condenser is_filtered overlay column declared on telememo's messages table.
 MESSAGES_OPTIONAL_FIELDS = {
     'messages': [{'name': 'is_filtered', 'type': 'BOOLEAN', 'default': 0}],
@@ -38,7 +41,11 @@ MESSAGES_OPTIONAL_FIELDS = {
 # Bumped when condenser's own table shapes change; recorded in app_meta on init so a
 # future startup can detect an upgrade and run a migration. Telememo manages its own
 # table migrations separately (init_db optional_fields / ALTER TABLE).
-SCHEMA_VERSION = 13
+SCHEMA_VERSION = 14
+
+# One-shot marker for the v14 admission backfill (see _migrate_hn_qualified_v14).
+# State, not shape: the columns can exist while the stamping has not happened.
+BACKFILL_META_KEY = 'hn_qualified_backfilled'
 
 
 class CondenserBaseModel(Model):
@@ -212,6 +219,15 @@ class HNStory(CondenserBaseModel):
     # for self-posts / URLs that failed preview_attempts real fetches).
     preview = TextField(null=True)
     preview_attempts = IntegerField(default=0)
+    # v14: the admission stamp — NULL means "not (yet) on the timeline". Written
+    # once by the polling-time judge and never cleared, because the query-time rank
+    # it replaces let a story vanish *after* it had been read. It is the timeline's
+    # sort key and its day grouping, so "became visible" and "sits at" are the same
+    # instant by construction (plan 2026-08-14 phase 3).
+    qualified_at = DateTimeField(null=True, index=True)
+    # Which admission slot of its day this took — the card's badge. Stored rather
+    # than computed, so it stops jumping between two refreshes.
+    qualified_rank = IntegerField(null=True)
 
     class Meta:
         table_name = 'hn_stories'
@@ -406,12 +422,18 @@ def init_db(db_path: str, vector_dims: int = 256) -> None:
     derived from the source tables (``search.ensure_index``).
     """
     tdb.init_db(db_path, optional_fields=MESSAGES_OPTIONAL_FIELDS)
+    # Before the migrations, not with the vec0 table below: an ALTER TABLE makes
+    # SQLite reload the whole schema, and a vec0 table it cannot parse reports
+    # that as "database disk image is malformed" (see vectors.load).
+    vectors.load()
     _migrate_subscriptions_v3()
+    _migrate_hn_qualified_v14()
     tdb.db.create_tables(CONDENSER_TABLES)
     _migrate_read_saved_v4()
     _migrate_hn_previews_v5()
     _migrate_feedback_reason_v9()
     _migrate_x_urls_v13()
+    _backfill_hn_admission()
     _enable_wal(db_path)
     set_meta('schema_version', str(SCHEMA_VERSION))
     vectors.setup(vector_dims)
@@ -510,6 +532,64 @@ def _migrate_x_urls_v13() -> None:
     if not cols or 'urls' in cols:
         return
     tdb.db.execute_sql('ALTER TABLE x_tweets ADD COLUMN urls TEXT')
+
+
+def _migrate_hn_qualified_v14() -> None:
+    """Add the admission-stamp columns to a pre-v14 ``hn_stories`` table.
+
+    Shape-based ADD COLUMNs, the v5/v9/v13 pattern — but it runs **before**
+    ``create_tables``, which the other three do not, and that ordering is
+    load-bearing rather than tidy. ``HNStory.qualified_at`` is declared
+    ``index=True``, so ``create_tables`` issues
+    ``CREATE INDEX IF NOT EXISTS hnstory_qualified_at ON hn_stories (qualified_at)``
+    for the existing table. On a connection that has seen this table's schema
+    change, SQLite **accepts** that statement against a column that is not there
+    (a bare connection rejects it with "no such column"), and the moment the
+    column is then added, ``PRAGMA integrity_check`` reports
+    ``row 1 missing from index hnstory_qualified_at`` and every write to the table
+    fails with ``database disk image is malformed``. Measured, not theorised —
+    it is what the upgrade test caught. Put this call back after ``create_tables``
+    and production's first restart corrupts its own hn_stories.
+
+    The **backfill** is deliberately not here — see ``_backfill_hn_admission``.
+    """
+    cols = [r[1] for r in tdb.db.execute_sql('PRAGMA table_info(hn_stories)').fetchall()]
+    if not cols or 'qualified_at' in cols:
+        return
+    with tdb.db.atomic():
+        tdb.db.execute_sql('ALTER TABLE hn_stories ADD COLUMN qualified_at DATETIME')
+        tdb.db.execute_sql('ALTER TABLE hn_stories ADD COLUMN qualified_rank INTEGER')
+
+
+def _backfill_hn_admission() -> None:
+    """Stamp what the pre-v14 query-time rule would have shown (plan §5.4d).
+
+    Unlike the v5/v9/v13 columns, these cannot stay NULL: the read path now shows
+    exactly what carries a stamp, so an un-backfilled upgrade empties the HN
+    timeline. The backfill replays the old rule once and stamps each story it
+    would have shown at that story's own ``first_seen_at`` — position for
+    position, badge for badge — so the upgrade is invisible to the reader.
+
+    Keyed on its own marker rather than on the columns' presence, because this is
+    *state*, not shape: a crash between the ALTER and the stamping would otherwise
+    satisfy the shape check forever and leave the timeline permanently empty. It
+    also has to run after ``create_tables`` (it reads the subscription's config),
+    which is the other reason it is not part of the migration above.
+
+    ⚠️ One-shot on purpose. ``stamp_hn_history`` reproduces history; running it
+    again under a later config would apply that config retroactively and move
+    items the reader has already read past.
+    """
+    if get_meta(BACKFILL_META_KEY):
+        return
+    # deferred: condenser.sources.hn imports this module. The admission rule and its
+    # config live with the provider, so this asks it rather than restating the floors.
+    from .sources import hn as hn_source
+
+    with tdb.db.atomic():
+        stamped = hn_source.stamp_history()
+        set_meta(BACKFILL_META_KEY, '1')
+    log.info('hn v14 admission backfill stamped %s stories', stamped)
 
 
 def _enable_wal(db_path: str) -> None:
@@ -797,10 +877,17 @@ def mark_read_bulk(
         tdb.db.execute_sql(sql, (_now().isoformat(sep=' '), *params))
 
     if channel_id is None and source in (None, 'hn') and hn_sampling_active():
-        hn_where = ['h.is_dead = 0']
+        # Admitted stories only (v14). Before the admission stamp this swept the
+        # whole archive, on the grounds that a below-cut story was invisible anyway
+        # and marking it kept a later display-mode widening quiet. That inverts
+        # under one-way admission: an unadmitted story is not below a cut, it is
+        # *not here yet*, and burning it now would land it at the head of the
+        # timeline already read — exactly the arrival the stamp exists to make
+        # visible. Same rule as X's bulk_read_scope: burn what the view showed.
+        hn_where = ['h.is_dead = 0', 'h.qualified_at IS NOT NULL']
         hn_params: list = []
         if before_date:
-            hn_where.append('h.day < ?')
+            hn_where.append('substr(h.qualified_at, 1, 10) < ?')
             hn_params.append(before_date)
         tdb.db.execute_sql(
             'INSERT OR IGNORE INTO read_items (source, ref1, ref2, read_at) '
@@ -1104,6 +1191,132 @@ def hn_story_counts(today: str) -> tuple[int, int]:
     total = HNStory.select().count()
     today_count = HNStory.select().where(HNStory.day == today).count()
     return total, today_count
+
+
+# --- hn admission (v14): the polling-time judge's SQL -------------------------
+#
+# Everything below writes or reads ``qualified_at`` / ``qualified_rank``. The
+# *policy* (which floors, how big today's budget is) lives in sources/hn.py with
+# the config it reads; this is only the storage side, per the module's convention
+# that all SQL lives here.
+
+
+def hn_qualified_count(day: str) -> int:
+    """How many stories have been admitted on ``day`` (a UTC date string).
+
+    Counts by *admission* day, not archive day: a story first seen at 23:50 and
+    admitted at 02:00 spends the second day's budget, which is what keeps the
+    budget line monotone (plan §5.4a).
+    """
+    cur = tdb.db.execute_sql('SELECT COUNT(*) FROM hn_stories WHERE substr(qualified_at, 1, 10) = ?', (day,))
+    return cur.fetchone()[0]
+
+
+def hn_qualification_candidates(
+    min_score: int,
+    max_peak_rank: int,
+    first_seen_after: datetime,
+    limit: Optional[int],
+) -> list[HNStory]:
+    """Unadmitted stories eligible for a stamp, best score first.
+
+    ``first_seen_after`` is the refresh window's own cutoff, deliberately the same
+    constant: past it we stop pulling scores, so a story can no longer *earn* its
+    way in — only a freed-up slot could let it in, and stamping a three-day-old
+    story with today's timestamp would drop it at the top of the timeline
+    (plan §5.4b).
+    """
+    where = HNStory.qualified_at.is_null() & (HNStory.is_dead == False) & (HNStory.first_seen_at >= first_seen_after)  # noqa: E712
+    if min_score > 0:
+        where &= HNStory.score >= min_score
+    if max_peak_rank > 0:
+        where &= HNStory.peak_rank.is_null() | (HNStory.peak_rank <= max_peak_rank)
+    query = HNStory.select().where(where).order_by(HNStory.score.desc(), HNStory.id.asc())
+    if limit is not None:
+        query = query.limit(limit)
+    return list(query)
+
+
+def stamp_hn_qualified(story_id: int, at: datetime, rank: int) -> None:
+    """Admit one story. Guarded by ``qualified_at IS NULL`` because admission is
+    one-way — a second stamp would move an item the reader may already have read."""
+    HNStory.update(qualified_at=at, qualified_rank=rank).where(
+        (HNStory.id == story_id) & HNStory.qualified_at.is_null()
+    ).execute()
+
+
+def hn_daily_archive_counts(days: int, before_day: str) -> list[int]:
+    """Archived-story counts for the ``days`` most recent complete days before
+    ``before_day`` — the population 'half' mode takes its rate from."""
+    cur = tdb.db.execute_sql(
+        'SELECT COUNT(*) FROM hn_stories WHERE day < ? GROUP BY day ORDER BY day DESC LIMIT ?',
+        (before_day, days),
+    )
+    return [row[0] for row in cur.fetchall()]
+
+
+# The pre-v14 read rule, kept for one purpose: replaying what the timeline *did*
+# show, so history can be stamped where it already sat. Not a general ranking
+# helper — see the warning on _migrate_hn_qualified_v14.
+_LEGACY_RANKED = """
+    SELECT h.id, h.day, h.first_seen_at, h.score, h.peak_rank, h.qualified_at,
+           ROW_NUMBER() OVER (PARTITION BY h.day ORDER BY h.score DESC, h.id ASC) AS day_rank,
+           COUNT(*) OVER (PARTITION BY h.day) AS day_total
+    FROM hn_stories h
+    WHERE h.is_dead = 0
+"""
+
+
+def stamp_hn_history(cfg, quota: Optional[int], day: Optional[str] = None) -> int:
+    """Stamp a historical day (or the whole archive) at each story's own ``first_seen_at``.
+
+    Two callers, one meaning — *these stories belong where they already are*: the
+    v14 backfill, and the hckrnews import, which hands us days that closed before
+    we were watching. A live round never uses this; it stamps at ``now``, so a
+    newly admitted story lands at the head of the timeline.
+
+    ``quota`` is the day's fixed capacity (None for 'all'/'half', whose own rank
+    predicate already caps them). Already-stamped rows are skipped *and* count
+    against it, so re-importing a day the sampler was already watching — which
+    happens to every new subscriber on their third day — tops the day up instead
+    of doubling it. Returns the number stamped.
+    """
+    where = ['r.qualified_at IS NULL', _legacy_mode_where(cfg.mode, quota)[0]]
+    params = list(_legacy_mode_where(cfg.mode, quota)[1])
+    if cfg.min_score > 0:
+        where.append('r.score >= ?')
+        params.append(cfg.min_score)
+    if cfg.max_peak_rank > 0:
+        where.append('(r.peak_rank IS NULL OR r.peak_rank <= ?)')
+        params.append(cfg.max_peak_rank)
+    if day is not None:
+        where.append('r.day = ?')
+        params.append(day)
+    cur = tdb.db.execute_sql(
+        f'SELECT r.id, r.day, r.first_seen_at, r.day_rank FROM ({_LEGACY_RANKED}) r '
+        f'WHERE {" AND ".join(where)} ORDER BY r.day, r.day_rank',
+        tuple(params),
+    )
+    taken: dict[str, int] = {}
+    stamped = 0
+    for story_id, story_day, first_seen_at, day_rank in cur.fetchall():
+        if quota is not None:
+            if story_day not in taken:
+                taken[story_day] = hn_qualified_count(story_day)
+            if taken[story_day] >= quota:
+                continue
+            taken[story_day] += 1
+        stamp_hn_qualified(story_id, first_seen_at, day_rank)
+        stamped += 1
+    return stamped
+
+
+def _legacy_mode_where(mode: str, quota: Optional[int]) -> tuple[str, list]:
+    if mode == 'half':
+        return 'r.day_rank * 2 <= r.day_total + 1', []
+    if quota is None:  # 'all'
+        return '1 = 1', []
+    return 'r.day_rank <= ?', [quota]
 
 
 # --- subscriptions (x / twitter) ---------------------------------------------

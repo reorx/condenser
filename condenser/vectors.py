@@ -59,23 +59,43 @@ def dims() -> Optional[int]:
     return _dims
 
 
-def setup(dimensions: int) -> bool:
-    """Load the extension on the shared peewee database and ensure the index table.
+def load() -> bool:
+    """Register sqlite-vec on the shared peewee database. Safe before any DDL.
 
     peewee's connections are thread-local (uvicorn's threadpool vs. the event
     loop), so registering the extension on the *database* matters: peewee replays
     it on every connection it opens, rather than only on the current one.
 
-    Must run after the ordinary tables are created — a vec0 table is created with
+    Split out of ``setup`` because of a trap that costs an afternoon to find: an
+    ``ALTER TABLE`` makes SQLite reload the **entire** schema on the next
+    statement, and a ``vec0`` table it cannot parse turns that into
+    ``database disk image is malformed`` — a message that says nothing about
+    extensions. So the extension has to be on the connection *before* the
+    migrations, while the vec0 *table* still has to be created after the ordinary
+    ones. Two steps, two positions in ``db.init_db``.
+    """
+    try:
+        import sqlite_vec
+
+        tdb.db.load_extension(sqlite_vec.loadable_path())
+    except Exception as e:  # noqa: BLE001 - a missing/unloadable extension is a degraded mode, not a crash
+        log.warning('sqlite-vec unavailable, For You verdicts are disabled: %s', e)
+        return False
+    return True
+
+
+def setup(dimensions: int) -> bool:
+    """Ensure the index table (and the extension behind it — see ``load``).
+
+    Must run after the ordinary tables are created: a vec0 table is created with
     raw SQL and the extension has to be loaded first.
     """
     global _available, _dims
     _available = False
     _dims = None
     try:
-        import sqlite_vec
-
-        tdb.db.load_extension(sqlite_vec.loadable_path())
+        if not load():
+            return False
         _ensure_table(dimensions)
     except Exception as e:  # noqa: BLE001 - a missing/unloadable extension is a degraded mode, not a crash
         log.warning('sqlite-vec unavailable, For You verdicts are disabled: %s', e)

@@ -78,9 +78,15 @@ export interface HnStory {
   text: string | null;
   submitted_at: string | null;
   first_seen_at: string;
+  /** When the story was admitted to the timeline, and therefore where it sits
+   *  (schema v14). Null for a story that never was — search reaches those — and
+   *  on records saved before the stamp existed. */
+  qualified_at: string | null;
   score: number;
   comments_count: number;
-  /** Query-time rank within the story's archive day; null on saved records. */
+  /** Which admission slot of its day the story took. Keeps the pre-v14 name on
+   *  the wire (shipped iOS builds decode it); the column behind it is
+   *  `qualified_rank`, and unlike the old query-time rank it no longer moves. */
   day_rank: number | null;
   peak_rank: number | null;
   backfilled: boolean;

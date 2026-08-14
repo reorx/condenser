@@ -143,9 +143,11 @@ def test_hide_hn_story_removes_it_without_promoting_others(env):
     with _client() as client:
         _login(client)
         subscribe_hn(config={'display_mode': 'top10'})
-        # 11 stories on one day: ranks 1..11 by score; #11 is below the top10 cut
-        for i in range(11):
+        # 10 admitted stories plus one the judge never let in (v14: admission is a
+        # stamp, so "below the cut" is now "unstamped")
+        for i in range(10):
             seed_hn(100 + i, minutes=i, score=100 - i)
+        seed_hn(110, minutes=10, score=90, qualified_at=None, qualified_rank=None)
 
         assert len(client.get('/api/timeline').json()['items']) == 10
         assert hn_unread(client) == 10

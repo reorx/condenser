@@ -193,7 +193,7 @@ def test_add_subscription_coerces_str_channel_id(env):
 def test_fresh_db_records_schema_version(env):
     db.init_db(os.environ['CONDENSER_DB_PATH'])
     assert db.get_meta('schema_version') == str(db.SCHEMA_VERSION)
-    assert db.SCHEMA_VERSION == 13
+    assert db.SCHEMA_VERSION == 14
 
 
 def test_hn_stories_table_migrates_to_v5(env):
@@ -905,3 +905,52 @@ def test_hn_status_reports_story_counts(env):
         assert st['last_poll_at'] == '2026-07-19 11:50:00'
         assert st['last_error'] is None
         assert st['source_enabled'] is True
+
+
+# --- admission wiring (v14, plan 2026-08-14 phase 3) -------------------------
+
+
+def test_a_round_admits_the_stories_it_sampled(env):
+    """The judge is the round's last step, and this is where it gets called.
+
+    Last on purpose: the floors read scores, so the snapshot refresh has to have
+    run; and by following the preview prefetch, a story usually arrives with its
+    link-preview card already filled instead of bare for one interval.
+    """
+    fetch = FakeFetch()
+    mgr = make_manager(fetch)
+    subscribe_front()
+    db.update_hn_subscription('front', config={'display_mode': 'top10', 'min_score': 50})
+    fetch.set(TOPSTORIES, [101, 102])
+    fetch.set(item_url(101), story(101, score=300))
+    fetch.set(item_url(102), story(102, score=6))  # below the floor
+
+    asyncio.run(mgr.poll_once())
+
+    # NOW is 12:00 UTC -> budget ceil(10 * 12/24) = 5, so the floor is what binds
+    assert db.get_hn_story(101).qualified_at is not None
+    assert db.get_hn_story(102).qualified_at is None
+
+
+def test_an_imported_day_is_stamped_by_the_round_that_imported_it(env):
+    """hckrnews days are >= 2 days old, so the live judge's candidate window
+    excludes them by construction. Without the history stamp at the end of the
+    import, a new subscriber's whole backfilled week would be invisible."""
+    fetch = FakeFetch()
+    mgr = make_manager(fetch)
+    subscribe_front()
+    db.update_hn_subscription('front', config={'display_mode': 'top10', 'min_score': 50})
+    fetch.set(TOPSTORIES, [])
+
+    day = TODAY - timedelta(days=3)
+    fetch.set(hckr_url(day), [{'id': 700 + i} for i in range(3)])
+    for i in range(3):
+        fetch.set(item_url(700 + i), story(700 + i, score=300, time=unix(datetime.combine(day, datetime.min.time()))))
+    db.set_meta('hn_backfill_pending', json.dumps([str(day)]))
+
+    asyncio.run(mgr.poll_once())
+
+    stamps = [db.get_hn_story(700 + i).qualified_at for i in range(3)]
+    assert all(s is not None for s in stamps)
+    # stamped where they sit, not at now — otherwise a week of history lands on top
+    assert all(str(s).startswith(str(day)) for s in stamps)

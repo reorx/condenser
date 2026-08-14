@@ -128,6 +128,9 @@ export function ItemDetailInfo({ item, sub }: Props) {
       {hn.author && <DetailRow label="作者">{hn.author}</DetailRow>}
       {hn.submitted_at && <DetailRow label="提交时间">{fullDateLabel(hn.submitted_at)}</DetailRow>}
       <DetailRow label="上榜时间">{fullDateLabel(hn.first_seen_at)}</DetailRow>
+      {/* 上榜 ≠ 入选：前者是它出现在 HN 首页的时刻，后者是它够格进入时间线的时刻，
+          也是它在时间线上的位置。两者之间的间隔就是它挣到这个位置花的时间。 */}
+      {hn.qualified_at && <DetailRow label="入选时间">{fullDateLabel(hn.qualified_at)}</DetailRow>}
       <DetailRow label="热度">
         {hn.score} 分 ·{' '}
         <a href={hnCommentsUrl(hn.id)} target="_blank" rel="noreferrer" className="hover:underline">
@@ -136,7 +139,7 @@ export function ItemDetailInfo({ item, sub }: Props) {
       </DetailRow>
       {(hn.day_rank != null || hn.peak_rank != null) && (
         <DetailRow label="排名">
-          {hn.day_rank != null && <span>当日 #{hn.day_rank}</span>}
+          {hn.day_rank != null && <span>当日入选第 {hn.day_rank} 条</span>}
           {hn.day_rank != null && hn.peak_rank != null && <span aria-hidden> · </span>}
           {hn.peak_rank != null && <span>首页峰值 #{hn.peak_rank}</span>}
         </DetailRow>

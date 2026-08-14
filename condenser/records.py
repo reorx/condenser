@@ -57,7 +57,7 @@ def build_snapshot(channel_id: int, message_id: int) -> Optional[dict]:
 
 def _hn_snapshot(story: db.HNStory) -> dict:
     # Single source of truth for the field mapping: the snapshot is exactly the
-    # envelope payload (day_rank is query-time only, stored as None) plus `day`.
+    # envelope payload plus `day` (the archive day, which the payload doesn't carry).
     payload = hn_payload(story.__data__)
     payload['day'] = story.day
     return payload

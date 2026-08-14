@@ -20,6 +20,7 @@ function makeStory(over: Partial<HnStory> = {}): HnStory {
     text: null,
     submitted_at: '2026-07-19T10:00:00+00:00',
     first_seen_at: '2026-07-19T12:00:00+00:00',
+    qualified_at: '2026-07-19T12:30:00+00:00',
     score: 120,
     comments_count: 45,
     day_rank: 3,

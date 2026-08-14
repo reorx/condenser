@@ -81,6 +81,7 @@ const hnItem: TimelineItem = {
     text: null,
     submitted_at: '2026-06-01T11:00:00Z',
     first_seen_at: '2026-06-01T12:05:00Z',
+    qualified_at: '2026-06-01T13:05:00Z',
     score: 42,
     comments_count: 7,
     day_rank: 1,
@@ -159,6 +160,22 @@ describe('ItemDetailPane', () => {
 
     await userEvent.setup().click(screen.getByRole('button', { name: '隐藏' }));
     await waitFor(() => expect(api.hideItem).toHaveBeenCalledWith('hn:101'));
+  });
+
+  it('separates when a story hit the front page from when it was let in', async () => {
+    // Two different instants, and the gap between them is what the story spent
+    // earning its slot — the pane is the only place a reader can see it.
+    renderPane(hnItem);
+    expect(screen.getByText('上榜时间')).toBeInTheDocument();
+    expect(screen.getByText('入选时间')).toBeInTheDocument();
+    expect(screen.getByText('当日入选第 1 条')).toBeInTheDocument();
+  });
+
+  it('omits the admission row for a story that was never admitted', async () => {
+    // Search reaches these; the archive timestamp is all they have.
+    renderPane({ ...hnItem, hn: { ...hnItem.hn!, qualified_at: null, day_rank: null } });
+    expect(screen.getByText('上榜时间')).toBeInTheDocument();
+    expect(screen.queryByText('入选时间')).not.toBeInTheDocument();
   });
 
   it('saves by key and flips the label, then unsaves on a second click', async () => {

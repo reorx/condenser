@@ -31,10 +31,14 @@ def _login(client):
 def seed_hn(sid, minutes, score=120, day=None, is_dead=False, **over):
     """Seed one hn_stories row; first_seen_at = BASE + minutes (naive UTC).
 
+    Admitted at its own ``first_seen_at`` by default (v14, plan 2026-08-14 phase 3),
+    which is what puts it on the timeline at all — most cases here are about
+    merging, paging and keys and want an ordinary already-visible story. Pass
+    ``qualified_at=None`` for one the judge has not admitted yet; the admission
+    tests do exactly that and then run a round.
+
     The default score clears the admission floor (``sources/hn.DEFAULT_MIN_SCORE``,
-    plan 2026-08-14 phase A) — these cases are about merging, paging and keys, so
-    their stories should be ordinary front-page material rather than the kind the
-    floor exists to reject. ``peak_rank`` defaults to NULL, which always passes.
+    plan phase A); ``peak_rank`` defaults to NULL, which always passes.
     """
     first_seen = (BASE + timedelta(minutes=minutes)).replace(tzinfo=None)
     fields = dict(
@@ -54,6 +58,10 @@ def seed_hn(sid, minutes, score=120, day=None, is_dead=False, **over):
         is_dead=is_dead,
     )
     fields.update(over)
+    # After the overrides, so a case that moves first_seen_at moves the story's
+    # timeline position with it. An explicit qualified_at=None survives.
+    fields.setdefault('qualified_at', fields['first_seen_at'])
+    fields.setdefault('qualified_rank', 1)
     db.insert_hn_story(**fields)
 
 
@@ -381,29 +389,28 @@ def test_timeline_without_hn_subscription_shows_no_hn(env):
         assert client.get('/api/timeline').json()['items'] == []
 
 
-def test_hn_display_mode_top_n(env):
-    """Reading is compressed query-time: only each day's top-N stories are visible."""
+def test_hn_timeline_shows_exactly_what_carries_an_admission_stamp(env):
+    """Reading is compressed at *admission* time (v14), not query time.
+
+    Which stories earn a stamp — the day quota, the score floor, the peak-rank
+    gate — is `tests/test_hn_admission.py`'s subject. Here the point is only that
+    the read path asks one question and the display mode is not part of it: a
+    story that was admitted stays admitted even after the mode is tightened.
+    """
     with _client() as client:
         _login(client)
         subscribe_hn(config={'display_mode': 'top10'})
-        # 25 stories on one day, score = id so higher id wins
-        for i in range(25):
+        for i in range(6):
             seed_hn(100 + i, i, score=100 + i)
+        seed_hn(200, 10, score=999, qualified_at=None, qualified_rank=None)
 
-        items = client.get('/api/timeline?limit=50').json()['items']
-        assert len(items) == 10
-        # the visible ones are the highest-scored, ordered by first_seen desc
-        visible_ids = {it['hn']['id'] for it in items}
-        assert visible_ids == {100 + i for i in range(15, 25)}
+        keys = keys_of(client.get('/api/timeline?limit=50').json()['items'])
+        assert 'hn:200' not in keys  # the best score in the archive, never admitted
+        assert len(keys) == 6
 
-        db.update_hn_subscription('front', config={'display_mode': 'half'})
-        assert len(client.get('/api/timeline?limit=50').json()['items']) == 13  # ceil(25/2)
-
-        db.update_hn_subscription('front', config={'display_mode': 'all'})
-        assert len(client.get('/api/timeline?limit=50').json()['items']) == 25
-
-        db.update_hn_subscription('front', config={'display_mode': 'top20'})
-        assert len(client.get('/api/timeline?limit=50').json()['items']) == 20
+        # narrowing the mode is a rate change from here on, not a retroactive cut
+        db.update_hn_subscription('front', config={'display_mode': 'top10', 'min_score': 150})
+        assert len(client.get('/api/timeline?limit=50').json()['items']) == 6
 
 
 def test_hn_dead_stories_excluded(env):
@@ -438,12 +445,14 @@ def test_timeline_days_merged_across_sources(env):
         subscribe_hn(config={'display_mode': 'top10'})
         seed_hn(101, 5)
         seed_hn(102, 60 * 24 * 2)  # two days later
-        # a hidden story (rank > N) must not count
-        for i in range(11):
+        # 9 more admitted that day, plus two the judge never let in
+        for i in range(9):
             seed_hn(200 + i, 10 + i, score=50 + i)
+        for i in range(2):
+            seed_hn(300 + i, 30 + i, score=6, qualified_at=None, qualified_rank=None)
 
         days = {d['date']: d['count'] for d in client.get('/api/timeline/days').json()}
-        # 2026-06-01: 2 TG units + top10 of that day's 12 stories
+        # 2026-06-01: 2 TG units + the 10 admitted stories
         assert days['2026-06-01'] == 2 + 10
         assert days['2026-06-03'] == 1
 
@@ -718,12 +727,14 @@ def test_sources_lists_only_added_sources(env):
 
 
 def test_hn_unread_counts_only_visible_top_n(env):
-    """HN unread must match the display filter, or the badge can never clear."""
+    """HN unread must match what the page shows, or the badge can never clear."""
     with _client() as client:
         _login(client)
         subscribe_hn(config={'display_mode': 'top10'})
-        for i in range(15):
-            seed_hn(100 + i, i, score=100 + i)  # top10 = ids 105..114
+        for i in range(5):
+            seed_hn(100 + i, i, score=100 + i, qualified_at=None, qualified_rank=None)
+        for i in range(5, 15):
+            seed_hn(100 + i, i, score=100 + i)  # admitted: ids 105..114
 
         def hn_unread():
             out = client.get('/api/sources').json()
