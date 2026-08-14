@@ -2,7 +2,9 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<!-- make archive 用：从 xcarchive 导出 App Store 分发 ipa（本地出包，上传另走 asc/Transporter） -->
+	<!-- make archive 用：从 xcarchive 导出 App Store 分发 ipa（本地出包，上传另走 asc/Transporter）。
+	     这是模板：teamID 占位符由 Makefile 从 ~/Sync/apple-developer/secrets.env 的
+	     APPLE_TEAM_ID 渲染，产物落 .build/DerivedData/ExportOptions.plist，不要直接使用本文件 -->
 	<key>method</key>
 	<string>app-store-connect</string>
 	<key>destination</key>
@@ -10,7 +12,7 @@
 	<key>signingStyle</key>
 	<string>automatic</string>
 	<key>teamID</key>
-	<string>YU3FMV36N2</string>
+	<string>__APPLE_TEAM_ID__</string>
 	<key>uploadSymbols</key>
 	<true/>
 </dict>

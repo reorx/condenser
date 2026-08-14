@@ -31,25 +31,33 @@ run:
 
 dev: build run
 
-# 真机构建 + 推送安装（签名参数在脚本内命令行覆盖，不动 project.yml）
+# 真机构建 + 推送安装（签名参数在脚本内命令行覆盖，不动 project.yml；
+# Team ID 由脚本从 secrets.env 读，TEAM_ID= 可覆盖）
 # 用法：make device [TEAM_ID=ABCDE12345] [DEVICE="<设备名或UDID>"]
 device: gen
 	./scripts/device.sh
 
-# App Store 归档 + 导出 ipa（Release；签名/导出配置见 scripts/ExportOptions.plist）
+# Apple 凭据统一从 ~/Sync/apple-developer/secrets.env 加载（变量含义与文件清单见
+# 同目录 AGENTS.md）；本地不再硬编码任何凭据值。只取值不 export（xcodebuild 走参数）。
+APPLE_SECRETS := $(HOME)/Sync/apple-developer/secrets.env
+
+# App Store 归档 + 导出 ipa（Release；导出配置由 scripts/ExportOptions.template.plist
+# 渲染 teamID 生成，产物见 EXPORT_OPTIONS）
 # 产物：.build/DerivedData/export/Condenser.ipa；上传走 asc / Transporter
-TEAM_ID ?= YU3FMV36N2
 ARCHIVE := $(DERIVED_DATA)/Condenser.xcarchive
+EXPORT_OPTIONS := $(DERIVED_DATA)/ExportOptions.plist
 archive: gen
-	set -o pipefail && xcodebuild -project Condenser.xcodeproj -scheme Condenser \
+	set -o pipefail && source $(APPLE_SECRETS) && xcodebuild -project Condenser.xcodeproj -scheme Condenser \
 		-destination 'generic/platform=iOS' -derivedDataPath $(DERIVED_DATA) \
 		-configuration Release \
-		DEVELOPMENT_TEAM=$(TEAM_ID) CODE_SIGN_STYLE=Automatic \
+		DEVELOPMENT_TEAM=$$APPLE_TEAM_ID CODE_SIGN_STYLE=Automatic \
 		CODE_SIGN_IDENTITY="Apple Development" \
 		-allowProvisioningUpdates \
 		archive -archivePath $(ARCHIVE) | xcbeautify
+	source $(APPLE_SECRETS) && mkdir -p $(DERIVED_DATA) && \
+		sed "s/__APPLE_TEAM_ID__/$$APPLE_TEAM_ID/" scripts/ExportOptions.template.plist > $(EXPORT_OPTIONS)
 	set -o pipefail && xcodebuild -exportArchive -archivePath $(ARCHIVE) \
-		-exportOptionsPlist scripts/ExportOptions.plist \
+		-exportOptionsPlist $(EXPORT_OPTIONS) \
 		-exportPath $(DERIVED_DATA)/export -allowProvisioningUpdates | xcbeautify
 
 clean:

@@ -105,9 +105,11 @@ make clean       # 清理构建产物与生成的 xcodeproj
 
 ## 真机部署
 
-`make device`：xcodegen → Team ID 固定为付费账号的正式 Team `YU3FMV36N2`（Xiao Meng，
-2026-08-10 起；可用 `TEAM_ID=` 覆盖。不再从钥匙串探测——钥匙串里还留着旧免费 Personal
-Team `QFW98B7VB4` 的证书，find-certificate 取首个匹配会探错）→ 选设备（唯一已连接的
+`make device`：xcodegen → Team ID 从 `~/Sync/apple-developer/secrets.env` 的
+`APPLE_TEAM_ID` 读（Apple 凭据的唯一权威来源，变量与用法见该目录 AGENTS.md；
+2026-08-13 起不再在项目里硬编码，可用 `TEAM_ID=` 覆盖。不再从钥匙串探测——钥匙串里
+还留着旧免费 Personal Team `QFW98B7VB4` 的证书，find-certificate 取首个匹配会探错）
+→ 选设备（唯一已连接的
 真机，多台时 `DEVICE="<名称或UDID>"` 指定）→ device 构建（`-allowProvisioningUpdates`
 自动出 profile）→ `devicectl` 安装 + 启动。
 产物在 `.build/DerivedData/Build/Products/Debug-iphoneos/`（与模拟器产物不冲突）。
@@ -132,8 +134,10 @@ destination」——实测手机锁屏时 poke 保活 + `-destination-timeout` �
 ## App Store 发布（2026-08-12 起 Ready）
 
 `make archive`：Release 归档（automatic 签名 + `-allowProvisioningUpdates`，Apple
-Distribution 证书与 App Store profile 由 Xcode 云签名按需补发）→ `exportArchive`
-（`scripts/ExportOptions.plist`，method `app-store-connect`）→ ipa 落在
+Distribution 证书与 App Store profile 由 Xcode 云签名按需补发；`DEVELOPMENT_TEAM`
+从 secrets.env 的 `APPLE_TEAM_ID` 读）→ `exportArchive`（导出配置由
+`scripts/ExportOptions.template.plist` 渲染 teamID 生成
+`.build/DerivedData/ExportOptions.plist`，method `app-store-connect`）→ ipa 落在
 `.build/DerivedData/export/Condenser.ipa`。前提同真机部署：团队里至少注册过一台设备
 （archive 的 development 签名也依赖），Xcode 已登录付费账号。
 
@@ -149,13 +153,19 @@ Distribution 证书与 App Store profile 由 Xcode 云签名按需补发）→ `
 - **隐私清单**：`Condenser/PrivacyInfo.xcprivacy` —— 不追踪、不采集；唯一
   required-reason API 是 UserDefaults（CA92.1）。新增用到文件时间戳 / 磁盘容量 /
   系统启动时间等 API 的代码时要同步补声明
-- **上传**：asc CLI 已装（brew），认证走 `~/Sync/apple-developer/` 的 API key
-  （`ASC_KEY_ID` / `ASC_ISSUER_ID` / `ASC_PRIVATE_KEY_PATH`，值见 secrets.env，
-  用 envops 读）。上传 build：`asc builds upload --path <ipa>`（asc-release-flow
-  sub-skill 有完整编排）
+- **上传**：asc CLI 已装（brew），认证已 `asc auth login` 持久化到系统钥匙串
+  （profile `reorx-dev`，默认，裸跑即可用；`asc auth status` 查看）。兜底是
+  `~/Sync/apple-developer/secrets.env` 的 `ASC_*` 三件套（asc 原生识别的变量名，
+  `set -a; source …; set +a` 即可，文件用 envops 读）。上传 build：
+  `asc builds upload --path <ipa>`（asc-release-flow sub-skill 有完整编排）。
+  2026-08-13 起默认 profile 是 **Admin 角色** key（`reorx-admin`），旧 Developer key
+  的 403 限制不再存在（详见凭据目录 AGENTS.md 的「已知限制」）
 
-仍需人工的步骤：ASC 创建 app record（名称 / SKU / 主语言——无公开 API，走网页或
-`asc-app-create-ui`）；App 隐私标签（对应 PrivacyInfo：Data Not Collected）；截图
+**App record 已创建（2026-08-13）**：名称 Condenser、bundle `com.reorx.condenser`、
+SKU `condenser-ios`、主语言 en-US——经 `asc web apps create`（网页会话 API）无头创建，
+无需浏览器自动化。app id / bundle ID 资源 id / 注册设备 / API key 等标识不入公开库，
+见私密 KB `kb.private/condenser/kb/docs/ios-app-store-release.md`。
+仍需人工/待做的步骤：App 隐私标签（对应 PrivacyInfo：Data Not Collected）；截图
 （6.9" 必填；`asc-shots-pipeline` 可自动化）；描述 / 关键词 / 分级问卷 / 定价。
 注意：这个 app 是自托管单用户阅读器，审核可能问 demo 账号——准备一个可访问的
 demo server + app password 或预生成 device token。

@@ -2,7 +2,8 @@
 # 真机构建 + 推送安装（make device 的实现，用法见 AGENTS.md「真机部署」）
 #
 # 环境变量：
-#   TEAM_ID  签名用的开发者 Team ID（缺省用付费账号的正式 Team）
+#   TEAM_ID  签名用的开发者 Team ID（缺省从 ~/Sync/apple-developer/secrets.env
+#            的 APPLE_TEAM_ID 读——Apple 凭据唯一权威来源，见该目录 AGENTS.md）
 #   DEVICE   目标设备（名称 / UDID），缺省时自动选中唯一已连接的设备
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -11,11 +12,14 @@ DERIVED_DATA=.build/DerivedData
 APP=$DERIVED_DATA/Build/Products/Debug-iphoneos/Condenser.app
 BUNDLE_ID=com.reorx.condenser
 
-# ---- Team ID：付费 Apple Developer 账号的正式 Team（Xiao Meng），env 可覆盖 ----
+# ---- Team ID：从 secrets.env 的 APPLE_TEAM_ID 读（子 shell 取值，不污染环境），env 可覆盖 ----
 # 不再从钥匙串自动探测：钥匙串里同时存在旧免费 Personal Team（QFW98B7VB4）的证书，
 # find-certificate 取首个匹配会探错。付费 Team 的 profile 一年有效，没有 7 天重装问题。
 # 证书缺失时不预检——Automatic + -allowProvisioningUpdates 下 Xcode 会自动补证书/给出准确报错。
-TEAM_ID="${TEAM_ID:-YU3FMV36N2}"
+if [[ -z "${TEAM_ID:-}" ]]; then
+  TEAM_ID=$(source "$HOME/Sync/apple-developer/secrets.env" && echo "$APPLE_TEAM_ID")
+fi
+[[ -n "$TEAM_ID" ]] || { echo "error: TEAM_ID 为空——检查 ~/Sync/apple-developer/secrets.env 的 APPLE_TEAM_ID" >&2; exit 1; }
 echo "==> Team ID: $TEAM_ID"
 
 # ---- 选设备：解析出 UDID（DEVICE 可传名称或 UDID；缺省取唯一已配对的真机） ----
