@@ -36,7 +36,7 @@ Two conventions this list exists to protect:
 | `ChannelFilterOption` | One row inside the `ChannelFilter` dropdown (avatar + name + message count) |
 | `ConfirmDialog` | Generic confirm/cancel modal (destructive variant + pending state) |
 | `DeviceList` | Authorized devices (bearer-token clients) in `SettingsDialog`: list + revoke with confirm |
-| `HnDisplayModeMenu` | Top-N display-mode dropdown (top10/top20/half/all → PATCH the front feed's config); used by the `/s/hn` header + `HackerNewsSection` |
+| `HnFeedRulesMenu` | Which HN stories reach the timeline, in one dropdown with three groups: the day quota (top10/top20/half/all), the score floor and the front-page peak-rank gate → PATCH the front feed's config **one key at a time** (the server merges; a whole-value write would disarm the other two). One trigger rather than three because the header has to fit on a phone, and the quota is the knob you actually change while the floors are set once — so the trigger shows the quota and the tooltip names all three. The peak-rank gate ships **off** (see `useHnFeedRules`). Used by the `/s/hn` header + `HackerNewsSection` |
 | `HnGlyph` | The HN "Y" mark in its orange square (size via className); shared by `HnCard`, the sidebar feed row, the `/s/hn` header, `HackerNewsSection`, the Subscriptions tab bar |
 | `TgGlyph` | The Telegram paper-plane mark in its blue square, HnGlyph's size-pair; used by the Subscriptions tab bar |
 | `XGlyph` | The X mark in its foreground-colored square (inverts with the theme), HnGlyph/TgGlyph's size-pair; used by the Subscriptions tab bar + X subscription rows |
@@ -115,7 +115,7 @@ Two conventions this list exists to protect:
 | `BrowseChannelRow` | One selectable channel row in `BrowseChannelsDialog` |
 | `SubscriptionRow` | One channel row on the Manage channels page: enable switch + actions menu + confirm dialogs |
 | `TelegramSection` | The Telegram tab on the Subscriptions page: browse/add-by-handle actions + the `SubscriptionRow` channel list |
-| `HackerNewsSection` | The Hacker News tab on the Subscriptions page: Front Page subscribe/unsubscribe, sampling pause switch, display-mode menu, status line (`/api/hn/status`) |
+| `HackerNewsSection` | The Hacker News tab on the Subscriptions page: Front Page subscribe/unsubscribe, sampling pause switch, `HnFeedRulesMenu`, status line (`/api/hn/status`) |
 | `XSection` | The X tab on the Subscriptions page: add Following / For You / an account by handle, the `XSubscriptionRow` list, and a two-line `/api/x/status` block — archive size + last probe push + parse errors (the data is pushed by the local probe, so this is where you find out the probe went quiet), plus an `XVerdictLine` explaining why the For You verdict is quiet: not configured, no sqlite-vec, or still counting down how many 👍/👎 remain before the cold-start gate opens |
 | `XSubscriptionRow` | One X feed row: For You, Following or a followed account (handle chip only once a real display name has been learned), archive size + last push, plus the per-feed filter counts (Following: ads dropped + out-of-window entries archived only; For You: foreign-language tweets dropped — a 0 where you expected some means a filter stopped working), `XLangFilterToggle` (For You only), `XAggregateMenu` (whole-timeline feeds only), pause switch, unsubscribe |
 | `XAggregateMenu` | How much of a whole-timeline X feed joins the aggregate → PATCH the feed's `config.aggregate` (`HnDisplayModeMenu`'s sibling). Only For You and Following get one, and not with the same options: For You offers 不进 / 只进推荐的 / 全部并入, Following only 不进 / 全部并入 — it is never judged, so a recommended-only mode would silently hide the whole feed. A setting rather than a constant because the right answer tracks how good the verdict currently is |
@@ -136,7 +136,9 @@ Two conventions this list exists to protect:
   `useChannelFilter`, `useScrollToRead` (armed "看过即读" judgement + `pendingKeys` green
   sync state + confirm-then-flip cache writes — see the root AGENTS.md bullet),
   `useNewContent`, `useRefresh`, `useCollapsedSources`
-  (sidebar collapse persistence), `useHnDisplayMode` (mode helpers + PATCH mutation),
+  (sidebar collapse persistence), `useHnFeedRules` (the front feed's three admission rules —
+  option lists, the coercion that fills a pre-floors config with the server's defaults, the
+  tooltip summary, and the one-key PATCH mutation),
   `useXAggregate` (a whole-timeline X feed's aggregate-mode options + PATCH mutation; invalidates the
   timeline, the calendar and both unread badges, since the admitted set is computed at
   query time on the backend),

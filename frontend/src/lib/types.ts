@@ -309,7 +309,7 @@ export interface HnStatus {
   enabled: boolean;
   /** Server-side master switch (CONDENSER_HN_ENABLED); false = no sampling loop exists. */
   source_enabled: boolean;
-  config: { display_mode?: string } | null;
+  config: HnFeedConfig | null;
   last_poll_at: string | null;
   last_error: string | null;
   stories_total: number;
@@ -496,6 +496,17 @@ export interface TimelineParams {
 
 /** HN front-feed display mode: how many of each day's top stories are visible. */
 export type HnDisplayMode = 'top10' | 'top20' | 'half' | 'all';
+
+/** The front feed's admission rules (subscription config). A key may be absent on
+ *  a row written before it existed, which reads as its server-side default — see
+ *  `hnFeedRules`. PATCHes are merged server-side, so one key at a time is safe. */
+export interface HnFeedConfig {
+  display_mode?: string;
+  /** Absolute score floor; 0 = off. */
+  min_score?: number;
+  /** Worst front-page peak rank still admitted; 0 = off, NULL rank always passes. */
+  max_peak_rank?: number;
+}
 
 /** A (channel_id, message_id) pair for Telegram-scoped endpoints (media, previews). */
 export interface MsgRef {

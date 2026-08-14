@@ -5,7 +5,7 @@ import { Navigate, useParams, useSearchParams } from 'react-router-dom';
 import { ChannelAvatar } from '@/components/ChannelAvatar';
 import { ChannelFilter } from '@/components/ChannelFilter';
 import { CalendarPopover } from '@/components/CalendarPopover';
-import { HnDisplayModeMenu } from '@/components/HnDisplayModeMenu';
+import { HnFeedRulesMenu } from '@/components/HnFeedRulesMenu';
 import { HnGlyph } from '@/components/HnGlyph';
 import { IconBadge, PageHeader } from '@/components/PageHeader';
 import { Timeline } from '@/components/timeline/Timeline';
@@ -14,7 +14,7 @@ import { XAvatar } from '@/components/XAvatar';
 import { XGlyph } from '@/components/XGlyph';
 import { useBulkRead } from '@/hooks/useBulkRead';
 import { useChannelFilter } from '@/hooks/useChannelFilter';
-import { hnDisplayModeOf } from '@/hooks/useHnDisplayMode';
+import { hnFeedRulesOf } from '@/hooks/useHnFeedRules';
 import { useRefreshAll, useRefreshChannel } from '@/hooks/useRefresh';
 import { useSources } from '@/hooks/useSources';
 import { useChannelLabels, useSubscriptions } from '@/hooks/useSubscriptions';
@@ -138,7 +138,7 @@ export function TimelineView() {
         meta={unreadCount > 0 ? `${unreadCount.toLocaleString()} unread` : undefined}
         actions={
           <>
-            {source === 'hn' && <HnDisplayModeMenu mode={hnDisplayModeOf(sources)} />}
+            {source === 'hn' && <HnFeedRulesMenu rules={hnFeedRulesOf(sources)} />}
             <CalendarPopover
               channelId={cid ?? null}
               source={source}

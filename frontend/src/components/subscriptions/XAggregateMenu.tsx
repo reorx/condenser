@@ -12,7 +12,7 @@ import { useSetXAggregate, xAggregateLabel, xAggregateModes } from '@/hooks/useX
 import { xFeedLabel } from '@/lib/sources';
 import type { XAggregateMode } from '@/lib/types';
 
-/** How much of a synthetic X feed joins the aggregate timeline (`HnDisplayModeMenu`'s
+/** How much of a synthetic X feed joins the aggregate timeline (`HnFeedRulesMenu`'s
  *  sibling).
  *
  *  For You alone is a firehose, which is why it was kept out of the main timeline

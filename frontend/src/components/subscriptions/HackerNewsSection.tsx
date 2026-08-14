@@ -4,12 +4,12 @@ import { Plus, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { ConfirmDialog } from '@/components/ConfirmDialog';
-import { HnDisplayModeMenu } from '@/components/HnDisplayModeMenu';
+import { HnFeedRulesMenu } from '@/components/HnFeedRulesMenu';
 import { HnGlyph } from '@/components/HnGlyph';
 import { Spinner } from '@/components/Spinner';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
-import { asHnDisplayMode } from '@/hooks/useHnDisplayMode';
+import { hnFeedRules } from '@/hooks/useHnFeedRules';
 import { api, errorMessage } from '@/lib/api';
 import { fullDateLabel } from '@/lib/format';
 import type { HnStatus } from '@/lib/types';
@@ -90,7 +90,7 @@ export function HackerNewsSection() {
             <HnStatusLine status={status} />
           </div>
           <div className="ml-auto flex items-center gap-2">
-            <HnDisplayModeMenu mode={asHnDisplayMode(status.config?.display_mode)} />
+            <HnFeedRulesMenu rules={hnFeedRules(status.config)} />
             <Switch
               checked={status.enabled}
               onCheckedChange={(enabled) => setEnabled.mutate(enabled)}

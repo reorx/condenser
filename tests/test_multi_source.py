@@ -28,8 +28,14 @@ def _login(client):
     assert client.post('/api/auth/login', json={'password': 'pw'}).status_code == 200
 
 
-def seed_hn(sid, minutes, score=10, day=None, is_dead=False, **over):
-    """Seed one hn_stories row; first_seen_at = BASE + minutes (naive UTC)."""
+def seed_hn(sid, minutes, score=120, day=None, is_dead=False, **over):
+    """Seed one hn_stories row; first_seen_at = BASE + minutes (naive UTC).
+
+    The default score clears the admission floor (``sources/hn.DEFAULT_MIN_SCORE``,
+    plan 2026-08-14 phase A) — these cases are about merging, paging and keys, so
+    their stories should be ordinary front-page material rather than the kind the
+    floor exists to reject. ``peak_rank`` defaults to NULL, which always passes.
+    """
     first_seen = (BASE + timedelta(minutes=minutes)).replace(tzinfo=None)
     fields = dict(
         id=sid,
@@ -145,7 +151,7 @@ def test_timeline_hn_envelope_payload(env):
     with _client() as client:
         _login(client)
         subscribe_hn()
-        seed_hn(101, 5, score=42, text=None)
+        seed_hn(101, 5, score=142, text=None)
 
         items = client.get('/api/timeline').json()['items']
         assert len(items) == 1
@@ -156,7 +162,7 @@ def test_timeline_hn_envelope_payload(env):
         hn = it['hn']
         assert hn['id'] == 101 and hn['title'] == 'S101'
         assert hn['url'] == 'https://ex.com/101' and hn['domain'] == 'ex.com'
-        assert hn['score'] == 42 and hn['comments_count'] == 1
+        assert hn['score'] == 142 and hn['comments_count'] == 1
         assert hn['day_rank'] == 1
         assert hn['first_seen_at'].startswith('2026-06-01T12:05')
         assert it['datetime'] == hn['first_seen_at']

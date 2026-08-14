@@ -23,6 +23,7 @@ import httpx
 
 from . import db, preview, search
 from .config import Settings
+from .sources import hn as hn_source
 
 log = logging.getLogger('condenser.hn')
 
@@ -40,7 +41,20 @@ PREVIEW_MAX_ATTEMPTS = 3
 PENDING_META_KEY = 'hn_backfill_pending'
 
 FRONT_FEED_NAME = 'Hacker News Front Page'
-DEFAULT_FEED_CONFIG = {'display_mode': 'top20'}
+# Assembled from the read path's own constants rather than restated here: these
+# three values decide what reaches the timeline, and two copies of a number like
+# that drift the first time one of them is tuned.
+DEFAULT_FEED_CONFIG = {
+    'display_mode': hn_source.DEFAULT_DISPLAY_MODE,
+    'min_score': hn_source.DEFAULT_MIN_SCORE,
+    'max_peak_rank': hn_source.DEFAULT_MAX_PEAK_RANK,
+}
+
+
+def sub_config(sub: db.Subscription) -> dict:
+    """A subscription's stored config, defaults filled in (``x.sub_config``'s peer)."""
+    cfg = json.loads(sub.config) if sub.config else {}
+    return {**DEFAULT_FEED_CONFIG, **cfg}
 
 
 def _domain(url: Optional[str]) -> Optional[str]:

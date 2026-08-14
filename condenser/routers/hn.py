@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 
 from .. import db
 from ..auth import require_auth
-from ..hn import DEFAULT_FEED_CONFIG, FRONT_FEED_NAME, HNManager
+from ..hn import DEFAULT_FEED_CONFIG, FRONT_FEED_NAME, HNManager, sub_config
 from ..types import HNSubscribeBody, HNSubscriptionPatch
 
 router = APIRouter(prefix='/api', tags=['hn'], dependencies=[Depends(require_auth)])
@@ -44,11 +44,17 @@ def add_hn_subscription(body: HNSubscribeBody, hn: HNManager = Depends(get_hn)):
 
 @router.patch('/sources/hn/subscriptions/{feed}')
 def patch_hn_subscription(feed: str, body: HNSubscriptionPatch, hn: HNManager = Depends(get_hn)):
-    if db.get_hn_subscription(feed) is None:
+    sub = db.get_hn_subscription(feed)
+    if sub is None:
         raise HTTPException(status_code=404, detail='hn subscription not found')
     if body.enabled:
         _require_source_enabled(hn)
-    db.update_hn_subscription(feed, enabled=body.enabled, config=body.config)
+    config = None
+    if body.config is not None:
+        # merge, not replace (x.py's precedent): the config holds three
+        # independent knobs now, so writing one whole would disarm the other two
+        config = {**sub_config(sub), **body.config}
+    db.update_hn_subscription(feed, enabled=body.enabled, config=config)
     return {'ok': True}
 
 
