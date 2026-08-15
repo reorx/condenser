@@ -108,7 +108,7 @@ make clean       # 清理构建产物与生成的 xcodeproj
 `make device`：xcodegen → Team ID 从 `~/Sync/apple-developer/secrets.env` 的
 `APPLE_TEAM_ID` 读（Apple 凭据的唯一权威来源，变量与用法见该目录 AGENTS.md；
 2026-08-13 起不再在项目里硬编码，可用 `TEAM_ID=` 覆盖。不再从钥匙串探测——钥匙串里
-还留着旧免费 Personal Team `QFW98B7VB4` 的证书，find-certificate 取首个匹配会探错）
+还留着旧免费 Personal Team 的证书，find-certificate 取首个匹配会探错）
 → 选设备（唯一已连接的
 真机，多台时 `DEVICE="<名称或UDID>"` 指定）→ device 构建（`-allowProvisioningUpdates`
 自动出 profile）→ `devicectl` 安装 + 启动。

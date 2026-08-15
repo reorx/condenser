@@ -13,7 +13,7 @@ APP=$DERIVED_DATA/Build/Products/Debug-iphoneos/Condenser.app
 BUNDLE_ID=com.reorx.condenser
 
 # ---- Team ID：从 secrets.env 的 APPLE_TEAM_ID 读（子 shell 取值，不污染环境），env 可覆盖 ----
-# 不再从钥匙串自动探测：钥匙串里同时存在旧免费 Personal Team（QFW98B7VB4）的证书，
+# 不再从钥匙串自动探测：钥匙串里同时存在旧免费 Personal Team 的证书，
 # find-certificate 取首个匹配会探错。付费 Team 的 profile 一年有效，没有 7 天重装问题。
 # 证书缺失时不预检——Automatic + -allowProvisioningUpdates 下 Xcode 会自动补证书/给出准确报错。
 if [[ -z "${TEAM_ID:-}" ]]; then

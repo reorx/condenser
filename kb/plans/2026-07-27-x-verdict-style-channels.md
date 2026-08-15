@@ -251,8 +251,9 @@ score(f) = (down_f + α) / (down_f + up_f + 2α)   → 映射到 [-1, +1]
 跑法（**必须对生产库副本跑**，sweep 每折都会砸掉重建 KNN 索引）：
 
 ```bash
-ssh -p 1122 root@<hh-hk-01> 'sqlite3 /opt/apps/condenser/data/condenser.db ".backup /tmp/snap.db"'
-scp -P 1122 root@<hh-hk-01>:/tmp/snap.db tmp/prod-snapshot.db
+# 生产主机的地址/端口/用户见 deploy workspace 的 ansible inventory，不入公开库
+ssh <prod-host> 'sqlite3 /opt/apps/condenser/data/condenser.db ".backup /tmp/snap.db"'
+scp <prod-host>:/tmp/snap.db tmp/prod-snapshot.db
 CONDENSER_DB_PATH=tmp/prod-snapshot.db uv run python scripts/x_verdict_backtest.py --sweep
 ```
 

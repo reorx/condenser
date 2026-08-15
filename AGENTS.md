@@ -928,7 +928,8 @@ confidently wrong answer about production. Measured on the box 2026-07-29 **15:5
 this precise goes stale by design — re-measure rather than quote it): schema **v10**, image revision
 **`10daa6d`**, `x_attributes` re-extracting under `qwen3.7-flash@v2`, shadow **`c,d,a`** live.
 **Check, don't infer**:
-`ssh -p 1122 root@<PROD-HOST>` → `docker inspect ghcr.io/reorx/condenser:latest --format
+ssh 进生产主机（地址/端口/用户见 deploy workspace 的 ansible inventory，不入公开库）
+→ `docker inspect ghcr.io/reorx/condenser:latest --format
 '{{index .Config.Labels "org.opencontainers.image.revision"}}'`, and read
 `app_meta.schema_version` out of `/data/condenser.db`, and `GET /api/x/status` for which channels
 are actually live.
@@ -1465,7 +1466,9 @@ e.g. a private channel you've left but still have cached messages for).
 - `kb/docs/content-update-mechanism.md` — Read before touching ingest/sync: realtime push,
   backfill, the manual refresh / fetch-older / reset triggers, the enable toggle, and how
   fetch-older's id-anchored cursor paging works.
-- `kb/docs/ios-app-store-release.md` — iOS 首次发布全流程记录：关键资产（app id /
-  bundle ID / API keys）、已跑通的签名与出包链路、上传 build 与提审前的剩余步骤、
-  审核 demo 服务方案。做发布操作（传 build / 提审 / 出新版本）前读它。
+- `kb.private/condenser/kb/docs/ios-app-store-release.md` — iOS 首次发布全流程记录：
+  关键资产（app id / bundle ID / API keys）、已跑通的签名与出包链路、上传 build 与
+  提审前的剩余步骤、审核 demo 服务方案。做发布操作（传 build / 提审 / 出新版本）前读它。
+  **在私密 KB 仓库 `../kb.private` 里**，不在本库——它记录的是 Apple 账号标识，
+  本库是公开仓库。同理 `kb.private/condenser/kb/sessions/2026-08-12-ios-signing-and-app-store-ready.md`。
 - `kb/sessions/` — dated session summaries (history). Read the latest to catch up on recent work.
