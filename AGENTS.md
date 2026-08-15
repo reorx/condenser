@@ -215,7 +215,18 @@ React Router v7, **pnpm**. Backend `app.py` auto-serves `frontend/dist` at `/` i
 - `lib/api.ts` typed fetch client + `ApiError`; `lib/types.ts` mirrors the backend JSON.
 - **Auth gate** = the `tg-status` query: 401 → AppLogin, else `status` drives TgLogin/main
   (`App.tsx`, `useTgStatus`). Global 401 handler re-runs tg-status but **must skip tg-status
-  itself** or the gate refetch-loops (`lib/queryClient.ts`).
+  itself** or the gate refetch-loops (`lib/queryClient.ts`). Since 2026-08-15 the Telegram
+  login is a wall **only for a Telegram-only install**: if `GET /api/sources` reports any
+  non-Telegram subscription, an unauthorized Telegram session no longer blocks the app. The
+  app went multi-source two sources ago, and an HN- or X-only install has content to show —
+  a phone-number form in front of it is a lock, not onboarding. That is exactly the shape of
+  the App Store review demo server (`kb/docs/demo-server.md`), which is what surfaced it.
+  Three details are load-bearing: the gate **waits** for the sources query instead of
+  deciding early (else the wall flashes at an install that has other sources), a failed
+  sources request falls back to walling (the pre-multi-source behavior), and
+  `/connect-telegram` renders `TgLogin` from inside the app — `SettingsDialog`'s Telegram row
+  links there when disconnected, and it is now the only way to reach the Telegram login at
+  all. `useSources` is `enabled`-gated in the gate so it never fires behind `AppLogin`.
 - **Scroll-past-to-read** via IntersectionObserver + debounced batch `POST /api/read`
   (`useScrollToRead`); window is the scroll container (IO root = viewport). Since 2026-08-05
   ("看过即读", both platforms): a card is judged read once the user has scrolled in the view
@@ -1477,6 +1488,10 @@ e.g. a private channel you've left but still have cached messages for).
 - `kb/docs/content-update-mechanism.md` — Read before touching ingest/sync: realtime push,
   backfill, the manual refresh / fetch-older / reset triggers, the enable toggle, and how
   fetch-older's id-anchored cursor paging works.
+- `kb/docs/demo-server.md` — `condenser-demo.reorx.com`，App Store 审核用的第二实例
+  （只开 HN、无 Telegram 会话、不接 hookploy）。**提审前必读**：`scripts/demo_bootstrap.py`
+  既是初始化也是健康检查，外加审核表单怎么填、备注话术、每次提审前的 checklist。
+  密码实值与 ASC 表单记录在私密 KB。
 - `kb.private/condenser/kb/docs/ios-app-store-release.md` — iOS 首次发布全流程记录：
   关键资产（app id / bundle ID / API keys）、已跑通的签名与出包链路、上传 build 与
   提审前的剩余步骤、审核 demo 服务方案。做发布操作（传 build / 提审 / 出新版本）前读它。

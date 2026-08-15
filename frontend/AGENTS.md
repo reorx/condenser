@@ -43,7 +43,7 @@ Two conventions this list exists to protect:
 | `PageHeader` + `IconBadge` | Unified reading-view top bar (leading icon + title + meta + right-aligned actions); `IconBadge` wraps a lucide icon in a muted circle |
 | `LanguageOption` | One language checkbox-pill in `SettingsDialog`'s 语言 multi-select (toggle → immediate PATCH of the whole list) |
 | `SegmentedOption` | One icon-over-label button in a segmented control; shared by `SettingsDialog`'s theme + unread pickers |
-| `SettingsDialog` | Settings modal: Telegram account, theme, unread-indicator mode, 语言 (global language whitelist — X For You's ingest filter reads it), forward channel, devices, lock app |
+| `SettingsDialog` | Settings modal: Telegram account, theme, unread-indicator mode, 语言 (global language whitelist — X For You's ingest filter reads it), forward channel, devices, lock app. The Telegram row is status-aware: connected → phone + Disconnect, disconnected → a **Connect Telegram** link to `/connect-telegram`. That link is not decoration — since the gate stopped walling off multi-source installs (see `pages/` below), it is the only remaining entry to the Telegram login |
 | `Sidebar` | Left navigation: nav links (Unread first, `/` = Unread, `/?all=1` = All, then Saved / Search / Filters / Subscriptions), then one `SidebarSourceGroup` per source from `GET /api/sources`, settings |
 | `SidebarSourceGroup` | One collapsible source section (collapse persisted via `useCollapsedSources`): the full-width header row links to `/s/:source` (+ unread badge when collapsed) with the collapse chevron as its own right-edge target, rows = the source's enabled subscriptions |
 | `SidebarChannelLink` + `navLinkClass` | One Telegram channel link in a sidebar source group; also exports the shared nav-row className used by the top-level links |
@@ -129,7 +129,18 @@ Two conventions this list exists to protect:
 - `pages/` — route screens (`TimelineView`, `RecordsView`, `SearchView`, `FiltersView`,
   `SubscriptionsView`, `AppShell`, `AppLogin`, `TgLogin`, `AuthorizeView` — the
   device-authorization page cold-loaded by the iOS app; only needs the cookie session, so
-  `App.tsx` renders it before the TG gate). `SearchView` owns the box (local draft state,
+  `App.tsx` renders it before the TG gate). **The TG gate is a wall only for a
+  Telegram-only install** (2026-08-15): if `GET /api/sources` reports any non-Telegram
+  subscription, an unauthorized Telegram session no longer blocks the app — since the
+  reader went multi-source, an HN- or X-only install has content to show and a
+  phone-number form in front of it is a lock, not onboarding (a review/demo server is
+  exactly that shape). Three details make it safe: the gate **waits** for the sources
+  query rather than deciding early (else the wall flashes at an install that has other
+  sources), a failed sources request falls back to walling (the pre-multi-source
+  behavior), and `/connect-telegram` renders `TgLogin` from *inside* the app so the login
+  stays reachable — `SettingsDialog` links there, and the route redirects home once
+  connected. `useSources` is `enabled`-gated here so it never fires behind `AppLogin`.
+  `SearchView` owns the box (local draft state,
   300ms debounce) while the **URL owns the committed query** and every filter, written with
   `replace` — so a search is shareable and Back leaves the page rather than un-typing a word.
 - `hooks/` — data + behavior hooks (`useTimeline`, `useSources`, `useSubscriptions`,

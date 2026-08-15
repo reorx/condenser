@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { MemoryRouter } from 'react-router-dom';
 import type { ReactNode } from 'react';
 
 vi.mock('@/lib/api', () => ({
@@ -32,7 +33,9 @@ function renderDialog() {
     <QueryClientProvider client={qc}>
       <ThemeProvider>
         <UnreadIndicatorProvider>
-          <SettingsDialog open onOpenChange={() => {}} />
+          <MemoryRouter>
+            <SettingsDialog open onOpenChange={() => {}} />
+          </MemoryRouter>
         </UnreadIndicatorProvider>
       </ThemeProvider>
     </QueryClientProvider>
@@ -45,6 +48,33 @@ const meta = (languages: string[]) => ({
   backfill_days: 7,
   forward_channel: null,
   languages,
+});
+
+describe('SettingsDialog Telegram section', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(api.getAppMeta).mockResolvedValue(meta([]));
+  });
+
+  it('shows the phone and a disconnect action when connected', async () => {
+    vi.mocked(api.tgStatus).mockResolvedValue({ status: 'authorized', phone: '+8613800000000' });
+    renderDialog();
+
+    expect(await screen.findByText('+8613800000000')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /disconnect telegram/i })).toBeInTheDocument();
+  });
+
+  // The gate stopped forcing the Telegram login on a multi-source install, so this
+  // is the only remaining way in — without it an HN-only install could never
+  // connect Telegram at all.
+  it('offers the way in when Telegram is not connected', async () => {
+    vi.mocked(api.tgStatus).mockResolvedValue({ status: 'unauthorized' });
+    renderDialog();
+
+    const link = await screen.findByRole('link', { name: /connect telegram/i });
+    expect(link).toHaveAttribute('href', '/connect-telegram');
+    expect(screen.queryByRole('button', { name: /disconnect telegram/i })).not.toBeInTheDocument();
+  });
 });
 
 describe('SettingsDialog 语言 section', () => {

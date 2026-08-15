@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
-import { Circle, Lock, LogOut, Minus, Monitor, Moon, Phone, Sun } from 'lucide-react';
+import { Circle, Lock, LogIn, LogOut, Minus, Monitor, Moon, Phone, Sun } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { toast } from 'sonner';
 
 import { ConfirmDialog } from '@/components/ConfirmDialog';
@@ -43,6 +44,7 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
 
 export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
   const { data: status } = useTgStatus();
+  const tgConnected = status?.status === 'authorized';
   const { theme, setTheme } = useTheme();
   const { mode: unreadMode, setMode: setUnreadMode } = useUnreadIndicator();
   const [confirmTgLogout, setConfirmTgLogout] = useState(false);
@@ -89,17 +91,28 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
           <SectionLabel>Telegram</SectionLabel>
           <div className="flex items-center gap-2 text-sm">
             <Phone className="size-4 text-muted-foreground" />
-            <span>{status?.phone ?? 'Connected'}</span>
+            <span>{tgConnected ? (status?.phone ?? 'Connected') : 'Not connected'}</span>
           </div>
-          <Button
-            variant="outline"
-            size="sm"
-            className="w-full justify-start text-destructive hover:text-destructive"
-            onClick={() => setConfirmTgLogout(true)}
-          >
-            <LogOut className="size-4" />
-            Disconnect Telegram
-          </Button>
+          {/* Reachable only on a multi-source install: the gate no longer walls
+              those off, so this is the one entry left to the Telegram login. */}
+          {tgConnected ? (
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-full justify-start text-destructive hover:text-destructive"
+              onClick={() => setConfirmTgLogout(true)}
+            >
+              <LogOut className="size-4" />
+              Disconnect Telegram
+            </Button>
+          ) : (
+            <Button variant="outline" size="sm" className="w-full justify-start" asChild>
+              <Link to="/connect-telegram" onClick={() => onOpenChange(false)}>
+                <LogIn className="size-4" />
+                Connect Telegram
+              </Link>
+            </Button>
+          )}
         </div>
 
         <div className="space-y-2">

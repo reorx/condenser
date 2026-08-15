@@ -8,7 +8,7 @@ export function Spinner({ className }: { className?: string }) {
 
 export function FullScreenSpinner() {
   return (
-    <div className="flex min-h-dvh items-center justify-center">
+    <div className="flex min-h-dvh items-center justify-center" data-testid="full-screen-spinner">
       <Spinner className="size-6 text-muted-foreground" />
     </div>
   );

@@ -170,13 +170,24 @@ SKU `condenser-ios`、主语言 en-US——经 `asc web apps create`（网页会
 processing VALID、已挂到版本；文案（副标题 / 描述 / 关键词 / 支持与营销 URL）、分类
 （NEWS + PRODUCTIVITY）、年龄分级（全 none → 4+）、版权、定价（免费）、全 175 地区可用、
 内容版权声明、隐私标签（Data Not Collected，已 publish）、3 张 `IPHONE_65` 截图——
-全部经 asc CLI 无头完成。`asc validate` 现在**只剩一个阻塞项**：审核 demo 账号的
-name/password，即 demo server（方案 `../kb/plans/2026-08-15-app-review-demo-server.md`）。
-命令与 ASC 侧资源 id 见上面那份私密 KB 文档；两个反复踩的坑记在那里：隐私标签
-`publish` 前必须先 `apply`（pull 显示的是规范视图，远端其实空的，直接 publish 报 409），
-以及 `asc review details-create` 强制要 `--contact-phone`。
+全部经 asc CLI 无头完成。命令与 ASC 侧资源 id 见上面那份私密 KB 文档；两个反复踩的坑记在
+那里：隐私标签 `publish` 前必须先 `apply`（pull 显示的是规范视图，远端其实空的，直接
+publish 报 409），以及 `asc review details-create` 强制要 `--contact-phone`。
 ⚠️ 隐私政策是新建的 `PRIVACY.md`，商店里的 URL 指向 GitHub master——**提审前必须确认它
 已经 push**，否则链接 404。
+
+**demo server 已就位（2026-08-15）**，`asc validate` 的最后一个阻塞项（审核 demo 账号的
+name/password）由此消除：`https://condenser-demo.reorx.com`，只开 HN 源、无 Telegram 会话、
+不接自动部署。运维记录在 deploy workspace 的 `kb/docs/condenser.md`「Demo 实例」，**提审前
+必读**的是 `../kb/docs/demo-server.md`——初始化即健康检查的 `scripts/demo_bootstrap.py`、
+审核表单三个字段怎么填、备注英文话术、每次提审前的 checklist；密码实值与已填的表单值在私密 KB。
+
+⚠️ 连带一处 app 改动，**下个 build 必须带上**：`LoginView` 的服务器地址字段以前预填生产域名
+`https://condenser.reorx.com`，现在改成空（`CURRENT_PROJECT_VERSION` 已从 1 升到 2）。原因是
+审核员拿到的是全新安装，直接点登录会去**作者的生产服务器**认证，demo 密码在那里必被拒——
+报错读起来像「demo 凭据不管用」而不是「服务器填错了」，正是 2.1 被拒的典型形状。也就是说
+**已上传的 build 1.0.0 (1) 不能用来提审**，要重新 `make archive` + `asc builds upload` 并把
+新 build 挂到版本上。
 
 ### 商店截图的造法（下个版本照搬）
 

@@ -8,7 +8,11 @@ struct LoginView: View {
     @Environment(AuthSession.self) private var session
     @Environment(\.webAuthenticationSession) private var webAuthenticationSession
 
-    @State private var serverAddress = "https://condenser.reorx.com"
+    // 空值而不是预填某个域名：这一屏只有全新安装会看到（登录过一次后 onAppear 用
+    // session.serverURL 覆盖它），而全新安装的人——包括 App Review 的审核员——填的
+    // 一定不是作者的服务器。预填生产域名时，审核员直接点登录会走到生产服务器的密码
+    // 页，demo 密码在那里被拒，读起来像「demo 凭据不管用」而不是「服务器填错了」。
+    @State private var serverAddress = ""
     @State private var deviceName = UIDevice.current.name
     @State private var errorMessage: String?
     @State private var isAuthorizing = false
