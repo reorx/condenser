@@ -123,7 +123,9 @@ is rejected — a failure that reads as "the demo credentials do not work".
    ```bash
    ssh hh-hk-01 'cd /opt/apps/condenser-demo && docker compose pull && docker compose up -d'
    ```
-   Then re-run `demo_bootstrap.py`. Prefer *not* doing this mid-review.
+   Then re-run `demo_bootstrap.py`. Prefer *not* doing this mid-review. ⚠️ If you verify the
+   result in a browser, the PWA service worker will serve you the **pre-refresh** bundle —
+   unregister it and clear its caches first, or you will conclude the deploy did not land.
 4. **Optional — reset the reviewer's tracks.** Previous reviewers leave read/saved state
    behind. It does not matter (the timeline defaults to unread and refills daily), but to
    start clean:
