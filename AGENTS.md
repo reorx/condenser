@@ -567,6 +567,17 @@ iOS 拒绝覆盖）——删旧 app 重装即可，装好后重走 `/authorize` 
 限制见 `ios/AGENTS.md` 的「真机部署」。**`make archive` 已实跑验证（2026-08-13）**：
 ipa 落地 `.build/DerivedData/export/Condenser.ipa`，签名 Apple Distribution（云签名
 自动补发分发证书），App Store 型 profile 有效期 1 年——发布链路本地部分全通。
+**首版素材全部上架，只差审核 demo server（2026-08-15）**：build 1.0.0 (1) 已上传、
+processing VALID、已挂到 1.0.0 版本；文案 / 分类（NEWS+PRODUCTIVITY）/ 年龄分级（4+）/
+版权 / 定价（免费）/ 全 175 地区 / 内容版权声明 / 隐私标签（Data Not Collected，已
+publish）/ 3 张 `IPHONE_65` 截图，全部经 asc CLI 无头完成。`asc validate` 只剩**一个**
+阻塞项——审核 demo 账号的 name/password，即 demo server
+（`kb/plans/2026-08-15-app-review-demo-server.md`，另一 session 在做：
+`condenser-demo.reorx.com`，生产同主机独立容器，**数据只开 HN 源**）。收尾是
+`asc review details-update` + `asc review submit` 两条命令。截图的造法（临时后端 +
+只开 HN + debug 路由逐屏截）与 asc 的几个坑记在 `ios/AGENTS.md`「App Store 发布」，
+ASC 侧资源 id 在私密 KB。⚠️ 新建的 `PRIVACY.md` 是商店隐私政策 URL 的落点，
+**提审前必须已 push 到 master**，否则 404。
 
 ## Dev
 

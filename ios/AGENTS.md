@@ -165,10 +165,38 @@ Distribution 证书与 App Store profile 由 Xcode 云签名按需补发；`DEVE
 SKU `condenser-ios`、主语言 en-US——经 `asc web apps create`（网页会话 API）无头创建，
 无需浏览器自动化。app id / bundle ID 资源 id / 注册设备 / API key 等标识不入公开库，
 见私密 KB `kb.private/condenser/kb/docs/ios-app-store-release.md`。
-仍需人工/待做的步骤：App 隐私标签（对应 PrivacyInfo：Data Not Collected）；截图
-（6.9" 必填；`asc-shots-pipeline` 可自动化）；描述 / 关键词 / 分级问卷 / 定价。
-注意：这个 app 是自托管单用户阅读器，审核可能问 demo 账号——准备一个可访问的
-demo server + app password 或预生成 device token。
+
+**首版素材已全部上架，只差 demo server（2026-08-15）**：build 1.0.0 (1) 已上传并
+processing VALID、已挂到版本；文案（副标题 / 描述 / 关键词 / 支持与营销 URL）、分类
+（NEWS + PRODUCTIVITY）、年龄分级（全 none → 4+）、版权、定价（免费）、全 175 地区可用、
+内容版权声明、隐私标签（Data Not Collected，已 publish）、3 张 `IPHONE_65` 截图——
+全部经 asc CLI 无头完成。`asc validate` 现在**只剩一个阻塞项**：审核 demo 账号的
+name/password，即 demo server（方案 `../kb/plans/2026-08-15-app-review-demo-server.md`）。
+命令与 ASC 侧资源 id 见上面那份私密 KB 文档；两个反复踩的坑记在那里：隐私标签
+`publish` 前必须先 `apply`（pull 显示的是规范视图，远端其实空的，直接 publish 报 409），
+以及 `asc review details-create` 强制要 `--contact-phone`。
+⚠️ 隐私政策是新建的 `PRIVACY.md`，商店里的 URL 指向 GitHub master——**提审前必须确认它
+已经 push**，否则链接 404。
+
+### 商店截图的造法（下个版本照搬）
+
+不碰生产数据、不需要任何账号，因为**只开 HN 源**就能填满界面（公开数据，一分钟内
+200+ 条，含 hckrnews 历史回填）：
+
+1. 临时后端指向全新 DB：`CONDENSER_DB_PATH=tmp/<date>-appstore-shots/condenser.db uv run
+   uvicorn condenser.app:create_app --factory --port 8793`；
+2. 往 `devices` 表插调试 token 的 sha256（脚本见 `tmp/<date>-appstore-shots/`），再
+   `POST /api/sources/hn/subscriptions {"channel_id":"front"}`（订阅即 kick 一轮采样）；
+3. 6.9" 模拟器（iPhone 17 Pro Max）装 Debug 构建 → `simctl status_bar override --time 9:41
+   --batteryState charged --batteryLevel 100` → 用 `SIMCTL_CHILD_CONDENSER_DEBUG_ROUTE`
+   逐屏截图（路由表见下面「CLI 驱动的界面走查」），`simctl ui <udid> appearance dark`
+   出深色版；
+4. `asc screenshots sizes` 说 iPhone 只有 **`APP_IPHONE_65`**（1284×2778）必填；6.9"
+   出图是 1320×2868，`sips -z 2789 1284` 等比放大后 `sips -c 2778 1284` 居中裁。
+   上传用 `--version-localization <版本本地化资源 id>`（**不是** `en-US`）。
+
+⚠️ **设置页不要放进商店截图**——第一行就是服务器地址，截图里会印着 `http://localhost:8793`。
+定稿的三张是浅色时间线 / 深色时间线 / 收藏页。
 
 ## 开发调试：跳过授权直连本地后端
 
