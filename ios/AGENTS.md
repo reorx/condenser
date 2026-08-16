@@ -166,8 +166,7 @@ SKU `condenser-ios`、主语言 en-US——经 `asc web apps create`（网页会
 无需浏览器自动化。app id / bundle ID 资源 id / 注册设备 / API key 等标识不入公开库，
 见私密 KB `kb.private/condenser/kb/docs/ios-app-store-release.md`。
 
-**首版素材已全部上架，只差 demo server（2026-08-15）**：build 1.0.0 (1) 已上传并
-processing VALID、已挂到版本；文案（副标题 / 描述 / 关键词 / 支持与营销 URL）、分类
+**首版素材已全部上架（2026-08-15）**：文案（副标题 / 描述 / 关键词 / 支持与营销 URL）、分类
 （NEWS + PRODUCTIVITY）、年龄分级（全 none → 4+）、版权、定价（免费）、全 175 地区可用、
 内容版权声明、隐私标签（Data Not Collected，已 publish）、3 张 `IPHONE_65` 截图——
 全部经 asc CLI 无头完成。命令与 ASC 侧资源 id 见上面那份私密 KB 文档；两个反复踩的坑记在
@@ -182,12 +181,20 @@ name/password）由此消除：`https://condenser-demo.reorx.com`，只开 HN �
 必读**的是 `../kb/docs/demo-server.md`——初始化即健康检查的 `scripts/demo_bootstrap.py`、
 审核表单三个字段怎么填、备注英文话术、每次提审前的 checklist；密码实值与已填的表单值在私密 KB。
 
-⚠️ 连带一处 app 改动，**下个 build 必须带上**：`LoginView` 的服务器地址字段以前预填生产域名
-`https://condenser.reorx.com`，现在改成空（`CURRENT_PROJECT_VERSION` 已从 1 升到 2）。原因是
+连带一处 app 改动：`LoginView` 的服务器地址字段以前预填生产域名
+`https://condenser.reorx.com`，现在改成空（`CURRENT_PROJECT_VERSION` 1 → 2）。原因是
 审核员拿到的是全新安装，直接点登录会去**作者的生产服务器**认证，demo 密码在那里必被拒——
-报错读起来像「demo 凭据不管用」而不是「服务器填错了」，正是 2.1 被拒的典型形状。也就是说
-**已上传的 build 1.0.0 (1) 不能用来提审**，要重新 `make archive` + `asc builds upload` 并把
-新 build 挂到版本上。
+报错读起来像「demo 凭据不管用」而不是「服务器填错了」，正是 2.1 被拒的典型形状。所以
+**build 1.0.0 (1) 作废**，提审用的是带这处改动的 **build 1.0.0 (2)**。
+
+**提审前的一切都已就绪，只差最后一条命令（2026-08-16）**：build 1.0.0 (2) 已 archive →
+upload → processing VALID → 挂到 1.0.0 版本；审核详情（demo 账号 = demo 域名 + 密码 +
+三步英文备注）已填；`asc validate` **0 error / 0 warning**（唯一 info 是「隐私标签发布状态
+公开 API 查不到」，用 `asc web privacy pull` 实测 `published: true`）；`asc review submit
+--dry-run` 报 `wouldSubmit: true`。**故意停在 `asc review submit --confirm` 之前**——提审
+是对外不可逆动作，留给人按。ASC 侧资源 id 与提审命令原文见私密 KB。
+⚠️ 提审当时的四项前置（demo 在线 / 密码一致 / `PRIVACY.md` 已 push / build 号对）逐条
+怎么查，见 `../kb/docs/demo-server.md` 的 checklist——**每次提审都要重跑一遍**，不是一次性的。
 
 ### 商店截图的造法（下个版本照搬）
 

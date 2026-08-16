@@ -93,6 +93,11 @@ In App Store Connect → the version → **App Review Information**:
 * **Password**: the demo app password (private KB)
 * **Notes**: the text below, with the password substituted
 
+Fill it with a script that reads the password out of the server's `.env` at the moment it
+writes the form — `asc review details-update` has no stdin entry point for the password, so the
+alternative is pasting a copy, and a pasted copy is what drifts from the server after a
+rotation. The script (with the ASC record id) is in the private KB's release doc.
+
 > Condenser is a self-hosted, single-user feed reader. Each user runs their own server
 > instance; this app is a read-only client for it, and there is no public sign-up. For
 > review, please use our demo server:
