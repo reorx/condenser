@@ -196,6 +196,29 @@ upload → processing VALID → 挂到 1.0.0 版本；审核详情（demo 账号
 ⚠️ 提审当时的四项前置（demo 在线 / 密码一致 / `PRIVACY.md` 已 push / build 号对）逐条
 怎么查，见 `../kb/docs/demo-server.md` 的 checklist——**每次提审都要重跑一遍**，不是一次性的。
 
+### TestFlight（2026-08-16 起可用）
+
+**内部测试不需要任何审核**，build processing 一 VALID 就能装——所以它和提审是两条独立的线，
+提审前先发一轮 TestFlight 不会耽误任何事。外部测试（最多 10000 人 / 公开链接）才需要
+Beta App Review，那是另一套、比正式审核轻。
+
+对本项目它有个**别处替代不了**的用处：提审的 ipa 是 App Store 签名的，profile 里没有设备清单，
+`make device` 装不上——TestFlight 是唯一能在真机上跑「即将提交的那个二进制」的途径。
+
+已建好一个 internal 组，账号持有人已是组内 tester（组 id / tester id 在私密 KB）。之后每个
+build 只需一条命令，`--build` 指已上传的 build id 就不会重复上传：
+
+```bash
+asc publish testflight --app <app id> --build <build id> --group <group id> \
+  --locale en-US --notify --test-notes "这轮要验什么"
+```
+
+验收看两处：`asc testflight distribution view --build-id <id>` 的 **Internal State 应为
+`IN_BETA_TESTING`**，以及 `asc builds test-notes list --build-id <id>` 能读回笔记
+（`asc publish testflight` 的输出表里 `Notified` 显示 false 是正常的——组上
+`Auto Notify: true` 时由 Apple 自动发信，不走这个字段）。内部 tester 必须是 ASC 用户
+（`asc users list`），拿外部邮箱加进 internal 组是不行的。TestFlight build **90 天后过期**。
+
 ### 商店截图的造法（下个版本照搬）
 
 不碰生产数据、不需要任何账号，因为**只开 HN 源**就能填满界面（公开数据，一分钟内
@@ -213,8 +236,19 @@ upload → processing VALID → 挂到 1.0.0 版本；审核详情（demo 账号
    出图是 1320×2868，`sips -z 2789 1284` 等比放大后 `sips -c 2778 1284` 居中裁。
    上传用 `--version-localization <版本本地化资源 id>`（**不是** `en-US`）。
 
-⚠️ **设置页不要放进商店截图**——第一行就是服务器地址，截图里会印着 `http://localhost:8793`。
-定稿的三张是浅色时间线 / 深色时间线 / 收藏页。
+⚠️ **设置页要单独拍**，别用上面这条临时后端的流水线——它第一行就是服务器地址，截出来印着
+`http://localhost:8793`。做法（2026-08-16 补的第 4 张）：让模拟器直连 **demo server**，
+截出来的地址就是审核员会看到的那个域名。token 不必碰数据库，用公开 API 现铸现销：
+`POST /api/auth/login`（密码走 envops，别落盘）拿 cookie → `POST /api/auth/device` 拿 token
+→ `SIMCTL_CHILD_CONDENSER_DEBUG_SERVER=<demo> SIMCTL_CHILD_CONDENSER_DEBUG_TOKEN=<token>
+SIMCTL_CHILD_CONDENSER_DEBUG_ROUTE=settings` 启动 → 截图 → `DELETE /api/auth/devices/{id}`。
+⚠️ `status_bar override` 要把信号一起盖掉（`--cellularMode active --cellularBars 4
+--dataNetwork wifi --wifiMode active --wifiBars 3`），只给 `--time`/电量的话信号是「....」，
+和另外三张对不上。定稿四张：浅色时间线 / 深色时间线 / 收藏页 / 设置页。
+
+设置页截图里有两处**已知但没修**的东西，重拍前先看一眼是不是已经解决：tab 栏
+`Timeline` 是英文而另外三个是中文；半透明 tab 栏下面会透出「设备」区的红色删除按钮残影
+（iOS 原生半透明栏的正常表现，不是渲染 bug，但静态图里看着像）。
 
 ## 开发调试：跳过授权直连本地后端
 

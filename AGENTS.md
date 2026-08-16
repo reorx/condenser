@@ -584,14 +584,22 @@ publish）/ 3 张 `IPHONE_65` 截图，全部经 asc CLI 无头完成。截图�
 只开 HN + debug 路由逐屏截）与 asc 的几个坑记在 `ios/AGENTS.md`「App Store 发布」，
 ASC 侧资源 id 在私密 KB。⚠️ 新建的 `PRIVACY.md` 是商店隐私政策 URL 的落点，
 **提审前必须已 push 到 master**，否则 404（2026-08-15 已 push）。
-**一切就绪，只差 `asc review submit --confirm`（2026-08-16）**：审核 demo server
+**1.0.0 已提交审核，`WAITING_FOR_REVIEW`（2026-08-16 02:40 UTC）**：审核 demo server
 （`kb/docs/demo-server.md`，`condenser-demo.reorx.com`，只开 HN 源）上线并验收，最后一个
 `asc validate` 阻塞项由此消除；**build 1.0.0 (2)** 已 archive → upload → VALID → 挂到版本
 （build 1 作废——它的 `LoginView` 预填的是作者的生产域名，审核员点下去必然认证失败，
 读起来正是 2.1 的形状）；审核详情的 demo 账号与三步英文备注已填，密码是从
-`hh-hk-01:/opt/apps/condenser-demo/.env` 现读现填的，所以不可能与服务器漂移；validate
-0 error / 0 warning。**提审这一步是对外不可逆动作，故意留给人按**——提审前逐条重跑
-`kb/docs/demo-server.md` 的 checklist。
+`hh-hk-01:/opt/apps/condenser-demo/.env` 现读现填的，所以不可能与服务器漂移；截图 4 张
+（设置页那张 2026-08-16 补拍，模拟器直连 demo server，所以地址栏印的就是审核员会输入的域名）；
+validate 0 error / 0 warning。提审前先过了一轮 **TestFlight 内部测试**（不需要 beta 审核，
+而且这是唯一能在真机上跑提审二进制的途径——App Store 型 profile 没有设备清单），真机验过
+demo 登录全流程后由用户拍板提交。⚠️ **审核期内 demo server 必须一直在线**，掉线就是 2.1。
+查进度 `asc review status --app <app id>`；`asc review submit` 会报一个无害的自检错误，
+处理方式记在私密 KB（别按报错重跑）。提交后又改了两处（价格与发布方式都不属于审核内容，
+改了不影响在审的版本）：**定价 免费 → USD 2.00**，**发布方式改为手动**——过审后停在
+`PENDING_DEVELOPER_RELEASE` 等人点发布。⚠️ 收费的前置是 ASC → Business 里的
+**付费应用协议**（银行 + 税务）生效，这个状态公开 API 查不到，只能人去网页确认；没生效
+则过审也上不了架。细节与两个 asc 定价坑见私密 KB。
 
 ## Dev
 
