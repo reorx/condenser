@@ -220,7 +220,8 @@ React Router v7, **pnpm**. Backend `app.py` auto-serves `frontend/dist` at `/` i
   non-Telegram subscription, an unauthorized Telegram session no longer blocks the app. The
   app went multi-source two sources ago, and an HN- or X-only install has content to show —
   a phone-number form in front of it is a lock, not onboarding. That is exactly the shape of
-  the App Store review demo server (`kb/docs/demo-server.md`), which is what surfaced it.
+  the App Store review demo server (`kb.private/condenser/kb/docs/demo-server.md`), which is
+  what surfaced it.
   Three details are load-bearing: the gate **waits** for the sources query instead of
   deciding early (else the wall flashes at an install that has other sources), a failed
   sources request falls back to walling (the pre-multi-source behavior), and
@@ -585,7 +586,8 @@ publish）/ 3 张 `IPHONE_65` 截图，全部经 asc CLI 无头完成。截图�
 ASC 侧资源 id 在私密 KB。⚠️ 新建的 `PRIVACY.md` 是商店隐私政策 URL 的落点，
 **提审前必须已 push 到 master**，否则 404（2026-08-15 已 push）。
 **1.0.0 已提交审核，`WAITING_FOR_REVIEW`（2026-08-16 02:40 UTC）**：审核 demo server
-（`kb/docs/demo-server.md`，`condenser-demo.reorx.com`，只开 HN 源）上线并验收，最后一个
+（`kb.private/condenser/kb/docs/demo-server.md`，`condenser-demo.reorx.com`，只开 HN 源）
+上线并验收，最后一个
 `asc validate` 阻塞项由此消除；**build 1.0.0 (2)** 已 archive → upload → VALID → 挂到版本
 （build 1 作废——它的 `LoginView` 预填的是作者的生产域名，审核员点下去必然认证失败，
 读起来正是 2.1 的形状）；审核详情的 demo 账号与三步英文备注已填，密码是从
@@ -1499,13 +1501,20 @@ e.g. a private channel you've left but still have cached messages for).
 - `kb/docs/content-update-mechanism.md` — Read before touching ingest/sync: realtime push,
   backfill, the manual refresh / fetch-older / reset triggers, the enable toggle, and how
   fetch-older's id-anchored cursor paging works.
-- `kb/docs/demo-server.md` — `condenser-demo.reorx.com`，App Store 审核用的第二实例
-  （只开 HN、无 Telegram 会话、不接 hookploy）。**提审前必读**：`scripts/demo_bootstrap.py`
-  既是初始化也是健康检查，外加审核表单怎么填、备注话术、每次提审前的 checklist。
-  密码实值与 ASC 表单记录在私密 KB。
+- ⚠️ **凡是 app 审核/发布，或服务器部署/运维相关的文档，一律写进私密 KB 仓库
+  `../kb.private/condenser/kb/<docs|plans|sessions>/`，不进本库。** 本库是公开仓库
+  （<https://github.com/reorx/condenser>），而这类文档的价值恰恰在于它记着具体值——
+  Apple 账号标识、生产主机与端口、Caddy/DNS、审核表单。抹掉这些就没有文档了，所以整份
+  挪走、本库只留一行指针（判断标准见 `../kb.private/README.md`）。已经这样处理的：
 - `kb.private/condenser/kb/docs/ios-app-store-release.md` — iOS 首次发布全流程记录：
   关键资产（app id / bundle ID / API keys）、已跑通的签名与出包链路、上传 build 与
   提审前的剩余步骤、审核 demo 服务方案。做发布操作（传 build / 提审 / 出新版本）前读它。
-  **在私密 KB 仓库 `../kb.private` 里**，不在本库——它记录的是 Apple 账号标识，
-  本库是公开仓库。同理 `kb.private/condenser/kb/sessions/2026-08-12-ios-signing-and-app-store-ready.md`。
+  同理 `kb.private/condenser/kb/sessions/2026-08-12-ios-signing-and-app-store-ready.md`。
+- `kb.private/condenser/kb/docs/demo-server.md` — `condenser-demo.reorx.com`，App Store
+  审核用的第二实例（只开 HN、无 Telegram 会话、不接 hookploy）。**提审前必读**：
+  `scripts/demo_bootstrap.py`（脚本本身在本库 `scripts/`）既是初始化也是健康检查，
+  外加审核表单怎么填、备注话术、每次提审前的 checklist。密码实值与 ASC 表单在同目录的
+  `ios-app-store-release.md`。决策记录是
+  `kb.private/condenser/kb/plans/2026-08-15-app-review-demo-server.md`。
+  （2026-08-16 从本库 `kb/docs/` + `kb/plans/` 整体挪过去。）
 - `kb/sessions/` — dated session summaries (history). Read the latest to catch up on recent work.

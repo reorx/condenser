@@ -178,8 +178,9 @@ publish 报 409），以及 `asc review details-create` 强制要 `--contact-pho
 **demo server 已就位（2026-08-15）**，`asc validate` 的最后一个阻塞项（审核 demo 账号的
 name/password）由此消除：`https://condenser-demo.reorx.com`，只开 HN 源、无 Telegram 会话、
 不接自动部署。运维记录在 deploy workspace 的 `kb/docs/condenser.md`「Demo 实例」，**提审前
-必读**的是 `../kb/docs/demo-server.md`——初始化即健康检查的 `scripts/demo_bootstrap.py`、
-审核表单三个字段怎么填、备注英文话术、每次提审前的 checklist；密码实值与已填的表单值在私密 KB。
+必读**的是私密 KB `kb.private/condenser/kb/docs/demo-server.md`——初始化即健康检查的
+`scripts/demo_bootstrap.py`（脚本在本库）、审核表单三个字段怎么填、备注英文话术、每次提审前的
+checklist；密码实值与已填的表单值在同目录的 `ios-app-store-release.md`。
 
 连带一处 app 改动：`LoginView` 的服务器地址字段以前预填生产域名
 `https://condenser.reorx.com`，现在改成空（`CURRENT_PROJECT_VERSION` 1 → 2）。原因是
@@ -194,7 +195,8 @@ upload → processing VALID → 挂到 1.0.0 版本；审核详情（demo 账号
 --dry-run` 报 `wouldSubmit: true`。**故意停在 `asc review submit --confirm` 之前**——提审
 是对外不可逆动作，留给人按。ASC 侧资源 id 与提审命令原文见私密 KB。
 ⚠️ 提审当时的四项前置（demo 在线 / 密码一致 / `PRIVACY.md` 已 push / build 号对）逐条
-怎么查，见 `../kb/docs/demo-server.md` 的 checklist——**每次提审都要重跑一遍**，不是一次性的。
+怎么查，见私密 KB `kb.private/condenser/kb/docs/demo-server.md` 的 checklist——**每次提审
+都要重跑一遍**，不是一次性的。
 
 ### TestFlight（2026-08-16 起可用）
 
