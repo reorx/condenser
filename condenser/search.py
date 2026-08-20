@@ -50,7 +50,13 @@ VERSION_META_KEY = 'search_index_version'
 # look like missing data — so the version mismatch triggers a full rebuild at
 # startup. One integer rather than embedding.py's ``model_tag`` string, because
 # there is only ever one tokenizer in the process.
-TOKENIZER_VERSION = 3
+#
+# It is also bumped when a **source joins the index** (4: RSS, 2026-08-20). The
+# marker's real meaning is "a rebuild finished under this pipeline", and an
+# archive that predates the new source is missing from the index in exactly the
+# way a tokenizer change makes it wrong: silently, and only for the rows nobody
+# thinks to check.
+TOKENIZER_VERSION = 4
 
 # CJK ideographs (including extension A), kana and hangul — the same ranges
 # ngram.py uses, so the project has one definition of "CJK" even though the two
@@ -244,6 +250,15 @@ def sweep_x_orphans() -> int:
     ).rowcount
 
 
+def sweep_rss_orphans() -> int:
+    """Drop RSS documents whose entry is gone (the retention sweep's cascade)."""
+    if not _available:
+        return 0
+    return tdb.db.execute_sql(
+        f"DELETE FROM {TABLE} WHERE source = 'rss' AND ref1 NOT IN (SELECT id FROM rss_entries)"
+    ).rowcount
+
+
 def count() -> int:
     if not _available:
         return 0
@@ -333,6 +348,37 @@ def index_hn_story(row: dict) -> None:
         delete_item('hn', row['id'])
         return
     index_item('hn', row['id'], 0, hn_document(row), row.get('first_seen_at'))
+
+
+def rss_document(row: dict) -> str:
+    """A feed entry's searchable text: what the card and the pane put on screen.
+
+    The summary is included because it is what the *card* shows (plan §0.4) — the
+    reader searches for a phrase they remember reading, and on a summarized entry
+    that phrase may exist nowhere else. It arrives later than the entry does, so
+    the summary pipeline (Phase 3) re-indexes after writing one.
+    """
+    parts = (row.get('title') or '', _strip_html(row.get('content')), row.get('summary') or '')
+    return ' '.join(p for p in parts if p)
+
+
+def index_rss_entries(entry_ids: list[int]) -> None:
+    """Index entries by id, at the position the timeline sorts them.
+
+    One transaction rather than one per row: a first fetch of an archive-style feed
+    lands hundreds of entries at once, and outside ``atomic()`` every DELETE and
+    INSERT is its own commit (``index_x_tweets``' measurement).
+    """
+    if not _available or not entry_ids:
+        return
+    from .sources import rss as rss_source
+
+    rows = rss_source.rows_by_id(entry_ids)
+    if not rows:
+        return
+    with tdb.db.atomic():
+        for row in rows:
+            index_item('rss', row['id'], 0, rss_document(row), row['sort_at'])
 
 
 def _json_dict(value) -> dict:
@@ -438,7 +484,12 @@ def rebuild() -> dict[str, int]:
 
     with tdb.db.atomic():
         tdb.db.execute_sql(f'DELETE FROM {TABLE}')
-        counts = {'telegram': _rebuild_telegram(), 'hn': _rebuild_hn(), 'x': _rebuild_x()}
+        counts = {
+            'telegram': _rebuild_telegram(),
+            'hn': _rebuild_hn(),
+            'x': _rebuild_x(),
+            'rss': _rebuild_rss(),
+        }
         db.set_meta(VERSION_META_KEY, str(TOKENIZER_VERSION))
     log.info('search index rebuilt: %s', counts)
     return counts
@@ -489,6 +540,20 @@ def _rebuild_x() -> int:
             _document_row('x', d['id'], 0, d['document'], d['ts']) for d in _x_documents(ids[i : i + _REBUILD_CHUNK])
         )
         written += _insert_many([r for r in rows if r is not None])
+    return written
+
+
+def _rebuild_rss() -> int:
+    from .sources import rss as rss_source
+
+    ids = [row[0] for row in tdb.db.execute_sql('SELECT id FROM rss_entries').fetchall()]
+    written = 0
+    # Chunked for the same reason ``_rebuild_x`` is: the row lookup binds one
+    # parameter per id and SQLite's variable limit is finite.
+    for i in range(0, len(ids), _REBUILD_CHUNK):
+        rows = rss_source.rows_by_id(ids[i : i + _REBUILD_CHUNK])
+        documents = (_document_row('rss', r['id'], 0, rss_document(r), r['sort_at']) for r in rows)
+        written += _insert_many([d for d in documents if d is not None])
     return written
 
 
@@ -580,10 +645,20 @@ def _where(
         where.append(f"{TABLE}.source = 'telegram' AND {TABLE}.ref1 = ?")
         params.append(channel_id)
     if feed:
-        where.append(
-            f"{TABLE}.source = 'x' AND EXISTS (SELECT 1 FROM x_feed_items f "
-            f'  WHERE f.tweet_id = {TABLE}.ref1 AND f.channel_id = ?)'
-        )
+        # A feed key is only meaningful inside its own source, and the two that
+        # have feeds key on different things (an X handle, an RSS feed URL) — hence
+        # the dispatch, and the endpoint's 422 when ``feed`` arrives without one of
+        # them named.
+        if source == 'rss':
+            where.append(
+                f"{TABLE}.source = 'rss' AND EXISTS (SELECT 1 FROM rss_entries e "
+                f'  WHERE e.id = {TABLE}.ref1 AND e.feed_url = ?)'
+            )
+        else:
+            where.append(
+                f"{TABLE}.source = 'x' AND EXISTS (SELECT 1 FROM x_feed_items f "
+                f'  WHERE f.tweet_id = {TABLE}.ref1 AND f.channel_id = ?)'
+            )
         params.append(feed)
     if status in _STATUS_SQL:
         where.append(_STATUS_SQL[status])
@@ -641,8 +716,9 @@ def render(rows: list[dict]) -> list[dict]:
     and the cascade that follows it, and the honest answer for one stale row is
     to show one fewer result — the ``total`` beside it is off by the same one.
     """
-    from .items import hn_envelope, x_envelope
+    from .items import hn_envelope, rss_envelope, x_envelope
     from .sources import hn as hn_source
+    from .sources import rss as rss_source
     from .sources import telegram as tg_source
     from .sources import x as x_source
 
@@ -653,6 +729,7 @@ def render(rows: list[dict]) -> list[dict]:
     units = tg_source.units_by_key([(r['ref1'], r['ref2']) for r in by_source.get('telegram', [])])
     stories = hn_source.rows_by_id([r['ref1'] for r in by_source.get('hn', [])])
     tweets = {t['id']: t for t in x_source.rows_by_id([r['ref1'] for r in by_source.get('x', [])])}
+    entries = {e['id']: e for e in rss_source.rows_by_id([r['ref1'] for r in by_source.get('rss', [])])}
 
     out = []
     for row in rows:
@@ -661,6 +738,9 @@ def render(rows: list[dict]) -> list[dict]:
         elif row['source'] == 'hn':
             story = stories.get(row['ref1'])
             envelope = hn_envelope(story, bool(story['is_read']), bool(story['is_saved'])) if story else None
+        elif row['source'] == 'rss':
+            entry = entries.get(row['ref1'])
+            envelope = rss_envelope(entry, bool(entry['is_read']), bool(entry['is_saved'])) if entry else None
         else:
             tweet = tweets.get(row['ref1'])
             envelope = (

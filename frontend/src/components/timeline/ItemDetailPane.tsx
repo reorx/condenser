@@ -46,12 +46,21 @@ export function ItemDetailPane() {
   const msg = open?.telegram ?? null;
   const story = open?.hn ?? null;
   const tweet = open?.x ?? null;
+  const entry = open?.rss ?? null;
   const msgRef = msg ? { channel_id: msg.channel_id, message_id: msg.id } : null;
 
   const messageQuery = useLinkPreviews(msgRef);
   // Single-URL sources: the story's own link (unless ingest already prefetched a
   // preview) or the tweet's first outbound link. Null = nothing to fetch.
-  const singleUrl = story ? (story.preview ? null : story.url) : tweet ? (xPreviewUrls(tweet)[0] ?? null) : null;
+  const singleUrl = story
+    ? story.preview
+      ? null
+      : story.url
+    : tweet
+      ? (xPreviewUrls(tweet)[0] ?? null)
+      : entry
+        ? entry.link
+        : null;
   const urlQuery = useUrlPreview(singleUrl);
   const query = msg ? messageQuery : urlQuery;
   const previews = msg
@@ -130,7 +139,13 @@ export function ItemDetailPane() {
             <Info className="size-4" /> 条目详情
           </SheetTitle>
           <SheetDescription>
-            {story ? '该 Hacker News 条目的完整信息。' : tweet ? '该推文的完整信息。' : '该消息的完整信息。'}
+            {story
+              ? '该 Hacker News 条目的完整信息。'
+              : tweet
+                ? '该推文的完整信息。'
+                : entry
+                  ? '该文章的完整信息。'
+                  : '该消息的完整信息。'}
           </SheetDescription>
         </SheetHeader>
 
@@ -176,7 +191,9 @@ export function ItemDetailPane() {
           {pending ? (
             <>
               <CardSkeleton />
-              {!story && <CardSkeleton />}
+              {/* A Telegram message can carry several links; the single-URL sources
+                  never show two placeholders for one card that is coming. */}
+              {!story && !entry && <CardSkeleton />}
             </>
           ) : query.isError ? (
             <div className="flex flex-col items-center gap-3 py-8 text-center text-sm text-muted-foreground">
@@ -187,7 +204,13 @@ export function ItemDetailPane() {
             </div>
           ) : previews.length === 0 ? (
             <p className="py-8 text-center text-sm text-muted-foreground">
-              {story ? '自荐帖，无外部链接 — 讨论即内容。' : tweet ? '该推文没有外部链接。' : '消息中没有链接。'}
+              {story
+                ? '自荐帖，无外部链接 — 讨论即内容。'
+                : tweet
+                  ? '该推文没有外部链接。'
+                  : entry
+                    ? '该条目没有原文链接。'
+                    : '消息中没有链接。'}
             </p>
           ) : (
             previews.map((p, i) => <LinkPreviewCard key={`${p.url}-${i}`} channelId={msgRef?.channel_id} preview={p} />)
@@ -202,14 +225,22 @@ export function ItemDetailPane() {
                   ? hnCommentsUrl(story.id)
                   : tweet
                     ? xTweetUrl(tweet.id, tweet.author_handle)
-                    : tgMessageUrl(msgRef!.channel_id, msgRef!.message_id, sub?.username)
+                    : entry
+                      ? (entry.link ?? entry.feed_url)
+                      : tgMessageUrl(msgRef!.channel_id, msgRef!.message_id, sub?.username)
               }
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center gap-2 text-sm text-muted-foreground transition-colors hover:text-foreground"
             >
               <ExternalLink className="size-4" />
-              {story ? 'Open comments on Hacker News' : tweet ? 'Open original on X' : 'Open original in Telegram'}
+              {story
+                ? 'Open comments on Hacker News'
+                : tweet
+                  ? 'Open original on X'
+                  : entry
+                    ? 'Open original article'
+                    : 'Open original in Telegram'}
             </a>
             <Button
               variant="outline"

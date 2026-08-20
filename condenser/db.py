@@ -922,10 +922,10 @@ def mark_read_bulk(
     when an enabled HN subscription exists (all archived rows — hidden ranks don't
     affect visible counts and marking them keeps a later display-mode widening quiet).
     `source` narrows the sweep to one source (the source-scoped timeline views),
-    `feed` narrows it further within a multi-feed source (X); `channel_id` already
-    implies telegram. X's For You only joins the sweep when the caller is X-scoped —
-    it is invisible in the aggregate view, so clearing it from there would silently
-    burn a feed the user never saw.
+    `feed` narrows it further within a multi-feed source (X feed key / RSS feed
+    URL); `channel_id` already implies telegram. X's For You only joins the sweep
+    when the caller is X-scoped — it is invisible in the aggregate view, so
+    clearing it from there would silently burn a feed the user never saw.
     """
     if source is None or source == 'telegram':
         where = ['m.is_filtered IS NOT 1']
@@ -965,6 +965,25 @@ def mark_read_bulk(
 
     if channel_id is None and source in (None, 'x'):
         _mark_x_read_bulk(before_date, feed, include_foryou=source == 'x')
+
+    if channel_id is None and source in (None, 'rss'):
+        _mark_rss_read_bulk(before_date, feed if source == 'rss' else None)
+
+
+def _mark_rss_read_bulk(before_date: Optional[str], feed: Optional[str]) -> None:
+    # deferred, for the same reason as X's: the sort key and the "what did the view
+    # show" rule live with the provider, so the sweep burns exactly those rows.
+    from .sources.rss import bulk_read_scope
+
+    where, params = bulk_read_scope(before_date)
+    if feed:
+        where += ' AND e.feed_url = ?'
+        params.append(feed)
+    tdb.db.execute_sql(
+        "INSERT OR IGNORE INTO read_items (source, ref1, ref2, read_at) SELECT 'rss', e.id, 0, ? "
+        'FROM rss_entries e JOIN subscriptions s ON s.channel_id = e.feed_url WHERE ' + where,
+        (_now().isoformat(sep=' '), *params),
+    )
 
 
 def _mark_x_read_bulk(before_date: Optional[str], feed: Optional[str], include_foryou: bool) -> None:
@@ -1984,6 +2003,26 @@ def _mark_rss_read_by_guid(feed_url: str, guids: list[str], now: datetime) -> No
         )
 
 
+def rss_entry_ids(feed_url: str, guids: list[str]) -> list[int]:
+    """The surrogate ids behind a feed's guids, in insertion order.
+
+    ``insert_rss_entries`` cannot return them — ``INSERT OR IGNORE`` reports no
+    rowids — and the ingest hook needs them to index the new entries for search.
+    """
+    if not guids:
+        return []
+    ids: list[int] = []
+    for i in range(0, len(guids), 500):
+        chunk = guids[i : i + 500]
+        rows = (
+            RssEntry.select(RssEntry.id)
+            .where((RssEntry.feed_url == feed_url) & (RssEntry.guid.in_(chunk)))
+            .order_by(RssEntry.id)
+        )
+        ids.extend(row.id for row in rows)
+    return ids
+
+
 def rss_entry_count() -> int:
     return RssEntry.select().count()
 
@@ -2109,6 +2148,40 @@ def sweep_x_retention(feed_cutoff: datetime, embedding_cutoff: Optional[datetime
             # A living tweet's vector expires on its own, longer clock: it is read
             # once (at judge time) and re-derivable from the text that is still here.
             counts['embeddings_expired'] = prune_x_embeddings(embedding_cutoff, set(x_labeled_samples()))
+    return counts
+
+
+_DELETE_RSS_ENTRIES = 'DELETE FROM rss_entries WHERE first_seen_at < ? ' + ' '.join(
+    f"AND NOT EXISTS (SELECT 1 FROM {table} m WHERE m.source = 'rss' AND m.ref1 = rss_entries.id)"
+    for table in ('read_items', 'hidden_items', 'item_feedback', 'saved_items')
+)
+
+
+def sweep_rss_retention(cutoff: datetime) -> dict[str, int]:
+    """Delete archived entries older than ``cutoff`` that the reader never touched.
+
+    X's rule, unchanged in substance and stated the same way round: an **unread**
+    old entry is deleted and a **read** one is kept forever. What is intentionally
+    preserved is everything the reader read, hid, labeled or saved.
+
+    Two consequences worth knowing rather than rediscovering. The clock is
+    ``first_seen_at``, not the timeline's clamped sort key: the question is how long
+    a row has sat in the backlog, and an archive-style feed hands us years-old
+    entries that should sort into history without being deleted the next morning.
+    And the unread window (plan §0.3) marks an import's back-catalogue *read* on
+    arrival, so those rows are exempt and accumulate — accepted at plan time, since
+    they are kilobytes of text each and ``/api/cleanup/status`` makes the total
+    visible.
+
+    No feed row is dropped: ``rss_feeds`` is per-feed fetch state (100 rows at the
+    design target) and its validators are what make a re-subscribe resume.
+    """
+    counts = {'entries': 0, 'search_orphaned': 0}
+    with tdb.db.atomic():
+        counts['entries'] = tdb.db.execute_sql(_DELETE_RSS_ENTRIES, (cutoff.strftime('%Y-%m-%d %H:%M:%S'),)).rowcount
+        # Anti-join rather than the ids just deleted, so the sweep also heals
+        # documents orphaned before this rule existed (the X precedent).
+        counts['search_orphaned'] = search.sweep_rss_orphans()
     return counts
 
 

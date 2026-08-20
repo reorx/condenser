@@ -277,3 +277,44 @@ Status 段。
 二月的，全部归档零未读；HN 30 条全在窗口内。**这三个 feed 里有一个（HN）既不给
 etag 也不给 last-modified**，所以「多数轮次 304 零成本」是趋势不是保证，Phase 3 估
 摘要量时别按 100% 命中算。
+
+## 13. 阶段 2 实施记录（2026-08-20）
+
+**已完成，649 后端 + 169 前端全绿（新增 21 + 10），八个真实 feed 的浏览器 walkthrough
+跑通。** 验收物料 `tmp/2026-08-20-rss-phase2/`（可复跑，见其 README）。落地的东西：
+`condenser/sources/rss.py` provider、`items.py` 的 rss envelope、`timeline.py` 注册、
+`db.mark_read_bulk` 的 rss 分支、`records.py` / `forward.py` 的 rss 分支、搜索接入
+（ingest 钩子 + rebuild + 渲染 + 按 feed 收窄）、`cleanup.RssRetentionRule`、
+`/api/sources` 的 RSS 组，以及前端整套（`RssCard` / `RssSection` / `RssSubscriptionRow` /
+`SidebarRssFeedLink` / `RssGlyph` / 详情抽屉 / 搜索范围菜单 / `/s/rss/:feed` 路由）。
+
+### 计划没写、实现时定的
+
+1. **排序时间戳算在 SQL 里，算完的值随 envelope 走（`rss.sort_at`）。** §2 说钳制在
+   provider 的 SORT SQL 层做，但收藏快照是脱离源表回放的——规则活在 SQL 里，快照就
+   必须带着**结论**，否则 Python 里要再实现一遍同一条规则，两份迟早会漂。
+2. **`feed` 参数放宽到 2000 字符，并且必须跟 `source` 一起出现。** 这个源的 feed key
+   是 URL，塞不进原来 64 字符的上限；而两个多 feed 源的 key 形状完全不同（X 是 handle，
+   RSS 是 URL），服务端脱离 source 读不懂 feed。搜索端点因此从「feed 不给 source 就当
+   成 x」改成 422，`normalize_feed` 也只对 x 做——对 URL 做小写化会改掉它指向的东西。
+3. **清理规则一并落在本阶段。** §8 把搜索和清理写在同一节，而 Phase 4 的验收里写的是
+   「清理规则观察」——它得先存在。X 的语义原样搬：`first_seen_at` 超 30 天且没有
+   read/save/hide/feedback 行才删，删的时候同事务扫搜索文档。
+4. **`search.TOKENIZER_VERSION` 3 → 4。** §8 说 tokenizer 没改所以不用动，但那个版本号
+   实际的含义是「索引在当前这套管道下重建过」——加一个源，存量归档就以完全相同的方式
+   缺失：悄无声息，而且只对没人想到去查的那些行。加个源就 bump，注释里写清楚了。
+5. **`/s/rss/:feed` 用 `encodeURIComponent(url)` 做路径段。** 编码后没有字面斜杠，正好
+   占一个 segment。地址栏难看，但为了好看的路由再造一个 id 就等于永远要维护两套键。
+
+### walkthrough 抓到的两个前端问题
+
+都是「测试全绿但用起来不对」的那类，详情见验收 README：导入后订阅行不会自己刷新
+（`refetchInterval` 改成函数，还有 feed 没抓过就 5 秒一轮，抓完退回 60 秒，条件自己
+会结束）；feed 正文里的图片按原尺寸铺满、一条比一屏还高（`[&_img]:max-h-80` 封顶）。
+
+### 实测数据
+
+八个真实 feed 一轮冷抓：280 条入库、7 成功 1 失败（matrix67 的 SSL 证书链坏了，真坏
+不是安排的）、**未读 3 条**、搜索文档 280。那个 3 就是一周未读窗口在博客类 feed 上的
+样子——博客不是新闻源，280 条里只有 3 条是最近一周的。Phase 3 估摘要量要按这个来：
+**稳态下需要摘要的是「一周内的未读」，不是归档总量**。

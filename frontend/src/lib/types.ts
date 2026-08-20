@@ -65,7 +65,7 @@ export interface DisplayMessage {
   channel?: ChannelRef | null;
 }
 
-export type Source = 'telegram' | 'hn' | 'x';
+export type Source = 'telegram' | 'hn' | 'x' | 'rss';
 
 /** The `hn` payload of a TimelineItem: one archived Hacker News story. */
 export interface HnStory {
@@ -92,6 +92,31 @@ export interface HnStory {
   backfilled: boolean;
   /** Ingest-prefetched preview for `url`; null while unfetched / failed / self-post. */
   preview: LinkPreview | null;
+}
+
+/** The `rss` payload of a TimelineItem: one archived feed entry. */
+export interface RssEntry {
+  id: number;
+  /** The feed's own dedup key for it (guid / id / link / a hash). */
+  guid: string | null;
+  /** The feed URL — this source's subscription key, so also its `feed` scope. */
+  feed_url: string;
+  /** The feed's display name; null until a fetch has taught us its title. */
+  feed_title: string | null;
+  title: string | null;
+  link: string | null;
+  author: string | null;
+  /** The feed's own HTML body (content:encoded, else description). Sanitize before render. */
+  content: string | null;
+  /** The LLM summary (Phase 3); null = short enough not to need one, not written
+   *  yet, or given up on. The card falls back to truncated `content`. */
+  summary: string | null;
+  /** What the feed declared, unclamped — feeds do publish future timestamps. */
+  published_at: string | null;
+  first_seen_at: string;
+  /** The timeline position: `published_at` clamped to our first sighting. Equal to
+   *  the envelope's `datetime`; carried here so a saved snapshot keeps it. */
+  sort_at: string | null;
 }
 
 /** One media attachment on a tweet — bird's shape, passed through verbatim
@@ -236,7 +261,7 @@ export type ItemFeedback = 'up' | 'down';
  *  planned model (kb/notes/2026-07-24-x-verdict-multi-channel-discussion.md). */
 export type ItemFeedbackReason = 'topic' | 'promo' | 'ai_slop' | 'engagement_farming' | 'author';
 
-/** Multi-source item envelope: exactly one of `telegram` / `hn` / `x` is present. */
+/** Multi-source item envelope: exactly one of `telegram` / `hn` / `x` / `rss` is present. */
 export interface TimelineItem {
   source: Source;
   /** Global item id, e.g. 'tg:123:45' / 'hn:678' / 'x:208…' — the read/save API currency. */
@@ -253,6 +278,7 @@ export interface TimelineItem {
   telegram?: DisplayMessage;
   hn?: HnStory;
   x?: XTweet;
+  rss?: RssEntry;
 }
 
 /** What scroll-to-read reports: the item key plus its TG channel (for badge math). */
@@ -322,6 +348,47 @@ export interface HnStatus {
   stories_today: number;
   /** Days (YYYY-MM-DD) still waiting for the hckrnews history backfill. */
   backfill_pending_days: string[];
+}
+
+/** One subscribed feed, from GET /api/sources/rss/subscriptions. The reader's
+ *  decision (`url`, `enabled`, `name`) plus the feed's fetch state, which is where
+ *  a feed that has gone quiet explains itself. */
+export interface RssSubscription {
+  /** The feed URL — the subscription key, so PATCH/DELETE pass it as `?url=`. */
+  url: string;
+  /** Null until the first successful fetch teaches us the feed's title; the row
+   *  falls back to the URL rather than rendering a placeholder. */
+  name: string | null;
+  enabled: boolean;
+  site_url: string | null;
+  /** Last round that reached the feed (200 or 304); null = never fetched yet. */
+  fetched_at: string | null;
+  /** The last failure, or a recovered-from complaint about malformed XML. */
+  last_error: string | null;
+  /** Consecutive failures; 0 with a `last_error` set means "warning, not broken". */
+  error_count: number;
+}
+
+/** GET /api/rss/status — the polling loop's health, source-wide. */
+export interface RssStatus {
+  /** Server-side master switch (CONDENSER_RSS_ENABLED); false = no polling loop. */
+  source_enabled: boolean;
+  subscribed: boolean;
+  feeds_total: number;
+  feeds_enabled: number;
+  /** Subscribed feeds whose last round failed — the "something is broken" number. */
+  feeds_error: number;
+  entries_total: number;
+  last_poll_at: string | null;
+  last_error: string | null;
+  last_round: { feeds: number; errors: number; new_entries: number } | null;
+}
+
+/** POST /api/sources/rss/opml — an import states its whole result in three counts. */
+export interface RssOpmlResult {
+  added: number;
+  skipped_existing: number;
+  invalid: number;
 }
 
 /** One X subscription, from GET /api/sources/x/subscriptions.

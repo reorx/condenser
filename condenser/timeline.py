@@ -15,11 +15,12 @@ from typing import Optional
 from . import db
 from .items import norm_ts
 from .sources import hn as hn_source
+from .sources import rss as rss_source
 from .sources import telegram as tg_source
 from .sources import x as x_source
 from .sources.base import SourcePage, pack_pos
 
-SOURCES = ('telegram', 'hn', 'x')
+SOURCES = ('telegram', 'hn', 'x', 'rss')
 
 
 class InvalidCursor(ValueError):
@@ -46,7 +47,8 @@ def _active_sources(channel_id: Optional[int], source: Optional[str]) -> list[st
     explicit ``source`` narrows to it; default = telegram + any active others.
 
     The aggregate view only counts X as active when a *followed account* is
-    subscribed: For You is opt-in (see sources/x.py)."""
+    subscribed: For You is opt-in (see sources/x.py). RSS has no such carve-out —
+    every subscribed feed is in (plan §0.2)."""
     if channel_id is not None:
         return ['telegram']
     if source:
@@ -56,6 +58,8 @@ def _active_sources(channel_id: Optional[int], source: Optional[str]) -> list[st
         active.append('hn')
     if x_source.active(include_foryou=False):
         active.append('x')
+    if rss_source.active():
+        active.append('rss')
     return active
 
 
@@ -81,6 +85,17 @@ def _fetch_pages(
                 limit,
                 feed=feed,
                 include_foryou=source == 'x',
+                date=date,
+                unread_only=unread_only,
+            )
+        elif s == 'rss':
+            # A feed key only means something inside its own source, and RSS's are
+            # URLs: handing one to RSS while the caller meant an X handle would
+            # silently empty the source out of an aggregate page.
+            pages[s] = rss_source.fetch_page(
+                cursors.get(s),
+                limit,
+                feed=feed if source == 'rss' else None,
                 date=date,
                 unread_only=unread_only,
             )
@@ -187,6 +202,10 @@ def query_new(
             units += x_source.fetch_new(
                 anchors[s], limit, feed=feed, include_foryou=source == 'x', unread_only=unread_only
             )
+        elif s == 'rss':
+            units += rss_source.fetch_new(
+                anchors[s], limit, feed=feed if source == 'rss' else None, unread_only=unread_only
+            )
         else:
             units += hn_source.fetch_new(anchors[s], limit, unread_only=unread_only)
     units.sort(key=lambda u: u.sort_ts, reverse=True)
@@ -205,6 +224,8 @@ def query_days(
             counts = tg_source.days(channel_id)
         elif s == 'x':
             counts = x_source.days(feed=feed, include_foryou=source == 'x')
+        elif s == 'rss':
+            counts = rss_source.days(feed=feed if source == 'rss' else None)
         else:
             counts = hn_source.days()
         for day, cnt in counts.items():

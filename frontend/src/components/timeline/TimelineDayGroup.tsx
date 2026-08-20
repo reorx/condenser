@@ -3,6 +3,7 @@ import type { ReadTarget, TimelineItem } from '@/lib/types';
 
 import { HnCard } from './HnCard';
 import { MessageCard } from './MessageCard';
+import { RssCard } from './RssCard';
 import { XCard } from './XCard';
 
 interface TimelineDayGroupProps {
@@ -44,6 +45,8 @@ export function TimelineDayGroup({ items, labels, observe, pendingKeys }: Timeli
             <HnCard key={it.key} item={it} observe={observe} pendingKeys={pendingKeys} />
           ) : it.x ? (
             <XCard key={it.key} item={it} observe={observe} pendingKeys={pendingKeys} />
+          ) : it.rss ? (
+            <RssCard key={it.key} item={it} observe={observe} pendingKeys={pendingKeys} />
           ) : null,
         )}
       </div>

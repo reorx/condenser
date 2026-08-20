@@ -1,5 +1,6 @@
 import { HnCard } from '@/components/timeline/HnCard';
 import { MessageCard } from '@/components/timeline/MessageCard';
+import { RssCard } from '@/components/timeline/RssCard';
 import { XCard } from '@/components/timeline/XCard';
 import { channelName, fullDateLabel } from '@/lib/format';
 import type { TimelineItem } from '@/lib/types';
@@ -18,6 +19,7 @@ export function DatedItemRow({ item }: { item: TimelineItem }) {
       {item.telegram ? <MessageCard item={item} channelLabel={channelName(item.telegram.channel)} /> : null}
       {item.hn ? <HnCard item={item} /> : null}
       {item.x ? <XCard item={item} /> : null}
+      {item.rss ? <RssCard item={item} /> : null}
     </div>
   );
 }

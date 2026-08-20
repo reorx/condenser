@@ -289,6 +289,15 @@ class Settings(BaseSettings):
     # and saved tweets are exempt and kept indefinitely, as TG and HN archives are.
     condenser_cleanup_x_retention_days: int = 15
 
+    # --- cleanup rule: rss retention (condenser/cleanup.py: RssRetentionRule) ---
+    condenser_cleanup_rss_enabled: bool = True
+    # Longer than X's 15 days: a feed publishes a few entries a day where For You
+    # pushes hundreds, so the backlog costs little and an unread post from three
+    # weeks ago is still plausibly something you meant to read. Same semantics —
+    # read, hidden, labeled and saved entries are exempt and kept indefinitely,
+    # measured from first_seen_at (how long it sat in the backlog).
+    condenser_cleanup_rss_retention_days: int = 30
+
     # --- link preview fetching (condenser/preview.py) ---
     # Total per-request timeout (seconds) for fetching a URL/its image.
     condenser_preview_fetch_timeout: float = 8.0

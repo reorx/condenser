@@ -179,6 +179,47 @@ def hn_envelope(row: dict, is_read: bool, is_saved: bool) -> dict:
     }
 
 
+def rss_payload(row: dict) -> dict:
+    """The `rss` payload from a provider row (or, idempotently, a stored payload).
+
+    ``sort_at`` is the timeline position — the feed's ``published_at`` clamped to
+    our first sighting (``sources/rss.SORT_AT_SQL`` owns the rule). It rides in the
+    payload because the rule lives in SQL and a saved snapshot replays without ever
+    running it again; ``published_at`` stays beside it, unclamped, so the detail
+    pane can still show what the feed actually claimed.
+    """
+    return {
+        'id': row['id'],
+        'guid': row.get('guid'),
+        'feed_url': row.get('feed_url'),
+        'feed_title': row.get('feed_title'),
+        'title': row.get('title'),
+        'link': row.get('link'),
+        'author': row.get('author'),
+        'content': row.get('content'),
+        # The LLM summary (plan §3). Null = short enough not to need one, not yet
+        # written, or given up on — the card degrades to truncated content either way.
+        'summary': row.get('summary'),
+        'published_at': iso_utc(row.get('published_at')),
+        'first_seen_at': iso_utc(row.get('first_seen_at')),
+        'sort_at': iso_utc(row.get('sort_at')),
+    }
+
+
+def rss_envelope(row: dict, is_read: bool, is_saved: bool) -> dict:
+    payload = rss_payload(row)
+    return {
+        'source': 'rss',
+        'key': rss_key(payload['id']),
+        # The fallbacks cover a snapshot written before `sort_at` existed; a row
+        # from the provider always carries it.
+        'datetime': payload['sort_at'] or payload['published_at'] or payload['first_seen_at'],
+        'is_read': is_read,
+        'is_saved': is_saved,
+        'rss': payload,
+    }
+
+
 def _x_quote(row: dict) -> Optional[dict]:
     """The quoted tweet, from either a joined query row (``q_*`` columns) or an
     already-assembled payload (saved-record replay)."""

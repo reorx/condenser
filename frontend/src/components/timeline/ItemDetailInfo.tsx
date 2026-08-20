@@ -4,9 +4,10 @@ import { type ReactNode } from 'react';
 
 import { ChannelAvatar } from '@/components/ChannelAvatar';
 import { HnGlyph } from '@/components/HnGlyph';
+import { RssGlyph } from '@/components/RssGlyph';
 import { XAvatar } from '@/components/XAvatar';
 import { channelName, compactNumber, fullDateLabel } from '@/lib/format';
-import { FEEDBACK_REASON_LABELS, hnCommentsUrl, xProfileUrl, X_FORYOU_FEED } from '@/lib/sources';
+import { FEEDBACK_REASON_LABELS, hnCommentsUrl, rssFeedLabel, xProfileUrl, X_FORYOU_FEED } from '@/lib/sources';
 import type { Subscription, TimelineItem } from '@/lib/types';
 
 import { XVerdictDetail } from './XVerdictDetail';
@@ -31,6 +32,7 @@ export function ItemDetailInfo({ item, sub }: Props) {
   const msg = item.telegram;
   const hn = item.hn;
   const tweet = item.x;
+  const rss = item.rss;
 
   if (msg) {
     const fwd = msg.forward_info;
@@ -110,6 +112,35 @@ export function ItemDetailInfo({ item, sub }: Props) {
             <XVerdictDetail verdict={tweet.verdict} meta={tweet.verdict_meta} />
           </DetailRow>
         )}
+        <DetailRow label="条目 ID">{item.key}</DetailRow>
+      </dl>
+    );
+  }
+
+  if (rss) {
+    return (
+      <dl className="space-y-1.5">
+        <DetailRow label="订阅源">
+          <span className="inline-flex min-w-0 items-center gap-1.5">
+            <RssGlyph className="size-4" />
+            <span className="truncate">{rssFeedLabel(rss.feed_url, rss.feed_title)}</span>
+          </span>
+        </DetailRow>
+        {rss.author && <DetailRow label="作者">{rss.author}</DetailRow>}
+        {rss.published_at && <DetailRow label="发布时间">{fullDateLabel(rss.published_at)}</DetailRow>}
+        {/* 抓取时间 is also the sort position whenever the feed declared none or
+            declared one we did not believe — so when the two differ, say which is which. */}
+        <DetailRow label="抓取时间">{fullDateLabel(rss.first_seen_at)}</DetailRow>
+        {rss.published_at && rss.published_at !== item.datetime && (
+          <DetailRow label="排序时间">
+            {fullDateLabel(item.datetime)}
+            <span className="text-muted-foreground"> · 源站声明的时间不可信，已按抓取时间排列</span>
+          </DetailRow>
+        )}
+        {rss.summary && <DetailRow label="AI 摘要">{rss.summary}</DetailRow>}
+        <DetailRow label="Feed">
+          <span className="break-all text-muted-foreground">{rss.feed_url}</span>
+        </DetailRow>
         <DetailRow label="条目 ID">{item.key}</DetailRow>
       </dl>
     );

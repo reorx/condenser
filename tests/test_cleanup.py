@@ -696,7 +696,10 @@ def test_status_before_any_round_says_so(env, monkeypatch):
 
     assert status['last_run_at'] is None
     assert status['last_report'] is None
-    assert status['rules'] == [{'rule': 'x_retention', 'enabled': True}]
+    assert status['rules'] == [
+        {'rule': 'x_retention', 'enabled': True},
+        {'rule': 'rss_retention', 'enabled': True},
+    ]
 
 
 def test_the_endpoint_distinguishes_ran_from_deleted_nothing(env, monkeypatch):

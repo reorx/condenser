@@ -13,7 +13,7 @@ export const SEARCH_PAGE_SIZE = 20;
  */
 export interface SearchScope {
   source?: Source | null;
-  /** A TG channel id or an X feed key, as a string; null = the whole source. */
+  /** A TG channel id, an X feed key or an RSS feed URL, as a string; null = the whole source. */
   sub?: string | null;
 }
 
@@ -24,12 +24,14 @@ export interface SearchQueryParams extends SearchScope {
 }
 
 /** Scope -> the API's own parameters. HN has a single feed, so its subscription
- *  row adds nothing the source filter does not already say. */
+ *  row adds nothing the source filter does not already say. A `feed` always travels
+ *  with its source: the two feed-keyed sources key on different things (an X handle,
+ *  an RSS feed URL), so the server cannot read one without the other. */
 export function scopeParams(scope: SearchScope) {
   const { source, sub } = scope;
   if (!sub || !source) return { source: source ?? null, channel_id: null, feed: null };
   if (source === 'telegram') return { source, channel_id: Number(sub), feed: null };
-  if (source === 'x') return { source, channel_id: null, feed: sub };
+  if (source === 'x' || source === 'rss') return { source, channel_id: null, feed: sub };
   return { source, channel_id: null, feed: null };
 }
 

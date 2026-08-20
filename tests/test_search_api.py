@@ -114,8 +114,9 @@ def test_source_and_subscription_filters_narrow_the_scope(env):
         assert _keys(_search(client, '模型', source='telegram')) == ['tg:200:1', 'tg:100:1']
         assert _keys(_search(client, '模型', source='hn')) == ['hn:500']
         assert _keys(_search(client, '模型', channel_id=100)) == ['tg:100:1']
-        assert _keys(_search(client, '模型', feed='foryou')) == ['x:9001']
-        assert _keys(_search(client, '模型', feed='@ForYou')) == ['x:9001']  # feed keys normalize
+        # a feed key only means something inside its own source, so it comes with one
+        assert _keys(_search(client, '模型', source='x', feed='foryou')) == ['x:9001']
+        assert _keys(_search(client, '模型', source='x', feed='@ForYou')) == ['x:9001']  # X keys normalize
 
 
 def test_status_filter_selects_unread_or_saved(env):
@@ -236,7 +237,7 @@ def test_a_query_with_no_searchable_token_is_422(env):
 def test_unknown_source_status_or_sort_is_422(env):
     with _client() as client:
         _login(client)
-        assert client.get('/api/search', params={'q': 'x', 'source': 'rss'}).status_code == 422
+        assert client.get('/api/search', params={'q': 'x', 'source': 'mastodon'}).status_code == 422
         assert client.get('/api/search', params={'q': 'x', 'status': 'starred'}).status_code == 422
         assert client.get('/api/search', params={'q': 'x', 'sort': 'random'}).status_code == 422
 

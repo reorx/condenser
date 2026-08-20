@@ -16,11 +16,12 @@ from .common import parse_key_or_422
 
 router = APIRouter(prefix='/api', tags=['reading'], dependencies=[Depends(require_auth)])
 
-_SOURCE_PATTERN = '^(telegram|hn|x)$'
+_SOURCE_PATTERN = '^(telegram|hn|x|rss)$'
 
-# A multi-feed source (X) can be narrowed further; the provider normalizes the key,
-# so '@Handle' and 'handle' are the same feed.
-_FEED_QUERY = Query(None, max_length=64, description='narrow a multi-feed source to one feed (X)')
+# A multi-feed source (X, RSS) can be narrowed further; the provider normalizes the
+# key, so '@Handle' and 'handle' are the same X feed. The bound is generous because
+# an RSS feed key is the feed's URL, query string included.
+_FEED_QUERY = Query(None, max_length=2000, description='narrow a multi-feed source to one feed (X / RSS)')
 
 
 @router.get('/timeline')

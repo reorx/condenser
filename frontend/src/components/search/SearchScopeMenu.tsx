@@ -2,6 +2,7 @@ import { ChevronDown, Globe } from 'lucide-react';
 
 import { ChannelAvatar } from '@/components/ChannelAvatar';
 import { HnGlyph } from '@/components/HnGlyph';
+import { RssGlyph } from '@/components/RssGlyph';
 import { SearchScopeOption } from '@/components/search/SearchScopeOption';
 import { TgGlyph } from '@/components/TgGlyph';
 import { XAvatar } from '@/components/XAvatar';
@@ -15,13 +16,14 @@ import {
 } from '@/components/ui/dropdown-menu';
 import type { SearchScope } from '@/hooks/useSearch';
 import { useSources } from '@/hooks/useSources';
-import { isXSyntheticFeed, sourceLabel, sourceSubLabel } from '@/lib/sources';
+import { isXSyntheticFeed, rssFeedLabel, sourceLabel, sourceSubLabel, subRowLabel } from '@/lib/sources';
 import type { Source, SourceGroup, SourceSub } from '@/lib/types';
 
 /** The glyph identifying a whole source, matching the sidebar's marks. */
 export function sourceGlyph(source: Source, className = 'size-4 rounded-sm text-[9px]') {
   if (source === 'telegram') return <TgGlyph className={className} />;
   if (source === 'hn') return <HnGlyph className={className} />;
+  if (source === 'rss') return <RssGlyph className={className} />;
   return <XGlyph className={className} />;
 }
 
@@ -43,6 +45,9 @@ function scopeLabel(scope: SearchScope, groups: SourceGroup[] | undefined): stri
   const sub = groups
     ?.find((g) => g.source === scope.source)
     ?.subscriptions.find((s) => String(s.channel_id) === scope.sub);
+  // An RSS row's fallback is its URL, which is the key — trimmed to what tells two
+  // feeds apart rather than printed whole into a menu trigger.
+  if (scope.source === 'rss') return rssFeedLabel(scope.sub, sub?.name);
   return sub ? sourceSubLabel(sub) : scope.sub;
 }
 
@@ -93,7 +98,7 @@ export function SearchScopeMenu({ scope, onChange }: SearchScopeMenuProps) {
             {group.subscriptions.map((sub) => (
               <SearchScopeOption
                 key={String(sub.channel_id)}
-                label={sourceSubLabel(sub)}
+                label={subRowLabel(group.source, sub)}
                 icon={subGlyph(group.source, sub)}
                 indent
                 active={active({ source: group.source, sub: String(sub.channel_id) })}

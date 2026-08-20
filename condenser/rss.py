@@ -30,7 +30,7 @@ from xml.etree import ElementTree
 import feedparser
 import httpx
 
-from . import db
+from . import db, search
 from .config import Settings
 
 log = logging.getLogger('condenser.rss')
@@ -377,6 +377,7 @@ class RssManager:
         if not parsed.entries:
             return 0
         known = db.existing_rss_guids(feed_url, [e.guid for e in parsed.entries])
+
         rows, seen = [], set()
         for entry in parsed.entries:
             if entry.guid in known or entry.guid in seen:
@@ -394,7 +395,12 @@ class RssManager:
                     'first_seen_at': now,
                 }
             )
-        return db.insert_rss_entries(rows, read_before=self._unread_cutoff(now), now=now)
+        added = db.insert_rss_entries(rows, read_before=self._unread_cutoff(now), now=now)
+        # Search documents are written here rather than inside the insert, because
+        # what they contain (the clamped sort position, the feed's own title) is the
+        # provider's view of the row, not the row.
+        search.index_rss_entries(db.rss_entry_ids(feed_url, [row['guid'] for row in rows]))
+        return added
 
     def _unread_cutoff(self, now: datetime) -> Optional[datetime]:
         """Entries published before this arrive already read (plan §0.3).
