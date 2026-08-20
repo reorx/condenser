@@ -16,7 +16,7 @@ from fastapi.testclient import TestClient
 
 from condenser import db
 from condenser.app import create_app
-from condenser.items import hn_key, parse_key, tg_key
+from condenser.items import hn_key, parse_key, rss_key, tg_key
 from tests.conftest import BASE, md, seed_channel, seed_messages
 
 
@@ -87,7 +87,12 @@ def test_item_key_roundtrip():
     assert k.key == 'hn:44001234'
     assert hn_key(44001234) == 'hn:44001234'
 
-    for bad in ('rss:1', 'tg:1', 'hn:1:2', 'tg:x:1', 'hn:', 'tg:1:2:3', ''):
+    k = parse_key('rss:77')
+    assert (k.source, k.ref1, k.ref2) == ('rss', 77, 0)
+    assert k.key == 'rss:77'
+    assert rss_key(77) == 'rss:77'
+
+    for bad in ('zz:1', 'tg:1', 'hn:1:2', 'tg:x:1', 'hn:', 'tg:1:2:3', ''):
         with pytest.raises(ValueError):
             parse_key(bad)
 

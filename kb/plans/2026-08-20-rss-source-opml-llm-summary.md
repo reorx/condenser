@@ -232,3 +232,48 @@ Status 段。
   `config.aggregate` 模式是现成的退路，一个 PATCH 即可加）
 - RSS 条目的 verdict/feedback UI（表已通用，接 UI 是一次独立决策）
 - 条目编辑跟踪（update-in-place）
+
+## 12. 阶段 1 实施记录（2026-08-20）
+
+**已完成，628 后端测试全绿（新增 33 个），真实 feed 端到端跑通。** 验收物料
+`tmp/2026-08-20-rss-phase1/`（可复跑，见其 README）。落地的东西：schema v15
+（`rss_feeds` / `rss_entries`，纯 `create_tables`）、`condenser/rss.py`（`RssManager`
++ feedparser 解析 + OPML 手解）、`condenser/routers/rss.py`、`items.py` 的 `rss:{id}`
+键、config 五个开关、app 接线。**没**落地的（按分期，且都有硬理由）：时间线 provider
+与搜索接入留 Phase 2 —— `search.render` 不认识 `rss`，现在写文档等于让搜索结果
+指向空气；`records.py` 的 rss 分支同理；status 的摘要计数留 Phase 3。
+
+### 计划没写、实现时定的（都在代码注释里说明了理由）
+
+1. **PATCH/DELETE 用 `?url=` 查询参数，不用路径段。** 这个源的键是 URL，自带斜杠
+   和查询串，做不成路径段。其余（订阅即启用、暂停、503 门、退订保留归档）与 HN/X
+   同构。OPML 走 JSON 字段 `{opml}` 而不是裸 text body，跟本项目其它端点一致。
+2. **`parse_feed` 扔到 `asyncio.to_thread`。** feedparser 是纯 Python，100 个 feed
+   一轮会把这个进程唯一的事件循环（FastAPI + TG 监听 + HN 采样 + 判定共用）卡住。
+3. **「不是 feed」是独立错误类。** 实测确认：一个 HTML 错误页在 feedparser 里解析得
+   干干净净——**不设 bozo**、零条目。不单独判，订阅就会永远表现成「这个 feed 从不
+   发文」。判据是 `没有条目 且 没有 version`。
+4. **bozo 但有条目 → 记 `last_error`、`error_count` 保持 0。** 坏 XML 里 feedparser
+   照样能捞出条目，为一个野生 `&` 丢掉真内容是更糟的失败；它是警告不是待重试的故障。
+5. **无法成键的条目丢弃并计数**（抄 `x.py`）：`guid`/`link`/`sha256(title+published)`
+   三级全空的条目连下一轮都认不出自己，归档到「空值的哈希」下会让这类条目全部变成
+   同一条。
+6. `rss_feed_error_count` 只数**已订阅**的 feed —— 退订保留抓取状态（etag 留着，
+   重新订阅可续传），已丢掉的 feed 上的陈年错误不是读者的问题。
+
+### 实跑抓到的 bug —— 注入式单测看不见的那类
+
+**httpx 把 304 归为重定向，`raise_for_status()` 会抛。** 一轮健康轮询最常见的结果
+「没变化」因此被记成 feed 失败，几轮后每个正常 feed 都挂错误角标。单测注入了
+`fetch_feed`，天然绕过抓取器，所以只有真网络那一跑能发现。已修（304 在
+`raise_for_status` 之前返回），并补了传输层回归测试（`httpx.MockTransport`），
+连带把「5xx 必须抛」的另一半也扎住。**教训可推广：凡是可注入的 I/O 边界，注入之外
+必须另有一条真实现的测试路径。**
+
+### 实测数据（下阶段调参的基线）
+
+三个真实 feed：冷轮 0.71s / 111 条入库，热轮 0.20s / 新增 0（两个 304）。一周未读
+窗口在真数据上正是预期形状——simonw 30 条跨窗口边界、一半自动已读；reorx 51 条全是
+二月的，全部归档零未读；HN 30 条全在窗口内。**这三个 feed 里有一个（HN）既不给
+etag 也不给 last-modified**，所以「多数轮次 304 零成本」是趋势不是保证，Phase 3 估
+摘要量时别按 100% 命中算。

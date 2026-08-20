@@ -41,7 +41,7 @@ MESSAGES_OPTIONAL_FIELDS = {
 # Bumped when condenser's own table shapes change; recorded in app_meta on init so a
 # future startup can detect an upgrade and run a migration. Telememo manages its own
 # table migrations separately (init_db optional_fields / ALTER TABLE).
-SCHEMA_VERSION = 14
+SCHEMA_VERSION = 15
 
 # One-shot marker for the v14 admission backfill (see _migrate_hn_qualified_v14).
 # State, not shape: the columns can exist while the stamping has not happened.
@@ -388,6 +388,72 @@ class XFollowing(CondenserBaseModel):
         table_name = 'x_following'
 
 
+class RssFeed(CondenserBaseModel):
+    """One subscribed feed's *fetch state* (v15), keyed by its URL.
+
+    Split from the subscription row for the same reason ``x_feed_items`` is split
+    from ``x_tweets``: this half is machine state that changes every poll round
+    (validators, timestamps, a failure streak), while the subscription row is the
+    reader's decision. ``url`` is also the subscription's ``channel_id`` — what
+    the reader typed is the key, the way an X handle is (``x.py``).
+
+    ``title`` / ``site_url`` are backfilled from the first successful fetch: the
+    reader subscribes with a URL and the feed tells us its name.
+    """
+
+    url = TextField(primary_key=True)
+    title = TextField(null=True)
+    site_url = TextField(null=True)
+    # Conditional-request validators, echoed back as If-None-Match / If-Modified-Since.
+    # Most rounds are a 304 because of them, which is what makes 100 feeds cheap.
+    etag = TextField(null=True)
+    last_modified = TextField(null=True)
+    fetched_at = DateTimeField(null=True)  # last *attempt* that succeeded, 200 or 304
+    # Recorded, never acted on: a feed that 404s for a week stays subscribed, because
+    # unsubscribing on the reader's behalf loses a decision they never made.
+    last_error = TextField(null=True)
+    error_count = IntegerField(default=0)  # consecutive failures; a success clears it
+
+    class Meta:
+        table_name = 'rss_feeds'
+
+
+class RssEntry(CondenserBaseModel):
+    """One archived feed entry (v15). ``id`` is the item key's ref1 (``rss:{id}``).
+
+    A surrogate key rather than the feed's own ``guid``, because a guid is only
+    unique *within* its feed and is a string of arbitrary shape — the item triple
+    is three integers. ``(feed_url, guid)`` carries the uniqueness instead, and
+    ingest is insert-if-absent on it: an entry is archived as first seen, since RSS
+    republishing an edited item is rare enough that v1 does not chase it.
+
+    ``published_at`` is what the feed declared and is stored **verbatim**, missing
+    or absurd (some feeds publish future timestamps). Clamping it against
+    ``first_seen_at`` is a read-side concern — the provider's sort key — so the
+    archive keeps the evidence.
+    """
+
+    id = AutoField()
+    feed_url = TextField(index=True)
+    guid = TextField()
+    title = TextField(null=True)
+    link = TextField(null=True)
+    author = TextField(null=True)
+    content = TextField(null=True)  # the feed's own HTML (content:encoded, else description)
+    published_at = DateTimeField(null=True)
+    first_seen_at = DateTimeField(index=True)
+    # The LLM summary (plan §3, Phase 3), denormalized onto the entry the way
+    # hn_stories.preview is. ``summary_model`` is the model_tag contract: a model
+    # change re-summarizes rather than migrates.
+    summary = TextField(null=True)
+    summary_model = TextField(null=True)
+    summary_attempts = IntegerField(default=0)
+
+    class Meta:
+        table_name = 'rss_entries'
+        indexes = ((('feed_url', 'guid'), True),)
+
+
 CONDENSER_TABLES = [
     Subscription,
     KeywordFilter,
@@ -405,6 +471,8 @@ CONDENSER_TABLES = [
     XEmbedding,
     XAttribute,
     XFollowing,
+    RssFeed,
+    RssEntry,
 ]
 
 
@@ -1733,6 +1801,203 @@ def x_verdict_label_coverage() -> list[dict]:
             (FORYOU_FEED,),
         )
     )
+
+
+# --- subscriptions (rss) ------------------------------------------------------
+
+_RSS = Subscription.source == 'rss'
+
+
+def list_rss_subscriptions() -> list[Subscription]:
+    return list(Subscription.select().where(_RSS).order_by(Subscription.added_at.desc()))
+
+
+def get_rss_subscription(url: str) -> Optional[Subscription]:
+    return Subscription.get_or_none(_RSS & (Subscription.channel_id == url))
+
+
+def add_rss_subscription(url: str, name: Optional[str] = None) -> tuple[Subscription, bool]:
+    """Subscribe-and-enable, plus the feed's fetch-state row; a paused row is re-enabled.
+
+    The two rows are created together because a subscription with no ``rss_feeds``
+    row would poll with no validators and no place to record a failure. Returns
+    ``(sub, created)`` — HN/X's POST semantics.
+    """
+    with tdb.db.atomic():
+        sub, created = Subscription.get_or_create(
+            source='rss',
+            channel_id=url,
+            defaults={'enabled': True, 'backfill_done': False, 'added_at': _now(), 'name': name},
+        )
+        if not created and not sub.enabled:
+            Subscription.update(enabled=True).where(_RSS & (Subscription.channel_id == url)).execute()
+            sub.enabled = True
+        RssFeed.insert(url=url).on_conflict_ignore().execute()
+    return sub, created
+
+
+def update_rss_subscription(
+    url: str,
+    enabled: Optional[bool] = None,
+    config: Optional[dict] = None,
+    name: Optional[str] = None,
+) -> None:
+    fields = {}
+    if enabled is not None:
+        fields[Subscription.enabled] = enabled
+    if config is not None:
+        fields[Subscription.config] = json.dumps(config)
+    if name is not None:
+        fields[Subscription.name] = name
+    if fields:
+        Subscription.update(fields).where(_RSS & (Subscription.channel_id == url)).execute()
+
+
+def delete_rss_subscription(url: str) -> None:
+    """Unsubscribe. Archived entries **and** the feed's fetch state are intentionally
+    preserved (``delete_channel_messages``'s convention of naming what survives):
+    the entries are the reader's history, and keeping the validators means a
+    re-subscribe resumes instead of re-downloading a window it already has."""
+    Subscription.delete().where(_RSS & (Subscription.channel_id == url)).execute()
+
+
+def enabled_rss_subscriptions() -> list[Subscription]:
+    return list(
+        Subscription.select().where(_RSS & (Subscription.enabled == True)).order_by(Subscription.added_at)  # noqa: E712
+    )
+
+
+def rss_polling_active() -> bool:
+    """Whether any enabled RSS subscription exists (the polling gate)."""
+    return Subscription.select().where(_RSS & (Subscription.enabled == True)).exists()  # noqa: E712
+
+
+# --- rss feeds + entries ------------------------------------------------------
+
+
+def get_rss_feed(url: str) -> Optional[RssFeed]:
+    return RssFeed.get_or_none(RssFeed.url == url)
+
+
+def ensure_rss_feed(url: str) -> RssFeed:
+    """The feed's fetch-state row, created if it is somehow missing.
+
+    ``add_rss_subscription`` creates the pair atomically, so this only fires for a
+    row deleted underneath us — but a poll round that cannot record its failure
+    fails silently forever, which is the one outcome this source must not have.
+    """
+    RssFeed.insert(url=url).on_conflict_ignore().execute()
+    return RssFeed.get(RssFeed.url == url)
+
+
+def list_rss_feeds() -> list[RssFeed]:
+    return list(RssFeed.select())
+
+
+def record_rss_feed_success(
+    url: str,
+    at: datetime,
+    title: Optional[str] = None,
+    site_url: Optional[str] = None,
+    etag: Optional[str] = None,
+    last_modified: Optional[str] = None,
+    note: Optional[str] = None,
+) -> None:
+    """Record a round that reached the feed (200 or 304): validators, timestamp, and
+    a cleared failure streak.
+
+    ``note`` is a non-fatal complaint (malformed XML we still recovered entries
+    from) — it lands in ``last_error`` so the row can show a warning badge, while
+    ``error_count`` stays 0 because nothing needs retrying. NULL fields are left
+    alone: a 304 carries no title and must not erase the one we learned.
+    """
+    fields: dict = {RssFeed.fetched_at: at, RssFeed.last_error: note, RssFeed.error_count: 0}
+    for column, value in (
+        (RssFeed.title, title),
+        (RssFeed.site_url, site_url),
+        (RssFeed.etag, etag),
+        (RssFeed.last_modified, last_modified),
+    ):
+        if value is not None:
+            fields[column] = value
+    RssFeed.update(fields).where(RssFeed.url == url).execute()
+
+
+def record_rss_feed_error(url: str, error: str, at: datetime) -> None:
+    """Count one failed round. ``fetched_at`` is deliberately not touched — it means
+    "last time we actually saw this feed", which is what makes a stale feed visible."""
+    RssFeed.update(last_error=error, error_count=RssFeed.error_count + 1).where(RssFeed.url == url).execute()
+
+
+def existing_rss_guids(feed_url: str, guids: list[str]) -> set[str]:
+    if not guids:
+        return set()
+    known: set[str] = set()
+    for i in range(0, len(guids), 500):  # SQLite's bound-variable limit
+        chunk = guids[i : i + 500]
+        rows = RssEntry.select(RssEntry.guid).where((RssEntry.feed_url == feed_url) & (RssEntry.guid.in_(chunk)))
+        known.update(row.guid for row in rows)
+    return known
+
+
+def insert_rss_entries(rows: list[dict], read_before: Optional[datetime], now: datetime) -> int:
+    """Archive new entries and, in the same transaction, mark the old ones read.
+
+    Callers pre-filter against ``existing_rss_guids``, so the return is the number
+    archived; the unique index on ``(feed_url, guid)`` is the backstop and makes a
+    re-run a no-op rather than a duplicate.
+
+    ``read_before`` is the unread window's cutoff (None = mark nothing). Marking
+    happens here rather than in a later pass because the two writes have to be one
+    fact: an entry that is archived without its read marker is unread backlog on
+    the reader's screen the moment the transaction commits.
+    """
+    if not rows:
+        return 0
+    with tdb.db.atomic():
+        # Chunked: one INSERT binds a parameter per column per row, and a first
+        # fetch of an archive-style feed can carry hundreds of entries at once.
+        for i in range(0, len(rows), 200):
+            RssEntry.insert_many(rows[i : i + 200]).on_conflict_ignore().execute()
+        if read_before is not None:
+            by_feed: dict[str, list[str]] = {}
+            for row in rows:
+                if (row.get('published_at') or row['first_seen_at']) < read_before:
+                    by_feed.setdefault(row['feed_url'], []).append(row['guid'])
+            for feed_url, guids in by_feed.items():
+                _mark_rss_read_by_guid(feed_url, guids, now)
+    return len(rows)
+
+
+def _mark_rss_read_by_guid(feed_url: str, guids: list[str], now: datetime) -> None:
+    """Read markers for entries identified by guid — the ids were just assigned by
+    the INSERT, so they are read back rather than round-tripped through Python."""
+    stamp = now.isoformat(sep=' ', timespec='seconds')
+    for i in range(0, len(guids), 500):
+        chunk = guids[i : i + 500]
+        placeholders = ','.join('?' for _ in chunk)
+        tdb.db.execute_sql(
+            'INSERT OR IGNORE INTO read_items (source, ref1, ref2, read_at) '
+            "SELECT 'rss', id, 0, ? FROM rss_entries WHERE feed_url = ? AND guid IN "
+            f'({placeholders})',
+            (stamp, feed_url, *chunk),
+        )
+
+
+def rss_entry_count() -> int:
+    return RssEntry.select().count()
+
+
+def rss_feed_error_count() -> int:
+    """Subscribed feeds whose last round failed — the "something is broken" number
+    on status. Scoped to subscriptions on purpose: unsubscribing keeps the fetch
+    state (see ``delete_rss_subscription``), and a stale error on a feed the reader
+    dropped is not a problem they have."""
+    cur = tdb.db.execute_sql(
+        "SELECT COUNT(*) FROM rss_feeds f JOIN subscriptions s ON s.source = 'rss' AND s.channel_id = f.url "
+        'WHERE f.error_count > 0'
+    )
+    return cur.fetchone()[0]
 
 
 # --- daily cleanup (condenser/cleanup.py) -------------------------------------

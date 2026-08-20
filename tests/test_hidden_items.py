@@ -195,5 +195,5 @@ def test_hide_is_idempotent(env):
 def test_hide_invalid_key_is_422(env):
     with _client() as client:
         _login(client)
-        assert client.post('/api/hidden', json={'key': 'rss:1'}).status_code == 422
+        assert client.post('/api/hidden', json={'key': 'zz:1'}).status_code == 422
         assert client.delete('/api/hidden/garbage').status_code == 422

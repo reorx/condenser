@@ -498,7 +498,7 @@ def test_the_v14_upgrade_reproduces_the_old_visible_set_exactly(env):
 
     with _client() as client:  # re-runs init_db -> the v14 migration
         _login(client)
-        assert db.get_meta('schema_version') == '14'
+        assert db.get_meta('schema_version') == str(db.SCHEMA_VERSION)
         assert _ids(client) == before
         # The migration adds an indexed column, and getting its position in
         # init_db wrong corrupts the table while reporting something unrelated

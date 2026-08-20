@@ -23,6 +23,7 @@ dependencies = [
     # the maintained backport on 3.13+ to keep `import metadata_parser` working.
     "legacy-cgi>=2.6; python_version >= '3.13'",
     "sqlite-vec>=0.1.9",
+    "feedparser>=6.0.14",
 ]
 
 [project.optional-dependencies]

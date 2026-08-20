@@ -64,6 +64,23 @@ class Settings(BaseSettings):
     # for 732 accounts, so daily is plenty — people do not follow in bursts).
     condenser_x_following_sync_hours: int = 24
 
+    # --- rss source (condenser/rss.py) ---
+    # Master switch for the polling loop; polling itself is subscription-driven.
+    # Ships **false**, unlike every other source: RSS items go straight into the
+    # aggregate timeline, and a client that cannot render them yet draws blank rows
+    # (the X Phase 2 lesson). Turning it on in production is the last step of the
+    # plan's deploy order, after the iOS build with an RSS card is sideloaded.
+    condenser_rss_enabled: bool = False
+    condenser_rss_poll_minutes: int = 30
+    # Conditional requests make most rounds a 304, so the cost of 100 feeds is the
+    # round trips rather than the bodies; 5 at a time keeps the burst polite.
+    condenser_rss_fetch_concurrency: int = 5
+    condenser_rss_timeout: float = 20.0
+    # An entry published longer ago than this arrives already read. Importing an
+    # OPML file otherwise dumps every feed's whole retained window onto the reader
+    # as unread — the archive is still complete, only the backlog is not offered.
+    condenser_rss_unread_window_days: int = 7
+
     # --- embeddings (condenser/embedding.py) ---
     # OpenAI-compatible endpoint; the provider lives entirely in these four vars so
     # switching vendors is an env change, not a code change. With no API key the

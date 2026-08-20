@@ -13,7 +13,7 @@ from typing import Optional, Union
 
 from pydantic import BaseModel
 
-SOURCES = ('telegram', 'hn', 'x')
+SOURCES = ('telegram', 'hn', 'x', 'rss')
 
 # The X feed keys that are not account handles. They live here rather than in x.py
 # because the envelope's sort timestamp depends on which feed an item came from
@@ -32,8 +32,8 @@ def x_feed_kind(feed: Optional[str]) -> str:
 
 
 class ItemKey(BaseModel):
-    source: str  # 'telegram' | 'hn' | 'x'
-    ref1: int  # TG: channel_id, HN: story_id, X: tweet id
+    source: str  # 'telegram' | 'hn' | 'x' | 'rss'
+    ref1: int  # TG: channel_id, HN: story_id, X: tweet id, RSS: entry id
     ref2: int = 0  # TG: message_id, others: unused
 
     @property
@@ -42,6 +42,8 @@ class ItemKey(BaseModel):
             return f'tg:{self.ref1}:{self.ref2}'
         if self.source == 'x':
             return f'x:{self.ref1}'
+        if self.source == 'rss':
+            return f'rss:{self.ref1}'
         return f'hn:{self.ref1}'
 
     @property
@@ -61,6 +63,10 @@ def x_key(tweet_id: Union[int, str]) -> str:
     return f'x:{tweet_id}'
 
 
+def rss_key(entry_id: int) -> str:
+    return f'rss:{entry_id}'
+
+
 def parse_key(key: str) -> ItemKey:
     """Parse an item key string; raises ValueError on any malformed input."""
     parts = key.split(':')
@@ -70,6 +76,8 @@ def parse_key(key: str) -> ItemKey:
         return ItemKey(source='hn', ref1=int(parts[1]))
     if parts[0] == 'x' and len(parts) == 2:
         return ItemKey(source='x', ref1=int(parts[1]))
+    if parts[0] == 'rss' and len(parts) == 2:
+        return ItemKey(source='rss', ref1=int(parts[1]))
     raise ValueError(f'invalid item key: {key!r}')
 
 
