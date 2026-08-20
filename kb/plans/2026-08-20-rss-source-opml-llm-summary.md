@@ -1,0 +1,234 @@
+---
+created: 2026-08-20
+tags:
+  - rss-source
+  - multi-source
+  - llm-summary
+  - plan
+---
+
+# RSS 源 —— OPML 导入 + LLM 摘要 实施计划
+
+> 起因：在多源架构（Telegram / HN / X）上增加第四个源 RSS，支持 OPML 批量导入与
+> 手动按 URL 添加，并对文章自动生成 LLM 摘要。设计目标场景是 **100 个 feed 订阅**。
+>
+> 可行性结论（2026-08-20 头脑风暴定案）：架构上是现成的——`subscriptions` 复合主键、
+> item envelope、`SourceUnit` 联邦合并、cleanup 规则对象、attributes 的 LLM 计费围栏，
+> 每一块都有可直接照抄的先例。RSS 比 HN 和 X 都简单：标准协议、无 probe、无判定、
+> 无反爬。总量估计 4-6 个 session。
+
+## 0. 已定决策（用户拍板，不再重议）
+
+1. **摘要原料只用 feed 自带内容**，纯文本长度 > 200 字符才触发摘要；短文直接显示原文。
+   全文抓取（readability/trafilatura）**不做**，留作后续增强——这把新依赖、付费墙、
+   反爬失败面整个砍掉。
+2. **RSS 条目全部进聚合时间线**（All/Unread），与 Telegram/HN 同等地位。无 admission、
+   无 verdict。
+3. **存量条目处理**（OPML 导入与单个新订阅一视同仁）：条目**全部入库归档**；
+   `published_at` 距今**超过 7 天**的直接标已读；一周内的保持未读。**只有未读条目做
+   摘要**，且摘要按每轮 batch 上限限流逐步消化，避免导入时并发爆炸。
+4. **卡片只显摘要**（标题 + 摘要），详情抽屉/原文链接看全文；无摘要（短文、失败、
+   未开启）退化为原文截断。
+
+## 1. 数据模型（SCHEMA_VERSION 15，两张新表，纯 `create_tables` 零迁移）
+
+### 1.1 `rss_feeds` —— feed 级抓取状态
+
+| 列 | 说明 |
+|---|---|
+| `url` TEXT PK | feed URL，也是订阅的 `channel_id`（"读者输入什么就用什么作键"，X handle 先例） |
+| `title` / `site_url` | 首次成功抓取回填（X `_learn_user_identity` 先例） |
+| `etag` / `last_modified` | 条件请求凭据（`If-None-Match` / `If-Modified-Since`） |
+| `fetched_at` | 最近一次抓取（无论 200/304） |
+| `last_error` TEXT / `error_count` INT | 最近错误与连续失败计数，成功清零；只记录，不自动退订 |
+
+订阅行：`subscriptions(source='rss', channel_id=<feed url>)`。`channel_id` 是
+BareField，HN 已存字符串键，无迁移。`name` 由首次抓取回填 feed 标题，回填前前端
+显示 URL（`XSubscriptionRow` 的 `@handle` 回退先例）。
+
+### 1.2 `rss_entries` —— 条目归档
+
+| 列 | 说明 |
+|---|---|
+| `id` INTEGER PK AUTOINCREMENT | item key 的 ref1 |
+| `feed_url` TEXT | 归属 feed |
+| `guid` TEXT | 去重键，三级回退：feed 的 `<guid>`/`id` → `link` → `sha256(title + published)` |
+| `title` / `link` / `author` | 元数据 |
+| `content` TEXT | feed 自带 HTML（`content:encoded` 优先，回退 `description`/`summary`） |
+| `published_at` DATETIME | feed 声明的发布时间，可空 |
+| `first_seen_at` DATETIME | 我们首次见到的时间 |
+| `summary` TEXT / `summary_model` TEXT / `summary_attempts` INT | LLM 摘要，非规范化落在条目行（`hn_stories.preview` 先例）；`summary_model` 即 `model_tag` 契约——换模型时旧摘要重做、不迁移；`summary_attempts` 上限 3（`PREVIEW_MAX_ATTEMPTS` 先例） |
+
+唯一索引 `(feed_url, guid)`，ingest 以此幂等（insert-or-skip；RSS 条目编辑不常见，
+v1 不做 update-in-place，条目以首见版本为准）。
+
+### 1.3 item key
+
+`rss:{entry_id}` ↔ `(rss, entry_id, 0)` —— HN 的形状。read / save / hide /
+feedback（表是通用的，v1 不接 UI）/ 搜索 / 详情面板全部免费继承。唯一例外是
+**收藏快照**：`records.py` 的 `save_item`/`render_item` 按 source 分发（else 落到
+hn），需要加显式 rss 分支——快照存 envelope payload 本身（X 先例）。
+
+## 2. 抓取（`condenser/rss.py`，`RssManager`，`HNManager` 同款）
+
+- 挂 `app.state.rss`，lifespan 启停；`CONDENSER_RSS_ENABLED=false`（**默认 false**，
+  部署顺序需要，见 §7）时循环不启动、订阅端点 503（HN 先例）。
+- 轮询间隔 `CONDENSER_RSS_POLL_MINUTES`（默认 30）。每轮遍历启用订阅的 feed，
+  `asyncio.Semaphore(CONDENSER_RSS_FETCH_CONCURRENCY)`（默认 5）限并发；条件请求下
+  多数轮次 304 零成本，100 个 feed 摊在轮内对共享 asyncio loop 是零负担。
+- HTTP 经可注入的 `fetch_feed`（HN `fetch_json` 先例，测试不碰网络）；超时默认 20s。
+- 解析用 **feedparser**（唯一新增依赖，纯 Python，容错是它的本职）。RSS 2.0 / Atom /
+  RDF 都由它兜住；`bozo` 但有条目时照常入库并记 `last_error`。
+- **单 feed 失败只记 `last_error`/`error_count`，绝不沉整轮**；`_loop` 外层 catch-all
+  守护（HN Phase 1 review 教训）。
+- `kick()`：订阅/导入后立即触发一轮（`call_soon_threadsafe`，HN 先例）。
+- **排序时间戳**：`published_at`，两种情况钳到 `first_seen_at`——缺失，或超前于
+  `first_seen_at + 30min`（feed 里未来时间戳的垃圾数据不允许长期霸占时间线顶部）。
+  钳制在 provider 的 SORT SQL 层做（`COALESCE`/`MIN`），不改写归档值。
+- **入库即执行未读窗口规则**（§0.3）：新条目 `published_at`（缺失用 `first_seen_at`）
+  距今超过 `CONDENSER_RSS_UNREAD_WINDOW_DAYS`（默认 7）→ ingest 时同事务写
+  `read_items`。规则对首轮和日常轮一视同仁——日常轮里正常新文章都在窗口内，该规则
+  实际只在导入/新订阅时起作用，但不需要为"首轮"单设分支。
+- 每轮尾部挂摘要管道（§3），再更新 `app_meta` 的轮次统计（`x_*` 键先例：
+  `rss_last_poll_at`、new/error 计数）供 status 端点读取。
+
+## 3. 摘要管道（`condenser/summary.py`）
+
+跟在 `poll_once` 尾部，**不单开循环**——RSS 内容只随轮询到达，尾挂即可（
+`_fill_previews` 的位置；将来抓全文再升级成独立 worker）。
+
+- **候选**：未读（无 `read_items` 行）+ `summary IS NULL` + `summary_attempts < 3` +
+  HTML 剥离后纯文本长度 > 200 字符。新→旧排序，每轮最多
+  `CONDENSER_SUMMARY_BATCH`（默认 20）条——OPML 导入的积压（100 feeds × 一周窗口内
+  约 3 条未读 ≈ 300 条）在几小时内自然排完。
+- **计费围栏照抄 attributes 四件套**：
+  1. `CONDENSER_SUMMARY_ENABLED`（默认 true，但没有 key 等于关）
+  2. 独立 `CONDENSER_SUMMARY_API_KEY`，**不回落到 embedding/attr 的 key**——设 key
+     即是开机动作，部署代码不产生花费
+  3. 每轮 batch 硬上限
+  4. `/api/rss/status` 报待摘要计数与已花费计数
+- **一条一请求，绝不批发**（attributes 的错位教训：四个答案对五篇文章，gap 之后
+  全部错位）。
+- 模型/端点：`CONDENSER_SUMMARY_MODEL`（默认 qwen-flash 档）+
+  `CONDENSER_SUMMARY_BASE_URL`（默认 DashScope OpenAI 兼容端点），复用
+  `embedding.py` 的 OpenAI 兼容客户端形状。输入截断到
+  `CONDENSER_SUMMARY_MAX_INPUT_CHARS`(默认 8000) 字符。
+- 产出**中文摘要，2-3 句**，prompt 固定指令"无论原文语言，用中文摘要"。存入
+  `summary` + `summary_model`。
+- 失败 `summary_attempts += 1`，≤3 次后放弃，卡片永久退化为原文截断——**逐条降级**，
+  不影响其它条目（t.co 展开的 per-entry degradation 先例）。API 整体不可用时整轮
+  跳过且**不 bump attempts**（HN preview 的"新鲜负缓存不烧重试"教训的同类：不为
+  环境故障消耗条目的重试预算）。
+- 量级预估（推测值，上线后以 status 计数核实）：稳态 300-800 条/天 × ~2K token，
+  qwen-flash 档每天几分钱。
+
+## 4. 时间线（`condenser/sources/rss.py` provider）
+
+- 注册进 `items.py` 的 source 模式 + `timeline.SOURCES`。分页/游标/day 分组/未读计数/
+  `/timeline/new` 锚点全部照 `sources/hn.py` 的形状实现，anti-join `hidden_items`。
+- envelope payload `rss`：`{feed_url, feed_title, title, link, author, content,
+  summary}`。`datetime` = 钳制后的排序时间戳（§2）。
+- **聚合**：全量进入（§0.2）。`bulk_read_scope` 烧全部 RSS 未读——视图显示什么就烧
+  什么，这里视图=全部。
+- `GET /api/sources` 的 RSS 组：每 feed 一行（name/unread），100 行侧栏可滚动，
+  v1 不做折叠分组之外的特殊处理（源组折叠已有 `useCollapsedSources`）。
+
+## 5. 订阅 API + OPML（`condenser/routers/rss.py`）
+
+- `/api/sources/rss/subscriptions` CRUD，HN router 同构：POST = 建订阅 + 建/复活
+  `rss_feeds` 行 + `kick()`；重复订阅 → 复活暂停行；PATCH enable/pause；DELETE 退订
+  （保留归档，`delete_channel_messages` 的"言明保留什么"docstring 惯例）。
+  `CONDENSER_RSS_ENABLED=false` → 503。
+- `POST /api/sources/rss/opml`：body 为 OPML 文本（前端读文件后作为 text 上传）。
+  `xml.etree` 手解——只认 `outline[@xmlUrl]`，递归展开嵌套分组（分组层级丢弃，
+  v1 不做文件夹）；逐条走与单订阅相同的建订阅路径；返回
+  `{added, skipped_existing, invalid}`。导入后一次 `kick()`。
+- OPML **导出**留作后续（~20 行，v1 不做）。
+- `GET /api/rss/status`（对齐 `/api/hn/status` / `/api/x/status` 的路径惯例）：
+  `source_enabled`、feed 总数/错误 feed 数、`rss_last_poll_at`、待摘要/已摘要计数、
+  summary enabled（key 是否配置）。
+
+## 6. Web UI（`frontend/`）
+
+- 订阅页 `RssSection`（`HackerNewsSection`/`XSection` 并列）：URL 手动添加框、
+  OPML 上传按钮（`<input type=file>` 读文本 POST）、feed 行 = 标题（回退 URL）/
+  未读/暂停/退订/错误徽标（`last_error` tooltip）。
+- 侧栏 RSS 源组（`SidebarSourceGroup` 已通用，接数据即可）。
+- **`RssCard`**：feed 名 + 相对时间为 header（字母色块头像，favicon 代理留作后续）；
+  标题加粗链接原文（in-app 打开走 `openURL` 惯例）；正文 = `summary`，无摘要则
+  DOMPurify 消毒后的 `content` 截断（HN self-post 的 `lib/sanitize.ts` 先例 + 字符
+  阈值 more 展开）。摘要角落一个小标识（如「AI」微标）与原文截断作视觉区分。
+- 详情抽屉 `ItemDetailPane`：基本信息 + 消毒全文 + 链接预览（`preview.py` 通用，
+  entry 的 `link` 即 PaneTarget URL）+「打开原文」。转发走 `forward.py` 的 HN 形状
+  （标题行链原文；RSS 没有第二个讨论链接，单行即可）。
+- 乐观更新/已读/收藏/隐藏全部走既有 key 驱动 hooks（`lib/itemCaches.ts` 三处缓存
+  同步已通用）。
+
+## 7. iOS 与部署顺序 ⚠️
+
+聚合=全部 ⇒ 服务端一开闸，现装 iOS 在聚合时间线渲染**空行**（X Phase 2 教训：卡片
+dispatch 不认识的 source）。且 `git push` 即生产部署。因此：
+
+1. 服务端各阶段**随时可 push**——`CONDENSER_RSS_ENABLED` 默认 false，生产不启用
+   就没有 rss envelope，在审的 App Store 1.0.0 不受影响。
+2. iOS 补 `RssCard` + detail sheet（Kit：`RssEntry` payload 模型 + 测试；App：卡片
+   dispatch 加 rss 分支；`hnPlainText` 同类的 HTML→纯文本已有先例），`make device`
+   侧载到用户手机——单用户系统，不依赖 App Store 审核。
+3. 侧载完成后才在生产 compose 模板加 `CONDENSER_RSS_ENABLED=true` + summary key，
+   ansible 跑一遍（env 在 role 模板，hookploy 只 repin 镜像——既有运维事实），
+   然后导 OPML。
+
+## 8. 搜索 / 清理
+
+- **搜索**：`search.index_rss_entry`（title + 剥离 HTML 的 content + summary），
+  ingest 时写入；`TOKENIZER_VERSION` 不变（文档管道无 tokenizer 改动）。
+  `search.ensure_index` 的重建路径加 `_rebuild_rss`（与既有各源 rebuild 并列）。
+  退订不删归档故文档保留；被清理规则删除的条目**同事务删文档**（"删除必须三处强制"
+  的政策：这里是清理一处 + 无 rebuild 复活路径——重建只读存活行，天然一致）。
+- **清理**：`RssRetentionRule` 加入 `cleanup.DEFAULT_RULES`（规则对象即插）。X 语义
+  原样：`first_seen_at` 超过 `CONDENSER_CLEANUP_RSS_RETENTION_DAYS`（默认 30）且
+  无 read/save/hide/feedback 行 → 删；读过/收藏/隐藏永久保留。已知接受：导入时
+  标已读的存量永久保留（文本 KB 级/条，~百 MB/年 上限，接受；`cleanup/status`
+  可观测）。
+
+## 9. 测试（BDD，行为先行）
+
+新增 `tests/test_rss.py` + `tests/test_rss_summary.py` + `tests/test_rss_timeline.py`，
+fixtures 取自真实 feed 样本（RSS2.0 / Atom / 带 `content:encoded` / 无 guid /
+未来时间戳 / bozo 各一）。必须覆盖的行为：
+
+1. ingest 幂等（guid 三级回退各一例；同 guid 重推 0 新增）
+2. 一周未读窗口：旧条目入库即已读、新条目未读；窗口规则对 OPML 导入与日常轮一致
+3. 条件请求：304 轮不触碰条目；etag/last_modified 回写
+4. 单 feed 失败不沉轮、`error_count` 累积与清零
+5. 摘要：>200 字符才触发；只摘未读；batch 上限；一条一请求；失败 bump attempts、
+   API 整体故障不 bump；无 key 全程不调用（围栏）
+6. 排序钳制：缺失/未来 `published_at` 钳到 `first_seen_at`
+7. timeline：聚合含 RSS、游标翻页、`/timeline/new`、bulk-read、hidden anti-join、
+   read/save/hide 经 `rss:{id}` key 全通
+8. OPML：嵌套分组展开、坏 XML 400、重复 skip、返回计数
+9. 503 门（`CONDENSER_RSS_ENABLED=false`）
+10. 清理规则：老未读删、读过/收藏保留、搜索文档同事务删
+11. 搜索：标题/正文/摘要可搜、中文 bigram 路径复用
+
+## 10. 分期
+
+| 阶段 | 内容 | 验收 |
+|---|---|---|
+| **Phase 1** 后端 ingest | schema v15 + `RssManager` + OPML + 订阅 API + status | 真实 feed 样本端到端入库；`uv run pytest` 全绿 |
+| **Phase 2** 时间线 + Web UI | provider + 注册 + `RssSection`/`RssCard`/详情/侧栏 + 搜索接入 | 浏览器 walkthrough（截图归档 `tmp/<date>-rss-phase2/`） |
+| **Phase 3** 摘要管道 | `summary.py` + 围栏 + status 计数 + 卡片摘要展示 | 真实 DashScope 小批量端到端；限流实测 |
+| **Phase 4** iOS + 开闸 | Kit payload + `RssCard`/sheet + 侧载；生产 enable + 导 OPML + 清理规则观察 | 真机聚合时间线正常渲染；模拟器 walkthrough 归档 |
+
+每阶段独立可部署（enable 关着），plan 完成后按惯例更新根 CLAUDE.md 的模块表与
+Status 段。
+
+## 11. 明确不做（YAGNI，留作后续）
+
+- 全文抓取 + readability 抽取（摘要质量增强的第一候选）
+- favicon 头像代理（v1 字母色块）
+- OPML 导出、feed 文件夹/分组
+- 按 feed 的 `aggregate` 开关（全进聚合是决策；若 100 feed 实测淹没时间线，X 的
+  `config.aggregate` 模式是现成的退路，一个 PATCH 即可加）
+- RSS 条目的 verdict/feedback UI（表已通用，接 UI 是一次独立决策）
+- 条目编辑跟踪（update-in-place）
