@@ -17,6 +17,29 @@ tags:
 > 每一块都有可直接照抄的先例。RSS 比 HN 和 X 都简单：标准协议、无 probe、无判定、
 > 无反爬。总量估计 4-6 个 session。
 
+## 当前进度（2026-08-21）
+
+**四个阶段里三个已完成，代码全部在 master 上，但生产还没开闸。** 逐阶段的实施记录在
+§12（Phase 1）、§13（Phase 2）、§14（Phase 4 的客户端部分）。
+
+| | 状态 |
+|---|---|
+| Phase 1 后端 ingest | ✅ 2026-08-20 |
+| Phase 2 时间线 + Web UI | ✅ 2026-08-20 |
+| Phase 3 摘要管道 | ❌ 未开始（`condenser/summary.py` 不存在，config 无 `condenser_summary_*`） |
+| Phase 4 iOS + 开闸 | 🟡 客户端已完成（2026-08-21）；**侧载与开闸两步没做** |
+
+**卡在哪里、为什么**：`CONDENSER_RSS_ENABLED` 生产仍是 `false`，所以线上一条 RSS 都
+看不到。开闸的前置是**先把带 `RssCard` 的 iOS 包侧载到手机**（§7 的部署顺序）——现装的
+1.0.0 不认识 `rss` 这个 source，一开闸聚合时间线就给它画空行。剩下的两步都要人在场：
+
+1. `make device`：USB 连机侧载（Wi-Fi 对 xcodebuild 的 destination 发现不够用）。
+2. 侧载确认后：生产 compose 模板加 `CONDENSER_RSS_ENABLED=true`，ansible 跑一遍，
+   然后导 OPML（`tmp/feeds.opml`，204 个 feed）。
+
+Phase 3 与这条链路**互不阻塞**：没有摘要时卡片本来就退化为原文截断，那是计划里写好的
+降级路径。它需要的是一个独立的 `CONDENSER_SUMMARY_API_KEY`（计费围栏，设 key 即开机）。
+
 ## 0. 已定决策（用户拍板，不再重议）
 
 1. **摘要原料只用 feed 自带内容**，纯文本长度 > 200 字符才触发摘要；短文直接显示原文。
@@ -213,12 +236,12 @@ fixtures 取自真实 feed 样本（RSS2.0 / Atom / 带 `content:encoded` / 无 
 
 ## 10. 分期
 
-| 阶段 | 内容 | 验收 |
-|---|---|---|
-| **Phase 1** 后端 ingest | schema v15 + `RssManager` + OPML + 订阅 API + status | 真实 feed 样本端到端入库；`uv run pytest` 全绿 |
-| **Phase 2** 时间线 + Web UI | provider + 注册 + `RssSection`/`RssCard`/详情/侧栏 + 搜索接入 | 浏览器 walkthrough（截图归档 `tmp/<date>-rss-phase2/`） |
-| **Phase 3** 摘要管道 | `summary.py` + 围栏 + status 计数 + 卡片摘要展示 | 真实 DashScope 小批量端到端；限流实测 |
-| **Phase 4** iOS + 开闸 | Kit payload + `RssCard`/sheet + 侧载；生产 enable + 导 OPML + 清理规则观察 | 真机聚合时间线正常渲染；模拟器 walkthrough 归档 |
+| 阶段 | 内容 | 验收 | 状态 |
+|---|---|---|---|
+| **Phase 1** 后端 ingest | schema v15 + `RssManager` + OPML + 订阅 API + status | 真实 feed 样本端到端入库；`uv run pytest` 全绿 | ✅ §12 |
+| **Phase 2** 时间线 + Web UI | provider + 注册 + `RssSection`/`RssCard`/详情/侧栏 + 搜索接入 | 浏览器 walkthrough（截图归档 `tmp/<date>-rss-phase2/`） | ✅ §13 |
+| **Phase 3** 摘要管道 | `summary.py` + 围栏 + status 计数 + 卡片摘要展示 | 真实 DashScope 小批量端到端；限流实测 | ❌ 未开始 |
+| **Phase 4** iOS + 开闸 | Kit payload + `RssCard`/sheet + 侧载；生产 enable + 导 OPML + 清理规则观察 | 真机聚合时间线正常渲染；模拟器 walkthrough 归档 | 🟡 客户端 ✅ §14；侧载 + 开闸未做 |
 
 每阶段独立可部署（enable 关着），plan 完成后按惯例更新根 CLAUDE.md 的模块表与
 Status 段。
