@@ -98,6 +98,13 @@ final class ReaderSession {
         return store
     }
 
+    /// 订阅 tab push 进来的单个 RSS feed；feed key 就是 feed URL
+    func makeRssStore(feed: String) -> TimelineStore {
+        let store = TimelineStore(api: api, source: SourceID.rss, feed: feed)
+        store.onUnauthorized = onUnauthorized
+        return store
+    }
+
     /// 信源/订阅数据源；成功后落快照，冷启动先用快照渲染
     func loadSources() async {
         do {
@@ -120,6 +127,10 @@ final class ReaderSession {
 
     var xSubs: [SourceSub] {
         sources.first { $0.source == SourceID.x }?.subscriptions ?? []
+    }
+
+    var rssSubs: [SourceSub] {
+        sources.first { $0.source == SourceID.rss }?.subscriptions ?? []
     }
 
     func telegramSub(for channelID: Int) -> SourceSub? {

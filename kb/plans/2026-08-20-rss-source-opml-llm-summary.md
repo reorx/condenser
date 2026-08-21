@@ -318,3 +318,44 @@ etag 也不给 last-modified**，所以「多数轮次 304 零成本」是趋势
 不是安排的）、**未读 3 条**、搜索文档 280。那个 3 就是一周未读窗口在博客类 feed 上的
 样子——博客不是新闻源，280 条里只有 3 条是最近一周的。Phase 3 估摘要量要按这个来：
 **稳态下需要摘要的是「一周内的未读」，不是归档总量**。
+
+## 14. 阶段 4（iOS 侧）实施记录（2026-08-21）
+
+**iOS 客户端已完成，223 Kit 测试全绿（新增 24），模拟器走查跑通；生产开闸与真机侧载
+没做——两件都要人在场。** 验收物料 `tmp/2026-08-21-rss-phase4/`（可复跑，见其 README）。
+
+落地的东西：Kit 的 `RssEntry`（+`RssBody`/`RssFeed.label`）、`rssPlainText`、
+`SourceID.rss`、envelope 的 `rss` 字段；app 的 `RssCard`/`RssGlyph`、`RssDetailSheet`、
+`RssFeedTimelineScreen` + 订阅行、`makeRssStore(feed:)`、两条 debug 路由；三份 fixture
+（`timeline_page_rss` / `rss_shapes` / `sources_rss`，生成脚本 `tmp/make_ios_rss_fixtures.py`）。
+
+**§7 的第 2 步说的「Kit payload + 卡片 + sheet」就是这些；第 3 步（侧载 → 生产 enable →
+导 OPML）原样留着，顺序不能改**——现装的 1.0.0 不认识 `rss` 这个 source，一开闸聚合
+时间线就给它画空行。
+
+### 计划没写、实现时定的
+
+1. **正文在 Kit 里是 `RssBody` 两个 case（`.summary` / `.excerpt`），不是一个字符串。**
+   §0.4 只说「卡片只显摘要」，但摘要和原文截断在屏幕上长得一样，来源不跟着正文一起
+   传出去，卡片就没法标出「你读的是机器转述」。详情 sheet 两样都给，摘要在上——
+   点进来是要读文章的，不是要读它的转述。
+2. **`rssPlainText` 是新写的，不是 `hnPlainText` 的推广**，三条规则刻意相反：链接保留
+   锚文本、`<script>`/`<style>` 连内容一起丢、源码换行按空白处理（只有块级标签断行）。
+   HN 的 `text` 是能穷举的子集，RSS 收的是整个开放网络的 HTML。`<pre>` 是唯一例外，
+   整块摘出去、处理完再放回来，代码缩进才留得住。
+3. **debug 路由 `rss` 用订阅下标、`detail/rss` 要翻页。** feed key 是整个 URL，塞不进
+   路径段；而归档按时间倒序，值得看的怪例（中文长文、缺字段的）都在两百多位。
+4. **iOS 只做只读展示，不做订阅管理**——与 TG/HN/X 一致，OPML 导入留在 web。
+
+### 走查抓到的（单测看不见的那类）
+
+1. **RSS 方块用了系统 `.orange`，和 `HnGlyph` 一模一样。** 两个方块在同一条时间线上
+   前后相邻，颜色一样等于没有信源标记。改成 web 的 amber-500。**单看 RSS 卡片毫无
+   问题——只有把两个源摆在一起才会发现**，这正是走查而不是单测的职责。
+2. `detail/rss/<id>` 只查第一页，老条目永远找不到（已改成翻页）。
+
+### 下一步的两个人工动作
+
+- `make device`：USB 连机侧载（Wi-Fi 对 xcodebuild 的 destination 发现不够用）。
+- 侧载确认后：生产 compose 模板加 `CONDENSER_RSS_ENABLED=true`，ansible 跑一遍，
+  然后导 OPML（204 个 feed 那份）。Phase 3 的摘要 key 可以同期加，也可以再等。

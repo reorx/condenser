@@ -1,12 +1,13 @@
 import SwiftUI
 import CondenserKit
 
-/// 订阅项导航目标：TG 频道 → 单频道 timeline；HN / X feed → 该 feed 的 timeline。
+/// 订阅项导航目标：TG 频道 → 单频道 timeline；HN / X / RSS feed → 该 feed 的 timeline。
 /// X 的 For You 不进聚合流，这里的两级列表就是它唯一的入口。
 enum SubDestination: Hashable {
     case telegramChannel(SourceSub)
     case hnFeed(SourceSub)
     case xFeed(SourceSub)
+    case rssFeed(SourceSub)
 }
 
 /// 订阅 tab（原「频道」）：按 信源 → 订阅 两级展示（数据源 GET /api/sources）。
@@ -56,6 +57,8 @@ struct SubscriptionsScreen: View {
                 HnFeedTimelineScreen(subscription: sub)
             case .xFeed(let sub):
                 XFeedTimelineScreen(subscription: sub)
+            case .rssFeed(let sub):
+                RssFeedTimelineScreen(subscription: sub)
             }
         }
         .refreshable { await reader.loadSources() }
@@ -70,6 +73,7 @@ struct SubscriptionsScreen: View {
         switch source {
         case SourceID.hn: .hnFeed(sub)
         case SourceID.x: .xFeed(sub)
+        case SourceID.rss: .rssFeed(sub)
         default: .telegramChannel(sub)
         }
     }
@@ -86,6 +90,8 @@ struct SubscriptionsScreen: View {
                 } else {
                     XAvatarView(handle: sub.username, name: sub.name, size: 40)
                 }
+            case SourceID.rss:
+                RssGlyph(size: 40)
             default:
                 ChannelAvatarView(
                     channelID: sub.channelID.intValue,
@@ -114,13 +120,17 @@ struct SubscriptionsScreen: View {
         .padding(.vertical, 2)
     }
 
-    /// X 关注人的 name 在首次 push 学到真实显示名前是 NULL，
-    /// 这时回落 @handle 而不是画一个占位（否则会出现「@x @x」）
+    /// 两个源的名字在学到之前都是 NULL，各自回落到自己的键而不是画一个占位：
+    /// X 关注人回落 @handle（否则会出现「@x @x」），RSS feed 回落 URL。
     private func rowTitle(_ source: String, _ sub: SourceSub) -> String {
-        if source == SourceID.x {
+        switch source {
+        case SourceID.x:
             return XFeed.label(sub.channelID.description, name: sub.name)
+        case SourceID.rss:
+            return RssFeed.label(sub.channelID.description, name: sub.name)
+        default:
+            return sub.name ?? "频道 \(sub.channelID.description)"
         }
-        return sub.name ?? "频道 \(sub.channelID.description)"
     }
 
     private var emptyState: some View {
@@ -210,6 +220,35 @@ struct XFeedTimelineScreen: View {
         .onAppear {
             if store == nil {
                 store = reader.makeXStore(feed: feed)
+            }
+        }
+    }
+}
+
+/// 单个 feed 的 timeline（RSS）：feed key 就是整个 feed URL——这个源的订阅键
+/// 是读者输入的东西本身。RSS 条目全部进聚合流，所以这里是「只看这个博客」，
+/// 而不是（像 For You 那样）唯一的入口。
+struct RssFeedTimelineScreen: View {
+    let subscription: SourceSub
+
+    @Environment(ReaderSession.self) private var reader
+    @State private var store: TimelineStore?
+
+    private var feed: String { subscription.channelID.description }
+
+    var body: some View {
+        Group {
+            if let store {
+                MessageListView(store: store, emptyLabel: "这个 feed 还没有归档条目")
+            } else {
+                Color.clear
+            }
+        }
+        .navigationTitle(RssFeed.label(feed, name: subscription.name))
+        .navigationBarTitleDisplayMode(.inline)
+        .onAppear {
+            if store == nil {
+                store = reader.makeRssStore(feed: feed)
             }
         }
     }

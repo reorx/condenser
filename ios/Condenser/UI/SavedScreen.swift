@@ -2,7 +2,8 @@ import SwiftUI
 import CondenserKit
 
 /// 收藏 tab：GET /api/records 快照列表（条目为自包含 envelope——TG 带 channel、
-/// HN 带 story 快照），星标 = 取消收藏（乐观移除 + 失败回滚），点开对应详情 sheet。
+/// HN 带 story 快照，X / RSS 直接存 payload），星标 = 取消收藏（乐观移除 + 失败回滚），
+/// 点开对应详情 sheet。
 struct SavedScreen: View {
     @Environment(ReaderSession.self) private var reader
     @State private var selectedItem: TimelineItem?
@@ -69,6 +70,8 @@ struct SavedScreen: View {
                 onFeedback: { setFeedback(item, $0) },
                 onReason: { setReason(item, $0) },
                 onOpenPhoto: { openViewer(for: tweet, at: $0) })
+        } else if let entry = item.rss {
+            RssCard(item: item, entry: entry, showsUnread: false, onToggleSaved: { unsave(item) })
         }
     }
 
@@ -86,6 +89,8 @@ struct SavedScreen: View {
                 onToggleSaved: { unsave(item) },
                 onFeedback: { setFeedback(item, $0) },
                 onReason: { setReason(item, $0) })
+        } else if let entry = item.rss {
+            RssDetailSheet(item: item, entry: entry, onToggleSaved: { unsave(item) })
         }
     }
 

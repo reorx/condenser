@@ -126,6 +126,36 @@ Debug routes gained `x[/<feed>]`, `detail/x/<feed>[/<id>]` and `tab/subs/<source
 v1 spec complete; remaining polish: end-to-end
 `ASWebAuthenticationSession` verify on device, video playback (non-goal).
 
+**RSS source (Phase 6, 2026-08-21)**: the fourth source, and the smallest addition of the
+four — no verdict, no feedback, no media, so the envelope only gains `rss` (`RssEntry`)
+and nothing else in the Kit's plumbing had to move (`feed` scope, item keys, read/save,
+records all came free from the X phase). Kit: `RssEntry` (+`RssBody`, `RssFeed.label`),
+`rssPlainText`, `SourceID.rss`. App: `RssCard`/`RssGlyph`, `RssDetailSheet`,
+`RssFeedTimelineScreen` + the subs-tab row, `makeRssStore(feed:)`, debug routes
+`rss[/<index>]` and `detail/rss[/<id>]`. 223 Kit tests (+24); walkthrough
+`tmp/2026-08-21-rss-phase4/`.
+
+Three decisions worth keeping:
+
+- **The body is a two-case enum, not a string.** `RssBody.summary` vs `.excerpt` —
+  a summary is a machine's paraphrase, and a card that renders it like the author's own
+  prose is lying quietly, so the source travels with the text and the card marks it
+  (「AI 摘要」). The detail sheet shows both, summary first: you tap in to read the
+  article, not its paraphrase.
+- **`rssPlainText` is not a generalization of `hnPlainText`.** HN's `text` is a subset
+  small enough to enumerate; RSS is the open web's HTML. Three rules invert: anchor text
+  is kept (HN swaps in the href because it truncates its own link text), `<script>` /
+  `<style>` are dropped *with* their contents, and source newlines are whitespace — only
+  block tags break lines, or a formatted feed hard-wraps mid-sentence. `<pre>` is the one
+  exception, lifted out and put back after, so code keeps its indentation.
+- **The glyph is amber, not `.orange`.** `HnGlyph` is already pure orange and the two
+  squares sit adjacent in one timeline; identical colors mean no source mark at all. Only
+  the walkthrough could catch this — an RSS card on its own looks fine.
+
+⚠️ This landed **after** 1.0.0 went to review, so it rides the next build. Until a build
+with `RssCard` is on the phone, `CONDENSER_RSS_ENABLED` stays false in production: a
+shipped client that meets an unknown `source` renders a blank row (the X Phase 2 lesson).
+
 **签名与 App Store 就绪（2026-08-12）**: 发布素材已全部就位 —— AppIcon 资产目录
 （`Condenser/Assets.xcassets`，1024 单尺寸/不透明/满幅，由 `tmp/make_ios_appicon.py`
 按 PWA 同款漏斗+水滴设计生成）、`MARKETING_VERSION`/`CURRENT_PROJECT_VERSION`、

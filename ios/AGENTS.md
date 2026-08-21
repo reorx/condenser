@@ -47,6 +47,26 @@ down）都走同一个 `write(_:verdict:reason:)`，一次请求写完整条标�
 chip 行（手机上一行摆不下这些中文标签），只在「这一下确实标成了踩」时弹；已选理由只在
 `XDetailSheet` 的「反馈」行回显，卡片上不画。
 
+**RSS 信息源（Phase 6，2026-08-21）**：envelope 多了 `rss`（`RssEntry`）。这个源没有
+判定、没有反馈、没有媒体，卡片（`RssCard` + `RssGlyph`）与 sheet（`RssDetailSheet`）
+是四个源里最简单的一对，订阅行 / 单 feed 视图（`RssFeedTimelineScreen`）照 HN/X 的
+形状。四处值得记：
+
+- **feed key 是整个 feed URL**（读者输入什么就用什么作键，`RssFeed.label` 在学到标题前
+  回落成去掉 scheme 的 URL）。所以 debug 路由 `rss[/<下标>]` 用下标而不是 key——URL
+  塞不进路径段；`detail/rss[/<id>]` 则要翻页找，归档按时间倒序而想看的往往是老条目。
+- **正文是 `RssBody` 而不是一个字符串**：`.summary` / `.excerpt` 两个 case。摘要是
+  机器的转述，卡片必须标出来（「AI 摘要」微标），只传字符串就没法区分。详情 sheet
+  两样都给——摘要块在上、全文接在下面，因为点进来是要读文章的。
+- **`rssPlainText` 不是 `hnPlainText` 的推广**，三条规则刻意相反：链接保留锚文本
+  （HN 换成 href 是因为它截断显示文本）、`<script>`/`<style>` 连内容一起丢、源码换行
+  按空白处理（只有块级标签断行，否则句子会在中间硬折），`<pre>` 是唯一例外——整块
+  摘出去、处理完再放回来，代码的缩进才留得住。
+- 信源方块的底色是琥珀而不是系统 `.orange`：`HnGlyph` 已经是纯橙，两个方块在同一条
+  时间线上前后相邻，颜色一样就等于没有信源标记（走查才发现的，单看 RSS 卡片没问题）。
+
+计划见 `../kb/plans/2026-08-20-rss-source-opml-llm-summary.md`。
+
 **外链统一出口（2026-07-29）**：所有外链都过 `ExternalLink.swift` 的
 `openExternalURL(_:fallback:)`——X 的推文 / 主页链接先试 `twitter://` 深链进 X app
 （scheme 是改名前注册的，X 一直认；打不开再试一次 x.com 的 universal link），
@@ -280,12 +300,17 @@ route 取值：`tab/{timeline|subs|channels|saved}` 切 tab（channels 是订阅
 而模拟器窗口收不到合成手势：`System Events` 拿不到它的 window，`cliclick` 也就无从下手）；
 `channel/<id>` push 单频道 timeline；`hn` push HN feed timeline；
 `x[/<feed>]` push 某个 X feed（缺省第一条 X 订阅；For You 不在聚合流里，这是唯一入口）；
+`rss[/<第几个订阅>]` push 某个 RSS feed——**用下标不是 key**，这个源的 feed key 是
+整个 URL，塞不进路径段；
 `settings` 切设置 tab；
 `detail/<cid>/<mid>` / `viewer/<cid>/<mid>` 弹详情
 sheet / 全屏图片浏览器（消息须在 timeline 首页内，路由会等首屏加载完才应用）；
 `detail/x/<feed>[/<tweet id>]` 弹推文详情——X 条目单独走一次网络查，因为 For You
 根本不在 `reader.timeline.items` 里；省略 id 时挑该 feed 第一条有判定的（判定证据
 正是这个界面最值得看的部分）；
+`detail/rss[/<条目 id>]` 弹条目详情——同样单独查，而且要**翻页**（最多 8 页）：
+归档按时间倒序，值得看的怪例（中文长文、缺字段的）都排在两百多位；
+省略 id 时挑第一条有正文的；
 `forward/<item key>[/<comment>]` 直接弹转发 dialog（条目不必在首页内，只用 key，
 例如 `forward/tg:-1001:123` / `forward/hn:44123` / `forward/x:2080…`；带第 3 段
 则 1s 后自动提交——**真实转发落地目标频道**，`-` 表示不带评论，中文评论需

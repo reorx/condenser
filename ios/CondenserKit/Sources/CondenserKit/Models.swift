@@ -49,6 +49,7 @@ public enum SourceID {
     public static let telegram = "telegram"
     public static let hn = "hn"
     public static let x = "x"
+    public static let rss = "rss"
 
     /// 信源展示名（切换菜单 / 订阅分组标题）
     public static func label(_ source: String) -> String {
@@ -56,6 +57,7 @@ public enum SourceID {
         case telegram: "Telegram"
         case hn: "Hacker News"
         case x: "X"
+        case rss: "RSS"
         default: source
         }
     }
@@ -626,6 +628,128 @@ public struct XTweet: Codable, Equatable, Sendable {
     }
 }
 
+// MARK: - RSS payload
+
+/// RSS 的 feed key 就是 feed URL——读者输入什么就用什么作键。
+public enum RssFeed {
+    /// feed 展示名：抓到标题前回落 URL（去掉 scheme 与尾斜杠）。
+    /// 一屏几十个 feed 时，主机名就是区分它们的东西，`https://` 只是噪声。
+    public static func label(_ url: String, name: String?) -> String {
+        if let name, !name.isEmpty { return name }
+        var text = url
+        for scheme in ["https://", "http://"] where text.hasPrefix(scheme) {
+            text.removeFirst(scheme.count)
+        }
+        while text.hasSuffix("/") { text.removeLast() }
+        return text
+    }
+}
+
+/// 卡片正文的两种来源。两者对读者不是一回事：摘要是机器的转述，
+/// 不标出来就是在悄悄撒谎，所以来源随正文一起传出去，而不是只给一个字符串。
+public enum RssBody: Equatable, Sendable {
+    /// LLM 摘要（计划 Phase 3）
+    case summary(String)
+    /// feed 自带正文转成的纯文本
+    case excerpt(String)
+
+    public var text: String {
+        switch self {
+        case .summary(let t), .excerpt(let t): t
+        }
+    }
+
+    public var isSummary: Bool {
+        if case .summary = self { return true }
+        return false
+    }
+}
+
+/// TimelineItem 的 rss payload：一条归档的 feed 条目。
+public struct RssEntry: Codable, Equatable, Sendable {
+    public let id: Int
+    /// feed 自己的去重键（guid / id / link / 哈希），客户端只读不用
+    public let guid: String?
+    /// feed URL——这个源的订阅键，也是它的 feed 作用域
+    public let feedURL: String
+    /// feed 标题；首次成功抓取回填前为 nil
+    public let feedTitle: String?
+    public let title: String?
+    public let link: String?
+    public let author: String?
+    /// feed 自带的 HTML 正文（content:encoded，回退 description）
+    public let content: String?
+    /// LLM 摘要（计划 Phase 3）；nil = 短到不需要 / 还没写 / 已放弃
+    public let summary: String?
+    /// feed 声明的时间，未经钳制——feed 确实会发未来的时间戳
+    public let publishedAt: Date?
+    public let firstSeenAt: Date
+    /// 时间线位置：`published_at` 被钳到首见时刻的结果，等于 envelope 的 datetime。
+    /// 规则活在后端 SQL 里，所以结论随 envelope 传出来——收藏快照脱离源表回放时，
+    /// 客户端不必（也不该）再实现一遍同一条规则。
+    public let sortAt: Date?
+
+    enum CodingKeys: String, CodingKey {
+        case id, guid
+        case feedURL = "feed_url"
+        case feedTitle = "feed_title"
+        case title, link, author, content, summary
+        case publishedAt = "published_at"
+        case firstSeenAt = "first_seen_at"
+        case sortAt = "sort_at"
+    }
+
+    public init(
+        id: Int, guid: String?, feedURL: String, feedTitle: String?, title: String?,
+        link: String?, author: String?, content: String?, summary: String?,
+        publishedAt: Date?, firstSeenAt: Date, sortAt: Date?
+    ) {
+        self.id = id
+        self.guid = guid
+        self.feedURL = feedURL
+        self.feedTitle = feedTitle
+        self.title = title
+        self.link = link
+        self.author = author
+        self.content = content
+        self.summary = summary
+        self.publishedAt = publishedAt
+        self.firstSeenAt = firstSeenAt
+        self.sortAt = sortAt
+    }
+
+    public var feedLabel: String { RssFeed.label(feedURL, name: feedTitle) }
+
+    /// 标题栏文字；一个只发正文不给标题的 feed 用链接顶上
+    public var displayTitle: String {
+        if let title, !title.isEmpty { return title }
+        if let link, !link.isEmpty { return link }
+        return "(untitled)"
+    }
+
+    /// 原文入口；nil = 这条 feed 把全文发过来了，没有可指的地方
+    public var articleURL: URL? {
+        guard let link, !link.isEmpty else { return nil }
+        return URL(string: link)
+    }
+
+    /// feed 正文的纯文本，与有没有摘要无关——详情页两样都要给：
+    /// 摘要说这篇讲什么，全文才是要读的东西
+    public var contentText: String? {
+        guard let content else { return nil }
+        let text = rssPlainText(fromHTML: content)
+        return text.isEmpty ? nil : text
+    }
+
+    /// 卡片正文：有摘要就是摘要，没有才退化为 feed 正文的纯文本（计划 §0.4）
+    public var body: RssBody? {
+        if let summary, !summary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return .summary(summary)
+        }
+        return contentText.map { .excerpt($0) }
+    }
+}
+
 /// 原推链接；handle 缺失时 x.com 的 /i/status/<id> 形态照样能打开
 /// （判定证据里的近邻只有 id + handle，没有完整推文，所以这个入口是公开的）
 public func xTweetURL(id: String, handle: String?) -> URL {
@@ -686,14 +810,15 @@ public enum ItemFeedbackReason: String, Codable, Sendable, CaseIterable {
     }
 }
 
-/// 多信源条目 envelope：telegram / hn / x 恰有其一。
+/// 多信源条目 envelope：telegram / hn / x / rss 恰有其一。
 /// key 是全局唯一 item id，也是 read/save API 的出入参。
 public struct TimelineItem: Codable, Equatable, Sendable, Identifiable {
-    /// "telegram" | "hn" | "x"（未知新信源按原样携带，UI 侧忽略）
+    /// "telegram" | "hn" | "x" | "rss"（未知新信源按原样携带，UI 侧忽略）
     public let source: String
     public let key: String
     /// 排序时间：TG=消息时间，HN=首次上榜时间，
-    /// X=关注人 feed 用推文时间 / For You 用首次抓到的时间
+    /// X=关注人 feed 用推文时间 / For You 用首次抓到的时间，
+    /// RSS=feed 声明时间钳到首见时刻
     public let datetime: Date
     public var isRead: Bool
     public var isSaved: Bool
@@ -706,13 +831,14 @@ public struct TimelineItem: Codable, Equatable, Sendable, Identifiable {
     public var telegram: DisplayMessage?
     public var hn: HnStory?
     public var x: XTweet?
+    public var rss: RssEntry?
 
     enum CodingKeys: String, CodingKey {
         case source, key, datetime
         case isRead = "is_read"
         case isSaved = "is_saved"
         case feedbackReason = "feedback_reason"
-        case feedback, telegram, hn, x
+        case feedback, telegram, hn, x, rss
     }
 
     public var id: String { key }
@@ -720,7 +846,8 @@ public struct TimelineItem: Codable, Equatable, Sendable, Identifiable {
     public init(
         source: String, key: String, datetime: Date, isRead: Bool, isSaved: Bool,
         feedback: ItemFeedback? = nil, feedbackReason: ItemFeedbackReason? = nil,
-        telegram: DisplayMessage? = nil, hn: HnStory? = nil, x: XTweet? = nil
+        telegram: DisplayMessage? = nil, hn: HnStory? = nil, x: XTweet? = nil,
+        rss: RssEntry? = nil
     ) {
         self.source = source
         self.key = key
@@ -732,6 +859,7 @@ public struct TimelineItem: Codable, Equatable, Sendable, Identifiable {
         self.telegram = telegram
         self.hn = hn
         self.x = x
+        self.rss = rss
     }
 }
 
@@ -771,7 +899,8 @@ public struct TimelineNew: Codable, Equatable, Sendable {
 
 // MARK: - Sources（GET /api/sources）
 
-/// 订阅在其信源内的 id：TG 为 int 频道 id，HN 为 feed key 字符串（v1 仅 'front'）
+/// 订阅在其信源内的 id：TG 为 int 频道 id，HN 为 feed key 字符串（v1 仅 'front'），
+/// X 为 handle / 'foryou'，RSS 为整个 feed URL
 public enum SubChannelID: Codable, Equatable, Hashable, Sendable {
     case int(Int)
     case string(String)

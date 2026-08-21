@@ -2,7 +2,7 @@ import SwiftUI
 import CondenserKit
 
 /// TimelineStore 驱动的多信源列表核心：无限滚动 + 下拉刷新 + 滚动即已读 + 详情 sheet。
-/// 按 item.source 分发卡片（MessageCard / HnCard）。刷新只有两条路径：用户下拉，
+/// 按 item.source 分发卡片（MessageCard / HnCard / XCard / RssCard）。刷新只有两条路径：用户下拉，
 /// 以及冷启动 / 长时间后台回前台的静默自动更新（传了 checker 的主 timeline 才有），
 /// 后者用灰色不可点 toast 事后告知条数。前台阅读期间不做任何轮询、不弹可点提示。
 /// 频道/feed timeline 不传 checker，纯列表复用。
@@ -168,6 +168,8 @@ struct MessageListView: View {
                 onFeedback: { setFeedback(item, $0) },
                 onReason: { setReason(item, $0) },
                 onOpenPhoto: { openViewer(for: tweet, at: $0) })
+        } else if let entry = item.rss {
+            RssCard(item: item, entry: entry, onToggleSaved: { toggleSaved(item) })
         }
     }
 
@@ -185,6 +187,8 @@ struct MessageListView: View {
                 onToggleSaved: { toggleSaved(item) },
                 onFeedback: { setFeedback(item, $0) },
                 onReason: { setReason(item, $0) })
+        } else if let entry = item.rss {
+            RssDetailSheet(item: item, entry: entry, onToggleSaved: { toggleSaved(item) })
         }
     }
 

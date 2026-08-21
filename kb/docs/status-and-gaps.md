@@ -883,12 +883,35 @@ Four things worth not re-deriving, all measured rather than assumed:
   Same trap `test_x_verdict` hit on 2026-08-09.
 
 649 backend + 169 frontend green (`tests/test_rss.py` 33, `tests/test_rss_timeline.py` 21,
-`RssCard.test.tsx` 10). **No iOS change yet** — that is phase 4, and it is what gates the
-production switch. Acceptance: `tmp/2026-08-20-rss-phase1/` (real feeds end-to-end) and
+`RssCard.test.tsx` 10). Acceptance: `tmp/2026-08-20-rss-phase1/` (real feeds end-to-end) and
 `tmp/2026-08-20-rss-phase2/` (browser walkthrough over 8 real feeds + the 204-feed OPML parsed
-offline); both re-runnable, see their READMEs. Remaining: **phase 3** (the LLM summary pipeline,
-`condenser/summary.py`, fenced the way `attributes.py` is — its own API key, so deploying the
-code cannot start spending) and **phase 4** (iOS + flipping the switch).
+offline); both re-runnable, see their READMEs.
+
+**RSS 源 —— 阶段 4（iOS 客户端）** (2026-08-21, BDD; same plan, §14). The client half of the
+deploy gate above. Kit gains `RssEntry` (+`RssBody`, `RssFeed.label`), `rssPlainText` and
+`SourceID.rss`; the app gains `RssCard`/`RssGlyph`, `RssDetailSheet`, `RssFeedTimelineScreen`
+and two debug routes. Nothing else in the Kit had to move — the `feed` scope, item keys,
+read/save and records all came free from the X phase, which is what a fourth source is
+supposed to feel like. Design decisions are in `kb/docs/ios.md`; two findings worth keeping:
+
+* **The plain-text converter had to be written fresh, not generalized from `hnPlainText`.**
+  HN's `text` is a subset small enough to enumerate; a feed sends the open web's HTML. Three
+  rules invert (anchor text kept, `<script>`/`<style>` dropped with contents, source newlines
+  treated as whitespace so a formatted feed does not hard-wrap mid-sentence), with `<pre>`
+  lifted out and restored so code keeps its indentation. Reusing the HN function would have
+  printed JS source into cards and broken sentences in half.
+* **The RSS glyph shipped the same orange as `HnGlyph` and only the walkthrough caught it.**
+  The two squares sit adjacent in one timeline; identical colors mean no source mark at all.
+  An RSS card viewed alone looks perfect — this class of defect is invisible to unit tests and
+  to any check that renders one source at a time.
+
+223 Kit tests (+24, three suites) + `make build` green; backend 649 unchanged. Acceptance
+`tmp/2026-08-21-rss-phase4/` (10 simulator screenshots incl. the summary-card shape, faked by
+writing one `summary` row and reverting it — phase 3 has not run). Remaining: **phase 3** (the
+LLM summary pipeline, `condenser/summary.py`, fenced the way `attributes.py` is — its own API
+key, so deploying the code cannot start spending), and the two human steps that end phase 4 —
+`make device` sideload (USB), then `CONDENSER_RSS_ENABLED=true` in production + the OPML
+import, **in that order**.
 
 Still open: subscription
 "delete-with-messages" option (Q4 / `?purge=1`) and the backfill batch-interval sleep.

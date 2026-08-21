@@ -1,0 +1,97 @@
+[
+  {
+    "source": "hn",
+    "subscriptions": [
+      {
+        "channel_id": "front",
+        "name": "Hacker News Front Page",
+        "username": null,
+        "enabled": true,
+        "unread": 153,
+        "aggregate_unread": 153,
+        "config": {
+          "display_mode": "top20",
+          "min_score": 50,
+          "max_peak_rank": 0
+        }
+      }
+    ]
+  },
+  {
+    "source": "rss",
+    "subscriptions": [
+      {
+        "channel_id": "http://www.matrix67.com/blog/feed",
+        "name": "Matrix67: The Aha Moments",
+        "username": null,
+        "enabled": true,
+        "unread": 0,
+        "aggregate_unread": 0,
+        "config": null
+      },
+      {
+        "channel_id": "https://halfrost.com/rss/",
+        "name": "Halfrost's Field | 冰霜之地",
+        "username": null,
+        "enabled": true,
+        "unread": 0,
+        "aggregate_unread": 0,
+        "config": null
+      },
+      {
+        "channel_id": "https://panic.com/blog/feed/",
+        "name": "Panic Blog",
+        "username": null,
+        "enabled": true,
+        "unread": 0,
+        "aggregate_unread": 0,
+        "config": null
+      },
+      {
+        "channel_id": "https://matt-rickard.com/rss",
+        "name": "Matt Rickard",
+        "username": null,
+        "enabled": true,
+        "unread": 0,
+        "aggregate_unread": 0,
+        "config": null
+      },
+      {
+        "channel_id": "https://lepture.com/feed.xml",
+        "name": "Just lepture",
+        "username": null,
+        "enabled": true,
+        "unread": 0,
+        "aggregate_unread": 0,
+        "config": null
+      },
+      {
+        "channel_id": "https://acko.net/atom.xml",
+        "name": "Acko.net",
+        "username": null,
+        "enabled": true,
+        "unread": 0,
+        "aggregate_unread": 0,
+        "config": null
+      },
+      {
+        "channel_id": "http://antirez.com/rss",
+        "name": "Antirez weblog",
+        "username": null,
+        "enabled": true,
+        "unread": 0,
+        "aggregate_unread": 0,
+        "config": null
+      },
+      {
+        "channel_id": "https://sive.rs/en.atom",
+        "name": "Derek Sivers",
+        "username": null,
+        "enabled": true,
+        "unread": 0,
+        "aggregate_unread": 0,
+        "config": null
+      }
+    ]
+  }
+]

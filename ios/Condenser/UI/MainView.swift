@@ -70,6 +70,8 @@ struct MainView: View {
                 XDetailSheet(
                     item: item, tweet: tweet, onToggleSaved: {},
                     onFeedback: { _ in }, onReason: { _ in })
+            } else if let entry = item.rss {
+                RssDetailSheet(item: item, entry: entry, onToggleSaved: {})
             }
         }
         .fullScreenCover(item: $debugViewer) { item in
@@ -98,7 +100,8 @@ struct MainView: View {
     }
 
     /// 路由：tab/{timeline|subs|channels|saved} 切 tab；channel/{id} push 频道 timeline；
-    /// hn 直接 push HN feed timeline；settings 切设置 tab；detail/{cid}/{mid}、
+    /// hn 直接 push HN feed timeline；x[/feed] / rss[/下标] push 单 feed timeline；
+    /// settings 切设置 tab；detail/{cid}/{mid}、
     /// viewer/{cid}/{mid} 弹详情 sheet / 全屏图（消息须已在 timeline 首页中）。
     /// 也可 `simctl openurl booted "condenser://debug/<route>"`
     /// （需在模拟器里手动点一次 Open 确认）。
@@ -136,6 +139,13 @@ struct MainView: View {
                 selectedTab = .subscriptions
                 subscriptionsPath.append(SubDestination.xFeed(sub))
             }
+        case "rss":
+            // rss[/<第几个订阅>]：feed key 是一整个 URL，塞不进路径段，所以用下标指
+            let index = parts.dropFirst().first.flatMap(Int.init) ?? 0
+            if reader.rssSubs.indices.contains(index) {
+                selectedTab = .subscriptions
+                subscriptionsPath.append(SubDestination.rssFeed(reader.rssSubs[index]))
+            }
         case "settings":
             selectedTab = .settings
         case "detail":
@@ -145,6 +155,11 @@ struct MainView: View {
                 let feed = parts.dropFirst(2).first ?? XFeed.foryou
                 let id = parts.dropFirst(3).first
                 Task { debugDetail = await debugXItem(feed: feed, id: id, reader: reader) }
+            } else if parts.dropFirst().first == "rss" {
+                // detail/rss[/<条目 id>]：RSS 在聚合流里，但首屏未必有它
+                // （未读窗口把存量都标了已读），所以同样单独查一次
+                let id = parts.dropFirst(2).first
+                Task { debugDetail = await debugRssItem(id: id, reader: reader) }
             } else {
                 debugDetail = debugItem(parts, reader: reader)
             }
@@ -177,6 +192,23 @@ struct MainView: View {
             return page.items.first { $0.x?.id == id }
         }
         return page.items.first { $0.x?.verdict?.isFinding == true } ?? page.items.first
+    }
+
+    /// 指定 id 的条目，或第一条带正文的（正文渲染是这个界面最想看的东西）。
+    /// 按 id 找要翻页：归档按时间倒序，而值得看的往往是老条目（中文长文、缺字段的怪例）
+    private func debugRssItem(id: String?, reader: ReaderSession) async -> TimelineItem? {
+        var cursor: String?
+        for _ in 0..<8 {
+            guard let page = try? await reader.api.timeline(
+                cursor: cursor, limit: 50, source: SourceID.rss) else { return nil }
+            guard let id else {
+                return page.items.first { $0.rss?.body != nil } ?? page.items.first
+            }
+            if let hit = page.items.first(where: { $0.rss?.id == Int(id) }) { return hit }
+            guard let next = page.nextCursor else { return nil }
+            cursor = next
+        }
+        return nil
     }
 
     private func debugItem(_ parts: [String], reader: ReaderSession) -> TimelineItem? {
