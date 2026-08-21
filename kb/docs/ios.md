@@ -1,4 +1,16 @@
-## iOS app (`ios/`, monorepo)
+---
+created: 2026-08-21
+tags:
+  - ios
+  - swiftui
+  - app-store
+---
+
+# iOS app (`ios/`, monorepo)
+
+> Written as a running log while this lived inside AGENTS.md — "see the iOS section
+> above" style references mean AGENTS.md; commands and build conventions are in
+> `ios/AGENTS.md`.
 
 Native SwiftUI read-only client (spec: `kb/plans/2026-07-16-ios-reader-app.md`; device-token
 auth spec: `kb/plans/2026-07-16-mobile-client-api-device-token.md`). Pure-CLI workflow —

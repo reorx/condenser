@@ -1,4 +1,20 @@
-## Status / known gaps
+---
+created: 2026-08-21
+tags:
+  - status
+  - history
+  - changelog
+---
+
+# Status / known gaps
+
+> A dated, append-only work log: every feature landing since 2026-06, with its
+> measurements, test counts, deploy state and the traps found along the way — the
+> project's memory of *why* things are the way they are. **Chronological, oldest first:
+> read from the tail to catch up on the current state.** Entries were written while this
+> lived inside AGENTS.md, so "see the X section/row above" refers to AGENTS.md's module
+> table or the other `kb/docs/` splits (`ios.md`, `probe.md`, `database.md`,
+> `x-verdict.md`).
 
 Backend endpoints (spec C2) all exist and §7 scenarios are tested. Recently closed
 (2026-06-24): SQLite WAL, `app_meta` wiring (schema version + runtime `backfill_days`

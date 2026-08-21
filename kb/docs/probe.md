@@ -1,4 +1,13 @@
-## Local probe (`probe/`, monorepo)
+---
+created: 2026-08-21
+tags:
+  - x
+  - probe
+  - xbird
+  - launchd
+---
+
+# Local probe (`probe/`, monorepo)
 
 Independent uv package (`condenser-probe`) that runs on the user's own machine — the X
 source's fetch half, since X data only exists inside a logged-in browser session. Each

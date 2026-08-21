@@ -224,11 +224,33 @@ endpoints, the chip UI, or the reason set.
 
 ## Local probe (`probe/`, monorepo)
 
-> **Note:** The original section "Local probe (`probe/`, monorepo)" has been split into a separate file. See [Local probe (`probe/`, monorepo)](kb/docs/probe.md).
+Independent uv package (`condenser-probe`) that runs on the user's own machine — the X
+source's **fetch half**, since X data only exists inside a logged-in browser session.
+Each round: `GET probe-config` → one X read per feed through the `xbird` library →
+`POST ingest`; the server decides when the follow list re-syncs, so the probe keeps no
+schedule of its own. Configless beyond a server URL + device token; the one piece of
+local state is `SeenCache`. `watch` (APScheduler, staggered cadences) is the
+long-running mode a launchd agent keeps alive — **deploys are `launchctl kickstart`,
+not `git push`**.
+
+Details in `kb/docs/probe.md`: the xbird migration and its four kept invariants (wire
+shape, per-feed failures, all-or-nothing follow crawl, page pacing), credential
+resolution, the stale-code kickstart trap, SeenCache semantics, and the schedule. Read
+it before touching `probe/` or debugging a silent X feed.
 
 ## iOS app (`ios/`, monorepo)
 
-> **Note:** The original section "iOS app (`ios/`, monorepo)" has been split into a separate file. See [iOS app (`ios/`, monorepo)](kb/docs/ios.md).
+Native SwiftUI read-only client, pure-CLI workflow (xcodegen `project.yml` + Makefile,
+simulator via `simctl`). Two layers: `CondenserKit/` local SPM package (pure logic +
+Swift Testing) and `Condenser/` app target. Device-token auth, envelope-based
+multi-source timeline (TG / HN / X cards), scroll-to-read, saved / subscriptions /
+settings tabs, DEBUG deep-link walkthroughs. **1.0.0 submitted for App Store review
+2026-08-16** (paid USD 2.00, manual release).
+
+Details in `kb/docs/ios.md`: the phase-by-phase feature history with the design
+decisions behind each surface, and the signing / App Store 发布 record (素材、提审、
+demo server). Read it before iOS feature work; `ios/AGENTS.md` has the build commands
+and conventions; release 操作前先读私密 KB 的 ios-app-store-release.md.
 
 ## Dev
 
@@ -265,7 +287,13 @@ scripts/dev-browser-login.sh [session] [--backend URL] [--frontend URL]
 
 ## Status / known gaps
 
-> **Note:** The original section "Status / known gaps" has been split into a separate file. See [Status / known gaps](kb/docs/status-and-gaps.md).
+The dated work log lives in `kb/docs/status-and-gaps.md`: every feature landing since
+2026-06 with its measurements, test counts, deploy state and the traps found along the
+way — the project's memory of *why* things are the way they are. Chronological, oldest
+first, so **read from the tail to catch up on the current state**. Consult it when you
+need the history or evidence behind a feature (backtest numbers, deploy incidents,
+rejected designs); for "what is true right now", this file and the other `kb/docs/`
+pages are the authority.
 
 ## Documentation
 
@@ -279,6 +307,14 @@ scripts/dev-browser-login.sh [session] [--backend URL] [--frontend URL]
 - `kb/docs/x-feedback.md` — X up/down labels + down-reason chips: feedback API rules,
   web/iOS chip UX, and the reason-taxonomy decisions. Read before changing the feedback
   endpoints or `FEEDBACK_REASONS`.
+- `kb/docs/probe.md` — the local X probe: xbird invariants, credentials, SeenCache,
+  scheduling, the kickstart deploy trap. Read before touching `probe/` or debugging a
+  silent X feed.
+- `kb/docs/ios.md` — iOS feature history + signing / App Store release record. Read
+  before iOS feature work (build commands are in `ios/AGENTS.md`).
+- `kb/docs/status-and-gaps.md` — the dated work log (oldest first; read from the tail).
+  Consult for the history and evidence behind a feature: measurements, deploy
+  incidents, rejected designs.
 - `kb/docs/content-update-mechanism.md` — Read before touching ingest/sync: realtime push,
   backfill, the manual refresh / fetch-older / reset triggers, the enable toggle, and how
   fetch-older's id-anchored cursor paging works.
