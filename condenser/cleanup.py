@@ -19,6 +19,9 @@ Two structural decisions worth knowing:
   exclusive lock for as long as it takes to rewrite the file. peewee's
   connections are thread-local — which is already how every sync route handler
   reaches the database — so the worker gets its own and hands it back.
+* **Deliberately no ``kick()``.** HN's exists for "subscribe → sample now" and
+  the verdict's for "push → judge now", but no user action makes yesterday's
+  retention scan due sooner.
 
 A rule is anything with ``name``, ``enabled(settings)`` and
 ``run(now, settings) -> CleanupReport``; duck-typed because this codebase uses
