@@ -1041,6 +1041,21 @@ Remaining for RSS: **iOS 侧载仍然欠着**（`make device` 要 USB 连机）�
 
 714 backend (+2) green。
 
+**生产开闸 RSS 摘要：配上 `CONDENSER_SUMMARY_API_KEY`** (2026-08-23, ops)。上一条里
+「尚未配置」的那把 key 补齐了，`/opt/apps/condenser/.env` 从此有三把（`envops` 管道写入，
+值没落过命令行）。取的就是本地那把 DashScope key——本地 `CONDENSER_EMBEDDING_API_KEY` 与
+`CONDENSER_ATTR_API_KEY` 本来就是同一把，而 summary 的默认端点与模型
+（`dashscope…/compatible-mode/v1` + `qwen3.7-flash`）跟 attributes 完全一致，所以「用本地
+的值」在这里没有歧义。设这把 key 这个动作**本身**就是打开项目第二个按条计费的组件，围栏
+仍是设计时那套：`CONDENSER_SUMMARY_BATCH=20`（每轮上限）+ `MIN_CHARS=200`（短文自己就是
+摘要，付钱只会更差）+ 思考关闭。
+
+⚠️ **改 `.env` 本身不生效**：compose 的 `env_file` 只在**创建容器**时读进去，跑着的容器
+不会重读。所以这次是「改 env → push master」：hookploy 的流水线（`image.pin` →
+`compose.up`）重建容器，新 key 才随之进程。反过来说，任何以后只改 `.env` 而不发版的运维，
+都要自己补一次 `docker compose up -d`，否则会看着一份正确的配置文件纳闷为什么没生效。
+变量名 SSOT（deploy 仓 `env.j2`）与 `kb/docs/condenser.md` 的环境变量核对表同步更新。
+
 Still open: subscription
 "delete-with-messages" option (Q4 / `?purge=1`) and the backfill batch-interval sleep.
 Full checklist: `kb/sessions/2026-06-09-backend-remaining-work.md`.
