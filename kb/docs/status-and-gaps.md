@@ -1056,6 +1056,14 @@ Remaining for RSS: **iOS 侧载仍然欠着**（`make device` 要 USB 连机）�
 都要自己补一次 `docker compose up -d`，否则会看着一份正确的配置文件纳闷为什么没生效。
 变量名 SSOT（deploy 仓 `env.j2`）与 `kb/docs/condenser.md` 的环境变量核对表同步更新。
 
+**首轮实测**（容器 17:19:19Z 重建，启动那一轮就跑）：`summarized=11, skipped_short=1,
+failed=0, provider_error=None`，11 次 DashScope 调用全 200、约 11 秒跑完——1583 条归档里
+真正排队的只有 12 条未读候选，一轮吃干净，没碰到 batch=20 的上限（「一周未读窗口在博客类
+feed 上就是这个形状」这句在生产上兑现了）。抽查摘要 120-135 字、中文两三句，形状对。
+随后两轮（17:49、18:20）`new_entries=0 → summarized=0`，库里计数纹丝不动 11/1/0 ——
+这正是要看的那件事：**已摘要的条目不会复入，`skip:short` 哨兵也挡住了那条短文**，否则
+每轮 20 条的上限就成了每轮 20 条的账单。容器 0.18% CPU / 155MiB，公网 200。
+
 Still open: subscription
 "delete-with-messages" option (Q4 / `?purge=1`) and the backfill batch-interval sleep.
 Full checklist: `kb/sessions/2026-06-09-backend-remaining-work.md`.
