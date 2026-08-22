@@ -17,16 +17,16 @@ tags:
 > 每一块都有可直接照抄的先例。RSS 比 HN 和 X 都简单：标准协议、无 probe、无判定、
 > 无反爬。总量估计 4-6 个 session。
 
-## 当前进度（2026-08-21）
+## 当前进度（2026-08-22）
 
-**四个阶段里三个已完成，代码全部在 master 上，但生产还没开闸。** 逐阶段的实施记录在
-§12（Phase 1）、§13（Phase 2）、§14（Phase 4 的客户端部分）。
+**四个阶段的代码全部完成，生产还没开闸。** 逐阶段的实施记录在 §12（Phase 1）、
+§13（Phase 2）、§14（Phase 4 的客户端部分）、§15（Phase 3）。
 
 | | 状态 |
 |---|---|
 | Phase 1 后端 ingest | ✅ 2026-08-20 |
 | Phase 2 时间线 + Web UI | ✅ 2026-08-20 |
-| Phase 3 摘要管道 | ❌ 未开始（`condenser/summary.py` 不存在，config 无 `condenser_summary_*`） |
+| Phase 3 摘要管道 | ✅ 2026-08-22（真实 DashScope 跑通，§15） |
 | Phase 4 iOS + 开闸 | 🟡 客户端已完成（2026-08-21）；**侧载与开闸两步没做** |
 
 **卡在哪里、为什么**：`CONDENSER_RSS_ENABLED` 生产仍是 `false`，所以线上一条 RSS 都
@@ -34,11 +34,9 @@ tags:
 1.0.0 不认识 `rss` 这个 source，一开闸聚合时间线就给它画空行。剩下的两步都要人在场：
 
 1. `make device`：USB 连机侧载（Wi-Fi 对 xcodebuild 的 destination 发现不够用）。
-2. 侧载确认后：生产 compose 模板加 `CONDENSER_RSS_ENABLED=true`，ansible 跑一遍，
-   然后导 OPML（`tmp/feeds.opml`，204 个 feed）。
-
-Phase 3 与这条链路**互不阻塞**：没有摘要时卡片本来就退化为原文截断，那是计划里写好的
-降级路径。它需要的是一个独立的 `CONDENSER_SUMMARY_API_KEY`（计费围栏，设 key 即开机）。
+2. 侧载确认后：生产 compose 模板加 `CONDENSER_RSS_ENABLED=true` 与
+   `CONDENSER_SUMMARY_API_KEY=...`（后者可以晚加，没有它卡片退化为原文截断），
+   ansible 跑一遍，然后导 OPML（`tmp/feeds.opml`，204 个 feed）。
 
 ## 0. 已定决策（用户拍板，不再重议）
 
@@ -240,7 +238,7 @@ fixtures 取自真实 feed 样本（RSS2.0 / Atom / 带 `content:encoded` / 无 
 |---|---|---|---|
 | **Phase 1** 后端 ingest | schema v15 + `RssManager` + OPML + 订阅 API + status | 真实 feed 样本端到端入库；`uv run pytest` 全绿 | ✅ §12 |
 | **Phase 2** 时间线 + Web UI | provider + 注册 + `RssSection`/`RssCard`/详情/侧栏 + 搜索接入 | 浏览器 walkthrough（截图归档 `tmp/<date>-rss-phase2/`） | ✅ §13 |
-| **Phase 3** 摘要管道 | `summary.py` + 围栏 + status 计数 + 卡片摘要展示 | 真实 DashScope 小批量端到端；限流实测 | ❌ 未开始 |
+| **Phase 3** 摘要管道 | `summary.py` + 围栏 + status 计数 + 卡片摘要展示 | 真实 DashScope 小批量端到端；限流实测 | ✅ §15 |
 | **Phase 4** iOS + 开闸 | Kit payload + `RssCard`/sheet + 侧载；生产 enable + 导 OPML + 清理规则观察 | 真机聚合时间线正常渲染；模拟器 walkthrough 归档 | 🟡 客户端 ✅ §14；侧载 + 开闸未做 |
 
 每阶段独立可部署（enable 关着），plan 完成后按惯例更新根 CLAUDE.md 的模块表与
@@ -382,3 +380,64 @@ etag 也不给 last-modified**，所以「多数轮次 304 零成本」是趋势
 - `make device`：USB 连机侧载（Wi-Fi 对 xcodebuild 的 destination 发现不够用）。
 - 侧载确认后：生产 compose 模板加 `CONDENSER_RSS_ENABLED=true`，ansible 跑一遍，
   然后导 OPML（204 个 feed 那份）。Phase 3 的摘要 key 可以同期加，也可以再等。
+
+## 15. 阶段 3 实施记录（2026-08-22）
+
+**已完成，678 后端测试全绿（新增 29），真实 DashScope 端到端跑通、限流实测。**
+验收物料 `tmp/2026-08-22-rss-phase3/`（可复跑，见其 README；API key 全程走 stdin）。
+落地的东西：`condenser/summary.py`（提取纯文本 → 判长度 → 一条一请求 → 写回并重建
+搜索文档）、config 七个开关、`db.py` 的候选查询与三个写入、`RssManager` 尾挂 +
+`summarize` 注入口、`/api/rss/status` 的 `summary` 块、前端状态行第二行。
+卡片和详情抽屉的摘要展示 Phase 2 就已经建好，这一阶段是**把内容真的填进去**。
+
+### 计划没写、实现时定的
+
+1. **`summary_model` 是出处，不是重做契约。** §1.2 说照 `embedding.model_tag` 的语义
+   ——换模型就重做。那条契约存在是因为两个模型的向量不可比、两套 taxonomy 的 flag
+   含义不同；摘要两样都不是，它是个成品，下游没有任何东西拿它做比较。换模型就重写
+   等于花钱替换一段并没有错的文字。所以列里记的是「这条摘要是谁写的」，换模型只影响
+   **之后**写的那些。
+2. **「太短」这个决定要落库**（`summary_model = 'skip:short'`，`summary` 保持 NULL）。
+   长度闸门量的是剥完 HTML 的正文，而候选查询在 SQL 里只能粗筛原始 HTML 长度。一条
+   包在一堆 `<div><span>` 里的短文因此能过粗筛、过不了正文闸门——不记这个决定，它每轮
+   都占一个 batch 名额，永远占下去。真实数据里每轮都真的出现 1 条。
+3. **失败按责任归属计费。** provider 没答上来（5xx/401/429/超时/连不上）说明不了这条
+   条目的任何事：不扣重试次数，并且**当轮就停**——API 挂了，剩下 19 个请求只是 19 次
+   失败。provider 答了且拒绝了这份输入（400/413/422）才扣，扣满 3 次放弃。这是 HN
+   「新鲜的负缓存不算一次尝试」那条教训的同类。
+4. **串行，不做并发。** batch 上限已经封住了一轮的量，并发在 30 分钟的周期上只省一分钟
+   墙钟，却会毁掉上面那条「第一个没人应答就停」的规则。
+5. **只摘启用中 feed 的未读条目。** 暂停一个 feed 就是不再读它，为它的积压付费没有
+   任何依据。
+
+### 实跑抓到的 —— 注入式单测看不见的那类（Phase 1 教训的第二次兑现）
+
+**默认模型 `qwen3.7-flash` 是思考模型，而 `max_tokens` 管不住思考那半。** 第一次真实
+小批量：每条 completion 1373 token，其中 **1274 是 reasoning**，单条 9.7 秒。也就是说
+计划 §3 的四道围栏里，「输出上限」这道实际是漏的——它只挡得住答案，挡不住推理。
+
+对照实验（`probe_thinking.py`，同一篇文章四种配置）：加上 `enable_thinking: false`
+后 completion 从 1373 掉到 **56**，延迟从 9.7s 掉到 **1.0s**，四份摘要的质量看不出
+差别。已修成默认开的开关 `CONDENSER_SUMMARY_DISABLE_THINKING`——做成开关而不是写死，
+是因为这个字段是 DashScope 的，严格的 OpenAI 兼容端点可能对不认识的 body 参数直接
+400，而这个源的 provider 本来就该「改 env 就能换」。
+
+**可推广的那半**：一个可注入的边界（这里是摘要器）挡住的不只是网络，还有**这个供应商
+到底怎么收费**。围栏是不是真的围住了钱，只有真调用能回答。
+
+同一轮里这条教训还兑现了第二次，而且更直白：`run_round(settings, summarize=None)` 内部
+的闭包写 `await summarize(...)`，Python 解析到的是**外层函数那个参数**（生产里是
+`None`），不是同名的模块函数——真跑一轮全军覆没在 `'NoneType' object is not callable`。
+29 个用例一个都看不见它，因为它们**全都注入摘要器**，走的正是被填满的那个槽。已修：
+模块函数改名 `summarize_entry`，并补一条「什么都不注入、只把 `httpx.AsyncClient` 换成
+MockTransport」的用例，跑的就是生产路径。
+
+### 实测数据（开闸后估算的基线）
+
+八个真实 feed、280 条归档、batch=10 两轮：每轮恰好 10 条（pending 190 → 180），
+整轮 13.1s / 12.5s（含抓取）。19 次调用累计 `prompt 20949 / completion 1279 /
+reasoning 0`，**均摊每条约 1100 输入 + 67 输出 token**；按 flash 档估，1000 篇约
+$0.08。默认 batch 20 / 30 分钟一轮 ⇒ 一份 200 条的导入积压约 5 小时排完。
+
+一周未读窗口在博客类 feed 上只留下个位数未读（Phase 2 实测 280 条里 3 条），所以
+**稳态的摘要量是「一周内的未读」而不是归档总量**——真正的成本取决于订阅里有多少新闻源。

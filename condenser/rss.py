@@ -30,7 +30,7 @@ from xml.etree import ElementTree
 import feedparser
 import httpx
 
-from . import db, search
+from . import db, search, summary
 from .config import Settings
 
 log = logging.getLogger('condenser.rss')
@@ -213,9 +213,17 @@ def parse_opml(text: str) -> list[dict]:
 
 
 class RssManager:
-    def __init__(self, settings: Settings, fetch_feed: Optional[Callable] = None):
+    def __init__(
+        self,
+        settings: Settings,
+        fetch_feed: Optional[Callable] = None,
+        summarize: Optional[Callable] = None,
+    ):
         self.settings = settings
         self._fetch_feed = fetch_feed or self._http_fetch_feed
+        # None = summary.run_round builds the real (billed) one. Injected in tests
+        # for the same reason fetch_feed is: no test may reach the network.
+        self._summarize = summarize
         self._client: Optional[httpx.AsyncClient] = None
         self._tasks: set[asyncio.Task] = set()
         self._wake = asyncio.Event()
@@ -330,6 +338,7 @@ class RssManager:
             'feeds': len(outcomes),
             'errors': sum(1 for o in results if not o['ok']) + (len(outcomes) - len(results)),
             'new_entries': sum(o['new'] for o in results),
+            **await self._summarize_round(),
         }
         db.set_meta(LAST_POLL_META_KEY, self._now().isoformat(sep=' ', timespec='seconds'))
         db.set_meta(LAST_ERROR_META_KEY, '')
@@ -413,6 +422,24 @@ class RssManager:
         days = self.settings.condenser_rss_unread_window_days
         return now - timedelta(days=days) if days > 0 else None
 
+    async def _summarize_round(self) -> dict:
+        """Run the summary pipeline at the tail of the round (plan §3).
+
+        Guarded on its own: fetching is this source's job and summarizing is an
+        extra, so a pipeline that throws must not cost the round its ingest — by
+        this point the entries are already archived, and the meta the status
+        endpoint reads is still unwritten.
+        """
+        try:
+            stats = await summary.run_round(self.settings, summarize=self._summarize)
+        except Exception as e:  # noqa: BLE001 — an extra must not sink the round
+            log.exception('rss summary round failed')
+            return {'summarized': 0, 'summary_error': str(e)}
+        out = {'summarized': stats['summarized']}
+        if stats['provider_error']:
+            out['summary_error'] = stats['provider_error']
+        return out
+
     def _learn_feed_name(self, sub: db.Subscription, title: Optional[str]) -> None:
         """Backfill the subscription's display name from the feed's own title.
 
@@ -433,6 +460,9 @@ class RssManager:
             'feeds_enabled': sum(1 for s in subs if s.enabled),
             'feeds_error': db.rss_feed_error_count(),
             'entries_total': db.rss_entry_count(),
+            # The billed half of this source reports itself here (plan §3 fence 4):
+            # an inert pipeline and an empty backlog look the same from the timeline.
+            'summary': summary.counts(self.settings),
             'last_poll_at': db.get_meta(LAST_POLL_META_KEY),
             'last_error': db.get_meta(LAST_ERROR_META_KEY) or None,
             'last_round': json.loads(raw_round) if raw_round else None,

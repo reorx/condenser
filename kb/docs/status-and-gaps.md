@@ -913,6 +913,60 @@ key, so deploying the code cannot start spending), and the two human steps that 
 `make device` sideload (USB), then `CONDENSER_RSS_ENABLED=true` in production + the OPML
 import, **in that order**.
 
+**RSS 源 —— 阶段 3（LLM 摘要管道）** (2026-08-22, BDD; same plan, §15). `condenser/summary.py`
+turns a feed entry's own HTML into two or three Chinese sentences on the card, which is what
+makes a hundred subscriptions triageable by reading instead of clicking. The project's second
+per-item billed component, fenced like the first: a switch, its **own** `CONDENSER_SUMMARY_API_KEY`
+(no fallback to the embedding/attribute keys — setting it is the act of turning this on), a
+per-round batch cap, and counts on `/api/rss/status` + the subscriptions status line. It hangs
+off `poll_once`'s tail rather than owning a loop, and only touches **unread entries of enabled
+feeds**, one request per entry, newest first.
+
+Four things worth not re-deriving:
+
+* **The default model was a thinking model, and `max_tokens` does not bound the thinking.**
+  The first live batch spent **1274 reasoning tokens against 99 tokens of summary**, 9.7s per
+  entry. `enable_thinking: false` cuts completion tokens 24x (1373 → 56) and latency 10x, with
+  no visible quality difference across four configurations on the same article
+  (`tmp/2026-08-22-rss-phase3/probe_thinking.py`). It is a **flag**
+  (`CONDENSER_SUMMARY_DISABLE_THINKING`, default on) because the field is DashScope's and a
+  strict OpenAI-compatible endpoint may 400 on an unknown body parameter. The generalizable
+  half: an injectable boundary hides not just the network but **how the vendor bills you** —
+  whether a spend fence actually fences spend is a question only a real call answers. (Same
+  lesson as phase 1's 304, second time.)
+* **…and a third time, with the injection slot itself.** Inside `run_round(settings,
+  summarize=None)` a closure calling `summarize(...)` resolves to the enclosing function's
+  **parameter**, not the module function of the same name — so production called its own empty
+  slot and every entry died on `'NoneType' object is not callable`, while all 29 tests passed
+  because every one of them injects. Fixed by renaming the module function to
+  `summarize_entry` and adding a test that injects **nothing** and swaps
+  `httpx.AsyncClient` for a `MockTransport` — i.e. the path production actually takes.
+* **A failure is charged to whoever caused it.** A provider that never answered (5xx / 401 /
+  429 / timeout) says nothing about the entry: no retry burned, and the round *stops* — with
+  the API down the next 19 requests are 19 more failures. A provider that answered and rejected
+  the input (400 / 413 / 422) costs the entry one of its three attempts. Same shape as HN's
+  "a fresh negative cache hit is not an attempt".
+* **"Too short to summarize" has to be recorded, not recomputed.** The gate measures stripped
+  text; the candidate query can only pre-filter raw HTML length in SQL. A one-liner wrapped in
+  a lot of markup clears the cheap filter and fails the real one — without the `skip:short`
+  sentinel in `summary_model` it would occupy a batch slot every round forever. Real data hit
+  this once per round.
+* **`summary_model` is provenance, not a re-do contract** — deliberately unlike
+  `embedding.model_tag`. Vectors from two models are incomparable and two taxonomies' flags
+  mean different things; a summary is a finished artifact nothing downstream compares, so
+  re-writing one on a model change would spend money to replace text that is not wrong.
+
+Measured on 8 real feeds / 280 entries: exactly `batch` entries per round (pending 190 → 180),
+13.1s and 12.5s per round including the fetch, **~1100 input + 67 output tokens per entry** —
+roughly $0.08 per 1000 articles at flash pricing. At the default 20/round a 200-entry import
+backlog drains in ~5 hours. 678 backend (+29) + 169 frontend green; acceptance
+`tmp/2026-08-22-rss-phase3/` (live DashScope run, thinking probe, 4 walkthrough screenshots of
+real summaries), re-runnable, API key passed on stdin throughout.
+
+Remaining for RSS: the two human steps that end phase 4 — `make device` sideload (USB), then
+`CONDENSER_RSS_ENABLED=true` (+ the summary key) in production and the OPML import, **in that
+order**.
+
 Still open: subscription
 "delete-with-messages" option (Q4 / `?purge=1`) and the backfill batch-interval sleep.
 Full checklist: `kb/sessions/2026-06-09-backend-remaining-work.md`.

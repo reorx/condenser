@@ -2039,6 +2039,83 @@ def rss_feed_error_count() -> int:
     return cur.fetchone()[0]
 
 
+# --- rss summaries (condenser/summary.py) -------------------------------------
+
+# "Waiting for a summary", as SQL. One copy, shared by the pipeline's candidate
+# query and the status count, so the number the reader is shown and the work that
+# gets done cannot drift apart.
+#
+# Three of the four conditions are about not spending: an **enabled** feed (pausing
+# a feed stops it reaching the reader, so its backlog stops being something they
+# might read), **unread** (an OPML import marks everything older than a week read —
+# that backlog is archived, not offered), and a **length floor**. The floor here is
+# on the raw HTML, which is a cheap upper bound on the text: a body shorter than the
+# gate before stripping is certainly shorter after it. The exact test runs on the
+# stripped text in ``summary.run_round``, which records its answer so a
+# markup-heavy one-liner is only measured once.
+_RSS_SUMMARY_FROM = """
+    FROM rss_entries e
+    JOIN subscriptions s ON s.source = 'rss' AND s.channel_id = e.feed_url AND s.enabled = 1
+    LEFT JOIN read_items ri ON ri.source = 'rss' AND ri.ref1 = e.id AND ri.ref2 = 0
+"""
+# summary_model IS NULL covers both "never looked at" and, by its absence, every
+# decided state: a written summary, and the `skip:short` sentinel.
+_RSS_SUMMARY_WHERE = (
+    'e.summary_model IS NULL AND e.summary_attempts < ? AND ri.ref1 IS NULL '
+    'AND e.content IS NOT NULL AND LENGTH(e.content) > ?'
+)
+
+
+def rss_entries_needing_summary(limit: int, max_attempts: int, min_content_chars: int) -> list[dict]:
+    """The next entries to summarize, newest first.
+
+    Ordered by the *timeline's* position rather than by insertion, because a
+    backlog drains over hours and the order decides what the reader finds
+    summarized when they next open the app — which is the top of the list.
+    """
+    from .sources.rss import SORT_AT_SQL
+
+    cur = tdb.db.execute_sql(
+        f'SELECT e.id, e.title, e.content {_RSS_SUMMARY_FROM} WHERE {_RSS_SUMMARY_WHERE} '
+        f'ORDER BY {SORT_AT_SQL} DESC, e.id DESC LIMIT ?',
+        (max_attempts, min_content_chars, limit),
+    )
+    columns = [c[0] for c in cur.description]
+    return [dict(zip(columns, row)) for row in cur.fetchall()]
+
+
+def rss_summary_counts(max_attempts: int, min_content_chars: int) -> dict[str, int]:
+    """What ``/api/rss/status`` reports: the backlog, the spend, and the give-ups."""
+    pending = tdb.db.execute_sql(
+        f'SELECT COUNT(*) {_RSS_SUMMARY_FROM} WHERE {_RSS_SUMMARY_WHERE}', (max_attempts, min_content_chars)
+    ).fetchone()[0]
+    done = tdb.db.execute_sql('SELECT COUNT(*) FROM rss_entries WHERE summary IS NOT NULL').fetchone()[0]
+    failed = tdb.db.execute_sql(
+        'SELECT COUNT(*) FROM rss_entries WHERE summary IS NULL AND summary_attempts >= ?', (max_attempts,)
+    ).fetchone()[0]
+    return {'pending': pending, 'done': done, 'failed': failed}
+
+
+def set_rss_summary(entry_id: int, summary: str, model: str) -> None:
+    """Store a summary and what wrote it. The two are one fact — a summary whose
+    provenance is unknown cannot be told from one written by a prompt we retired."""
+    RssEntry.update(summary=summary, summary_model=model).where(RssEntry.id == entry_id).execute()
+
+
+def set_rss_summary_decision(entry_id: int, decision: str) -> None:
+    """Record a decision *not* to summarize (``summary.SKIP_SHORT``).
+
+    ``summary`` stays NULL, so the card keeps rendering the feed's own text; only
+    the pipeline is told to stop reconsidering this entry.
+    """
+    RssEntry.update(summary_model=decision).where(RssEntry.id == entry_id).execute()
+
+
+def bump_rss_summary_attempts(entry_id: int) -> None:
+    """Charge one failed attempt to this entry (``hn.bump_hn_preview_attempts``)."""
+    RssEntry.update(summary_attempts=RssEntry.summary_attempts + 1).where(RssEntry.id == entry_id).execute()
+
+
 # --- daily cleanup (condenser/cleanup.py) -------------------------------------
 
 

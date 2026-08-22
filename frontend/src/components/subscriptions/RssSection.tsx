@@ -175,17 +175,42 @@ export function RssSection() {
   );
 }
 
-/** One-line polling summary: archive size, last round, and how many feeds are broken. */
+/** Polling state on one line, the summary pipeline on the next: archive size, last
+ *  round, broken feeds — then whether the billed half is running and how far behind
+ *  it is. The second line is the only place a reader can tell "the server never had
+ *  a summary key" apart from "these entries are too short to need one". */
 function RssStatusLine({ status }: { status: RssStatus }) {
   const parts: string[] = [`${status.feeds_enabled}/${status.feeds_total} feeds`, `${status.entries_total} archived`];
   if (status.last_poll_at) parts.push(`polled ${fullDateLabel(status.last_poll_at)}`);
   else parts.push('not polled yet');
   if (status.last_round) parts.push(`+${status.last_round.new_entries} last round`);
   return (
-    <div className="border-t px-4 py-3 text-xs text-muted-foreground sm:px-5">
-      {parts.join(' · ')}
-      {status.feeds_error > 0 && <span className="text-destructive"> · {status.feeds_error} feeds failing</span>}
-      {status.last_error && <span className="text-destructive"> · {status.last_error}</span>}
+    <div className="space-y-1 border-t px-4 py-3 text-xs text-muted-foreground sm:px-5">
+      <div>
+        {parts.join(' · ')}
+        {status.feeds_error > 0 && <span className="text-destructive"> · {status.feeds_error} feeds failing</span>}
+        {status.last_error && <span className="text-destructive"> · {status.last_error}</span>}
+      </div>
+      <RssSummaryLine summary={status.summary} />
+    </div>
+  );
+}
+
+/** The summary pipeline's line: off (and what it would do), or on with its backlog. */
+function RssSummaryLine({ summary }: { summary: RssStatus['summary'] }) {
+  if (!summary.enabled) {
+    return (
+      <div>
+        AI 摘要未开启（服务端未配置 CONDENSER_SUMMARY_API_KEY）
+        {summary.pending > 0 && ` · ${summary.pending} 条未读文章可摘要`}
+      </div>
+    );
+  }
+  return (
+    <div>
+      {`AI 摘要 ${summary.model} · 已生成 ${summary.done} 条`}
+      {summary.pending > 0 && ` · 待处理 ${summary.pending} 条`}
+      {summary.failed > 0 && <span className="text-amber-600 dark:text-amber-500"> · {summary.failed} 条已放弃</span>}
     </div>
   );
 }

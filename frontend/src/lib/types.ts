@@ -379,9 +379,22 @@ export interface RssStatus {
   /** Subscribed feeds whose last round failed — the "something is broken" number. */
   feeds_error: number;
   entries_total: number;
+  /** The LLM summary pipeline (Phase 3). `enabled` is really "an API key is
+   *  configured" — the key is the on switch, so this is what tells a reader whose
+   *  cards show no summaries whether the server is inert or just up to date. */
+  summary: {
+    enabled: boolean;
+    model: string | null;
+    /** Unread entries waiting for one — reported even when disabled, since that is
+     *  the number the switch would act on. */
+    pending: number;
+    done: number;
+    /** Gave up after the attempt ceiling; those cards show source text forever. */
+    failed: number;
+  };
   last_poll_at: string | null;
   last_error: string | null;
-  last_round: { feeds: number; errors: number; new_entries: number } | null;
+  last_round: { feeds: number; errors: number; new_entries: number; summarized: number } | null;
 }
 
 /** POST /api/sources/rss/opml — an import states its whole result in three counts. */
