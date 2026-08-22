@@ -1945,8 +1945,14 @@ def record_rss_feed_success(
     from) — it lands in ``last_error`` so the row can show a warning badge, while
     ``error_count`` stays 0 because nothing needs retrying. NULL fields are left
     alone: a 304 carries no title and must not erase the one we learned.
+
+    ``last_error`` obeys that same rule, which is why clearing it takes the empty
+    string rather than None. The two are different statements: ``''`` is "I parsed
+    a document and it was clean", None is "I have no opinion" — which is exactly a
+    304, where there is no document to complain about. Writing None through erased
+    the previous round's warning on every 304 and made the badge blink (2026-08-22).
     """
-    fields: dict = {RssFeed.fetched_at: at, RssFeed.last_error: note, RssFeed.error_count: 0}
+    fields: dict = {RssFeed.fetched_at: at, RssFeed.error_count: 0}
     for column, value in (
         (RssFeed.title, title),
         (RssFeed.site_url, site_url),
@@ -1955,6 +1961,8 @@ def record_rss_feed_success(
     ):
         if value is not None:
             fields[column] = value
+    if note is not None:
+        fields[RssFeed.last_error] = note or None  # '' clears; stored as NULL, not ''
     RssFeed.update(fields).where(RssFeed.url == url).execute()
 
 

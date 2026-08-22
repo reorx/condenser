@@ -13,6 +13,24 @@ import type { RssStatus, RssSubscription } from '@/lib/types';
 
 import { RssSubscriptionRow } from './RssSubscriptionRow';
 
+/** How often the subscription list re-polls: fast while a feed still has no verdict,
+ *  slow once they all have one.
+ *
+ *  A round finishes seconds after an import and minutes after that on its own
+ *  schedule, and the fetch state each row shows (title, last fetch, error streak) is
+ *  written by that round — without the fast phase the rows sit on "waiting for the
+ *  first fetch" until the reader reloads, which reads as a feed that never ran.
+ *
+ *  "No verdict yet" is all three fields, not just `fetched_at`. A failed round leaves
+ *  `fetched_at` NULL on purpose (it means "last time we actually saw this feed"), so
+ *  a permanently broken feed used to keep the page at 5s forever — the 10 dead feeds
+ *  in a 77-feed import did exactly that on 2026-08-22. A feed paused before its first
+ *  round is the same bug through a second door: nothing will ever fetch it. */
+export function rssRefetchInterval(subs: RssSubscription[] | undefined): number {
+  const undecided = (subs ?? []).some((s) => s.enabled && !s.fetched_at && s.error_count === 0);
+  return undecided ? 5_000 : 60_000;
+}
+
 /** The RSS tab on the Subscriptions page: add a feed by URL, bulk-import an OPML
  *  export, pause or drop a feed, and see whether polling is actually running.
  *
@@ -22,18 +40,12 @@ import { RssSubscriptionRow } from './RssSubscriptionRow';
 export function RssSection() {
   const qc = useQueryClient();
   const { data: status } = useQuery({ queryKey: ['rss-status'], queryFn: api.rssStatus, refetchInterval: 60_000 });
-  // Both queries poll: a round finishes seconds after an import and minutes after
-  // that on its own schedule, and the fetch state each row shows (title, last fetch,
-  // error streak) is written by that round. Without this the rows sit on "waiting for
-  // the first fetch" until the reader reloads — which reads as a feed that never ran.
-  //
-  // Fast while any feed has never been fetched, slow once they all have: right after
-  // an import that is the whole list and the answer arrives within seconds, and the
-  // condition ends itself — a feed only lacks `fetched_at` until its first round.
+  // Both queries poll — the status line and the rows are both written by a round
+  // that lands after the page is already open (see rssRefetchInterval).
   const { data: subs, isPending } = useQuery({
     queryKey: ['rss-subscriptions'],
     queryFn: api.listRssSubscriptions,
-    refetchInterval: (query) => ((query.state.data ?? []).some((s) => !s.fetched_at) ? 5_000 : 60_000),
+    refetchInterval: (query) => rssRefetchInterval(query.state.data),
   });
   const [url, setUrl] = useState('');
   const [pendingDelete, setPendingDelete] = useState<RssSubscription | null>(null);

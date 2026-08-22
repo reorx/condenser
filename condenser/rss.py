@@ -376,7 +376,11 @@ class RssManager:
                 site_url=parsed.site_url,
                 etag=result.etag,
                 last_modified=result.last_modified,
-                note=parsed.warning,
+                # '' rather than None when the document parsed clean: this round
+                # *looked*, so it may clear a previous round's warning. The 304
+                # branch above deliberately passes nothing — it read no document,
+                # so it has nothing to say about one (db.record_rss_feed_success).
+                note=parsed.warning or '',
             )
             self._learn_feed_name(sub, parsed.title)
             return {'ok': True, 'new': new}

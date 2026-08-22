@@ -45,6 +45,13 @@ def feed_xml(items_xml: str, title: str = 'Synthetic') -> bytes:
     ).encode()
 
 
+# Unescaped ampersand + no closing tags: feedparser sets ``bozo`` and still recovers
+# the item. The warning path's fixture.
+BROKEN_FEED = (
+    b'<rss version="2.0"><channel><title>Broken</title><item><title>A & B</title><link>https://e.com/1</link></item>'
+)
+
+
 class FakeFetch:
     """url -> body bytes (or an Exception to raise, or None for a 304). Records calls.
 
@@ -393,11 +400,7 @@ def test_a_malformed_but_readable_feed_is_ingested_and_flagged(rss_env):
     """feedparser recovers entries from broken XML. Dropping them would lose real
     content over a stray ampersand, so they are archived *and* the error is recorded."""
     fetch = FakeFetch()
-    fetch.set(
-        'https://example.com/f.xml',
-        b'<rss version="2.0"><channel><title>Broken</title>'
-        b'<item><title>A & B</title><link>https://e.com/1</link></item>',
-    )
+    fetch.set('https://example.com/f.xml', BROKEN_FEED)
     mgr = make_manager(fetch)
     db.add_rss_subscription('https://example.com/f.xml')
 
@@ -407,6 +410,45 @@ def test_a_malformed_but_readable_feed_is_ingested_and_flagged(rss_env):
     feed = db.get_rss_feed('https://example.com/f.xml')
     assert feed.last_error is not None
     assert feed.error_count == 0  # readable is not failed: the next round is not a retry
+
+
+def test_a_304_round_keeps_the_warning_the_last_document_earned(rss_env):
+    """304 means "the document did not change" — so a complaint *about* that document
+    must not change either. It used to: the 304 branch passes no ``note`` and the note
+    was written unconditionally, so every other round cleared the badge and the reader
+    saw it blink. A warning that goes away on its own is not a warning."""
+    url = 'https://example.com/f.xml'
+    fetch = FakeFetch()
+    fetch.set(url, BROKEN_FEED, etag='"abc"')
+    mgr = make_manager(fetch)
+    db.add_rss_subscription(url)
+    asyncio.run(mgr.poll_once())
+    warning = db.get_rss_feed(url).last_error
+    assert warning
+
+    fetch.set(url, None, etag='"abc"')  # 304
+    asyncio.run(mgr.poll_once())
+
+    feed = db.get_rss_feed(url)
+    assert feed.last_error == warning
+    assert feed.fetched_at == NOW  # still a successful check
+
+
+def test_a_feed_that_fixes_its_xml_loses_the_warning(rss_env):
+    """The other half of the rule above: a *new* document that parses clean clears the
+    complaint. Without this the fix would make the warning permanent instead."""
+    url = 'https://example.com/f.xml'
+    fetch = FakeFetch()
+    fetch.set(url, BROKEN_FEED)
+    mgr = make_manager(fetch)
+    db.add_rss_subscription(url)
+    asyncio.run(mgr.poll_once())
+    assert db.get_rss_feed(url).last_error
+
+    fetch.set(url, feed_xml('<item><title>Fixed</title><link>https://e.com/2</link></item>'))
+    asyncio.run(mgr.poll_once())
+
+    assert not db.get_rss_feed(url).last_error
 
 
 def test_a_response_that_is_not_a_feed_is_an_error(rss_env):
