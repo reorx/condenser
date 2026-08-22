@@ -7,6 +7,7 @@ import { ChannelFilter } from '@/components/ChannelFilter';
 import { CalendarPopover } from '@/components/CalendarPopover';
 import { HnFeedRulesMenu } from '@/components/HnFeedRulesMenu';
 import { HnGlyph } from '@/components/HnGlyph';
+import { RssGlyph } from '@/components/RssGlyph';
 import { IconBadge, PageHeader } from '@/components/PageHeader';
 import { Timeline } from '@/components/timeline/Timeline';
 import { Button } from '@/components/ui/button';
@@ -20,7 +21,7 @@ import { useSources } from '@/hooks/useSources';
 import { useChannelLabels, useSubscriptions } from '@/hooks/useSubscriptions';
 import { useTimeline } from '@/hooks/useTimeline';
 import { channelName } from '@/lib/format';
-import { isSource, isXSyntheticFeed, sourceLabel, sourceSubLabel } from '@/lib/sources';
+import { isSource, isXSyntheticFeed, rssFeedLabel, sourceLabel, subRowLabel } from '@/lib/sources';
 import type { TimelineItem } from '@/lib/types';
 import { cn } from '@/lib/utils';
 
@@ -29,8 +30,9 @@ export function TimelineView() {
   const [sp, setSp] = useSearchParams();
   const cid = channelId ? Number(channelId) : undefined;
   const source = isSource(sourceParam) ? sourceParam : undefined;
-  // Only X has more than one feed today; the route segment is ignored elsewhere.
-  const feed = source === 'x' ? feedParam : undefined;
+  // X and RSS are the multi-feed sources; the route segment is ignored elsewhere.
+  // RSS keys on the feed URL, which React Router hands back already decoded.
+  const feed = source === 'x' || source === 'rss' ? feedParam : undefined;
   // Channel + source views are "scoped": they show everything unless "?unread=1"
   // narrows them. The aggregate view defaults to Unread ("/"); "?all=1" shows all.
   const scoped = cid != null || source != null;
@@ -55,8 +57,10 @@ export function TimelineView() {
         : `Channel ${cid}`
       : feed
         ? feedSub
-          ? sourceSubLabel(feedSub)
-          : `@${feed}`
+          ? subRowLabel(source!, feedSub)
+          : source === 'rss'
+            ? rssFeedLabel(feed)
+            : `@${feed}`
         : source
           ? sourceLabel(source)
           : unreadOnly
@@ -95,9 +99,9 @@ export function TimelineView() {
 
   // Per-channel view re-pulls that one channel synchronously; the All/Unread view fans the
   // refresh out across every enabled channel in the background. HN has no manual pull —
-  // the sampling loop is the only ingest — and X is push-only (the local probe decides
-  // when data arrives), so both hide the button.
-  const showRefresh = source !== 'hn' && source !== 'x';
+  // the sampling loop is the only ingest — X is push-only (the local probe decides when
+  // data arrives), and RSS polls on its own schedule, so all three hide the button.
+  const showRefresh = source !== 'hn' && source !== 'x' && source !== 'rss';
   const refreshing = cid != null ? refreshChannel.isPending : refreshAll.isPending;
   const onRefresh = () => (cid != null ? refreshChannel.mutate(cid) : refreshAll.mutate());
 
@@ -124,6 +128,8 @@ export function TimelineView() {
       <XGlyph className="size-9 rounded-full text-base" />
     ) : source === 'hn' ? (
       <HnGlyph className="size-9 rounded-full text-base" />
+    ) : source === 'rss' ? (
+      <RssGlyph className="size-9 rounded-full text-base" />
     ) : source === 'telegram' ? (
       <IconBadge icon={<Send className="size-5" />} />
     ) : (

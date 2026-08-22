@@ -13,7 +13,8 @@ from telememo import db as tdb
 from telememo.utils import group_messages_to_display
 
 from . import db
-from .items import ItemKey, hn_envelope, hn_payload, tg_envelope, x_envelope, x_payload
+from .items import ItemKey, hn_envelope, hn_payload, rss_envelope, rss_payload, tg_envelope, x_envelope, x_payload
+from .sources import rss as rss_source
 from .sources import x as x_source
 
 _MSG_COLS = """
@@ -79,6 +80,14 @@ def save_item(key: ItemKey) -> bool:
         # record replays without x_tweets / x_feed_items
         db.add_saved_item('x', key.ref1, 0, x_payload(row))
         return True
+    if key.source == 'rss':
+        row = rss_source.get_row(key.ref1)
+        if row is None:
+            return False
+        # Like X's, the snapshot *is* the envelope payload — including the computed
+        # sort timestamp, which no longer exists once the entry row is gone.
+        db.add_saved_item('rss', key.ref1, 0, rss_payload(row))
+        return True
     story = db.get_hn_story(key.ref1)
     if story is None:
         return False
@@ -125,6 +134,8 @@ def render_item(
     if rec.source == 'x':
         verdict, reason = (feedback or {}).get(triple, (None, None))
         return x_envelope(json.loads(rec.raw_data), is_read, True, verdict, reason)
+    if rec.source == 'rss':
+        return rss_envelope(json.loads(rec.raw_data), is_read, True)
     return hn_envelope(json.loads(rec.raw_data), is_read, True)
 
 

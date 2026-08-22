@@ -22,7 +22,7 @@ import asyncio
 import json
 import os
 import threading
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from telememo import db as tdb
 
@@ -48,25 +48,25 @@ def make_manager(rules=None, now=NOW, **kwargs) -> cleanup.CleanupManager:
     return mgr
 
 
-def tweet(tweet_id: int, *, days_ago: float = 30, quote_of=None, text='hello') -> None:
+def tweet(tweet_id: int, *, days_ago: float = 30, quote_of=None, text='hello', now=NOW) -> None:
     db.XTweet.create(
         id=tweet_id,
         author_handle='someone',
         text=text,
         quote_of=quote_of,
-        created_at=NOW - timedelta(days=days_ago),
-        fetched_at=NOW - timedelta(days=days_ago),
+        created_at=now - timedelta(days=days_ago),
+        fetched_at=now - timedelta(days=days_ago),
     )
 
 
-def feed_row(tweet_id: int, *, feed='foryou', days_ago: float = 30) -> None:
-    db.XFeedItem.create(channel_id=feed, tweet_id=tweet_id, first_seen_at=NOW - timedelta(days=days_ago))
+def feed_row(tweet_id: int, *, feed='foryou', days_ago: float = 30, now=NOW) -> None:
+    db.XFeedItem.create(channel_id=feed, tweet_id=tweet_id, first_seen_at=now - timedelta(days=days_ago))
 
 
-def archived(tweet_id: int, *, days_ago: float = 30, feed='foryou', **kwargs) -> None:
+def archived(tweet_id: int, *, days_ago: float = 30, feed='foryou', now=NOW, **kwargs) -> None:
     """A tweet as it exists after ingest: a body plus one feed appearance."""
-    tweet(tweet_id, days_ago=days_ago, **kwargs)
-    feed_row(tweet_id, feed=feed, days_ago=days_ago)
+    tweet(tweet_id, days_ago=days_ago, now=now, **kwargs)
+    feed_row(tweet_id, feed=feed, days_ago=days_ago, now=now)
 
 
 def mark_read(tweet_id: int) -> None:
@@ -696,7 +696,10 @@ def test_status_before_any_round_says_so(env, monkeypatch):
 
     assert status['last_run_at'] is None
     assert status['last_report'] is None
-    assert status['rules'] == [{'rule': 'x_retention', 'enabled': True}]
+    assert status['rules'] == [
+        {'rule': 'x_retention', 'enabled': True},
+        {'rule': 'rss_retention', 'enabled': True},
+    ]
 
 
 def test_the_endpoint_distinguishes_ran_from_deleted_nothing(env, monkeypatch):
@@ -709,7 +712,10 @@ def test_the_endpoint_distinguishes_ran_from_deleted_nothing(env, monkeypatch):
     from condenser.app import create_app
 
     setup_db(monkeypatch)
-    archived(101, days_ago=2)  # too young to touch
+    # Seeded against the real clock, not the module's fixed NOW: this test boots the
+    # real app, whose startup round runs at wall time — anchored to NOW the fixture
+    # crosses the 15-day retention window as the calendar advances (rotted 2026-08-21).
+    archived(101, days_ago=2, now=datetime.now(timezone.utc).replace(tzinfo=None))
     with TestClient(create_app()) as client:
         client.post('/api/auth/login', json={'password': 'pw'})
         status = client.get('/api/cleanup/status').json()

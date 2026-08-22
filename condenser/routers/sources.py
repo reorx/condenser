@@ -15,6 +15,7 @@ from telememo import db as tdb
 from .. import db, x
 from ..auth import require_auth
 from ..sources import hn as hn_source
+from ..sources import rss as rss_source
 from ..sources import telegram as tg_source
 from ..sources import x as x_source
 
@@ -87,7 +88,31 @@ def _x_entries(subs: list[db.Subscription]) -> list[dict]:
     return out
 
 
-_ENTRY_BUILDERS = {'telegram': _telegram_entries, 'hn': _hn_entries, 'x': _x_entries}
+def _rss_entries(subs: list[db.Subscription]) -> list[dict]:
+    counts = rss_source.unread_counts()
+    feeds = {f.url: f for f in db.list_rss_feeds()}
+    out = []
+    for s in subs:
+        feed = feeds.get(s.channel_id)
+        out.append(
+            {
+                # The feed's URL: this source keys on what the reader typed.
+                'channel_id': s.channel_id,
+                # NULL until the first successful fetch teaches us the feed's title;
+                # the client falls back to the URL rather than a placeholder.
+                'name': s.name or (feed.title if feed else None),
+                'username': None,
+                'enabled': bool(s.enabled),
+                # Every subscribed feed is in the aggregate, so the two agree.
+                'unread': counts.get(s.channel_id, 0) if s.enabled else 0,
+                'aggregate_unread': counts.get(s.channel_id, 0) if s.enabled else 0,
+                'config': json.loads(s.config) if s.config else None,
+            }
+        )
+    return out
+
+
+_ENTRY_BUILDERS = {'telegram': _telegram_entries, 'hn': _hn_entries, 'x': _x_entries, 'rss': _rss_entries}
 
 
 @router.get('/sources')
@@ -98,7 +123,7 @@ def list_sources():
         by_source.setdefault(s.source, []).append(s)
 
     out = []
-    for source in ('telegram', 'hn', 'x'):  # fixed display order
+    for source in ('telegram', 'hn', 'x', 'rss'):  # fixed display order
         rows = by_source.get(source)
         if not rows:
             continue

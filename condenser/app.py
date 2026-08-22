@@ -22,6 +22,7 @@ from .routers import (
     messages,
     preview,
     reading,
+    rss,
     search,
     settings as settings_router,
     sources,
@@ -29,6 +30,7 @@ from .routers import (
     tg,
     x,
 )
+from .rss import RssManager
 from .tg import TgManager
 from .verdict import VerdictManager
 
@@ -66,6 +68,9 @@ def create_app() -> FastAPI:
         # hn sampling loop (no-ops until an hn subscription exists)
         app.state.hn = HNManager(settings)
         await app.state.hn.startup()
+        # rss polling loop (no-ops until an rss subscription exists; ships disabled)
+        app.state.rss = RssManager(settings)
+        await app.state.rss.startup()
         # For You verdicts; inert until labels exist (and until an embedding key does)
         app.state.verdict = VerdictManager(settings)
         await app.state.verdict.startup()
@@ -75,6 +80,7 @@ def create_app() -> FastAPI:
         yield
         await app.state.cleanup.shutdown()
         await app.state.verdict.shutdown()
+        await app.state.rss.shutdown()
         await app.state.hn.shutdown()
         await app.state.tg.shutdown()
         db.close_db()
@@ -96,6 +102,7 @@ def create_app() -> FastAPI:
     app.include_router(settings_router.router)
     app.include_router(hn.router)
     app.include_router(x.router)
+    app.include_router(rss.router)
     app.include_router(sources.router)
     app.include_router(cleanup.router)
     app.include_router(search.router)

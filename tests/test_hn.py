@@ -193,7 +193,7 @@ def test_add_subscription_coerces_str_channel_id(env):
 def test_fresh_db_records_schema_version(env):
     db.init_db(os.environ['CONDENSER_DB_PATH'])
     assert db.get_meta('schema_version') == str(db.SCHEMA_VERSION)
-    assert db.SCHEMA_VERSION == 14
+    assert db.SCHEMA_VERSION == 15
 
 
 def test_hn_stories_table_migrates_to_v5(env):

@@ -23,6 +23,7 @@ def env(tmp_path, monkeypatch):
     # the verdict/attribute tests opt back in explicitly (with injected fakes).
     monkeypatch.setenv('CONDENSER_EMBEDDING_API_KEY', '')
     monkeypatch.setenv('CONDENSER_ATTR_API_KEY', '')
+    monkeypatch.setenv('CONDENSER_SUMMARY_API_KEY', '')
     from condenser.config import get_settings
 
     get_settings.cache_clear()

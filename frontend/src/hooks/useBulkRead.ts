@@ -31,22 +31,24 @@ function coversSub(args: BulkReadArgs, source: string, sub: SourceSub): boolean 
   return true;
 }
 
+/** Does this sweep cover the given timeline item? Mirrors the server's scope. */
+export function itemInSweep(args: BulkReadArgs, it: TimelineItem): boolean {
+  const sourceMatch = !args.source || it.source === args.source;
+  const channelMatch = args.channel_id == null || it.telegram?.channel_id === args.channel_id;
+  // Each multi-feed source names its feed on its own payload: X by feed key, RSS by feed URL.
+  const feedMatch = !args.feed || it.x?.feed === args.feed || it.rss?.feed_url === args.feed;
+  const dateMatch = !args.before_date || it.datetime.slice(0, 10) < args.before_date;
+  return sourceMatch && channelMatch && feedMatch && dateMatch;
+}
+
 function sweepTimelineRead(qc: QueryClient, args: BulkReadArgs): void {
-  const channelId = args.channel_id ?? null;
-  const beforeDate = args.before_date ?? null;
   qc.setQueriesData<{ pages: TimelinePage[]; pageParams: unknown[] }>({ queryKey: ['timeline'] }, (data) => {
     if (!data) return data;
     return {
       ...data,
       pages: data.pages.map((page) => ({
         ...page,
-        items: page.items.map((it: TimelineItem) => {
-          const sourceMatch = !args.source || it.source === args.source;
-          const channelMatch = channelId == null || it.telegram?.channel_id === channelId;
-          const feedMatch = !args.feed || it.x?.feed === args.feed;
-          const dateMatch = !beforeDate || it.datetime.slice(0, 10) < beforeDate;
-          return sourceMatch && channelMatch && feedMatch && dateMatch ? { ...it, is_read: true } : it;
-        }),
+        items: page.items.map((it: TimelineItem) => (itemInSweep(args, it) ? { ...it, is_read: true } : it)),
       })),
     };
   });

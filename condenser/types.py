@@ -96,6 +96,31 @@ class XFollowingBody(BaseModel):
     users: list[Any]
 
 
+class RssSubscribeBody(BaseModel):
+    """A feed URL, plus an optional reader-chosen name (else the feed's own title)."""
+
+    url: str
+    name: Optional[str] = None
+
+
+class RssSubscriptionPatch(BaseModel):
+    """Partial update; None = leave unchanged."""
+
+    enabled: Optional[bool] = None
+    config: Optional[dict] = None
+
+
+class RssOpmlBody(BaseModel):
+    """An OPML document as text — the client reads the file and posts its contents.
+
+    A JSON field rather than a raw ``text/xml`` body, so the import goes through
+    the same authenticated JSON path as every other endpoint here; the XML is
+    parsed by ``rss.parse_opml``, never by the request layer.
+    """
+
+    opml: str
+
+
 class ReadBody(BaseModel):
     """Item keys to mark read (multi-source: 'tg:{cid}:{mid}' / 'hn:{sid}')."""
 
@@ -105,10 +130,10 @@ class ReadBody(BaseModel):
 class ReadBulkBody(BaseModel):
     channel_id: Optional[int] = None
     before_date: Optional[str] = None
-    # narrow the sweep to one source ('telegram' / 'hn' / 'x'); None = every source
-    source: Optional[str] = Field(default=None, pattern='^(telegram|hn|x)$')
-    # narrow further inside a multi-feed source (X): one feed key
-    feed: Optional[str] = Field(default=None, max_length=64)
+    # narrow the sweep to one source ('telegram' / 'hn' / 'x' / 'rss'); None = all
+    source: Optional[str] = Field(default=None, pattern='^(telegram|hn|x|rss)$')
+    # narrow further inside a multi-feed source: an X feed key or an RSS feed URL
+    feed: Optional[str] = Field(default=None, max_length=2000)
 
 
 class RecordBody(BaseModel):

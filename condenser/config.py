@@ -64,6 +64,55 @@ class Settings(BaseSettings):
     # for 732 accounts, so daily is plenty — people do not follow in bursts).
     condenser_x_following_sync_hours: int = 24
 
+    # --- rss source (condenser/rss.py) ---
+    # Master switch for the polling loop; polling itself is subscription-driven.
+    # Ships **false**, unlike every other source: RSS items go straight into the
+    # aggregate timeline, and a client that cannot render them yet draws blank rows
+    # (the X Phase 2 lesson). Turning it on in production is the last step of the
+    # plan's deploy order, after the iOS build with an RSS card is sideloaded.
+    condenser_rss_enabled: bool = False
+    condenser_rss_poll_minutes: int = 30
+    # Conditional requests make most rounds a 304, so the cost of 100 feeds is the
+    # round trips rather than the bodies; 5 at a time keeps the burst polite.
+    condenser_rss_fetch_concurrency: int = 5
+    condenser_rss_timeout: float = 20.0
+    # An entry published longer ago than this arrives already read. Importing an
+    # OPML file otherwise dumps every feed's whole retained window onto the reader
+    # as unread — the archive is still complete, only the backlog is not offered.
+    condenser_rss_unread_window_days: int = 7
+
+    # --- rss article summaries (condenser/summary.py) ---
+    # The project's second per-item billed component, fenced exactly like the first
+    # (channel C): a switch, its **own** API key — deliberately not falling back to
+    # the embedding or attribute one, so deploying this code cannot start spending —
+    # a hard per-round cap, and counts on /api/rss/status.
+    condenser_summary_enabled: bool = True
+    condenser_summary_base_url: str = 'https://dashscope.aliyuncs.com/compatible-mode/v1'
+    condenser_summary_api_key: str = ''
+    condenser_summary_model: str = 'qwen3.7-flash'
+    # Entries summarized per polling round — the spend ceiling. An OPML import puts
+    # its whole unread window in front of the pipeline at once (measured on 8 real
+    # feeds: 280 archived, 3 unread; on 100 news-ish feeds expect a few hundred), and
+    # 20 per 30-minute round drains that in hours rather than in one bill.
+    condenser_summary_batch: int = 20
+    # Below this many characters of *stripped* text the entry is its own summary
+    # (plan §0.1): a link-blog one-liner paraphrased is strictly worse than the
+    # one-liner, and it would cost money to be worse.
+    condenser_summary_min_chars: int = 200
+    # Input is truncated here. A long-read costs input tokens linearly and adds
+    # nothing after the first few thousand characters — the answer is 2-3 sentences
+    # either way.
+    condenser_summary_max_input_chars: int = 8000
+    # Send DashScope's `enable_thinking: false` with every request. Measured on one
+    # real article (tmp/2026-08-22-rss-phase3/probe_thinking.py): qwen3.7-flash spent
+    # **1274 reasoning tokens against 99 tokens of summary** and took 9.7s, versus 56
+    # tokens and 1.0s with thinking off — 24x the billed output and 10x the latency,
+    # for an answer no better. `max_tokens` does not bound the thinking half, so this
+    # flag is the only thing that does. It is a flag rather than a constant because
+    # the field is DashScope's: a strict OpenAI-compatible endpoint may reject an
+    # unknown body parameter, and this source's provider is meant to be an env change.
+    condenser_summary_disable_thinking: bool = True
+
     # --- embeddings (condenser/embedding.py) ---
     # OpenAI-compatible endpoint; the provider lives entirely in these four vars so
     # switching vendors is an env change, not a code change. With no API key the
@@ -271,6 +320,15 @@ class Settings(BaseSettings):
     # those the next morning is not what "15 days" means. Read, hidden, labeled
     # and saved tweets are exempt and kept indefinitely, as TG and HN archives are.
     condenser_cleanup_x_retention_days: int = 15
+
+    # --- cleanup rule: rss retention (condenser/cleanup.py: RssRetentionRule) ---
+    condenser_cleanup_rss_enabled: bool = True
+    # Longer than X's 15 days: a feed publishes a few entries a day where For You
+    # pushes hundreds, so the backlog costs little and an unread post from three
+    # weeks ago is still plausibly something you meant to read. Same semantics —
+    # read, hidden, labeled and saved entries are exempt and kept indefinitely,
+    # measured from first_seen_at (how long it sat in the backlog).
+    condenser_cleanup_rss_retention_days: int = 30
 
     # --- link preview fetching (condenser/preview.py) ---
     # Total per-request timeout (seconds) for fetching a URL/its image.

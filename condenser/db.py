@@ -41,7 +41,7 @@ MESSAGES_OPTIONAL_FIELDS = {
 # Bumped when condenser's own table shapes change; recorded in app_meta on init so a
 # future startup can detect an upgrade and run a migration. Telememo manages its own
 # table migrations separately (init_db optional_fields / ALTER TABLE).
-SCHEMA_VERSION = 14
+SCHEMA_VERSION = 15
 
 # One-shot marker for the v14 admission backfill (see _migrate_hn_qualified_v14).
 # State, not shape: the columns can exist while the stamping has not happened.
@@ -388,6 +388,72 @@ class XFollowing(CondenserBaseModel):
         table_name = 'x_following'
 
 
+class RssFeed(CondenserBaseModel):
+    """One subscribed feed's *fetch state* (v15), keyed by its URL.
+
+    Split from the subscription row for the same reason ``x_feed_items`` is split
+    from ``x_tweets``: this half is machine state that changes every poll round
+    (validators, timestamps, a failure streak), while the subscription row is the
+    reader's decision. ``url`` is also the subscription's ``channel_id`` — what
+    the reader typed is the key, the way an X handle is (``x.py``).
+
+    ``title`` / ``site_url`` are backfilled from the first successful fetch: the
+    reader subscribes with a URL and the feed tells us its name.
+    """
+
+    url = TextField(primary_key=True)
+    title = TextField(null=True)
+    site_url = TextField(null=True)
+    # Conditional-request validators, echoed back as If-None-Match / If-Modified-Since.
+    # Most rounds are a 304 because of them, which is what makes 100 feeds cheap.
+    etag = TextField(null=True)
+    last_modified = TextField(null=True)
+    fetched_at = DateTimeField(null=True)  # last *attempt* that succeeded, 200 or 304
+    # Recorded, never acted on: a feed that 404s for a week stays subscribed, because
+    # unsubscribing on the reader's behalf loses a decision they never made.
+    last_error = TextField(null=True)
+    error_count = IntegerField(default=0)  # consecutive failures; a success clears it
+
+    class Meta:
+        table_name = 'rss_feeds'
+
+
+class RssEntry(CondenserBaseModel):
+    """One archived feed entry (v15). ``id`` is the item key's ref1 (``rss:{id}``).
+
+    A surrogate key rather than the feed's own ``guid``, because a guid is only
+    unique *within* its feed and is a string of arbitrary shape — the item triple
+    is three integers. ``(feed_url, guid)`` carries the uniqueness instead, and
+    ingest is insert-if-absent on it: an entry is archived as first seen, since RSS
+    republishing an edited item is rare enough that v1 does not chase it.
+
+    ``published_at`` is what the feed declared and is stored **verbatim**, missing
+    or absurd (some feeds publish future timestamps). Clamping it against
+    ``first_seen_at`` is a read-side concern — the provider's sort key — so the
+    archive keeps the evidence.
+    """
+
+    id = AutoField()
+    feed_url = TextField(index=True)
+    guid = TextField()
+    title = TextField(null=True)
+    link = TextField(null=True)
+    author = TextField(null=True)
+    content = TextField(null=True)  # the feed's own HTML (content:encoded, else description)
+    published_at = DateTimeField(null=True)
+    first_seen_at = DateTimeField(index=True)
+    # The LLM summary (plan §3, Phase 3), denormalized onto the entry the way
+    # hn_stories.preview is. ``summary_model`` is the model_tag contract: a model
+    # change re-summarizes rather than migrates.
+    summary = TextField(null=True)
+    summary_model = TextField(null=True)
+    summary_attempts = IntegerField(default=0)
+
+    class Meta:
+        table_name = 'rss_entries'
+        indexes = ((('feed_url', 'guid'), True),)
+
+
 CONDENSER_TABLES = [
     Subscription,
     KeywordFilter,
@@ -405,6 +471,8 @@ CONDENSER_TABLES = [
     XEmbedding,
     XAttribute,
     XFollowing,
+    RssFeed,
+    RssEntry,
 ]
 
 
@@ -854,10 +922,10 @@ def mark_read_bulk(
     when an enabled HN subscription exists (all archived rows — hidden ranks don't
     affect visible counts and marking them keeps a later display-mode widening quiet).
     `source` narrows the sweep to one source (the source-scoped timeline views),
-    `feed` narrows it further within a multi-feed source (X); `channel_id` already
-    implies telegram. X's For You only joins the sweep when the caller is X-scoped —
-    it is invisible in the aggregate view, so clearing it from there would silently
-    burn a feed the user never saw.
+    `feed` narrows it further within a multi-feed source (X feed key / RSS feed
+    URL); `channel_id` already implies telegram. X's For You only joins the sweep
+    when the caller is X-scoped — it is invisible in the aggregate view, so
+    clearing it from there would silently burn a feed the user never saw.
     """
     if source is None or source == 'telegram':
         where = ['m.is_filtered IS NOT 1']
@@ -897,6 +965,25 @@ def mark_read_bulk(
 
     if channel_id is None and source in (None, 'x'):
         _mark_x_read_bulk(before_date, feed, include_foryou=source == 'x')
+
+    if channel_id is None and source in (None, 'rss'):
+        _mark_rss_read_bulk(before_date, feed if source == 'rss' else None)
+
+
+def _mark_rss_read_bulk(before_date: Optional[str], feed: Optional[str]) -> None:
+    # deferred, for the same reason as X's: the sort key and the "what did the view
+    # show" rule live with the provider, so the sweep burns exactly those rows.
+    from .sources.rss import bulk_read_scope
+
+    where, params = bulk_read_scope(before_date)
+    if feed:
+        where += ' AND e.feed_url = ?'
+        params.append(feed)
+    tdb.db.execute_sql(
+        "INSERT OR IGNORE INTO read_items (source, ref1, ref2, read_at) SELECT 'rss', e.id, 0, ? "
+        'FROM rss_entries e JOIN subscriptions s ON s.channel_id = e.feed_url WHERE ' + where,
+        (_now().isoformat(sep=' '), *params),
+    )
 
 
 def _mark_x_read_bulk(before_date: Optional[str], feed: Optional[str], include_foryou: bool) -> None:
@@ -1735,6 +1822,321 @@ def x_verdict_label_coverage() -> list[dict]:
     )
 
 
+# --- subscriptions (rss) ------------------------------------------------------
+
+_RSS = Subscription.source == 'rss'
+
+
+def list_rss_subscriptions() -> list[Subscription]:
+    return list(Subscription.select().where(_RSS).order_by(Subscription.added_at.desc()))
+
+
+def get_rss_subscription(url: str) -> Optional[Subscription]:
+    return Subscription.get_or_none(_RSS & (Subscription.channel_id == url))
+
+
+def add_rss_subscription(
+    url: str, name: Optional[str] = None, update_existing: bool = True
+) -> tuple[Subscription, bool]:
+    """Subscribe-and-enable, plus the feed's fetch-state row.
+
+    On an existing row, ``update_existing`` decides whose gesture this is. A
+    manual re-add (True) re-enables a paused feed and — since PATCH carries no
+    ``name`` — a name sent with it is the rename path, and sticks
+    (``_learn_feed_name`` never overwrites a non-NULL name). An OPML import
+    (False) leaves existing rows entirely alone: a re-import must not reverse
+    pause decisions or relabel feeds, it only picks up additions (2026-08-22).
+
+    The two rows are created together because a subscription with no ``rss_feeds``
+    row would poll with no validators and no place to record a failure. Returns
+    ``(sub, created)`` — HN/X's POST semantics.
+    """
+    with tdb.db.atomic():
+        sub, created = Subscription.get_or_create(
+            source='rss',
+            channel_id=url,
+            defaults={'enabled': True, 'backfill_done': False, 'added_at': _now(), 'name': name},
+        )
+        if not created and update_existing:
+            fields = {}
+            if not sub.enabled:
+                fields[Subscription.enabled] = True
+                sub.enabled = True
+            if name is not None and name != sub.name:
+                fields[Subscription.name] = name
+                sub.name = name
+            if fields:
+                Subscription.update(fields).where(_RSS & (Subscription.channel_id == url)).execute()
+        RssFeed.insert(url=url).on_conflict_ignore().execute()
+    return sub, created
+
+
+def update_rss_subscription(
+    url: str,
+    enabled: Optional[bool] = None,
+    config: Optional[dict] = None,
+    name: Optional[str] = None,
+) -> None:
+    fields = {}
+    if enabled is not None:
+        fields[Subscription.enabled] = enabled
+    if config is not None:
+        fields[Subscription.config] = json.dumps(config)
+    if name is not None:
+        fields[Subscription.name] = name
+    if fields:
+        Subscription.update(fields).where(_RSS & (Subscription.channel_id == url)).execute()
+
+
+def delete_rss_subscription(url: str) -> None:
+    """Unsubscribe. Archived entries **and** the feed's fetch state are intentionally
+    preserved (``delete_channel_messages``'s convention of naming what survives):
+    the entries are the reader's history, and keeping the validators means a
+    re-subscribe resumes instead of re-downloading a window it already has."""
+    Subscription.delete().where(_RSS & (Subscription.channel_id == url)).execute()
+
+
+def enabled_rss_subscriptions() -> list[Subscription]:
+    return list(
+        Subscription.select().where(_RSS & (Subscription.enabled == True)).order_by(Subscription.added_at)  # noqa: E712
+    )
+
+
+def rss_polling_active() -> bool:
+    """Whether any enabled RSS subscription exists (the polling gate)."""
+    return Subscription.select().where(_RSS & (Subscription.enabled == True)).exists()  # noqa: E712
+
+
+# --- rss feeds + entries ------------------------------------------------------
+
+
+def get_rss_feed(url: str) -> Optional[RssFeed]:
+    return RssFeed.get_or_none(RssFeed.url == url)
+
+
+def ensure_rss_feed(url: str) -> RssFeed:
+    """The feed's fetch-state row, created if it is somehow missing.
+
+    ``add_rss_subscription`` creates the pair atomically, so this only fires for a
+    row deleted underneath us — but a poll round that cannot record its failure
+    fails silently forever, which is the one outcome this source must not have.
+    """
+    RssFeed.insert(url=url).on_conflict_ignore().execute()
+    return RssFeed.get(RssFeed.url == url)
+
+
+def list_rss_feeds() -> list[RssFeed]:
+    return list(RssFeed.select())
+
+
+def record_rss_feed_success(
+    url: str,
+    at: datetime,
+    title: Optional[str] = None,
+    site_url: Optional[str] = None,
+    etag: Optional[str] = None,
+    last_modified: Optional[str] = None,
+    note: Optional[str] = None,
+) -> None:
+    """Record a round that reached the feed (200 or 304): validators, timestamp, and
+    a cleared failure streak.
+
+    ``note`` is a non-fatal complaint (malformed XML we still recovered entries
+    from) — it lands in ``last_error`` so the row can show a warning badge, while
+    ``error_count`` stays 0 because nothing needs retrying. NULL fields are left
+    alone: a 304 carries no title and must not erase the one we learned.
+    """
+    fields: dict = {RssFeed.fetched_at: at, RssFeed.last_error: note, RssFeed.error_count: 0}
+    for column, value in (
+        (RssFeed.title, title),
+        (RssFeed.site_url, site_url),
+        (RssFeed.etag, etag),
+        (RssFeed.last_modified, last_modified),
+    ):
+        if value is not None:
+            fields[column] = value
+    RssFeed.update(fields).where(RssFeed.url == url).execute()
+
+
+def record_rss_feed_error(url: str, error: str, at: datetime) -> None:
+    """Count one failed round. ``fetched_at`` is deliberately not touched — it means
+    "last time we actually saw this feed", which is what makes a stale feed visible."""
+    RssFeed.update(last_error=error, error_count=RssFeed.error_count + 1).where(RssFeed.url == url).execute()
+
+
+def existing_rss_guids(feed_url: str, guids: list[str]) -> set[str]:
+    if not guids:
+        return set()
+    known: set[str] = set()
+    for i in range(0, len(guids), 500):  # SQLite's bound-variable limit
+        chunk = guids[i : i + 500]
+        rows = RssEntry.select(RssEntry.guid).where((RssEntry.feed_url == feed_url) & (RssEntry.guid.in_(chunk)))
+        known.update(row.guid for row in rows)
+    return known
+
+
+def insert_rss_entries(rows: list[dict], read_before: Optional[datetime], now: datetime) -> int:
+    """Archive new entries and, in the same transaction, mark the old ones read.
+
+    Callers pre-filter against ``existing_rss_guids``, so the return is the number
+    archived; the unique index on ``(feed_url, guid)`` is the backstop and makes a
+    re-run a no-op rather than a duplicate.
+
+    ``read_before`` is the unread window's cutoff (None = mark nothing). Marking
+    happens here rather than in a later pass because the two writes have to be one
+    fact: an entry that is archived without its read marker is unread backlog on
+    the reader's screen the moment the transaction commits.
+
+    An entry with no ``published_at`` falls back to ``first_seen_at`` (= now),
+    which is never before the cutoff — so a dateless feed's first fetch arrives
+    entirely unread, window or no window. Accepted fail-open (2026-08-22): such
+    feeds are rare, and the exposure is bounded by one feed document.
+    """
+    if not rows:
+        return 0
+    with tdb.db.atomic():
+        # Chunked: one INSERT binds a parameter per column per row, and a first
+        # fetch of an archive-style feed can carry hundreds of entries at once.
+        for i in range(0, len(rows), 200):
+            RssEntry.insert_many(rows[i : i + 200]).on_conflict_ignore().execute()
+        if read_before is not None:
+            by_feed: dict[str, list[str]] = {}
+            for row in rows:
+                if (row.get('published_at') or row['first_seen_at']) < read_before:
+                    by_feed.setdefault(row['feed_url'], []).append(row['guid'])
+            for feed_url, guids in by_feed.items():
+                _mark_rss_read_by_guid(feed_url, guids, now)
+    return len(rows)
+
+
+def _mark_rss_read_by_guid(feed_url: str, guids: list[str], now: datetime) -> None:
+    """Read markers for entries identified by guid — the ids were just assigned by
+    the INSERT, so they are read back rather than round-tripped through Python."""
+    stamp = now.isoformat(sep=' ', timespec='seconds')
+    for i in range(0, len(guids), 500):
+        chunk = guids[i : i + 500]
+        placeholders = ','.join('?' for _ in chunk)
+        tdb.db.execute_sql(
+            'INSERT OR IGNORE INTO read_items (source, ref1, ref2, read_at) '
+            "SELECT 'rss', id, 0, ? FROM rss_entries WHERE feed_url = ? AND guid IN "
+            f'({placeholders})',
+            (stamp, feed_url, *chunk),
+        )
+
+
+def rss_entry_ids(feed_url: str, guids: list[str]) -> list[int]:
+    """The surrogate ids behind a feed's guids, in insertion order.
+
+    ``insert_rss_entries`` cannot return them — ``INSERT OR IGNORE`` reports no
+    rowids — and the ingest hook needs them to index the new entries for search.
+    """
+    if not guids:
+        return []
+    ids: list[int] = []
+    for i in range(0, len(guids), 500):
+        chunk = guids[i : i + 500]
+        rows = (
+            RssEntry.select(RssEntry.id)
+            .where((RssEntry.feed_url == feed_url) & (RssEntry.guid.in_(chunk)))
+            .order_by(RssEntry.id)
+        )
+        ids.extend(row.id for row in rows)
+    return ids
+
+
+def rss_entry_count() -> int:
+    return RssEntry.select().count()
+
+
+def rss_feed_error_count() -> int:
+    """Subscribed feeds whose last round failed — the "something is broken" number
+    on status. Scoped to subscriptions on purpose: unsubscribing keeps the fetch
+    state (see ``delete_rss_subscription``), and a stale error on a feed the reader
+    dropped is not a problem they have."""
+    cur = tdb.db.execute_sql(
+        "SELECT COUNT(*) FROM rss_feeds f JOIN subscriptions s ON s.source = 'rss' AND s.channel_id = f.url "
+        'WHERE f.error_count > 0'
+    )
+    return cur.fetchone()[0]
+
+
+# --- rss summaries (condenser/summary.py) -------------------------------------
+
+# "Waiting for a summary", as SQL. One copy, shared by the pipeline's candidate
+# query and the status count, so the number the reader is shown and the work that
+# gets done cannot drift apart.
+#
+# Three of the four conditions are about not spending: an **enabled** feed (pausing
+# a feed stops it reaching the reader, so its backlog stops being something they
+# might read), **unread** (an OPML import marks everything older than a week read —
+# that backlog is archived, not offered), and a **length floor**. The floor here is
+# on the raw HTML, which is a cheap upper bound on the text: a body shorter than the
+# gate before stripping is certainly shorter after it. The exact test runs on the
+# stripped text in ``summary.run_round``, which records its answer so a
+# markup-heavy one-liner is only measured once.
+_RSS_SUMMARY_FROM = """
+    FROM rss_entries e
+    JOIN subscriptions s ON s.source = 'rss' AND s.channel_id = e.feed_url AND s.enabled = 1
+    LEFT JOIN read_items ri ON ri.source = 'rss' AND ri.ref1 = e.id AND ri.ref2 = 0
+"""
+# summary_model IS NULL covers both "never looked at" and, by its absence, every
+# decided state: a written summary, and the `skip:short` sentinel.
+_RSS_SUMMARY_WHERE = (
+    'e.summary_model IS NULL AND e.summary_attempts < ? AND ri.ref1 IS NULL '
+    'AND e.content IS NOT NULL AND LENGTH(e.content) > ?'
+)
+
+
+def rss_entries_needing_summary(limit: int, max_attempts: int, min_content_chars: int) -> list[dict]:
+    """The next entries to summarize, newest first.
+
+    Ordered by the *timeline's* position rather than by insertion, because a
+    backlog drains over hours and the order decides what the reader finds
+    summarized when they next open the app — which is the top of the list.
+    """
+    from .sources.rss import SORT_AT_SQL
+
+    cur = tdb.db.execute_sql(
+        f'SELECT e.id, e.title, e.content {_RSS_SUMMARY_FROM} WHERE {_RSS_SUMMARY_WHERE} '
+        f'ORDER BY {SORT_AT_SQL} DESC, e.id DESC LIMIT ?',
+        (max_attempts, min_content_chars, limit),
+    )
+    columns = [c[0] for c in cur.description]
+    return [dict(zip(columns, row)) for row in cur.fetchall()]
+
+
+def rss_summary_counts(max_attempts: int, min_content_chars: int) -> dict[str, int]:
+    """What ``/api/rss/status`` reports: the backlog, the spend, and the give-ups."""
+    pending = tdb.db.execute_sql(
+        f'SELECT COUNT(*) {_RSS_SUMMARY_FROM} WHERE {_RSS_SUMMARY_WHERE}', (max_attempts, min_content_chars)
+    ).fetchone()[0]
+    done = tdb.db.execute_sql('SELECT COUNT(*) FROM rss_entries WHERE summary IS NOT NULL').fetchone()[0]
+    failed = tdb.db.execute_sql(
+        'SELECT COUNT(*) FROM rss_entries WHERE summary IS NULL AND summary_attempts >= ?', (max_attempts,)
+    ).fetchone()[0]
+    return {'pending': pending, 'done': done, 'failed': failed}
+
+
+def set_rss_summary(entry_id: int, summary: str, model: str) -> None:
+    """Store a summary and what wrote it. The two are one fact — a summary whose
+    provenance is unknown cannot be told from one written by a prompt we retired."""
+    RssEntry.update(summary=summary, summary_model=model).where(RssEntry.id == entry_id).execute()
+
+
+def set_rss_summary_decision(entry_id: int, decision: str) -> None:
+    """Record a decision *not* to summarize (``summary.SKIP_SHORT``).
+
+    ``summary`` stays NULL, so the card keeps rendering the feed's own text; only
+    the pipeline is told to stop reconsidering this entry.
+    """
+    RssEntry.update(summary_model=decision).where(RssEntry.id == entry_id).execute()
+
+
+def bump_rss_summary_attempts(entry_id: int) -> None:
+    """Charge one failed attempt to this entry (``hn.bump_hn_preview_attempts``)."""
+    RssEntry.update(summary_attempts=RssEntry.summary_attempts + 1).where(RssEntry.id == entry_id).execute()
+
+
 # --- daily cleanup (condenser/cleanup.py) -------------------------------------
 
 
@@ -1844,6 +2246,40 @@ def sweep_x_retention(feed_cutoff: datetime, embedding_cutoff: Optional[datetime
             # A living tweet's vector expires on its own, longer clock: it is read
             # once (at judge time) and re-derivable from the text that is still here.
             counts['embeddings_expired'] = prune_x_embeddings(embedding_cutoff, set(x_labeled_samples()))
+    return counts
+
+
+_DELETE_RSS_ENTRIES = 'DELETE FROM rss_entries WHERE first_seen_at < ? ' + ' '.join(
+    f"AND NOT EXISTS (SELECT 1 FROM {table} m WHERE m.source = 'rss' AND m.ref1 = rss_entries.id)"
+    for table in ('read_items', 'hidden_items', 'item_feedback', 'saved_items')
+)
+
+
+def sweep_rss_retention(cutoff: datetime) -> dict[str, int]:
+    """Delete archived entries older than ``cutoff`` that the reader never touched.
+
+    X's rule, unchanged in substance and stated the same way round: an **unread**
+    old entry is deleted and a **read** one is kept forever. What is intentionally
+    preserved is everything the reader read, hid, labeled or saved.
+
+    Two consequences worth knowing rather than rediscovering. The clock is
+    ``first_seen_at``, not the timeline's clamped sort key: the question is how long
+    a row has sat in the backlog, and an archive-style feed hands us years-old
+    entries that should sort into history without being deleted the next morning.
+    And the unread window (plan §0.3) marks an import's back-catalogue *read* on
+    arrival, so those rows are exempt and accumulate — accepted at plan time, since
+    they are kilobytes of text each and ``/api/cleanup/status`` makes the total
+    visible.
+
+    No feed row is dropped: ``rss_feeds`` is per-feed fetch state (100 rows at the
+    design target) and its validators are what make a re-subscribe resume.
+    """
+    counts = {'entries': 0, 'search_orphaned': 0}
+    with tdb.db.atomic():
+        counts['entries'] = tdb.db.execute_sql(_DELETE_RSS_ENTRIES, (cutoff.strftime('%Y-%m-%d %H:%M:%S'),)).rowcount
+        # Anti-join rather than the ids just deleted, so the sweep also heals
+        # documents orphaned before this rule existed (the X precedent).
+        counts['search_orphaned'] = search.sweep_rss_orphans()
     return counts
 
 

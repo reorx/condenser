@@ -3,11 +3,36 @@ import { NavLink } from 'react-router-dom';
 
 import { SidebarChannelLink } from '@/components/SidebarChannelLink';
 import { SidebarHnFeedLink } from '@/components/SidebarHnFeedLink';
+import { SidebarRssFeedLink } from '@/components/SidebarRssFeedLink';
 import { SidebarXFeedLink } from '@/components/SidebarXFeedLink';
 import { UnreadBadge } from '@/components/UnreadBadge';
-import { sourceLabel, sourceSubLabel } from '@/lib/sources';
-import type { SourceGroup } from '@/lib/types';
+import { sourceLabel, sourceSubLabel, subRowLabel } from '@/lib/sources';
+import type { Source, SourceGroup, SourceSub } from '@/lib/types';
 import { cn } from '@/lib/utils';
+
+/** One subscription row, dispatched to its source's own link component. Each source
+ *  addresses its subscriptions differently (a channel id, a feed key, a feed URL), so
+ *  the row types stay separate and this picks between them. */
+function SidebarSubLink({ source, sub, onNavigate }: { source: Source; sub: SourceSub; onNavigate?: () => void }) {
+  const feed = String(sub.channel_id);
+  if (source === 'telegram' && typeof sub.channel_id === 'number') {
+    return (
+      <SidebarChannelLink
+        channelId={sub.channel_id}
+        label={sourceSubLabel(sub)}
+        unread={sub.unread}
+        onNavigate={onNavigate}
+      />
+    );
+  }
+  if (source === 'x') {
+    return <SidebarXFeedLink feed={feed} label={sourceSubLabel(sub)} unread={sub.unread} onNavigate={onNavigate} />;
+  }
+  if (source === 'rss') {
+    return <SidebarRssFeedLink feed={feed} label={subRowLabel(source, sub)} unread={sub.unread} onNavigate={onNavigate} />;
+  }
+  return <SidebarHnFeedLink label={sourceSubLabel(sub)} unread={sub.unread} onNavigate={onNavigate} />;
+}
 
 interface SidebarSourceGroupProps {
   group: SourceGroup;
@@ -50,32 +75,9 @@ export function SidebarSourceGroup({ group, collapsed, onToggleCollapsed, onNavi
       </div>
       {!collapsed && (
         <div className="flex flex-col gap-0.5">
-          {enabled.map((s) =>
-            group.source === 'telegram' && typeof s.channel_id === 'number' ? (
-              <SidebarChannelLink
-                key={s.channel_id}
-                channelId={s.channel_id}
-                label={sourceSubLabel(s)}
-                unread={s.unread}
-                onNavigate={onNavigate}
-              />
-            ) : group.source === 'x' ? (
-              <SidebarXFeedLink
-                key={s.channel_id}
-                feed={String(s.channel_id)}
-                label={sourceSubLabel(s)}
-                unread={s.unread}
-                onNavigate={onNavigate}
-              />
-            ) : (
-              <SidebarHnFeedLink
-                key={s.channel_id}
-                label={sourceSubLabel(s)}
-                unread={s.unread}
-                onNavigate={onNavigate}
-              />
-            ),
-          )}
+          {enabled.map((s) => (
+            <SidebarSubLink key={String(s.channel_id)} source={group.source} sub={s} onNavigate={onNavigate} />
+          ))}
           {enabled.length === 0 && <p className="px-2.5 py-1 text-xs text-muted-foreground/70">Nothing enabled.</p>}
         </div>
       )}

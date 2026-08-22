@@ -1,0 +1,149 @@
+{
+  "plain": {
+    "source": "rss",
+    "key": "rss:36",
+    "datetime": "2026-08-18T21:57:17Z",
+    "is_read": true,
+    "is_saved": false,
+    "rss": {
+      "id": 36,
+      "guid": "https://sive.rs/d/1285",
+      "feed_url": "https://sive.rs/en.atom",
+      "feed_title": "Derek Sivers",
+      "title": "tweet",
+      "link": "https://sive.rs/d",
+      "author": null,
+      "content": "<p>Building without predicting. (The story of how I built my perfect home.) <a href=\"https://sive.rs/fit\">sive.rs/fit</a></p>",
+      "summary": null,
+      "published_at": "2026-08-18T21:57:17Z",
+      "first_seen_at": "2026-08-20T10:29:18Z",
+      "sort_at": "2026-08-18T21:57:17Z"
+    }
+  },
+  "html_body": {
+    "source": "rss",
+    "key": "rss:37",
+    "datetime": "2026-08-18T00:00:00Z",
+    "is_read": true,
+    "is_saved": false,
+    "rss": {
+      "id": 37,
+      "guid": "https://sive.rs/fit",
+      "feed_url": "https://sive.rs/en.atom",
+      "feed_title": "Derek Sivers",
+      "title": "Building without predicting",
+      "link": "https://sive.rs/fit",
+      "author": null,
+      "content": "<p>\n\tOn <a href=\"https://sive.rs/2024-10-ferriss\">a podcast</a>, I briefly mentioned that I’m <strong>building my dream house without predicting</strong> - by living in a bare cabin in the woods, then <strong>adding only what I find I actually need</strong>.\n</p><p>\n\tApparently it was intriguing, because since then, it’s been my most frequently asked question: “How’s your house going?”\n\tI didn’t think this would interest total strangers, but enough people have asked, so here’s the story.\n</p><p>\n\tI hope you can apply it metaphorically to your own projects or life choices.\n</p><p>\n\tIt starts with a maxim:\n</p>\n<blockquote>\n\tAll buildings are predictions.\n<br />\n\tAll predictions are wrong.\n</blockquote>\n<p>\n\tHow do you build without predicting?\n<strong>\n\tDefer decisions.\n\tStart using what’s there.\n\tDiscover actual needs.\n</strong>\n</p><p>\n\tWhen you catch yourself thinking “We’ll need this,” stop and say, “Let’s find out what we really need.”\n</p><p>\n\tA fabled example:\n\tThey built a new park and argued about where to put the walkways.\n\tAround the edges?\n\tThrough the middle?\n\tThe winning answer:\n<strong>\n<a href=\"https://sive.rs/walkways\">Open the park with no walkways</a>.\n\tAfter a year, look where people have been walking.\n\tFind paths where the grass is worn away.\n\tPave there.\n</strong>\n\tDon’t predict.\n</p><p>\n\tI’ve preached that idea for decades.\n\tThen a few years ago, I bought a piece of land for dirt cheap here in New Zealand - just 30 minutes away - and applied that idea to building a home for me and my son.\n</p><p>\n\tHow do you build a home without predicting?\n\tBy living in an unfurnished, unfinished place, adding only what you’ve <strong>proven</strong> you need or want.\n</p><p>\n<strong>\n\tIt’s a fun philosophical experiment, testing what you really need.\n</strong>\n\tEspecially when costs are high, it raises the bar on that word: “need”.\n</p><p>\n<em>\n\t(Note: I will say “I” and “my”, but my teenage son was very involved in most of these decisions, and loves this place even more than I do.)\n</em>\n</p><p>\n\tMy land is an off-grid forest valley with a creek running through the middle.\n<strong>\n\tNo buildings, no electricity or services.\n</strong>\n\tJust land.\n\tSo I really started from scratch.\n</p><p>\n\tFor two years, before building anything, we spent time there in all seasons, finding our favorite spots.\n\tWe built a path through our forest.\n\tTwice, we came face-to-face with a <a href=\"https://www.natureworldnews.com/articles/53355/20220929/feral-pigs-wreaking-havoc-new-zealand-s-capital-killing-over.htm\">wild boar</a>.\n</p><p>\n\tI slept outside, so I know I need a roof, walls, and great insulation - about 4 by 8 meters.\n\tI bought a used, pre-made, <a href=\"https://bode.co.nz/manufacturing-construction/\">well-insulated 4 by 8 cabin</a>.\n\tBecause they were on a clearance sale, I bought three more, so now we have <strong>four adjacent cabins</strong> for four purposes:\n</p>\n<ol><li>\n\tfor sleeping\n</li><li>\n\tfor me (where I spend most waking hours)\n</li><li>\n\tfor him (where my son does whatever he wants)\n</li><li>\n\tfor storage or future living.\n</li></ol>\n<p>\n\tI love the isolation of purposes.\n\tWhen I go into <em>my</em> cabin, it’s time to work.\n\tWhen we go into the <em>sleeping</em> cabin, it’s time for bed.\n</p><p>\n\tI slept on the floor, so I know I need a mattress and blankets.\n\tI bought a mattress and blankets and <a href=\"https://sive.rs/off23\">started living there</a>.\n</p><p>\n\tI tried living without electricity, then planned on going solar-only, but I decided to get fast fiber internet.\n\tSince I was digging a trench for the fiber optic cables to run from the road to my house, it made sense to get electric service.\n</p><p>\n<strong>\n\tThese ideas are from the book <a href=\"https://sive.rs/book/HowBuildingsLearn\">“How Buildings Learn” by Stewart Brand</a>.\n</strong>\n\tFor 20 years, it’s been a huge influence on my code, my life choices, and now on building my home.\n\tIf you find this fascinating or crazy, <a href=\"https://sive.rs/book/HowBuildingsLearn\">go read that book</a>.\n</p><p>\n\tIt makes a powerful point about water:\n</p>\n<blockquote>\n\t“Water consumes wood, erodes masonry, corrodes metals, peels paint, and expands when it freezes.\n\tIt warps, swells, discolors, rusts, loosens, mildews, and stinks.\n\tHouses deteriorate from the bathroom out.”\n</blockquote>\n<p>\n\tHeeding his warning, I made a rule of <strong>no water inside</strong>.\n\tAnything with water stays outside the cabins.\n</p><p>\n\tOutdoor showers, I’ve always loved, so now it’s all I’ve got.\n\tA simple hose shower that runs the water through a heater.\n\tUncovered, so at night I shower while looking at the stars.\n</p><p>\n\tOutdoor kitchen, holding an umbrella while cooking in the rain, proved I needed a roof.\n\tThin walls and a floating roof so the wind can circulate but keeps away the rain.\n\tWonderful except in winter, but a few minutes of cold hands are worth it for no fumes or smoke in the home.\n</p><p>\n\tOutdoor bathroom, can I handle that?\n\tI tried peeing outside for a month and it was fine.\n\tI built the same structure as the kitchen.\n\tIt’s actually really nice in there in a rainstorm.\n\tGot a composting toilet instead of flushing, which saves a lot of water.\n</p><p>\n\tRemember, my land is “off-grid” so I have no water supply, and no wastewater service.\n<strong>\n\tMy only water source is collecting the rain from my roof.\n</strong>\n\tGutters and tanks, and good water filtration.\n\tLater I added a reverse osmosis water filter for drinking.\n</p><p>\n\tAnother nice thing about having the cabins, kitchen, and bathroom all separated, is that it keeps you <strong>going outside almost every hour</strong>.\n\tIt snaps you out of your thoughts and into the real physical world of trees, birds, wind and weather.\n\tEvery night at dusk, the <a href=\"https://en.wikipedia.org/wiki/Morepork\">owls</a> start their beautiful “hoo-hoo ... hoo-hoo”.\n</p><p>\n\tThis is a cold dark valley so I wanted a sauna for sanity, pleasure, and health.\n\t<a href=\"https://www.saunatimes.com/\">Glenn Auerbach from Sauna Times</a> designed a great little two-person sauna for us.\n\tNow it’s my <strong>nightly ritual</strong>:\n\tHot sauna, <a href=\"https://tim.blog/2025/07/26/dr-rhonda-patrick-transcript/\">82°C for 21 minutes</a>, then shower, then bed.\n\tComing straight from the sauna makes the outdoor shower more appealing on cold nights.\n</p><p>\n\tI hate hanging laundry, so I got a washer and dryer.\n\tBut I’m happy to do dishes, so no dishwasher.\n</p><p>\n\tDo I need hot water in the sink?\n\tI went without it for a year, and found I never needed hot water - only cold or boiling.\n\tSo instead of an expensive water heater, I keep a kettle by the sink for dishes and tea.\n</p><p>\n\tAnd no built-in appliances - only portable, for easy changes.\n\tI design for maintenance, not appearances, so all conduit and pipes are exposed.\n\tNothing hidden.\n\tThat said, I planted privacy bushes around the perimeter, since, y’know, I like to shower naked.\n</p><p>\n\tThe story continues, but that’s enough.\n\t<strong>For each choice</strong>, like where to put lights, <strong>the process is:</strong>\n</p><ol><li>\n<strong>\n\tTry to do without it.\n</strong>\n\tStop here if possible.\n</li><li>\n\t<strong>Try a cheap portable fix</strong>, like a flashlight or lantern.\n\tStop here if possible.\n</li><li>\n<strong>\n\tTest a simple flexible solution, easy to maintain and change.\n</strong>\n</li></ol><p>\n\tWe’ve been living here full-time for a year and it’s really ideal.\n<strong>\n\tIt feels like <a href=\"https://sive.rs/suits\">custom tailored clothing</a>.\n</strong>\n\tInstead of generic “one size fits all”, it’s a house that perfectly fits our unique preferences and values.\n</p><p>\n\tA neighbor came by for the first time and <strong>really hated it</strong>, getting all upset and yelling, saying I was crazy for not having his preferred comforts.\n</p><p>\n\tI love that this home feels <strong>wrong for others, and just right for us</strong>.\n<em>\n\t(Kind of like my <a href=\"https://gitlab.com/sivers/sivers\">software</a> and <a href=\"https://sive.rs/about\">other life choices</a>.)\n</em>\n<p>\n\tIt’s a fun ongoing experiment and reminder to <a href=\"https://sive.rs/u15\">challenge all predictions</a>.\n</p>\n<hr />\n<p><em>\n\t(I have not taken any photos of the house, because I don’t care how it looks, and I almost never take photos of anything.)\n</em></p>",
+      "summary": null,
+      "published_at": "2026-08-18T00:00:00Z",
+      "first_seen_at": "2026-08-20T10:29:18Z",
+      "sort_at": "2026-08-18T00:00:00Z"
+    }
+  },
+  "authored": {
+    "source": "rss",
+    "key": "rss:156",
+    "datetime": "2026-07-21T00:00:00Z",
+    "is_read": true,
+    "is_saved": false,
+    "rss": {
+      "id": 156,
+      "guid": "33d6027e5d2ded373fbf5f0901bac071",
+      "feed_url": "https://matt-rickard.com/rss",
+      "feed_title": "Matt Rickard",
+      "title": "Pushing 4.7M Commits an Hour",
+      "link": "https://mattrickard.com/pushing-47m-commits-an-hour",
+      "author": "matt@mattrickard.com (Matt Rickard)",
+      "content": "<p><strong>The winning software teams will throw away orders of magnitude more code than they merge.</strong></p>\n<p>I ran a benchmark against the custom git server I’m building,</p>\n<ul>\n<li><p><strong>4.79 million pushes per hour</strong> to a single repository across 1,408 branches (p50, 322ms).</p></li>\n<li><p><strong>27.8 million clones per hour</strong> of a repository containing the NextJS starter template (p50, 220ms).</p></li>\n</ul>\n<p>4.79M commits won’t make it to master, but the frontier labs are running that many experiments at scale, and the rest of us will be soon.</p>\n<ul>\n<li><p><a href=\"https://www.anthropic.com/engineering/building-c-compiler\">Anthropic wrote a working C compiler</a> with a swarm of 2,000 Claude Code sessions coordinating over git</p></li>\n<li><p><a href=\"https://bun.com/blog/bun-in-rust\">Bun’s Rust rewrite</a> did 695 commits/hr for two weeks</p></li>\n<li><p><a href=\"https://deepmind.google/AlphaCode2_Tech_Report.pdf\">DeepMind’s AlphaCode 2</a> generated 77 million program candidates for 770 submissions in competitive programming.</p></li>\n<li><p><a href=\"https://devin.ai/blog/agentic-map-reduce\">Cognition is running Agentic MapReduce</a> over their codebase to scan for security vulnerabilities.</p></li>\n<li><p><a href=\"https://modal.com/blog/scaling-to-1-million-concurrent-sandboxes-in-seconds\">Modal can spin up a million sandboxes in seconds</a>, but what’s the point if those sandboxes have nowhere to read or write?</p></li>\n</ul>\n<p>GitHub won’t be the place that the work gets recorded. Branches and repositories should not be sacred. Every agent should use them, liberally. Every parallel agent gets a branch. Every agent turn gets snapshotted and stored in git, so you can provably correlate what turns corresponded which changes.</p>\n<p>That’s exactly what I’m building at <a href=\"https://corigin.dev\">Corigin</a>. A new git server implementation and wire protocol built from scratch. Distilled down to the essentials that agents need from first principles. Fast, scalable, and easy for agents to use because it’s just <code>git</code>. We <a href=\"https://github.com/r2d4/corigin-benchmarks\">benchmarked</a> with <code>git clone</code> and <code>git push</code>.</p>\n<p>You can try it today at <a href=\"http://corigin.dev\">corigin.dev</a>. Try it with <a href=\"https://x.com/mattrickard/status/2073111376516759770\">MapReduce skill</a> I made to run sharded reviews or edits over your codebase. Or use it to run parallel cloud agents.</p>",
+      "summary": null,
+      "published_at": "2026-07-21T00:00:00Z",
+      "first_seen_at": "2026-08-20T10:29:18Z",
+      "sort_at": "2026-07-21T00:00:00Z"
+    }
+  },
+  "cjk": {
+    "source": "rss",
+    "key": "rss:167",
+    "datetime": "2020-12-31T07:57:00Z",
+    "is_read": true,
+    "is_saved": false,
+    "rss": {
+      "id": 167,
+      "guid": "634360bbd892dc307476ccf2",
+      "feed_url": "https://halfrost.com/rss/",
+      "feed_title": "Halfrost's Field | 冰霜之地",
+      "title": "下一个五年计划起航 ！",
+      "link": "https://halfrost.com/halfrost_2020/",
+      "author": "一缕殇流化隐半边冰霜",
+      "content": "<!--kg-card-begin: markdown--><h2 id=\"%E9%A2%98%E8%AE%B0\">&#x9898;&#x8bb0;</h2>\n<img alt=\"&#x4E0B;&#x4E00;&#x4E2A;&#x4E94;&#x5E74;&#x8BA1;&#x5212;&#x8D77;&#x822A; &#xFF01;\" src=\"https://img.halfrost.com/2021/12/151_0.png\" /><p>&#x8003;&#x8651;&#x5230;&#x672c;&#x7cfb;&#x5217;&#x6587;&#x7ae0;&#x6709;&#x90e8;&#x5206;&#x65b0;&#x7684;&#x8bfb;&#x8005;&#xff0c;&#x6240;&#x4ee5;&#x5173;&#x4e8e;&#x672c;&#x7cfb;&#x5217;&#x6587;&#x7ae0;&#x540d;&#x5b57;&#x7684;&#x8d77;&#x6e90;&#x5c31;&#x4e0d;&#x518d;&#x8d58;&#x8ff0;&#x4e86;&#xff0c;&#x89c1;&#x8fd9;&#x91cc;<a href=\"https://github.com/halfrost/Halfrost-Field/blob/master/contents/TimeElapse/start.md\">&#x300a;&quot;&#x661f;&#x971c;&#x834f;&#x82d2;&quot;&#x540d;&#x5b57;&#x8bde;&#x751f;&#x8bb0;&#x300b;</a></p>\n<p>&#x6ce8;&#x610f;&#x8fd9;&#x7bc7;&#x5e74;&#x7ec8;&#x603b;&#x7ed3;&#x662f; 2020 &#x5e74;&#x7684;&#xff0c;&#x5e76;&#x975e;&#x662f; 2021 &#x5e74;&#x7684;&#x3002;&#x5f53;&#x4f60;&#x770b;&#x5230;&#x8fd9;&#x7bc7;&#x6587;&#x7ae0;&#x7684;&#x65f6;&#x5019;&#xff0c;&#x53ef;&#x80fd;&#x5230;&#x4e86; 2021 &#x5e74;&#x5e74;&#x5e95;&#x4e86;&#x3002;</p>\n<hr />\n<h2 id=\"%E7%96%AB%E6%83%85\">&#x75ab;&#x60c5;</h2>\n<p align=\"center\">\n<img alt=\"&#x4E0B;&#x4E00;&#x4E2A;&#x4E94;&#x5E74;&#x8BA1;&#x5212;&#x8D77;&#x822A; &#xFF01;\" src=\"https://img.halfrost.com/Blog/ArticleImage/151_1.jpg\" />\n</p>\n<p>2020 &#x5e74;&#x4e00;&#x5b9a;&#x662f;&#x5c5e;&#x4e8e;&#x4eba;&#x7c7b;&#x5386;&#x53f2;&#x4e0a;&#x6700;&#x5177;&#x6709;&#x5386;&#x53f2;&#x4e8b;&#x4ef6;&#x7684;&#x4e00;&#x5e74;",
+      "summary": null,
+      "published_at": "2020-12-31T07:57:00Z",
+      "first_seen_at": "2026-08-20T10:29:18Z",
+      "sort_at": "2020-12-31T07:57:00Z"
+    }
+  },
+  "summarized": {
+    "source": "rss",
+    "key": "rss:37",
+    "datetime": "2026-08-18T00:00:00Z",
+    "is_read": true,
+    "is_saved": false,
+    "rss": {
+      "id": 37,
+      "guid": "https://sive.rs/fit",
+      "feed_url": "https://sive.rs/en.atom",
+      "feed_title": "Derek Sivers",
+      "title": "Building without predicting",
+      "link": "https://sive.rs/fit",
+      "author": null,
+      "content": "<p>\n\tOn <a href=\"https://sive.rs/2024-10-ferriss\">a podcast</a>, I briefly mentioned that I’m <strong>building my dream house without predicting</strong> - by living in a bare cabin in the woods, then <strong>adding only what I find I actually need</strong>.\n</p><p>\n\tApparently it was intriguing, because since then, it’s been my most frequently asked question: “How’s your house going?”\n\tI didn’t think this would interest total strangers, but enough people have asked, so here’s the story.\n</p><p>\n\tI hope you can apply it metaphorically to your own projects or life choices.\n</p><p>\n\tIt starts with a maxim:\n</p>\n<blockquote>\n\tAll buildings are predictions.\n<br />\n\tAll predictions are wrong.\n</blockquote>\n<p>\n\tHow do you build without predicting?\n<strong>\n\tDefer decisions.\n\tStart using what’s there.\n\tDiscover actual needs.\n</strong>\n</p><p>\n\tWhen you catch yourself thinking “We’ll need this,” stop and say, “Let’s find out what we really need.”\n</p><p>\n\tA fabled example:\n\tThey built a new park and argued about where to put the walkways.\n\tAround the edges?\n\tThrough the middle?\n\tThe winning answer:\n<strong>\n<a href=\"https://sive.rs/walkways\">Open the park with no walkways</a>.\n\tAfter a year, look where people have been walking.\n\tFind paths where the grass is worn away.\n\tPave there.\n</strong>\n\tDon’t predict.\n</p><p>\n\tI’ve preached that idea for decades.\n\tThen a few years ago, I bought a piece of land for dirt cheap here in New Zealand - just 30 minutes away - and applied that idea to building a home for me and my son.\n</p><p>\n\tHow do you build a home without predicting?\n\tBy living in an unfurnished, unfinished place, adding only what you’ve <strong>proven</strong> you need or want.\n</p><p>\n<strong>\n\tIt’s a fun philosophical experiment, testing what you really need.\n</strong>\n\tEspecially when costs are high, it raises the bar on that word: “need”.\n</p><p>\n<em>\n\t(Note: I will say “I” and “my”, but my teenage son was very involved in most of these decisions, and loves this place even more than I do.)\n</em>\n</p><p>\n\tMy land is an off-grid forest valley with a creek running through the middle.\n<strong>\n\tNo buildings, no electricity or services.\n</strong>\n\tJust land.\n\tSo I really started from scratch.\n</p><p>\n\tFor two years, before building anything, we spent time there in all seasons, finding our favorite spots.\n\tWe built a path through our forest.\n\tTwice, we came face-to-face with a <a href=\"https://www.natureworldnews.com/articles/53355/20220929/feral-pigs-wreaking-havoc-new-zealand-s-capital-killing-over.htm\">wild boar</a>.\n</p><p>\n\tI slept outside, so I know I need a roof, walls, and great insulation - about 4 by 8 meters.\n\tI bought a used, pre-made, <a href=\"https://bode.co.nz/manufacturing-construction/\">well-insulated 4 by 8 cabin</a>.\n\tBecause they were on a clearance sale, I bought three more, so now we have <strong>four adjacent cabins</strong> for four purposes:\n</p>\n<ol><li>\n\tfor sleeping\n</li><li>\n\tfor me (where I spend most waking hours)\n</li><li>\n\tfor him (where my son does whatever he wants)\n</li><li>\n\tfor storage or future living.\n</li></ol>\n<p>\n\tI love the isolation of purposes.\n\tWhen I go into <em>my</em> cabin, it’s time to work.\n\tWhen we go into the <em>sleeping</em> cabin, it’s time for bed.\n</p><p>\n\tI slept on the floor, so I know I need a mattress and blankets.\n\tI bought a mattress and blankets and <a href=\"https://sive.rs/off23\">started living there</a>.\n</p><p>\n\tI tried living without electricity, then planned on going solar-only, but I decided to get fast fiber internet.\n\tSince I was digging a trench for the fiber optic cables to run from the road to my house, it made sense to get electric service.\n</p><p>\n<strong>\n\tThese ideas are from the book <a href=\"https://sive.rs/book/HowBuildingsLearn\">“How Buildings Learn” by Stewart Brand</a>.\n</strong>\n\tFor 20 years, it’s been a huge influence on my code, my life choices, and now on building my home.\n\tIf you find this fascinating or crazy, <a href=\"https://sive.rs/book/HowBuildingsLearn\">go read that book</a>.\n</p><p>\n\tIt makes a powerful point about water:\n</p>\n<blockquote>\n\t“Water consumes wood, erodes masonry, corrodes metals, peels paint, and expands when it freezes.\n\tIt warps, swells, discolors, rusts, loosens, mildews, and stinks.\n\tHouses deteriorate from the bathroom out.”\n</blockquote>\n<p>\n\tHeeding his warning, I made a rule of <strong>no water inside</strong>.\n\tAnything with water stays outside the cabins.\n</p><p>\n\tOutdoor showers, I’ve always loved, so now it’s all I’ve got.\n\tA simple hose shower that runs the water through a heater.\n\tUncovered, so at night I shower while looking at the stars.\n</p><p>\n\tOutdoor kitchen, holding an umbrella while cooking in the rain, proved I needed a roof.\n\tThin walls and a floating roof so the wind can circulate but keeps away the rain.\n\tWonderful except in winter, but a few minutes of cold hands are worth it for no fumes or smoke in the home.\n</p><p>\n\tOutdoor bathroom, can I handle that?\n\tI tried peeing outside for a month and it was fine.\n\tI built the same structure as the kitchen.\n\tIt’s actually really nice in there in a rainstorm.\n\tGot a composting toilet instead of flushing, which saves a lot of water.\n</p><p>\n\tRemember, my land is “off-grid” so I have no water supply, and no wastewater service.\n<strong>\n\tMy only water source is collecting the rain from my roof.\n</strong>\n\tGutters and tanks, and good water filtration.\n\tLater I added a reverse osmosis water filter for drinking.\n</p><p>\n\tAnother nice thing about having the cabins, kitchen, and bathroom all separated, is that it keeps you <strong>going outside almost every hour</strong>.\n\tIt snaps you out of your thoughts and into the real physical world of trees, birds, wind and weather.\n\tEvery night at dusk, the <a href=\"https://en.wikipedia.org/wiki/Morepork\">owls</a> start their beautiful “hoo-hoo ... hoo-hoo”.\n</p><p>\n\tThis is a cold dark valley so I wanted a sauna for sanity, pleasure, and health.\n\t<a href=\"https://www.saunatimes.com/\">Glenn Auerbach from Sauna Times</a> designed a great little two-person sauna for us.\n\tNow it’s my <strong>nightly ritual</strong>:\n\tHot sauna, <a href=\"https://tim.blog/2025/07/26/dr-rhonda-patrick-transcript/\">82°C for 21 minutes</a>, then shower, then bed.\n\tComing straight from the sauna makes the outdoor shower more appealing on cold nights.\n</p><p>\n\tI hate hanging laundry, so I got a washer and dryer.\n\tBut I’m happy to do dishes, so no dishwasher.\n</p><p>\n\tDo I need hot water in the sink?\n\tI went without it for a year, and found I never needed hot water - only cold or boiling.\n\tSo instead of an expensive water heater, I keep a kettle by the sink for dishes and tea.\n</p><p>\n\tAnd no built-in appliances - only portable, for easy changes.\n\tI design for maintenance, not appearances, so all conduit and pipes are exposed.\n\tNothing hidden.\n\tThat said, I planted privacy bushes around the perimeter, since, y’know, I like to shower naked.\n</p><p>\n\tThe story continues, but that’s enough.\n\t<strong>For each choice</strong>, like where to put lights, <strong>the process is:</strong>\n</p><ol><li>\n<strong>\n\tTry to do without it.\n</strong>\n\tStop here if possible.\n</li><li>\n\t<strong>Try a cheap portable fix</strong>, like a flashlight or lantern.\n\tStop here if possible.\n</li><li>\n<strong>\n\tTest a simple flexible solution, easy to maintain and change.\n</strong>\n</li></ol><p>\n\tWe’ve been living here full-time for a year and it’s really ideal.\n<strong>\n\tIt feels like <a href=\"https://sive.rs/suits\">custom tailored clothing</a>.\n</strong>\n\tInstead of generic “one size fits all”, it’s a house that perfectly fits our unique preferences and values.\n</p><p>\n\tA neighbor came by for the first time and <strong>really hated it</strong>, getting all upset and yelling, saying I was crazy for not having his preferred comforts.\n</p><p>\n\tI love that this home feels <strong>wrong for others, and just right for us</strong>.\n<em>\n\t(Kind of like my <a href=\"https://gitlab.com/sivers/sivers\">software</a> and <a href=\"https://sive.rs/about\">other life choices</a>.)\n</em>\n<p>\n\tIt’s a fun ongoing experiment and reminder to <a href=\"https://sive.rs/u15\">challenge all predictions</a>.\n</p>\n<hr />\n<p><em>\n\t(I have not taken any photos of the house, because I don’t care how it looks, and I almost never take photos of anything.)\n</em></p>",
+      "summary": "作者用三段讲清楚了一件事：为什么他把博客从静态生成器搬回手写 HTML。",
+      "published_at": "2026-08-18T00:00:00Z",
+      "first_seen_at": "2026-08-20T10:29:18Z",
+      "sort_at": "2026-08-18T00:00:00Z"
+    }
+  },
+  "future_published": {
+    "source": "rss",
+    "key": "rss:36",
+    "datetime": "2026-08-18T21:57:17Z",
+    "is_read": true,
+    "is_saved": false,
+    "rss": {
+      "id": 36,
+      "guid": "https://sive.rs/d/1285",
+      "feed_url": "https://sive.rs/en.atom",
+      "feed_title": "Derek Sivers",
+      "title": "tweet",
+      "link": "https://sive.rs/d",
+      "author": null,
+      "content": "<p>Building without predicting. (The story of how I built my perfect home.) <a href=\"https://sive.rs/fit\">sive.rs/fit</a></p>",
+      "summary": null,
+      "published_at": "2027-09-25T04:29:03+00:00",
+      "first_seen_at": "2026-08-20T10:29:18Z",
+      "sort_at": "2026-08-18T21:57:17Z"
+    }
+  },
+  "linkless": {
+    "source": "rss",
+    "key": "rss:36",
+    "datetime": "2026-08-18T21:57:17Z",
+    "is_read": true,
+    "is_saved": false,
+    "rss": {
+      "id": 36,
+      "guid": "https://sive.rs/d/1285",
+      "feed_url": "https://sive.rs/en.atom",
+      "feed_title": "Derek Sivers",
+      "title": null,
+      "link": null,
+      "author": null,
+      "content": "<p>Building without predicting. (The story of how I built my perfect home.) <a href=\"https://sive.rs/fit\">sive.rs/fit</a></p>",
+      "summary": null,
+      "published_at": "2026-08-18T21:57:17Z",
+      "first_seen_at": "2026-08-20T10:29:18Z",
+      "sort_at": "2026-08-18T21:57:17Z"
+    }
+  }
+}

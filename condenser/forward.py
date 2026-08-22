@@ -18,6 +18,10 @@ Two shapes, because the two sources give Telegram different things to work with:
   ``fixupx.com`` (same path, FixTweet's x.com-branded host) does — so a bare
   rewritten link renders a card with the author, text and media. Writing those
   into the message body as well would print every tweet twice.
+* **RSS** (2026-08-20) is HN's shape minus its second line: an article has one
+  destination, and there is no discussion page to link beside it. Telegram builds
+  its card from that URL, which is where the site name and blurb come from —
+  writing the feed's own name into the body would only repeat it.
 """
 
 import html
@@ -25,6 +29,7 @@ from typing import Optional
 
 from . import db
 from .items import ItemKey
+from .sources import rss as rss_source
 from .sources import x as x_source
 
 # The embed-serving mirror of x.com — identical path, so only the host is swapped.
@@ -67,6 +72,14 @@ def _hn_body(story: db.HNStory) -> str:
     )
 
 
+def _rss_body(entry: dict) -> str:
+    title = entry.get('title') or '(untitled)'
+    link = entry.get('link')
+    # An entry with no link is rare but real (a feed that carries the whole post
+    # and nothing to point at); a bold plain title is the honest degradation.
+    return _link(link, title, bold=True) if link else f'<b>{_esc(title)}</b>'
+
+
 def render(key: ItemKey, comment: str = '') -> str:
     """The Telegram HTML body for a non-Telegram item.
 
@@ -86,6 +99,11 @@ def render(key: ItemKey, comment: str = '') -> str:
         # Just the link: fixupx's card already carries the author, text, media and
         # quoted tweet, so anything written here would be printed twice.
         body = _esc(x_embed_url(row['id'], row.get('author_handle')))
+    elif key.source == 'rss':
+        entry = rss_source.get_row(key.ref1)
+        if entry is None:
+            raise ItemNotFound(key.key)
+        body = _rss_body(entry)
     else:
         raise ValueError(f'{key.source!r} is forwarded natively, not rendered')
 

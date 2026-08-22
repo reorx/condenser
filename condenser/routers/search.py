@@ -22,7 +22,11 @@ from ..sources.x import normalize_feed
 
 router = APIRouter(prefix='/api', tags=['search'], dependencies=[Depends(require_auth)])
 
-_SOURCE_PATTERN = '^(telegram|hn|x)$'
+_SOURCE_PATTERN = '^(telegram|hn|x|rss)$'
+# The sources whose subscriptions are addressed by a feed key rather than by a
+# channel id. Their keys look nothing alike (an X handle, an RSS feed URL), so the
+# scope is only interpretable once the source is named.
+_FEED_SOURCES = ('x', 'rss')
 _STATUS_PATTERN = '^(unread|saved)$'
 _SORT_PATTERN = '^(recent|relevance)$'
 
@@ -32,7 +36,7 @@ def get_search(
     q: str = Query(..., max_length=200),
     source: Optional[str] = Query(None, pattern=_SOURCE_PATTERN),
     channel_id: Optional[int] = None,
-    feed: Optional[str] = Query(None, max_length=64),
+    feed: Optional[str] = Query(None, max_length=2000),
     status: Optional[str] = Query(None, pattern=_STATUS_PATTERN),
     sort: str = Query('recent', pattern=_SORT_PATTERN),
     offset: int = Query(0, ge=0),
@@ -49,9 +53,10 @@ def get_search(
         raise HTTPException(
             status_code=422, detail="channel_id is a telegram scope; it cannot be combined with source='%s'" % source
         )
-    if feed and source not in (None, 'x'):
+    if feed and source not in _FEED_SOURCES:
         raise HTTPException(
-            status_code=422, detail="feed is an x scope; it cannot be combined with source='%s'" % source
+            status_code=422,
+            detail='feed narrows a multi-feed source and needs one named: source must be x or rss',
         )
     match = search.build_match(q)
     if match is None:
@@ -62,7 +67,9 @@ def get_search(
         match,
         source=source,
         channel_id=channel_id,
-        feed=normalize_feed(feed),
+        # Only X's keys are normalized ('@Handle' and 'handle' are one feed); an RSS
+        # key is a URL, where lowercasing a path can change what it addresses.
+        feed=normalize_feed(feed) if source == 'x' else feed,
         status=status,
         sort=sort,
         offset=offset,

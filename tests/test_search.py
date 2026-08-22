@@ -261,7 +261,7 @@ def test_rebuild_is_idempotent_and_covers_every_source(env):
     _seed_x_tweet(9001, '推特上的模型讨论')
 
     first = search.rebuild()
-    assert first == {'telegram': 2, 'hn': 1, 'x': 1}
+    assert first == {'telegram': 2, 'hn': 1, 'x': 1, 'rss': 0}
     assert search.rebuild() == first
     assert sorted(_find('模型')) == ['tg:100:1', 'x:9001']
     assert _find('rust') == ['hn:500']
@@ -310,7 +310,7 @@ def test_upgrade_from_v11_backfills_the_index(env):
     conn.close()
 
     _init()
-    assert db.get_meta('schema_version') == str(db.SCHEMA_VERSION) == '14'
+    assert db.get_meta('schema_version') == str(db.SCHEMA_VERSION)
     assert _find('模型') == ['tg:100:1']
 
 

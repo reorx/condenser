@@ -19,6 +19,9 @@ Two structural decisions worth knowing:
   exclusive lock for as long as it takes to rewrite the file. peewee's
   connections are thread-local — which is already how every sync route handler
   reaches the database — so the worker gets its own and hands it back.
+* **Deliberately no ``kick()``.** HN's exists for "subscribe → sample now" and
+  the verdict's for "push → judge now", but no user action makes yesterday's
+  retention scan due sooner.
 
 A rule is anything with ``name``, ``enabled(settings)`` and
 ``run(now, settings) -> CleanupReport``; duck-typed because this codebase uses
@@ -126,8 +129,27 @@ class XRetentionRule:
         return CleanupReport(rule=self.name, counts=counts)
 
 
+class RssRetentionRule:
+    """Deletes archived feed entries nobody engaged with, once they are old enough.
+
+    X's rule with one table instead of three: RSS has no quote graph, so there is
+    no convergence loop, and ``rss_feeds`` is never swept (100 rows at the design
+    target, and its validators are what make a re-subscribe resume rather than
+    re-download).
+    """
+
+    name = 'rss_retention'
+
+    def enabled(self, settings: Settings) -> bool:
+        return settings.condenser_cleanup_rss_enabled
+
+    def run(self, now: datetime, settings: Settings) -> CleanupReport:
+        cutoff = now - timedelta(days=settings.condenser_cleanup_rss_retention_days)
+        return CleanupReport(rule=self.name, counts=db.sweep_rss_retention(cutoff))
+
+
 # One tuple, so adding a rule is one line here and the loop below never changes.
-DEFAULT_RULES = (XRetentionRule(),)
+DEFAULT_RULES = (XRetentionRule(), RssRetentionRule())
 
 
 class CleanupManager:

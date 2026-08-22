@@ -6,6 +6,7 @@ const LABELS: Record<Source, string> = {
   telegram: 'Telegram',
   hn: 'Hacker News',
   x: 'X',
+  rss: 'RSS',
 };
 
 /** The down-reason chips, in the order they are offered. Shared by the card that asks
@@ -45,7 +46,16 @@ export function xFeedLabel(feed: string, name?: string | null): string {
 }
 
 export function isSource(v: string | undefined | null): v is Source {
-  return v === 'telegram' || v === 'hn' || v === 'x';
+  return v === 'telegram' || v === 'hn' || v === 'x' || v === 'rss';
+}
+
+/** Display name for an RSS feed. The URL is the fallback because it *is* the key —
+ *  the reader typed it, so it is at worst unfamiliar, never meaningless. The scheme
+ *  and any trailing `/feed.xml` are dropped: with 100 rows in a sidebar, what
+ *  distinguishes them is the host. */
+export function rssFeedLabel(feedUrl: string, name?: string | null): string {
+  if (name) return name;
+  return feedUrl.replace(/^https?:\/\//, '').replace(/\/$/, '');
 }
 
 /** Display name for a source group (sidebar headers, /s/:source view titles). */
@@ -103,4 +113,14 @@ export function sourceSubLabel(sub: SourceSub): string {
   if (sub.name) return sub.name;
   if (sub.username) return `@${sub.username}`;
   return typeof sub.channel_id === 'number' ? `Channel ${sub.channel_id}` : String(sub.channel_id);
+}
+
+/** Display name for a subscription row, source-aware. RSS is the exception the
+ *  source-blind version cannot serve: its key is a full URL, so the generic
+ *  fallback would print `https://…/feed.xml` where every other source prints a
+ *  name. Used by the sidebar, the search scope menu and the feed view's header, so
+ *  one feed is called the same thing in all three. */
+export function subRowLabel(source: Source, sub: SourceSub): string {
+  if (source === 'rss') return rssFeedLabel(String(sub.channel_id), sub.name);
+  return sourceSubLabel(sub);
 }

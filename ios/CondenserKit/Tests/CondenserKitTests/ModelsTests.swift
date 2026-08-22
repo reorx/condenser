@@ -165,6 +165,7 @@ struct ModelsDecodingTests {
     func sourceLabels() {
         #expect(SourceID.label("telegram") == "Telegram")
         #expect(SourceID.label("hn") == "Hacker News")
-        #expect(SourceID.label("rss") == "rss", "未知信源原样展示")
+        #expect(SourceID.label("rss") == "RSS")
+        #expect(SourceID.label("mastodon") == "mastodon", "未知信源原样展示")
     }
 }

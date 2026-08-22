@@ -14,6 +14,9 @@ import type {
   KeywordFilter,
   LinkPreview,
   MessageStats,
+  RssOpmlResult,
+  RssStatus,
+  RssSubscription,
   SearchPage,
   SearchParams,
   Source,
@@ -169,6 +172,21 @@ export const api = {
       body: JSON.stringify({ config }),
     }),
   xUnsubscribe: (channelId: string) => del<{ ok: true }>(`/api/sources/x/subscriptions/${channelId}`),
+
+  // ---- rss source ----
+  // This source keys on the feed URL, which carries its own slashes and query
+  // string — so it travels as a query parameter, never as a path segment.
+  rssStatus: () => request<RssStatus>('/api/rss/status'),
+  listRssSubscriptions: () => request<RssSubscription[]>('/api/sources/rss/subscriptions'),
+  rssSubscribe: (url: string) => post<RssSubscription>('/api/sources/rss/subscriptions', { url }),
+  rssSetEnabled: (url: string, enabled: boolean) =>
+    request<RssSubscription>(`/api/sources/rss/subscriptions?url=${encodeURIComponent(url)}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ enabled }),
+    }),
+  rssUnsubscribe: (url: string) => del<{ ok: true }>(`/api/sources/rss/subscriptions?url=${encodeURIComponent(url)}`),
+  /** Bulk subscribe from an OPML export (the file is read client-side and posted as text). */
+  rssImportOpml: (opml: string) => post<RssOpmlResult>('/api/sources/rss/opml', { opml }),
 
   // ---- sources (two-level source -> subscriptions listing, Phase 2) ----
   listSources: () => request<SourceGroup[]>('/api/sources'),
