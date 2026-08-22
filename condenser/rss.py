@@ -228,6 +228,10 @@ class RssManager:
         self._tasks: set[asyncio.Task] = set()
         self._wake = asyncio.Event()
         self._loop_ref: Optional[asyncio.AbstractEventLoop] = None
+        # Serializes the off-loop ingests (see _poll_feed): they used to run inline
+        # on the loop, which serialized them for free; concurrent SQLite writers
+        # would trade the stalled loop for lock contention.
+        self._ingest_lock = asyncio.Lock()
 
     # ---- lifecycle ----
     async def startup(self) -> None:
@@ -358,7 +362,13 @@ class RssManager:
                 db.record_rss_feed_success(url, at=now, etag=result.etag, last_modified=result.last_modified)
                 return {'ok': True, 'new': 0}
             parsed = await asyncio.to_thread(parse_feed, result.body or b'')
-            new = self._ingest(url, parsed, now)
+            # Off the shared loop for the same reason parse_feed is: a first fetch
+            # of an archive-style feed lands hundreds of entries — bulk insert plus
+            # Python CJK bigram indexing — in one synchronous stretch, and this loop
+            # also carries the API and Telegram realtime ingest (cleanup.py runs its
+            # rounds on a worker thread for the same reason).
+            async with self._ingest_lock:
+                new = await asyncio.to_thread(self._ingest, url, parsed, now)
             db.record_rss_feed_success(
                 url,
                 at=now,

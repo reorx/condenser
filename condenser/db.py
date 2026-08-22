@@ -1835,8 +1835,17 @@ def get_rss_subscription(url: str) -> Optional[Subscription]:
     return Subscription.get_or_none(_RSS & (Subscription.channel_id == url))
 
 
-def add_rss_subscription(url: str, name: Optional[str] = None) -> tuple[Subscription, bool]:
-    """Subscribe-and-enable, plus the feed's fetch-state row; a paused row is re-enabled.
+def add_rss_subscription(
+    url: str, name: Optional[str] = None, update_existing: bool = True
+) -> tuple[Subscription, bool]:
+    """Subscribe-and-enable, plus the feed's fetch-state row.
+
+    On an existing row, ``update_existing`` decides whose gesture this is. A
+    manual re-add (True) re-enables a paused feed and — since PATCH carries no
+    ``name`` — a name sent with it is the rename path, and sticks
+    (``_learn_feed_name`` never overwrites a non-NULL name). An OPML import
+    (False) leaves existing rows entirely alone: a re-import must not reverse
+    pause decisions or relabel feeds, it only picks up additions (2026-08-22).
 
     The two rows are created together because a subscription with no ``rss_feeds``
     row would poll with no validators and no place to record a failure. Returns
@@ -1848,9 +1857,16 @@ def add_rss_subscription(url: str, name: Optional[str] = None) -> tuple[Subscrip
             channel_id=url,
             defaults={'enabled': True, 'backfill_done': False, 'added_at': _now(), 'name': name},
         )
-        if not created and not sub.enabled:
-            Subscription.update(enabled=True).where(_RSS & (Subscription.channel_id == url)).execute()
-            sub.enabled = True
+        if not created and update_existing:
+            fields = {}
+            if not sub.enabled:
+                fields[Subscription.enabled] = True
+                sub.enabled = True
+            if name is not None and name != sub.name:
+                fields[Subscription.name] = name
+                sub.name = name
+            if fields:
+                Subscription.update(fields).where(_RSS & (Subscription.channel_id == url)).execute()
         RssFeed.insert(url=url).on_conflict_ignore().execute()
     return sub, created
 
@@ -1970,6 +1986,11 @@ def insert_rss_entries(rows: list[dict], read_before: Optional[datetime], now: d
     happens here rather than in a later pass because the two writes have to be one
     fact: an entry that is archived without its read marker is unread backlog on
     the reader's screen the moment the transaction commits.
+
+    An entry with no ``published_at`` falls back to ``first_seen_at`` (= now),
+    which is never before the cutoff — so a dateless feed's first fetch arrives
+    entirely unread, window or no window. Accepted fail-open (2026-08-22): such
+    feeds are rare, and the exposure is bounded by one feed document.
     """
     if not rows:
         return 0

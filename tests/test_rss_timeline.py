@@ -492,3 +492,33 @@ def test_retention_deletes_old_untouched_entries_and_keeps_engaged_ones(rss_env,
     # and the deleted entry takes its search document with it
     assert search.count() == 4
     assert db.RssEntry.get_or_none(db.RssEntry.id == stale.id) is None
+
+
+def test_rows_by_id_chunks_below_the_bound_variable_limit(rss_env):
+    """Every neighbor chunks its IN() at 500 for SQLite's bound-variable limit; a
+    first fetch of an archive-style feed hands this every new id at once, and by
+    then the entries are already committed — a crash here would skip their search
+    indexing permanently (the guids are no longer "new" next round)."""
+    import sqlite3
+
+    from telememo import db as tdb
+
+    from condenser.sources import rss as rss_source
+
+    init()
+    subscribe(FEED_A)
+    rows = [
+        {'feed_url': FEED_A, 'guid': f'g{i}', 'title': f'Entry {i}', 'first_seen_at': T0} for i in range(600)
+    ]
+    db.insert_rss_entries(rows, read_before=None, now=T0)
+    ids = db.rss_entry_ids(FEED_A, [row['guid'] for row in rows])
+    assert len(ids) == 600
+
+    conn = tdb.db.connection()
+    old_limit = conn.getlimit(sqlite3.SQLITE_LIMIT_VARIABLE_NUMBER)
+    conn.setlimit(sqlite3.SQLITE_LIMIT_VARIABLE_NUMBER, 500)
+    try:
+        got = rss_source.rows_by_id(ids)
+    finally:
+        conn.setlimit(sqlite3.SQLITE_LIMIT_VARIABLE_NUMBER, old_limit)
+    assert {row['id'] for row in got} == set(ids)

@@ -104,7 +104,9 @@ def import_opml(body: RssOpmlBody, rss: RssManager = Depends(get_rss)):
         except ValueError:
             counts['invalid'] += 1
             continue
-        _, created = db.add_rss_subscription(url, name=outline['title'])
+        # update_existing=False: an import must not reverse the reader's pause
+        # decisions or relabel feeds — it only picks up what is new.
+        _, created = db.add_rss_subscription(url, name=outline['title'], update_existing=False)
         counts['added' if created else 'skipped_existing'] += 1
     if counts['added']:
         rss.kick()

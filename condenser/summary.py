@@ -66,7 +66,12 @@ MAX_OUTPUT_TOKENS = 400
 _TAG_RE = re.compile(r'<[^>]+>')
 # script/style *contents* are not prose: dropping only the tags would send a
 # stylesheet to the model, paying for the tokens and getting a worse summary.
-_NOISE_RE = re.compile(r'<(script|style)\b.*?</\1>', re.IGNORECASE | re.DOTALL)
+_NOISE_RE = re.compile(r'<(script|style)\b.*?</\1\s*>', re.IGNORECASE | re.DOTALL)
+# A block left unclosed (a body truncated mid-<script>) would slip past the pair
+# above, and _TAG_RE stripping only the opening tag leaves the whole script body
+# posing as prose — inflating the text past the min_chars gate and getting billed
+# as the article. Strip from any opener that survived to the end of the text.
+_UNCLOSED_NOISE_RE = re.compile(r'<(?:script|style)\b.*\Z', re.IGNORECASE | re.DOTALL)
 _WS_RE = re.compile(r'\s+')
 # A model asked for a summary often labels it first. The label is not the summary.
 _PREFIX_RE = re.compile(r'^\s*(摘要|总结|概要|Summary)\s*[:：]\s*', re.IGNORECASE)
@@ -118,6 +123,7 @@ def plain_text(value: Optional[str]) -> str:
     if not value:
         return ''
     text = _NOISE_RE.sub(' ', value)
+    text = _UNCLOSED_NOISE_RE.sub(' ', text)
     text = _TAG_RE.sub(' ', text)
     return _WS_RE.sub(' ', html.unescape(text)).strip()
 

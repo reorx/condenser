@@ -423,6 +423,27 @@ def test_plain_text_reads_the_prose_and_drops_the_rest():
     assert 'Second & last.' in text  # entities are decoded, as the reader sees them
 
 
+def test_plain_text_strips_an_unclosed_script_or_style_block():
+    """A body truncated mid-<script>, or closed with `</script >`, must not leak
+    the script's source into the "prose": the leaked JS inflates the length past
+    the min_chars gate, gets billed as the article, and the garbage summary is
+    stored with ``summary_model`` set — so it is never redone."""
+    truncated = '<p>Intro.</p><script>var tracker = "abc"; loadAds();'
+    text = summary_mod.plain_text(truncated)
+    assert 'tracker' not in text and 'loadAds' not in text
+    assert 'Intro.' in text
+
+    spaced_closer = '<p>Intro.</p><script>secretPayload();</script ><p>After.</p>'
+    text = summary_mod.plain_text(spaced_closer)
+    assert 'secretPayload' not in text
+    assert 'Intro.' in text and 'After.' in text
+
+    open_style = '<p>Intro.</p><style>.a { color: red }'
+    text = summary_mod.plain_text(open_style)
+    assert 'color: red' not in text
+    assert 'Intro.' in text
+
+
 def test_plain_text_survives_nothing():
     assert summary_mod.plain_text(None) == ''
     assert summary_mod.plain_text('') == ''
@@ -615,7 +636,9 @@ def test_a_server_error_is_the_provider_being_down(summary_env, monkeypatch):
     settings = configure(monkeypatch)
 
     with pytest.raises(summary_mod.ProviderUnavailable):
-        asyncio.run(summary_mod.summarize_entry('T', 'body', settings, client=_mock_client(lambda r: httpx.Response(503))))
+        asyncio.run(
+            summary_mod.summarize_entry('T', 'body', settings, client=_mock_client(lambda r: httpx.Response(503)))
+        )
 
 
 def test_a_rejected_request_is_this_entry_failing(summary_env, monkeypatch):
@@ -625,7 +648,9 @@ def test_a_rejected_request_is_this_entry_failing(summary_env, monkeypatch):
     settings = configure(monkeypatch)
 
     with pytest.raises(summary_mod.SummaryError):
-        asyncio.run(summary_mod.summarize_entry('T', 'body', settings, client=_mock_client(lambda r: httpx.Response(400))))
+        asyncio.run(
+            summary_mod.summarize_entry('T', 'body', settings, client=_mock_client(lambda r: httpx.Response(400)))
+        )
 
 
 def test_an_empty_answer_is_a_failure_not_a_summary(summary_env, monkeypatch):

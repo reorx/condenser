@@ -168,8 +168,12 @@ def rows_by_id(entry_ids: list[int]) -> list[dict]:
     """
     if not entry_ids:
         return []
-    placeholders = ','.join('?' for _ in entry_ids)
-    return _rows(f'{_SELECT} {_FROM} WHERE e.id IN ({placeholders})', tuple(entry_ids))
+    rows: list[dict] = []
+    for i in range(0, len(entry_ids), 500):  # SQLite's bound-variable limit
+        chunk = entry_ids[i : i + 500]
+        placeholders = ','.join('?' for _ in chunk)
+        rows.extend(_rows(f'{_SELECT} {_FROM} WHERE e.id IN ({placeholders})', tuple(chunk)))
+    return rows
 
 
 def get_row(entry_id: int) -> Optional[dict]:

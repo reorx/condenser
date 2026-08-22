@@ -610,6 +610,40 @@ def test_opml_import_endpoint(rss_env):
         assert db.get_rss_feed(BLOG_URL) is not None
 
 
+def test_opml_import_leaves_an_existing_subscription_alone(rss_env):
+    """An import must not reverse the reader's decisions (2026-08-22): a paused
+    feed stays paused — re-importing an OPML export to pick up additions would
+    otherwise silently re-enable every noisy feed the reader turned off — and a
+    name the row already carries is not overwritten by the outline's title."""
+    with _client() as client:
+        _login(client)
+        _quiet_rss(client)
+        client.post('/api/sources/rss/subscriptions', json={'url': HN_URL, 'name': 'my label'})
+        client.patch('/api/sources/rss/subscriptions', params={'url': HN_URL}, json={'enabled': False})
+
+        r = client.post('/api/sources/rss/opml', json={'opml': OPML})
+        assert r.json() == {'added': 2, 'skipped_existing': 1, 'invalid': 0}
+        sub = db.get_rss_subscription(HN_URL)
+        assert not bool(sub.enabled)
+        assert sub.name == 'my label'
+
+
+def test_resubscribe_with_a_name_is_the_rename_path(rss_env):
+    """PATCH carries no ``name``, so re-adding the URL with one is how a feed gets
+    renamed; re-adding without one keeps the label already there."""
+    with _client() as client:
+        _login(client)
+        _quiet_rss(client)
+        client.post('/api/sources/rss/subscriptions', json={'url': HN_URL, 'name': 'old'})
+
+        r = client.post('/api/sources/rss/subscriptions', json={'url': HN_URL, 'name': 'new'})
+        assert r.json()['name'] == 'new'
+        assert db.get_rss_subscription(HN_URL).name == 'new'
+
+        r = client.post('/api/sources/rss/subscriptions', json={'url': HN_URL})
+        assert r.json()['name'] == 'new'
+
+
 def test_opml_import_counts_unusable_outlines(rss_env):
     with _client() as client:
         _login(client)
