@@ -963,9 +963,50 @@ backlog drains in ~5 hours. 678 backend (+29) + 169 frontend green; acceptance
 `tmp/2026-08-22-rss-phase3/` (live DashScope run, thinking probe, 4 walkthrough screenshots of
 real summaries), re-runnable, API key passed on stdin throughout.
 
-Remaining for RSS: the two human steps that end phase 4 — `make device` sideload (USB), then
-`CONDENSER_RSS_ENABLED=true` (+ the summary key) in production and the OPML import, **in that
-order**.
+**RSS 开闸 + 开闸后的四个待办** (2026-08-22/23, TDD; plan
+`kb/plans/2026-08-22-rss-post-launch-fixes.md`). `CONDENSER_RSS_ENABLED=true` 在生产开闸
+（deploy 仓库 `54b066d`），导入 77 个 feed 的 OPML，观察了两轮真实轮询：冷轮 39s / 1583 条，
+热轮 **13s / 0 条**，89 次请求里 41 个 304（61% 命中）—— 阶段 1 那个「httpx 把 304 归为重定向」
+的修复在真实流量上成立，冷热轮的差就是它省下来的。坏源四类失败分得清、每源每轮恰好一次请求、
+幂等 ingest 三项一并验证通过。同一次观察暴露的四件事，两个 bug 两个决策：
+
+* **订阅页 5 秒轮询永不停止**（前端）。快轮询的结束条件写的是「每个源都有了 `fetched_at`」，
+  而 `record_rss_feed_error` **刻意不动** `fetched_at`（它的含义是「上次真正见到这个源」，
+  这才让陈旧的源看得出来）—— 于是 10 个永久失败的源让这个条件永远为真。两个各自正确的设计
+  撞在一起，改前端不改后端：条件变成 `enabled && !fetched_at && error_count === 0`，即
+  「**还没有结论**」。`enabled` 那一项不是凑数——「加进来后在首轮之前就被暂停」的源同样永远
+  拿不到结论，不排掉它这个 bug 就换个入口复发一次。
+* **bozo 警告会在 304 轮被抹掉**（后端）。`record_rss_feed_success` 无条件把 `note` 写进
+  `last_error`，而 304 分支不传 `note` —— 「文档没变」的一轮把上一轮对这份文档的警告清成了
+  NULL，徽标在 200 轮和 304 轮之间来回闪。同一个函数里 `title`/`etag` 走的正是相反的规则。
+  修法是让 `last_error` 服从同一条规则，并把「清除」与「没有意见」分成两个信号：`''` 是
+  「我解析了，很干净」，`None` 是「我没有文档可评论」。
+* **坏源不加退避，由读者确认后手动关开关**（已决策，不再重议）。10 个死源 × 48 轮/天 = 480 次
+  注定失败的请求，仍然不做自动退订/退避：**判断谁是死源是读者的事，服务器只负责把证据摆清楚**。
+  所以本项的实际工作量只有排序—— `error_count > 0` 的排最前，其余保持 `added_at desc` 原序，
+  稳定排序（列表会定时重取，顺序抖动会把读者正要点的开关挪走）。关掉之后 `error_count` 仍
+  > 0，它留在顶部，等于一份「已处理但仍坏着」的清单。
+* **永久重定向自动迁移 URL**（后端，唯一动键的改动）。热轮 89 次请求服务 77 个 feed，多出来的
+  是 9×301 + 4×308；`follow_redirects` 早就把内容取回来了，**性能不是理由**——真正的理由是
+  **转发会过期**：「新地址在哪」这条信息只在旧主机还活着时拿得到，域名一到期，这个源就从
+  「搬家了」退化成「死了」，要人肉重新找地址。判据是 `resp.history` 每一跳都是 301/308
+  （混 302/307 不迁），且**只在「200 + 解析成功 + ingest 完成」的轮次**迁移，304 轮与失败轮
+  一律不动——顺手挡掉「服务器配错一天 301」的大半风险。迁移是一个 `atomic()` 里三条 UPDATE
+  （`rss_feeds.url` / `subscriptions.channel_id` / `rss_entries.feed_url`——时间线正是按最后
+  这个 JOIN，迁一半就是空视图），目标键已被占则放弃并写一条 `last_error`：合并两份归档是读者
+  的决定。曾议的「同一目标连续两轮才迁」判定为有了「200+解析+ingest」这条后不必加。
+
+两个 bug 的判据都在真实流量上验证过，所以两条测试是复现用例；§4 的两条走真实 httpx
+`MockTransport`——判据在传输层，用假 fetcher 测等于没测。712 backend (+6) + 179 frontend (+6)
+green。验收 `tmp/2026-08-22-rss-post-launch-fixes/`：一个种了六种抓取状态的临时库 + 真实轮询，
+证到了轮询退回 60s（三次请求整整 60s 一次）、`eurychen.me` 的 bozo 警告在**真实 304** 后仍在、
+以及 `http://simonwillison.net/atom/everything/` 的真实 301 把订阅、归档 30 条与 feed 行整体
+迁到 https（再把 http 加回来则如设计地**拒绝合并**，理由写在行上）。
+
+Remaining for RSS: **iOS 侧载仍然欠着**（`make device` 要 USB 连机）—— 现装的 1.0.0 不认识
+`rss`，而生产已开闸且有 1583 条条目，聚合时间线会给它画空行，这个雷只差用户打开手机。
+`CONDENSER_SUMMARY_API_KEY` 也尚未配置（候选只有 15 条未读，一周窗口在博客类 feed 上就是这个
+形状）。
 
 Still open: subscription
 "delete-with-messages" option (Q4 / `?purge=1`) and the backfill batch-interval sleep.
