@@ -1966,6 +1966,39 @@ def record_rss_feed_success(
     RssFeed.update(fields).where(RssFeed.url == url).execute()
 
 
+def migrate_rss_feed_url(old: str, new: str) -> bool:
+    """Move a feed to the URL it permanently redirects to. Returns whether it moved.
+
+    The URL is this source's key in three places, so one transaction moves all three:
+    ``rss_feeds.url`` (the PK), ``subscriptions.channel_id`` (half of a composite PK)
+    and every archived entry's ``feed_url`` — the timeline joins entries to the
+    subscription on exactly that, so a partial move would empty the feed's view. Read
+    state, saved items and search documents key on the entry id and are untouched;
+    a saved snapshot keeps the old URL it was taken with, which is what a snapshot is.
+
+    Refuses when the target key is already taken (by a feed row or a subscription):
+    merging two archives is a decision, not a mechanic, and the reader is the one who
+    should retire whichever copy they do not want. The refusal is written to
+    ``last_error`` so it is visible on the row — a silent no-op would re-attempt every
+    round with nothing to see — but not to ``error_count``: the fetch itself worked.
+    """
+    if old == new:
+        return False
+    with tdb.db.atomic():
+        taken = RssFeed.select().where(RssFeed.url == new).exists() or (
+            Subscription.select().where(_RSS & (Subscription.channel_id == new)).exists()
+        )
+        if taken:
+            RssFeed.update(last_error=f'permanently redirects to {new}, which is already subscribed').where(
+                RssFeed.url == old
+            ).execute()
+            return False
+        RssFeed.update(url=new).where(RssFeed.url == old).execute()
+        Subscription.update(channel_id=new).where(_RSS & (Subscription.channel_id == old)).execute()
+        RssEntry.update(feed_url=new).where(RssEntry.feed_url == old).execute()
+    return True
+
+
 def record_rss_feed_error(url: str, error: str, at: datetime) -> None:
     """Count one failed round. ``fetched_at`` is deliberately not touched — it means
     "last time we actually saw this feed", which is what makes a stale feed visible."""

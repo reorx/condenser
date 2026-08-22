@@ -64,9 +64,9 @@ class FakeFetch:
         self.headers: dict[str, tuple] = {}
         self.calls: list[tuple] = []
 
-    def set(self, url, body, etag=None, last_modified=None):
+    def set(self, url, body, etag=None, last_modified=None, redirect_to=None):
         self.bodies[url] = body
-        self.headers[url] = (etag, last_modified)
+        self.headers[url] = (etag, last_modified, redirect_to)
 
     async def __call__(self, url, etag=None, last_modified=None):
         from condenser.rss import FetchResult
@@ -77,10 +77,15 @@ class FakeFetch:
         body = self.bodies[url]
         if isinstance(body, Exception):
             raise body
-        new_etag, new_last_modified = self.headers[url]
-        if body is None:
-            return FetchResult(status=304, body=None, etag=new_etag, last_modified=new_last_modified)
-        return FetchResult(status=200, body=body, etag=new_etag, last_modified=new_last_modified)
+        new_etag, new_last_modified, redirect_to = self.headers[url]
+        status = 304 if body is None else 200
+        return FetchResult(
+            status=status,
+            body=body,
+            etag=new_etag,
+            last_modified=new_last_modified,
+            permanent_redirect_to=redirect_to,
+        )
 
 
 @pytest.fixture
@@ -355,6 +360,115 @@ def test_the_real_fetcher_raises_on_a_server_error(rss_env):
 
     with pytest.raises(httpx.HTTPStatusError):
         asyncio.run(mgr._http_fetch_feed(HN_URL))
+
+
+# --- permanent redirects (plan 2026-08-22 §4) ----------------------------------
+# The reason to follow a 301 into the key, rather than just into the content: the
+# "where did it move to" answer only exists while the *old* host is still up. A
+# domain that lapses takes the forwarding with it, and a subscription that was
+# merely moved degrades into one that is dead, with nothing left to look it up by.
+
+
+def test_the_real_fetcher_reports_a_permanent_redirect(rss_env):
+    import httpx
+
+    def handler(request):
+        if str(request.url) == HN_URL:
+            return httpx.Response(301, headers={'Location': 'https://new.example/feed.xml'})
+        return httpx.Response(200, content=feed_xml(''))
+
+    mgr = make_manager(None)
+    mgr._client = httpx.AsyncClient(transport=httpx.MockTransport(handler), follow_redirects=True)
+
+    result = asyncio.run(mgr._http_fetch_feed(HN_URL))
+
+    assert result.status == 200
+    assert result.permanent_redirect_to == 'https://new.example/feed.xml'
+
+
+def test_the_real_fetcher_ignores_a_temporary_redirect(rss_env):
+    """302/307 say "for now". Following one is right; writing it into the key is not —
+    today's detour becomes tomorrow's wrong address. One temporary hop anywhere in the
+    chain disqualifies the whole chain."""
+    import httpx
+
+    hops = {
+        HN_URL: (301, 'https://mid.example/feed.xml'),
+        'https://mid.example/feed.xml': (302, 'https://new.example/feed.xml'),
+    }
+
+    def handler(request):
+        hop = hops.get(str(request.url))
+        if hop:
+            return httpx.Response(hop[0], headers={'Location': hop[1]})
+        return httpx.Response(200, content=feed_xml(''))
+
+    mgr = make_manager(None)
+    mgr._client = httpx.AsyncClient(transport=httpx.MockTransport(handler), follow_redirects=True)
+
+    result = asyncio.run(mgr._http_fetch_feed(HN_URL))
+
+    assert result.status == 200 and result.permanent_redirect_to is None
+
+
+def test_a_permanent_redirect_migrates_the_feed_url(rss_env):
+    """The URL is this source's key in three tables, so all three move together."""
+    old, new = 'https://old.example/feed.xml', 'https://new.example/feed.xml'
+    fetch = FakeFetch()
+    fetch.set(old, fixture('rss2_no_guid.xml'), etag='"abc"')
+    mgr = make_manager(fetch)
+    db.add_rss_subscription(old, name='Moved')
+    asyncio.run(mgr.poll_once())
+    assert len(entries(old)) == 3
+
+    fetch.set(old, fixture('rss2_no_guid.xml'), etag='"abc"', redirect_to=new)
+    asyncio.run(mgr.poll_once())
+
+    assert db.get_rss_feed(old) is None and db.get_rss_subscription(old) is None
+    assert entries(old) == []
+    feed = db.get_rss_feed(new)
+    assert feed is not None and feed.etag == '"abc"' and feed.error_count == 0
+    sub = db.get_rss_subscription(new)
+    assert sub is not None and sub.enabled and sub.name == 'Moved'
+    assert len(entries(new)) == 3  # the archive follows its feed, nothing re-downloaded
+
+
+def test_a_redirect_onto_an_existing_feed_does_not_merge_the_two(rss_env):
+    """Both URLs subscribed and one now points at the other: merging two archives is a
+    decision, not a mechanic. Refuse, say so on the row, and let the reader unsubscribe
+    whichever they meant to keep — and do not count it as a failure, the fetch worked."""
+    old, new = 'https://old.example/feed.xml', 'https://new.example/feed.xml'
+    fetch = FakeFetch()
+    fetch.set(old, fixture('rss2_no_guid.xml'), redirect_to=new)
+    fetch.set(new, feed_xml(''))
+    mgr = make_manager(fetch)
+    db.add_rss_subscription(old)
+    db.add_rss_subscription(new)
+
+    asyncio.run(mgr.poll_once())
+
+    assert db.get_rss_subscription(old) is not None  # both still there
+    assert db.get_rss_subscription(new) is not None
+    feed = db.get_rss_feed(old)
+    assert new in feed.last_error and feed.error_count == 0
+
+
+def test_a_304_does_not_migrate_even_when_it_was_redirected(rss_env):
+    """Migration rides on "200 + parsed + ingested", the only outcome that proves the
+    new address actually serves this feed. A 304 proves a cache hit and nothing else —
+    and a misconfigured server that 301s for a day must not be able to move the key."""
+    old, new = 'https://old.example/feed.xml', 'https://new.example/feed.xml'
+    fetch = FakeFetch()
+    fetch.set(old, fixture('rss2_no_guid.xml'), etag='"abc"')
+    mgr = make_manager(fetch)
+    db.add_rss_subscription(old)
+    asyncio.run(mgr.poll_once())
+
+    fetch.set(old, None, etag='"abc"', redirect_to=new)  # 304, arriving via a 301
+    asyncio.run(mgr.poll_once())
+
+    assert db.get_rss_feed(old) is not None and db.get_rss_feed(new) is None
+    assert len(entries(old)) == 3
 
 
 # --- failure isolation --------------------------------------------------------

@@ -57,6 +57,11 @@ class FetchResult:
     body: Optional[bytes]  # None on 304
     etag: Optional[str] = None
     last_modified: Optional[str] = None
+    # The address this feed has permanently moved to (301/308 all the way), or None.
+    # Reported here rather than acted on here: the fetcher's job ends at "the
+    # publisher says the feed lives there now" — whether the key follows is
+    # ``_poll_feed``'s decision, and it only follows a round that also parsed.
+    permanent_redirect_to: Optional[str] = None
 
 
 @dataclass
@@ -96,6 +101,24 @@ def normalize_feed_url(url: str) -> str:
     if parts.scheme not in ('http', 'https') or not parts.netloc:
         raise ValueError(f'feed url must be an http(s) URL: {url!r}')
     return url
+
+
+def _permanent_redirect_target(resp: httpx.Response) -> Optional[str]:
+    """Where this feed says it has permanently moved, or None.
+
+    Only when **every** hop was a 301/308. A 302/307 means "for now", and one of them
+    anywhere in the chain disqualifies the whole chain: following a temporary detour
+    is right, recording it as the subscription's key is how a working feed acquires a
+    wrong address.
+
+    ``follow_redirects=True`` already gets us the content either way — this is only
+    about the key, and the reason to move the key is that the *forwarding* is what
+    expires. A lapsed domain takes the "moved to" answer with it, and a subscription
+    that had merely moved becomes one that is dead with no trail (plan §4).
+    """
+    if not resp.history or any(hop.status_code not in (301, 308) for hop in resp.history):
+        return None
+    return str(resp.url)
 
 
 # --- parsing ------------------------------------------------------------------
@@ -287,6 +310,7 @@ class RssManager:
         if last_modified:
             headers['If-Modified-Since'] = last_modified
         resp = await self._client.get(url, headers=headers)
+        moved = _permanent_redirect_target(resp)
         if resp.status_code == 304:
             # Checked *before* raise_for_status, which classifies 304 as a redirect
             # and raises on it. That would turn the most common outcome of a healthy
@@ -297,6 +321,7 @@ class RssManager:
                 body=None,
                 etag=resp.headers.get('etag'),
                 last_modified=resp.headers.get('last-modified'),
+                permanent_redirect_to=moved,
             )
         resp.raise_for_status()
         return FetchResult(
@@ -304,6 +329,7 @@ class RssManager:
             body=resp.content,
             etag=resp.headers.get('etag'),
             last_modified=resp.headers.get('last-modified'),
+            permanent_redirect_to=moved,
         )
 
     @staticmethod
@@ -383,6 +409,13 @@ class RssManager:
                 note=parsed.warning or '',
             )
             self._learn_feed_name(sub, parsed.title)
+            # Last, and only here: a permanent redirect moves the key only on a round
+            # that came back 200, parsed, and ingested — proof that the new address
+            # really serves this feed, which also costs a server that 301s by mistake
+            # for a day most of its chances. Everything above writes by the *old* key,
+            # so migrating first would leave those UPDATEs hitting nothing.
+            if result.permanent_redirect_to and db.migrate_rss_feed_url(url, result.permanent_redirect_to):
+                log.info('rss feed moved: %s -> %s', url, result.permanent_redirect_to)
             return {'ok': True, 'new': new}
         except Exception as e:  # noqa: BLE001 — per-feed isolation is the whole point
             log.warning('rss feed failed: %s (%s)', url, e)
