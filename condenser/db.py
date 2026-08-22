@@ -1976,11 +1976,13 @@ def migrate_rss_feed_url(old: str, new: str) -> bool:
     state, saved items and search documents key on the entry id and are untouched;
     a saved snapshot keeps the old URL it was taken with, which is what a snapshot is.
 
-    Refuses when the target key is already taken (by a feed row or a subscription):
-    merging two archives is a decision, not a mechanic, and the reader is the one who
-    should retire whichever copy they do not want. The refusal is written to
-    ``last_error`` so it is visible on the row — a silent no-op would re-attempt every
-    round with nothing to see — but not to ``error_count``: the fetch itself worked.
+    Refuses when the target key is already taken — by a subscription, or by a feed row
+    alone, which is what an unsubscribed-but-archived feed leaves behind (the archive
+    outlives the subscription on purpose). Merging two archives is a decision, not a
+    mechanic, and the reader is the one who should retire whichever copy they do not
+    want. The refusal is written to ``last_error`` so it is visible on the row — a
+    silent no-op would re-attempt every round with nothing to see — but not to
+    ``error_count``: the fetch itself worked.
     """
     if old == new:
         return False
@@ -1989,9 +1991,9 @@ def migrate_rss_feed_url(old: str, new: str) -> bool:
             Subscription.select().where(_RSS & (Subscription.channel_id == new)).exists()
         )
         if taken:
-            RssFeed.update(last_error=f'permanently redirects to {new}, which is already subscribed').where(
-                RssFeed.url == old
-            ).execute()
+            RssFeed.update(
+                last_error=f'permanently redirects to {new}, which already has an archive here — retire one of the two'
+            ).where(RssFeed.url == old).execute()
             return False
         RssFeed.update(url=new).where(RssFeed.url == old).execute()
         Subscription.update(channel_id=new).where(_RSS & (Subscription.channel_id == old)).execute()

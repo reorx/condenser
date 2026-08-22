@@ -453,6 +453,28 @@ def test_a_redirect_onto_an_existing_feed_does_not_merge_the_two(rss_env):
     assert new in feed.last_error and feed.error_count == 0
 
 
+def test_a_redirect_onto_an_unsubscribed_but_archived_feed_is_refused_too(rss_env):
+    """Unsubscribing keeps the entries and the fetch state on purpose, so an
+    ``rss_feeds`` row with no subscription behind it still owns that key — and moving
+    a second feed's archive onto it is the same merge, minus the row that would show
+    the reader what happened."""
+    old, gone = 'https://old.example/feed.xml', 'https://gone.example/feed.xml'
+    fetch = FakeFetch()
+    fetch.set(gone, feed_xml('<item><title>Old</title><link>https://e.com/9</link></item>'))
+    mgr = make_manager(fetch)
+    db.add_rss_subscription(gone)
+    asyncio.run(mgr.poll_once())
+    db.delete_rss_subscription(gone)  # archive + feed row survive
+
+    fetch.set(old, fixture('rss2_no_guid.xml'), redirect_to=gone)
+    db.add_rss_subscription(old)
+    asyncio.run(mgr.poll_once())
+
+    assert db.get_rss_subscription(old) is not None
+    assert gone in db.get_rss_feed(old).last_error
+    assert len(entries(gone)) == 1  # the other archive is untouched
+
+
 def test_a_304_does_not_migrate_even_when_it_was_redirected(rss_env):
     """Migration rides on "200 + parsed + ingested", the only outcome that proves the
     new address actually serves this feed. A 304 proves a cache hit and nothing else —
