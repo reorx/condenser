@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { rssRefetchInterval } from '@/components/subscriptions/RssSection';
+import { rssRefetchInterval, sortRssSubscriptions } from '@/components/subscriptions/RssSection';
 import type { RssSubscription } from '@/lib/types';
 
 function sub(url: string, over: Partial<RssSubscription> = {}): RssSubscription {
@@ -40,5 +40,43 @@ describe('rss subscription poll interval', () => {
     // Paused before its first round: no fetch, no error, and no round is coming —
     // the same never-ending poll through a second door.
     expect(rssRefetchInterval([sub('https://a.example/feed', { enabled: false })])).toBe(60_000);
+  });
+});
+
+describe('rss subscription order', () => {
+  const urls = (subs: RssSubscription[]) => subs.map((s) => s.url);
+
+  it('lifts the failing feeds to the top', () => {
+    // With 77 rows the 10 broken ones are scattered through the list and the reader
+    // has to read every row to find them. The action they owe each one is "look,
+    // then pause it" — so the whole job is putting them where they get looked at.
+    const list = [
+      sub('https://ok1.example/feed', OK),
+      sub('https://bad.example/feed', BROKEN),
+      sub('https://ok2.example/feed', OK),
+    ];
+    expect(urls(sortRssSubscriptions(list))).toEqual([
+      'https://bad.example/feed',
+      'https://ok1.example/feed',
+      'https://ok2.example/feed',
+    ]);
+  });
+
+  it('keeps the server order inside each group', () => {
+    // The server returns `added_at desc`; only the failing/not split may reorder it.
+    // An unstable sort would shuffle 77 rows on every refetch — five seconds of that
+    // and the row you were reaching for is somewhere else.
+    const list = [
+      sub('https://bad1.example/feed', BROKEN),
+      sub('https://ok1.example/feed', OK),
+      sub('https://bad2.example/feed', BROKEN),
+      sub('https://ok2.example/feed'),
+    ];
+    expect(urls(sortRssSubscriptions(list))).toEqual([
+      'https://bad1.example/feed',
+      'https://bad2.example/feed',
+      'https://ok1.example/feed',
+      'https://ok2.example/feed',
+    ]);
   });
 });

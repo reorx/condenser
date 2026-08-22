@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Plus, Upload } from 'lucide-react';
 import { toast } from 'sonner';
@@ -29,6 +29,24 @@ import { RssSubscriptionRow } from './RssSubscriptionRow';
 export function rssRefetchInterval(subs: RssSubscription[] | undefined): number {
   const undecided = (subs ?? []).some((s) => s.enabled && !s.fetched_at && s.error_count === 0);
   return undecided ? 5_000 : 60_000;
+}
+
+/** The row order: failing feeds first, everything else left as the server sent it
+ *  (`added_at desc`).
+ *
+ *  A dead feed is never unsubscribed or backed off automatically — deciding that a
+ *  feed is dead is the reader's call (plan 2026-08-22 §3) — so the server's whole job
+ *  is putting the evidence where it gets seen. In a 77-row list the 10 broken ones are
+ *  scattered and the reader has to read every row to find them; lifted to the top they
+ *  are a to-do list, and one that stays after they pause a feed (`error_count` does not
+ *  reset) — "handled, still broken". Deliberately no filter and no group heading: the
+ *  action is look-then-pause, and another control is another piece of state to keep.
+ *
+ *  Stable by contract, not by accident: the list refetches while the page is open, and
+ *  an order that reshuffles on every round moves the switch the reader is reaching for. */
+export function sortRssSubscriptions(subs: RssSubscription[]): RssSubscription[] {
+  const failing = (s: RssSubscription) => (s.error_count > 0 ? 0 : 1);
+  return [...subs].sort((a, b) => failing(a) - failing(b));
 }
 
 /** The RSS tab on the Subscriptions page: add a feed by URL, bulk-import an OPML
@@ -89,6 +107,7 @@ export function RssSection() {
   });
 
   const disabled = !status?.source_enabled;
+  const rows = useMemo(() => sortRssSubscriptions(subs ?? []), [subs]);
 
   async function onPickFile(file: File | undefined) {
     if (!file) return;
@@ -153,11 +172,11 @@ export function RssSection() {
         <div className="flex justify-center py-8">
           <Spinner className="size-5 text-muted-foreground" />
         </div>
-      ) : (subs ?? []).length === 0 ? (
+      ) : rows.length === 0 ? (
         <p className="px-4 py-8 text-center text-sm text-muted-foreground sm:px-5">还没有 RSS 订阅。</p>
       ) : (
         <div className="divide-y">
-          {(subs ?? []).map((sub) => (
+          {rows.map((sub) => (
             <RssSubscriptionRow
               key={sub.url}
               sub={sub}
