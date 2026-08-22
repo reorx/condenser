@@ -22,6 +22,11 @@ dependencies = [
     # path, which we bypass); `cgi` was removed in Python 3.13 (PEP 594), so we provide
     # the maintained backport on 3.13+ to keep `import metadata_parser` working.
     "legacy-cgi>=2.6; python_version >= '3.13'",
+    # metadata-parser prefers lxml but doesn't declare it; without it every parse
+    # falls back to html.parser AND logs a false ERROR (logger `metdata_parser` —
+    # upstream's typo) that polluted level-based alerting in production. Binary
+    # wheels exist for linux/amd64 + macOS, so no compiler needed in the image.
+    "lxml>=5.0",
     "sqlite-vec>=0.1.9",
     "feedparser>=6.0.14",
 ]

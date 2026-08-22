@@ -22,7 +22,6 @@ os.environ.setdefault('METADATA_PARSER__DISABLE_TLDEXTRACT', '1')
 
 import asyncio  # noqa: E402
 import json  # noqa: E402
-import logging  # noqa: E402
 import re  # noqa: E402
 from datetime import datetime, timezone  # noqa: E402
 from typing import Callable, Literal, Optional  # noqa: E402
@@ -35,9 +34,12 @@ from pydantic import BaseModel  # noqa: E402
 from . import db, records  # noqa: E402
 from .config import Settings, get_settings  # noqa: E402
 
-# metadata_parser warns once per parse that lxml is unavailable (we use the stdlib
-# parser on purpose); keep that out of the app logs.
-logging.getLogger('metadata_parser').setLevel(logging.ERROR)
+# metadata_parser parses with lxml (a declared dependency here — it doesn't declare
+# it itself). When lxml is missing it logs an ERROR *per parse* on the logger
+# `metdata_parser` (upstream's typo) and falls back to the slower html.parser — a
+# name-based suppression once lived here but aimed at the correctly-spelled name,
+# so it never worked. Deliberately NOT muted now: with lxml installed the message
+# can only mean the environment is genuinely broken, and we want to see that.
 
 # Mirror of the frontend URL regex (lib/linkify.tsx) so extraction agrees on both sides.
 _URL_RE = re.compile(r'(https?://[^\s<]+|www\.[^\s<]+)', re.I)

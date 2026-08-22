@@ -4,6 +4,9 @@ Network is fully mocked: helpers are tested directly, and the fetch/cache/endpoi
 behavior is exercised by monkeypatching the single network seam ``_fetch_capped``.
 """
 
+import logging
+
+from bs4 import BeautifulSoup
 from fastapi.testclient import TestClient
 
 from condenser import db, preview
@@ -72,6 +75,28 @@ def test_parse_metadata_prefers_opengraph_and_resolves_image():
     assert meta['site_name'] == 'Example Site'
     assert meta['image'] == 'https://example.com/cover.png'
     assert meta['canonical'] == 'https://example.com/article'
+
+
+# --- HTML parser selection (lxml fast path) ---------------------------------
+
+
+def test_bs4_can_use_lxml():
+    """lxml must be installed: it is metadata_parser's preferred parser, and its
+    absence both drops every parse onto the slow html.parser path and fires the
+    ERROR pinned by the test below. Raises ``FeatureNotFound`` when missing."""
+    BeautifulSoup('<p>x</p>', 'lxml')
+
+
+def test_parse_metadata_emits_no_error_log(caplog):
+    """metadata_parser logs an ERROR *per parse* when lxml is missing (upstream's
+    ``make_soup``; logger named ``metdata_parser`` — the typo is upstream's, which
+    is why the old name-based suppression in preview.py never worked). In
+    production this false alarm polluted the centralized level-based alerting.
+    A normal parse must produce no ERROR-level records at all."""
+    with caplog.at_level(logging.DEBUG):
+        preview._parse_metadata('https://example.com/page', SAMPLE_HTML)
+    errors = [r for r in caplog.records if r.levelno >= logging.ERROR]
+    assert errors == []
 
 
 # --- single-URL endpoint ----------------------------------------------------
