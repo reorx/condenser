@@ -22,6 +22,7 @@ import asyncio
 import json
 import os
 import threading
+import time
 from datetime import datetime, timedelta, timezone
 
 from telememo import db as tdb
@@ -718,7 +719,14 @@ def test_the_endpoint_distinguishes_ran_from_deleted_nothing(env, monkeypatch):
     archived(101, days_ago=2, now=datetime.now(timezone.utc).replace(tzinfo=None))
     with TestClient(create_app()) as client:
         client.post('/api/auth/login', json={'password': 'pw'})
-        status = client.get('/api/cleanup/status').json()
+        # The startup round runs on a worker thread and nothing orders it before
+        # this request — poll with a deadline instead of racing it (flaked 2026-08-23).
+        deadline = time.monotonic() + 5
+        while True:
+            status = client.get('/api/cleanup/status').json()
+            if status['last_run_at'] is not None or time.monotonic() > deadline:
+                break
+            time.sleep(0.02)
 
     assert status['last_run_at'] is not None
     assert status['last_error'] is None

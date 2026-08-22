@@ -1008,6 +1008,39 @@ Remaining for RSS: **iOS 侧载仍然欠着**（`make device` 要 USB 连机）�
 `CONDENSER_SUMMARY_API_KEY` 也尚未配置（候选只有 15 条未读，一周窗口在博客类 feed 上就是这个
 形状）。
 
+**`database is locked` 间歇失败：诊断证实，两处修为 IMMEDIATE 事务** (2026-08-23, TDD)。
+上一轮留下的诊断——deferred `atomic()` 里「先 SELECT 后写」在快照失效时跳过 busy handler
+直接 `SQLITE_BUSY`——**是对的，且这次拿到了证据**，不再是推断：
+
+* **确定性复现**（`tests/test_db_locking.py`）：monkeypatch 事务的第一条写语句
+  （`Subscription.create` / `RssFeed.update`），把事务冻结在「读完、还没写」的间隙里，从另一
+  连接提交一笔无关写（`set_meta`），再放行。未修复版**必红**，且 0.07s 内立即失败——这本身就是
+  机制证据：普通锁竞争会在 busy handler 里等满 5s 超时，立即失败只有「快照升级被拒、handler
+  被跳过」（WAL 下即 `SQLITE_BUSY_SNAPSHOT`）一种解释。事务内重试也救不回来——快照已stale，
+  只有整个回滚重开。改 `atomic(lock_type='IMMEDIATE')` 后两条测试转绿（BEGIN 即取写锁，事务
+  从头就是 writer，并发写者退回 busy handler 里排队等，测试里探针写确实等到了锁）。
+* **原始 flake 也复现了**：干净未修复代码上循环 `tests/test_rss.py` 40 轮，2 轮红（~5%）；
+  修复后 40 轮 0 红。测试里与端点赛跑的写者是 **cleanup 的启动 round**——它无论删没删东西都要
+  写三次 `app_meta`（`set_meta` 断点/错误/报告），跑在 worker 线程上，正好撞上端点测试的第一个
+  POST。生产的同形写者更多（Telethon ingest / threadpool 请求 / RSS `to_thread` ingest）。
+* **Pragma 盘点**（问题「谁设的」的答案）：WAL 是 condenser 自己的 `_enable_wal` 设的
+  （文件头持久属性，一次即可）；`busy_timeout` 谁都没显式设，实际值来自 peewee
+  `SqliteDatabase` 默认 `timeout=5` 传给 `sqlite3.connect`（≈5s busy handler）。telememo 的
+  `init_db` 不设任何 pragma。
+* **同形态全库扫过，恰好只有两处**：`add_rss_subscription`（`atomic()` 包住了
+  `get_or_create`，SELECT 进了事务）和 `migrate_rss_feed_url`（`exists()` 后 UPDATE）。其余
+  每个 `atomic()` 首语句都是写（delete/insert 开头，事务从第一条语句起就是 writer，走正常
+  busy-handler 路径）；裸 `get_or_create`（TG/HN/X 的 add_subscription）的 SELECT 在事务**外**
+  自动提交，create 自成写事务，不构成读升级写。`search.py` 的三个块要么先在事务外取数、
+  要么 DELETE 开头。两处调用点均无外层事务——这点要紧，**嵌套 `atomic()` 时 `lock_type`
+  会退化为 savepoint 被忽略**，以后写「读后写」事务时也照此办理（IMMEDIATE + 不嵌套）。
+* **`test_cleanup` 那次孤立失败是另一回事**，不同源：`CleanupManager.startup()` 只
+  `create_task`，没人保证启动 round 在第一个请求前落库，
+  `test_the_endpoint_distinguishes_ran_from_deleted_nothing` 紧跟 login 就 GET status，
+  round 慢一步就读到 `last_run_at=None`——纯时序竞态，不是锁。测试改成带 5s 限期的轮询。
+
+714 backend (+2) green。
+
 Still open: subscription
 "delete-with-messages" option (Q4 / `?purge=1`) and the backfill batch-interval sleep.
 Full checklist: `kb/sessions/2026-06-09-backend-remaining-work.md`.

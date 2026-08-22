@@ -1850,8 +1850,16 @@ def add_rss_subscription(
     The two rows are created together because a subscription with no ``rss_feeds``
     row would poll with no validators and no place to record a failure. Returns
     ``(sub, created)`` — HN/X's POST semantics.
+
+    IMMEDIATE, not deferred: this transaction reads (``get_or_create``'s SELECT)
+    before it writes, and a deferred transaction whose snapshot another
+    connection has since written past cannot upgrade — SQLite returns
+    ``database is locked`` *without* consulting the busy handler, so no timeout
+    or retry saves it (tests/test_db_locking.py replays the interleaving).
+    Taking the write lock at BEGIN keeps the transaction on the busy-handler
+    path, where concurrent writers wait instead of failing.
     """
-    with tdb.db.atomic():
+    with tdb.db.atomic(lock_type='IMMEDIATE'):
         sub, created = Subscription.get_or_create(
             source='rss',
             channel_id=url,
@@ -1983,10 +1991,15 @@ def migrate_rss_feed_url(old: str, new: str) -> bool:
     want. The refusal is written to ``last_error`` so it is visible on the row — a
     silent no-op would re-attempt every round with nothing to see — but not to
     ``error_count``: the fetch itself worked.
+
+    IMMEDIATE for the same reason as ``add_rss_subscription``: the taken-check
+    reads before the first UPDATE, and a deferred read-then-write transaction
+    loses its snapshot to any concurrent writer with an immediate, untimed
+    ``database is locked``.
     """
     if old == new:
         return False
-    with tdb.db.atomic():
+    with tdb.db.atomic(lock_type='IMMEDIATE'):
         taken = RssFeed.select().where(RssFeed.url == new).exists() or (
             Subscription.select().where(_RSS & (Subscription.channel_id == new)).exists()
         )

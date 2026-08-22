@@ -78,6 +78,12 @@ touching `init_db`.
   timeline query only reads the `is_filtered` boolean. Regex is reserved for later.
 - **peewee connections are thread-local**: tests close the main-thread connection between
   cases (see `tests/conftest.py`) because TestClient runs the lifespan in a portal thread.
+- **A transaction that reads before it writes must be `atomic(lock_type='IMMEDIATE')`**, and
+  must not be nested (nesting turns it into a savepoint and drops the lock_type). A deferred
+  read-then-write transaction whose snapshot another connection has written past dies with an
+  *immediate* `database is locked` — SQLite skips the busy handler on the upgrade, so no
+  timeout or in-transaction retry saves it. Verified + pinned by `tests/test_db_locking.py`
+  (2026-08-23); write-first `atomic()` blocks and bare `get_or_create` are fine as they are.
 - **Fixed-clock tests vs the cleanup sweep**: a test module that seeds fixtures with old
   timestamps must disable the retention rules (e.g. `CONDENSER_CLEANUP_RSS_ENABLED=false`),
   or the cleanup round at app startup deletes them out from under the assertions — the trap
