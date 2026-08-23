@@ -73,7 +73,29 @@ struct RssModelsDecodingTests {
         let entry = try #require(try rssShapes()["cjk"]?.rss)
         let title = try #require(entry.title)
         #expect(title.contains(where: { $0.unicodeScalars.first.map { $0.value > 0x2E80 } ?? false }))
+        #expect(entry.contentExcerpt?.isEmpty == false)
+    }
+
+    @Test("列表载荷不带全文，只带摘录——一页 30 条正文是几百 KB 到几 MB")
+    func listCarriesTheExcerptNotTheArticle() throws {
+        let page = try decoder.decode(TimelinePage.self, from: loadRssFixture("timeline_page_rss"))
+        for item in page.items {
+            let entry = try #require(item.rss)
+            #expect(entry.content == nil)
+        }
+        // 有正文的条目摘录里已经没有标签了：服务端剥好的
+        let bodied = try #require(page.items.compactMap(\.rss).first { $0.contentExcerpt != nil })
+        #expect(bodied.contentExcerpt?.contains("<") == false)
+    }
+
+    @Test("rss_article.json：详情接口回的是同一个 envelope，多一个 content")
+    func detailEnvelopeCarriesTheArticle() throws {
+        let item = try decoder.decode(TimelineItem.self, from: loadRssFixture("rss_article"))
+        let entry = try #require(item.rss)
+        #expect(item.source == SourceID.rss)
+        #expect(item.key == "rss:\(entry.id)")
         #expect(entry.content?.isEmpty == false)
+        #expect(entry.contentExcerpt?.isEmpty == false, "摘录也在，取全文失败时还能退回它")
     }
 
     @Test("sources_rss.json：RSS 订阅的 channel_id 是 feed URL（字符串键）")
@@ -141,35 +163,53 @@ struct RssEntryDisplayTests {
         let plain = try #require(shapes["html_body"]?.rss)
         #expect(plain.displaySummary == nil)
         let fallback = try #require(plain.contentText)
-        #expect(!fallback.contains("<"), "HTML 已经转成纯文本")
-        #expect(fallback == rssPlainText(fromHTML: plain.content ?? ""))
+        #expect(!fallback.contains("<"), "服务端已经转成纯文本")
 
-        #expect(makeEntry(content: "x", summary: "   ").displaySummary == nil,
+        #expect(makeEntry(excerpt: "x", summary: "   ").displaySummary == nil,
                 "全空白的摘要不算摘要")
     }
 
-    @Test("contentText 与摘要无关——详情页要在摘要下面接着给全文")
-    func contentTextIgnoresSummary() throws {
-        let summarized = try #require(try rssShapes()["summarized"]?.rss)
-        let text = try #require(summarized.contentText)
-        #expect(summarized.summary?.isEmpty == false)
-        #expect(text != summarized.summary)
-        #expect(text == rssPlainText(fromHTML: summarized.content ?? ""))
+    @Test("contentText 就是列表载荷里的摘录，不再每次重渲染解析一遍 HTML")
+    func contentTextIsTheServerCutExcerpt() throws {
+        let entry = try #require(try rssShapes()["html_body"]?.rss)
+        #expect(entry.content == nil, "列表载荷没有全文")
+        #expect(entry.contentText == entry.contentExcerpt)
+    }
+
+    @Test("articleText 是全文的纯文本，只有详情接口 / 老快照带得动")
+    func articleTextNeedsTheBody() throws {
+        let listed = try #require(try rssShapes()["html_body"]?.rss)
+        #expect(listed.articleText == nil)
+
+        let full = try JSONDecoder.condenserAPI
+            .decode(TimelineItem.self, from: loadRssFixture("rss_article"))
+        let entry = try #require(full.rss)
+        let text = try #require(entry.articleText)
+        #expect(text == rssPlainText(fromHTML: entry.content ?? ""))
+        #expect(!text.contains("<"))
+    }
+
+    @Test("改版前存的收藏快照只有 content：contentText 退回去解析它，卡片才不是空的")
+    func legacySnapshotFallsBackToTheArticle() {
+        let legacy = makeEntry(excerpt: nil, content: "<p>old snapshot body</p>", summary: nil)
+        #expect(legacy.contentText == "old snapshot body")
     }
 
     @Test("正文两者皆空 → 卡片没有可画的正文（只画标题）")
     func emptyBody() {
-        let empty = makeEntry(content: nil, summary: nil)
+        let empty = makeEntry(excerpt: nil, summary: nil)
         #expect(empty.contentText == nil && empty.displaySummary == nil)
-        #expect(makeEntry(content: "   <p> </p>  ", summary: nil).contentText == nil,
+        #expect(makeEntry(excerpt: nil, content: "   <p> </p>  ", summary: nil).contentText == nil,
                 "只有标签和空白的正文不算正文")
+        #expect(makeEntry(excerpt: "", summary: nil).contentText == nil, "空摘录不算正文")
     }
 
     /// 只为体现「正文来源」这一个维度的最小条目
-    private func makeEntry(content: String?, summary: String?) -> RssEntry {
+    private func makeEntry(excerpt: String?, content: String? = nil, summary: String?) -> RssEntry {
         RssEntry(
             id: 1, guid: nil, feedURL: "https://example.com/feed", feedTitle: nil,
-            title: "t", link: nil, author: nil, content: content, summary: summary,
+            title: "t", link: nil, author: nil, contentExcerpt: excerpt, content: content,
+            summary: summary,
             publishedAt: nil, firstSeenAt: Date(timeIntervalSince1970: 0), sortAt: nil)
     }
 }
@@ -241,9 +281,12 @@ struct RssTextTests {
         // 裸的 "<" 不能当判据：讲代码的博客正文里 `a < b` 就是内容
         let tag = try NSRegularExpression(pattern: "</?(p|div|a|br|img|span|h[1-6]|li)\\b",
                                           options: [.caseInsensitive])
+        // 真实 feed 的 HTML 从 rss_bodies.json 取，不再从 envelope 里掏——列表载荷
+        // 2026-08-23 起不带全文，而这条测的是 HTML 转换本身，与 envelope 无关。
+        let bodies = try JSONDecoder()
+            .decode([String: String].self, from: loadRssFixture("rss_bodies"))
         for key in ["html_body", "cjk", "authored"] {
-            let entry = try #require(try rssShapes()[key]?.rss)
-            let text = rssPlainText(fromHTML: try #require(entry.content))
+            let text = rssPlainText(fromHTML: try #require(bodies[key]))
             let hits = tag.numberOfMatches(in: text, range: NSRange(text.startIndex..., in: text))
             #expect(hits == 0, "\(key): 标签残留")
             #expect(!text.contains("\n\n\n"), "\(key): 空行没折叠")

@@ -11,7 +11,16 @@ struct RssDetailSheet: View {
     let entry: RssEntry
     var onToggleSaved: () -> Void
 
+    @Environment(ReaderSession.self) private var reader
+
     @State private var safariItem: SafariItem?
+    /// 全文的纯文本。列表载荷只带约 500 字的摘录（2026-08-23），所以这张 sheet
+    /// 打开时单独取一次全文；nil = 还没到手，此时先显示摘录。
+    @State private var articleText: String?
+    /// 取全文这件事有没有走完。与 `articleText != nil` 不是一回事：只发标题+链接的
+    /// feed 取回来也是空正文，那是成功，不是还在转圈。
+    @State private var articleLoaded = false
+    @State private var articleFailed = false
 
     var body: some View {
         ScrollView {
@@ -26,15 +35,13 @@ struct RssDetailSheet: View {
                 if let summary = entry.summary, !summary.isEmpty {
                     summarySection(summary)
                 }
-                if let text = entry.contentText {
-                    SelectableTextView(text: text)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
+                articleSection
                 Divider()
                 actions
             }
             .padding(16)
         }
+        .task(id: entry.id) { await loadArticle() }
         .readingFontScale()
         .edgeSwipeToDismiss()
         .presentationDetents([.medium, .large])
@@ -50,6 +57,45 @@ struct RssDetailSheet: View {
     /// 那份，Safari 会从这张 sheet 背后弹出来），所以直接调统一出口
     private func open(_ url: URL) {
         openExternalURL(url) { safariItem = SafariItem(url: $0) }
+    }
+
+    /// 正文区：全文到手前先给摘录——一段真的正文开头总比一块空白好读，
+    /// 取失败了也就停在这段上，而不是把正文清空。
+    /// HTML→纯文本的解析在 `loadArticle` 里算一次存进 state，不放在 body 里：
+    /// 那是一整篇的正则，SwiftUI 每次重渲染都会重跑一遍。
+    @ViewBuilder
+    private var articleSection: some View {
+        if let text = articleText ?? entry.contentText {
+            SelectableTextView(text: text)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        if !articleLoaded {
+            HStack(spacing: 6) {
+                ProgressView().controlSize(.small)
+                Text("正在加载全文…")
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        } else if articleFailed {
+            Text("正文加载失败")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    /// 快照里已经带全文的条目（改版前存下的收藏）直接用，不必再问一次网络。
+    private func loadArticle() async {
+        if let text = entry.articleText {
+            articleText = text
+            articleLoaded = true
+            return
+        }
+        do {
+            articleText = try await reader.api.rssEntry(id: entry.id).rss?.articleText
+        } catch {
+            articleFailed = true
+        }
+        articleLoaded = true
     }
 
     private var header: some View {

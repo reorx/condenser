@@ -66,6 +66,13 @@ public final class APIClient: @unchecked Sendable {
         ])
     }
 
+    /// 一条 feed 条目的**全文** envelope。列表载荷 2026-08-23 起只带约 500 字的
+    /// `content_excerpt`（正文平均 13.9KB、最长 7.1MB，一页 30 条全带就是一次
+    /// 几 MB 的下载），全文改成谁真的打开谁去取。
+    public func rssEntry(id: Int) async throws -> TimelineItem {
+        try await get("/api/rss/entries/\(id)")
+    }
+
     public func sources() async throws -> [SourceGroup] {
         try await get("/api/sources")
     }

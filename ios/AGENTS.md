@@ -65,6 +65,15 @@ chip 行（手机上一行摆不下这些中文标签），只在「这一下确
   sheet 还挂了 `.edgeSwipeToDismiss()`（`EdgeSwipeDismiss.swift`，可复用）：长文滚到
   底后下拉手势只会回滚内容，从左边缘右滑是给单手补的退路；手势用普通 `gesture` 不用
   `highPriorityGesture`，否则会抢走从边缘起手的纵向滚动。
+- **列表只有摘录，全文按需取**（2026-08-23）：envelope 的 `content_excerpt` 是服务端
+  剥好的约 500 字纯文本，`content` 只有 `GET /api/rss/entries/{id}` 与改版前存下的
+  收藏快照才带（feed 正文平均 13.9KB、最长一条 7.1MB，一页 30 条全带就是一次几 MB
+  的下载）。Kit 面因此是两个属性：`contentText` 走摘录（卡片用；旧快照里没有摘录时
+  才回落去解析 `content`），`articleText` 才解析全文。`RssDetailSheet` 打开时
+  `reader.api.rssEntry(id:)` 取一次，到手前先显示摘录 + 「正在加载全文…」，失败就停在
+  摘录上——**解析结果算一次存 state**，那是一整篇的正则，放在 body 里每次重渲染都会
+  重跑（正是这次排查 RSS 卡顿找到的另一半）。后端计划
+  `../kb/plans/2026-08-23-rss-list-excerpt-detail-endpoint.md`。
 - **`rssPlainText` 不是 `hnPlainText` 的推广**，三条规则刻意相反：链接保留锚文本
   （HN 换成 href 是因为它截断显示文本）、`<script>`/`<style>` 连内容一起丢、源码换行
   按空白处理（只有块级标签断行，否则句子会在中间硬折），`<pre>` 是唯一例外——整块

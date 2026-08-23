@@ -657,7 +657,15 @@ public struct RssEntry: Codable, Equatable, Sendable {
     public let title: String?
     public let link: String?
     public let author: String?
-    /// feed 自带的 HTML 正文（content:encoded，回退 description）
+    /// 正文开头的纯文本，约 500 字（后端 `text.EXCERPT_CHARS`）。列表载荷带的是它，
+    /// 不是全文——feed 正文平均 13.9KB、最长一条 7.1MB，一页 30 条就是 30 篇文章
+    /// （2026-08-23）。已经在服务端剥好标签，客户端不必再解析。
+    public let contentExcerpt: String?
+    /// 正文是否还有后续。iOS 暂时用不上（卡片按行数截、详情 sheet 一律取全文），
+    /// 保留是因为它在协议里，web 的 more 按钮就挂在这个字段上。
+    public let contentTruncated: Bool?
+    /// feed 自带的 HTML 正文（content:encoded，回退 description）。
+    /// **只有 `GET /api/rss/entries/{id}` 与旧的收藏快照带它**，列表载荷不带。
     public let content: String?
     /// LLM 摘要（计划 Phase 3）；nil = 短到不需要 / 还没写 / 已放弃
     public let summary: String?
@@ -674,6 +682,8 @@ public struct RssEntry: Codable, Equatable, Sendable {
         case feedURL = "feed_url"
         case feedTitle = "feed_title"
         case title, link, author, content, summary
+        case contentExcerpt = "content_excerpt"
+        case contentTruncated = "content_truncated"
         case publishedAt = "published_at"
         case firstSeenAt = "first_seen_at"
         case sortAt = "sort_at"
@@ -681,7 +691,8 @@ public struct RssEntry: Codable, Equatable, Sendable {
 
     public init(
         id: Int, guid: String?, feedURL: String, feedTitle: String?, title: String?,
-        link: String?, author: String?, content: String?, summary: String?,
+        link: String?, author: String?, contentExcerpt: String? = nil,
+        contentTruncated: Bool? = nil, content: String? = nil, summary: String?,
         publishedAt: Date?, firstSeenAt: Date, sortAt: Date?
     ) {
         self.id = id
@@ -691,6 +702,8 @@ public struct RssEntry: Codable, Equatable, Sendable {
         self.title = title
         self.link = link
         self.author = author
+        self.contentExcerpt = contentExcerpt
+        self.contentTruncated = contentTruncated
         self.content = content
         self.summary = summary
         self.publishedAt = publishedAt
@@ -713,9 +726,20 @@ public struct RssEntry: Codable, Equatable, Sendable {
         return URL(string: link)
     }
 
-    /// feed 正文的纯文本，与有没有摘要无关——详情页两样都要给：
-    /// 摘要说这篇讲什么，全文才是要读的东西
+    /// 卡片正文：列表载荷里的摘录，与有没有摘要无关——摘要是转述，正文开头才是文章本身。
+    ///
+    /// 服务端已经剥好标签，所以正常路径上这只是取个字符串：`rssPlainText` 不再每次
+    /// 重渲染都跑一遍整篇 HTML（那正是 2026-08-23 排查 RSS 卡顿时找到的那一半）。
+    /// 回落到解析 `content` 是给**改版前存下的收藏快照**用的——那些 payload 里只有全文。
     public var contentText: String? {
+        if let contentExcerpt, !contentExcerpt.isEmpty { return contentExcerpt }
+        return articleText
+    }
+
+    /// 全文的纯文本，只有拿到了 `content` 才有（详情 sheet 单独取一次
+    /// `GET /api/rss/entries/{id}`）。解析整篇 HTML 的开销在这里，所以调用方要把它
+    /// 算一次存进 state，别放在 SwiftUI 的 body 里。
+    public var articleText: String? {
         guard let content else { return nil }
         let text = rssPlainText(fromHTML: content)
         return text.isEmpty ? nil : text
