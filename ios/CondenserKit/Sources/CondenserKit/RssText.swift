@@ -92,7 +92,8 @@ private func restorePreBlocks(_ text: String, from blocks: [String]) -> String {
 
 /// 命名 / 十进制 / 十六进制实体。`&amp;` 必须最后解码，
 /// 否则 `&amp;lt;` 会被二次解码成 `<`（`hnPlainText` 的同一条约束）。
-private func decodeEntities(_ input: String) -> String {
+/// internal：RssBlocks 解码 `<img src>` 属性值时复用（属性也是实体编码的）。
+func decodeEntities(_ input: String) -> String {
     var text = decodeNumericEntities(input)
     let named = [
         ("&lt;", "<"), ("&gt;", ">"), ("&quot;", "\""), ("&apos;", "'"),

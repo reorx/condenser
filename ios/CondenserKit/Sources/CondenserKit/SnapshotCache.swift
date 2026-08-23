@@ -6,8 +6,10 @@ import Foundation
 /// 目录带契约版本号：多信源 envelope 是 breaking change，v2 起换目录，
 /// 旧契约快照（或未来再升级时的旧文件）decode 失败一律按 miss 处理。
 public final class SnapshotCache: @unchecked Sendable {
-    /// 快照契约版本：API breaking change 时 +1（v2 = 多信源 envelope）
-    public static let contractVersion = 2
+    /// 快照契约版本：API breaking change 时 +1（v2 = 多信源 envelope；
+    /// v3 = RSS 列表载荷只带 content_excerpt——旧快照 decode 得出来但没有摘录，
+    /// 会画成空白卡片，按 miss 换目录，代价是冷启动多一次网络请求，一次性）
+    public static let contractVersion = 3
 
     private let directory: URL
     private let encoder = JSONEncoder.condenserAPI
