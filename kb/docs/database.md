@@ -12,7 +12,7 @@ tags:
 One SQLite file, shared between [telememo](https://pypi.org/project/telememo/) (a PyPI
 dependency) and condenser. condenser's peewee models bind to telememo's `db` instance, so
 everything runs on one connection. `SCHEMA_VERSION` lives in `condenser/db.py` (currently
-**16**).
+**17**).
 
 ## Table ownership
 
@@ -30,7 +30,7 @@ deserve care:
 
 | Group | Tables |
 |---|---|
-| Reader state | `read_items`, `saved_items`, `hidden_items`, `item_feedback` |
+| Reader state | `read_items`, `saved_items`, `hidden_items`, `item_feedback`, `forward_records` |
 | Subscriptions & rules | `subscriptions`, `keyword_filters` |
 | Source archives | `hn_stories`; `x_tweets`, `x_feed_items`, `x_following`; `rss_feeds`, `rss_entries` |
 | Verdict / vector layer | `x_embeddings`, `x_attributes`, `x_vec_labeled` (sqlite-vec `vec0` virtual table) |
@@ -57,7 +57,7 @@ Virtual tables (`x_vec_labeled`, `search_index`) are created with raw SQL in `in
 
 ## Migration conventions
 
-- **New table → plain `create_tables`**, no migration (v6, v7, v8, v10, v11, v15).
+- **New table → plain `create_tables`**, no migration (v6, v7, v8, v10, v11, v15, v17).
 - **New column → shape-based `ALTER TABLE ADD COLUMN`** (v5, v9, v13, v14): inspect the
   live table, add what is missing. Historical rows stay NULL, and every reader treats
   NULL as "the pre-feature behavior".
@@ -76,6 +76,36 @@ Virtual tables (`x_vec_labeled`, `search_index`) are created with raw SQL in `in
   SQL names what is *intentionally preserved*, not only what is removed.
 
 ## Schema changelog (newest first)
+
+### v17 — 2026-08-23 · Forward records
+
+Adds `forward_records` (new table, plain `create_tables`) — one row per publish into
+the reader's own channel. Before it, forwarding was a one-shot side effect: the
+message landed in the target channel and condenser kept nothing, so "have I already
+sent this" and "what did I write about it" both needed a scroll through the channel.
+
+- **A log, not a marker.** Every other triple-keyed table here (`read_items`,
+  `saved_items`, `hidden_items`, `item_feedback`) is a state with a composite PK.
+  This one has an `AutoField` and a **non-unique** index on `(source, ref1, ref2)`,
+  because forwarding the same article again with a different comment is a real
+  thing to do and an upsert would delete the first comment — the one part of the
+  row the reader wrote themselves.
+- **Two snapshot columns.** `raw_data` is `saved_items.raw_data`'s twin (built by the
+  extracted `records.build_item_snapshot`), so a record renders after retention has
+  taken the source row; `target` is the *configured* `app_meta.forward_channel` at
+  forward time, because that value is mutable and a record that read it live would
+  rewrite its own history. `comment` is **NULL** for a plain forward, never `''`.
+- `link` is deliberately redundant with `target` + `message_id`: the link is what the
+  UI opens, the pair is what a future "unpublish" hands `client.delete_messages`.
+  Storing it also keeps `forwards.py` from importing `tg.py` to rebuild it, which
+  would close a cycle (`tg.py` already imports `forward.py`).
+- `raw_data` is nullable: a native Telegram forward reads no archive row, so it can
+  publish a message we never stored. Those records render `item: null`.
+- The one boolean this table feeds the API, `forwarded_by_me`, is **stamped after the
+  envelopes are assembled** (`forwards.stamp`) rather than joined per source — one
+  `SELECT DISTINCT` over a table that grows by single digits a day, against five
+  LEFT JOINs and four envelope signatures. Plan:
+  `kb/plans/2026-08-23-forward-records.md`.
 
 ### v16 — 2026-08-23 · RSS list excerpt
 
