@@ -23,7 +23,7 @@ from telememo.service import TelegramService
 from telememo.telegram import convert_channel_to_info
 from telememo.types import ChannelInfo, DisplayMessage, SignInResult
 
-from . import db, filters, forward, search
+from . import db, filters, forward, records, search
 from .config import Settings
 from .crypto import decrypt_session, encrypt_session
 from .items import ItemKey
@@ -461,7 +461,8 @@ class TgManager:
         HTML by ``forward.render`` and sent as a new message. ``mode`` follows the same
         rule everywhere — a comment makes it a quote, no comment makes it a plain share.
 
-        Returns the mode plus the t.me link of the message that just landed.
+        Returns the mode plus the t.me link of the message that just landed, and
+        appends a row to ``forward_records`` on the way out (see ``_record_forward``).
         """
         service = self._require_service()
         configured = db.get_meta('forward_channel')
@@ -486,11 +487,50 @@ class TgManager:
             raise
         # forward_messages may hand back a list when Telethon batches; the id we want is the first
         sent_id = sent[0].id if isinstance(sent, list) else sent.id
-        return {
-            'status': 'ok',
-            'mode': 'quote' if comment else 'forward',
-            'link': _sent_message_url(target, sent_id),
-        }
+        mode = 'quote' if comment else 'forward'
+        link = _sent_message_url(target, sent_id)
+        self._record_forward(key, comment, configured, sent_id, link, mode)
+        return {'status': 'ok', 'mode': mode, 'link': link}
+
+    def _record_forward(self, key: ItemKey, comment: str, target: str, message_id: int, link: str, mode: str) -> None:
+        """Append the publish to ``forward_records``. Swallows every failure.
+
+        ⚠️ This is a deliberate inversion of the project rule that low-level
+        functions do not catch — and the reason is that the irreversible part
+        already happened. By the time we get here the message is in Telegram. If
+        the bookkeeping raised, the request would 500, the client would report a
+        failed forward, the reader would press the button again, and the channel
+        would carry the same post twice. **Losing a row is cheaper than sending a
+        second message**, so nothing in here is allowed to reach the caller.
+
+        ``target`` is the *configured* string, not the normalized peer: it is a
+        snapshot of where the message went, and it is what ``_normalize_target``
+        would be handed again to reach it.
+        """
+        # Two guards, because the two losses cost different things. A missing
+        # snapshot is not even a failure — a native TG forward reads no archive
+        # row, so it can publish a message we never stored — and a *broken* one
+        # must still not cost the comment, which is the part only the reader could
+        # have written.
+        try:
+            snapshot = records.build_item_snapshot(key)
+        except Exception:
+            log.exception('failed to snapshot %s for its forward record', key.key)
+            snapshot = None
+        try:
+            db.add_forward_record(
+                source=key.source,
+                ref1=key.ref1,
+                ref2=key.ref2,
+                comment=comment,
+                mode=mode,
+                target=target,
+                message_id=message_id,
+                link=link,
+                raw_data=snapshot,
+            )
+        except Exception:
+            log.exception('failed to record forward of %s', key.key)
 
     # ---- subscription orchestration (used by routers) ----
     def _register_subscription(self, info: ChannelInfo) -> ChannelInfo:

@@ -42,7 +42,7 @@ MESSAGES_OPTIONAL_FIELDS = {
 # Bumped when condenser's own table shapes change; recorded in app_meta on init so a
 # future startup can detect an upgrade and run a migration. Telememo manages its own
 # table migrations separately (init_db optional_fields / ALTER TABLE).
-SCHEMA_VERSION = 16
+SCHEMA_VERSION = 17
 
 # One-shot marker for the v14 admission backfill (see _migrate_hn_qualified_v14).
 # State, not shape: the columns can exist while the stamping has not happened.
@@ -142,6 +142,51 @@ class SavedItem(CondenserBaseModel):
     class Meta:
         table_name = 'saved_items'
         primary_key = CompositeKey('source', 'ref1', 'ref2')
+
+
+class ForwardRecord(CondenserBaseModel):
+    """One publish of an item into the reader's own channel (v17) — a log, not a state.
+
+    Every other triple-keyed table here is a *marker*: read or not, saved or not.
+    This one is an append-only log with a surrogate key, because forwarding the
+    same article again with a different comment is a real thing to do and the two
+    comments are different thoughts. A composite primary key would overwrite the
+    first one, which is exactly the thing worth keeping — the item is somebody
+    else's writing, the comment is the reader's.
+
+    ``target`` and ``raw_data`` are both snapshots, for the same reason
+    ``saved_items.raw_data`` is: ``app_meta.forward_channel`` is mutable, and
+    retention takes archive rows out from under old records (``cleanup.py``), so
+    a record that read either of them live would rewrite or lose its own history.
+
+    ``link`` is deliberately redundant with ``target`` + ``message_id``: the link
+    is what the UI opens, the pair is what a future "unpublish" would hand to
+    ``client.delete_messages``. Storing the link also keeps ``forwards.py`` from
+    having to import ``tg.py`` to rebuild it — ``tg.py`` already imports
+    ``forward.py``, and that way round is a cycle.
+    """
+
+    id = AutoField()
+    source = CharField()
+    ref1 = IntegerField()
+    ref2 = IntegerField(default=0)
+    # NULL = forwarded as-is. Never '': "wrote nothing" and "wrote an empty
+    # string" would be the same row, and only one of them can happen.
+    comment = TextField(null=True)
+    mode = CharField()  # 'forward' | 'quote' — the same word the API returns
+    target = CharField()
+    message_id = IntegerField()
+    link = CharField()
+    # NULL when the source row was already gone at forward time (a native TG
+    # forward reads no table, so it can publish a message we never archived).
+    raw_data = TextField(null=True)
+    created_at = DateTimeField(default=datetime.now)
+
+    class Meta:
+        table_name = 'forward_records'
+        # Non-unique on purpose (see the class docstring); this is the index the
+        # per-page "did I forward this" stamp reads.
+        indexes = ((('source', 'ref1', 'ref2'), False),)
 
 
 class TgSession(CondenserBaseModel):
@@ -474,6 +519,7 @@ CONDENSER_TABLES = [
     ReadItem,
     HiddenItem,
     SavedItem,
+    ForwardRecord,
     TgSession,
     AppMeta,
     LinkPreviewCache,
@@ -1194,6 +1240,67 @@ def get_saved_item(source: str, ref1: int, ref2: int = 0) -> Optional[SavedItem]
 
 def list_saved_items() -> list[SavedItem]:
     return list(SavedItem.select().order_by(SavedItem.created_at.desc()))
+
+
+# --- forward records (the publish log) ---------------------------------------
+
+
+def add_forward_record(
+    source: str,
+    ref1: int,
+    ref2: int,
+    comment: Optional[str],
+    mode: str,
+    target: str,
+    message_id: int,
+    link: str,
+    raw_data: Optional[dict],
+) -> ForwardRecord:
+    """Append one publish. Never an upsert — see the ForwardRecord docstring."""
+    return ForwardRecord.create(
+        source=source,
+        ref1=ref1,
+        ref2=ref2,
+        comment=comment or None,
+        mode=mode,
+        target=target,
+        message_id=message_id,
+        link=link,
+        raw_data=json.dumps(raw_data) if raw_data is not None else None,
+        created_at=_now(),
+    )
+
+
+def list_forward_records(limit: int, offset: int = 0) -> list[ForwardRecord]:
+    """Newest first. ``id`` breaks ties so two forwards in the same second keep
+    the order they happened in (the reader's second thought sorts above the first)."""
+    return list(
+        ForwardRecord.select()
+        .order_by(ForwardRecord.created_at.desc(), ForwardRecord.id.desc())
+        .limit(limit)
+        .offset(offset)
+    )
+
+
+def delete_forward_record(record_id: int) -> int:
+    """Drop the local record only; the published Telegram message is untouched.
+
+    Preserved on purpose: the message in the target channel, the item's read /
+    saved / feedback state, and every *other* forward of the same item.
+    """
+    return ForwardRecord.delete().where(ForwardRecord.id == record_id).execute()
+
+
+def forwarded_triples() -> set[tuple[str, int, int]]:
+    """Every item that has been forwarded at least once, deduped.
+
+    The whole set in one query rather than a per-source LEFT JOIN like ``is_read``
+    / ``is_saved``: forwarding is a single-digits-per-day action, so this is a few
+    hundred rows at worst, and the alternative was five SQL statements and four
+    envelope signatures for one boolean.
+    """
+    cur = tdb.db.execute_sql('SELECT DISTINCT source, ref1, ref2 FROM forward_records')
+    return set(cur.fetchall())
 
 
 # --- devices (client bearer tokens) ------------------------------------------
