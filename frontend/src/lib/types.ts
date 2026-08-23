@@ -106,10 +106,17 @@ export interface RssEntry {
   title: string | null;
   link: string | null;
   author: string | null;
-  /** The feed's own HTML body (content:encoded, else description). Sanitize before render. */
-  content: string | null;
+  /** The article's opening as plain text, ~500 chars (backend `text.EXCERPT_CHARS`).
+   *  Null = the entry is a bare link. Already stripped — do NOT sanitize/render as HTML. */
+  content_excerpt: string | null;
+  /** Whether the article goes on past the excerpt — what the "more" toggle hangs off. */
+  content_truncated: boolean;
+  /** The feed's own HTML body. **Only present on `GET /api/rss/entries/{id}`** and in
+   *  saved snapshots: a list payload carries the excerpt instead (13.9KB average per
+   *  entry in production, 7.1MB at the tail). Sanitize before render. */
+  content?: string | null;
   /** The LLM summary (Phase 3); null = short enough not to need one, not written
-   *  yet, or given up on. The card falls back to truncated `content`. */
+   *  yet, or given up on. The card falls back to the excerpt. */
   summary: string | null;
   /** What the feed declared, unclamped — feeds do publish future timestamps. */
   published_at: string | null;

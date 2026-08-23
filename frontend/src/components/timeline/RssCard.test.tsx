@@ -1,9 +1,15 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 
+vi.mock('@/lib/api', () => ({
+  api: { rssEntry: vi.fn(), saveRecord: vi.fn(), deleteRecord: vi.fn() },
+  errorMessage: (_e: unknown, fallback: string) => fallback,
+}));
+
+import { api } from '@/lib/api';
 import { UnreadIndicatorProvider } from '@/lib/unreadIndicator';
 import type { RssEntry, TimelineItem } from '@/lib/types';
 
@@ -18,7 +24,8 @@ function makeEntry(over: Partial<RssEntry> = {}): RssEntry {
     title: 'An entry',
     link: 'https://simonwillison.net/2026/post/',
     author: 'Simon',
-    content: '<p>the feed body</p>',
+    content_excerpt: 'the feed body',
+    content_truncated: false,
     summary: null,
     published_at: '2026-08-20T10:00:00Z',
     first_seen_at: '2026-08-20T10:05:00Z',
@@ -37,6 +44,12 @@ function makeItem(over: Partial<RssEntry> = {}, read = true): TimelineItem {
     is_saved: false,
     rss,
   };
+}
+
+/** What GET /api/rss/entries/{id} answers: the same envelope, plus the article. */
+function articleItem(content: string): TimelineItem {
+  const item = makeItem({ content_truncated: true });
+  return { ...item, rss: { ...item.rss!, content } };
 }
 
 function wrap(ui: ReactNode) {
@@ -81,40 +94,54 @@ describe('RssCard', () => {
     expect(screen.getByText('simonwillison.net/atom/everything')).toBeInTheDocument();
   });
 
-  it('shows the summary instead of the body, and says that it is one', () => {
+  it('shows the summary instead of the excerpt, and says that it is one', () => {
     wrap(<RssCard item={makeItem({ summary: '这篇文章讲了三件事。' })} />);
     expect(screen.getByText('这篇文章讲了三件事。')).toBeInTheDocument();
     expect(screen.getByText('AI 摘要')).toBeInTheDocument();
-    // the source body is the fallback, not a second paragraph under the summary
+    // the excerpt is the fallback, not a second paragraph under the summary
     expect(screen.queryByText('the feed body')).toBeNull();
   });
 
-  it('renders the feed body when there is no summary', () => {
+  it('renders the excerpt as plain text when there is no summary', () => {
+    // The list payload carries no HTML any more, so there is nothing to sanitize
+    // here — what arrives is prose the backend already stripped.
     wrap(<RssCard item={makeItem()} />);
     expect(screen.getByText('the feed body')).toBeInTheDocument();
     expect(screen.queryByText('AI 摘要')).toBeNull();
   });
 
-  it('sanitizes the feed body', () => {
-    const { container } = wrap(
-      <RssCard item={makeItem({ content: '<p>safe</p><script>window.hacked = true</script>' })} />,
-    );
-    expect(container.querySelector('script')).toBeNull();
-    expect(screen.getByText('safe')).toBeInTheDocument();
+  it('does not offer "more" for a body that already fits', () => {
+    // content_truncated is the server saying "this is the whole thing"; a toggle
+    // over it would fetch an article to reveal nothing.
+    wrap(<RssCard item={makeItem()} />);
+    expect(screen.queryByRole('button', { name: 'more' })).toBeNull();
   });
 
-  it('collapses a long body behind a more toggle', async () => {
-    wrap(<RssCard item={makeItem({ content: `<p>${'word '.repeat(200)}</p>` })} />);
+  it('fetches the article on "more" and renders it sanitized', async () => {
+    vi.mocked(api.rssEntry).mockResolvedValue(
+      articleItem('<p>the whole article</p><script>window.hacked = true</script>'),
+    );
+    const { container } = wrap(<RssCard item={makeItem({ content_truncated: true })} />);
+    // nothing is fetched until the reader asks: that is the point of the split
+    expect(api.rssEntry).not.toHaveBeenCalled();
+
     await userEvent.setup().click(screen.getByRole('button', { name: 'more' }));
+
+    expect(api.rssEntry).toHaveBeenCalledWith(77);
+    expect(await screen.findByText('the whole article')).toBeInTheDocument();
+    expect(container.querySelector('script')).toBeNull();
     expect(screen.getByRole('button', { name: 'less' })).toBeInTheDocument();
   });
 
-  it('does not clamp a short body wrapped in a lot of markup', () => {
-    // The clamp measures text, not tags: a two-sentence post inside nested markup
-    // would otherwise grow a "more" button that reveals nothing.
-    const wrapped = `<div><div><p><em><strong>short</strong></em></p></div></div>`.repeat(6);
-    wrap(<RssCard item={makeItem({ content: wrapped })} />);
-    expect(screen.queryByRole('button', { name: 'more' })).toBeNull();
+  it('keeps showing the excerpt when the article cannot be fetched', async () => {
+    // A failed expand degrades to what the card already had, rather than blanking
+    // the body — the excerpt is still a true (if short) rendering of the entry.
+    vi.mocked(api.rssEntry).mockRejectedValue(new Error('offline'));
+    wrap(<RssCard item={makeItem({ content_truncated: true })} />);
+    await userEvent.setup().click(screen.getByRole('button', { name: 'more' }));
+
+    expect(await screen.findByText('正文加载失败')).toBeInTheDocument();
+    expect(screen.getByText('the feed body')).toBeInTheDocument();
   });
 
   it('renders a plain title when the entry has no link', () => {

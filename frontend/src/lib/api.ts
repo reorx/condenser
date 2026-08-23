@@ -177,6 +177,9 @@ export const api = {
   // This source keys on the feed URL, which carries its own slashes and query
   // string — so it travels as a query parameter, never as a path segment.
   rssStatus: () => request<RssStatus>('/api/rss/status'),
+  /** One entry with its **article body** — the half the timeline stopped carrying.
+   *  Answers the ordinary item envelope, so the card renders it with the code it has. */
+  rssEntry: (id: number) => request<TimelineItem>(`/api/rss/entries/${id}`),
   listRssSubscriptions: () => request<RssSubscription[]>('/api/sources/rss/subscriptions'),
   rssSubscribe: (url: string) => post<RssSubscription>('/api/sources/rss/subscriptions', { url }),
   rssSetEnabled: (url: string, enabled: boolean) =>
