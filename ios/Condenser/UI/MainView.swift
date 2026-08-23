@@ -202,7 +202,7 @@ struct MainView: View {
             guard let page = try? await reader.api.timeline(
                 cursor: cursor, limit: 50, source: SourceID.rss) else { return nil }
             guard let id else {
-                return page.items.first { $0.rss?.body != nil } ?? page.items.first
+                return page.items.first { $0.rss?.contentText != nil } ?? page.items.first
             }
             if let hit = page.items.first(where: { $0.rss?.id == Int(id) }) { return hit }
             guard let next = page.nextCursor else { return nil }

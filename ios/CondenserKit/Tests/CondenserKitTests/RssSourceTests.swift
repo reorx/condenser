@@ -131,19 +131,21 @@ struct RssEntryDisplayTests {
         #expect(linkless.articleURL == nil)
     }
 
-    @Test("正文：有摘要就用摘要并标明是摘要，没有才退化为 feed 正文的纯文本")
-    func body() throws {
+    @Test("displaySummary：非空摘要才算有；正文另走 contentText，摘要不替代它")
+    func displaySummaryRule() throws {
         let shapes = try rssShapes()
         let summarized = try #require(shapes["summarized"]?.rss)
-        let body = try #require(summarized.body)
-        #expect(body.isSummary)
-        #expect(body.text == summarized.summary)
+        #expect(summarized.displaySummary == summarized.summary)
+        #expect(summarized.contentText != nil, "有摘要的条目正文照给——卡片先画正文开头再画摘要块")
 
         let plain = try #require(shapes["html_body"]?.rss)
-        let fallback = try #require(plain.body)
-        #expect(!fallback.isSummary)
-        #expect(!fallback.text.contains("<"), "HTML 已经转成纯文本")
-        #expect(fallback.text == rssPlainText(fromHTML: plain.content ?? ""))
+        #expect(plain.displaySummary == nil)
+        let fallback = try #require(plain.contentText)
+        #expect(!fallback.contains("<"), "HTML 已经转成纯文本")
+        #expect(fallback == rssPlainText(fromHTML: plain.content ?? ""))
+
+        #expect(makeEntry(content: "x", summary: "   ").displaySummary == nil,
+                "全空白的摘要不算摘要")
     }
 
     @Test("contentText 与摘要无关——详情页要在摘要下面接着给全文")
@@ -155,10 +157,11 @@ struct RssEntryDisplayTests {
         #expect(text == rssPlainText(fromHTML: summarized.content ?? ""))
     }
 
-    @Test("正文两者皆空 → nil（卡片只画标题）")
+    @Test("正文两者皆空 → 卡片没有可画的正文（只画标题）")
     func emptyBody() {
-        #expect(makeEntry(content: nil, summary: nil).body == nil)
-        #expect(makeEntry(content: "   <p> </p>  ", summary: nil).body == nil,
+        let empty = makeEntry(content: nil, summary: nil)
+        #expect(empty.contentText == nil && empty.displaySummary == nil)
+        #expect(makeEntry(content: "   <p> </p>  ", summary: nil).contentText == nil,
                 "只有标签和空白的正文不算正文")
     }
 

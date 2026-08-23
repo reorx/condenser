@@ -22,8 +22,9 @@ struct RssGlyph: View {
 }
 
 /// 一条 feed 条目的卡片：feed 名作主体（一屏几十个 feed，「哪个博客」才是定位线索），
-/// 标题是主角并链向原文，正文是**有摘要就用摘要**、没有才用 feed 正文的纯文本（计划 §0.4）。
-/// 读的是哪一种要标出来——摘要是机器的转述，卡片不说就是在悄悄撒谎。
+/// 标题是主角并链向原文，正文是 feed 正文的纯文本；有摘要时正文只截开头几行，
+/// 摘要块（AiSummaryBlock）跟在下面——摘要是机器的转述，不标出来就是在悄悄撒谎，
+/// 但它也不该顶掉原文开头，只看转述没法快速判断文章本身。
 /// 已读/收藏态在外层 TimelineItem envelope 上。整卡 tap（列表层）→ 详情 sheet。
 struct RssCard: View {
     let item: TimelineItem
@@ -38,14 +39,23 @@ struct RssCard: View {
         VStack(alignment: .leading, spacing: 8) {
             header
             title
-            if let body = entry.body {
-                if body.isSummary {
-                    AiSummaryBlock {
-                        TruncatableText(text: body.text)
-                    }
-                } else {
-                    TruncatableText(text: body.text)
+            // 正文开头永远先给：只有机器转述、看不到原文开头的卡片，
+            // 没法让人快速判断这篇文章本身。有摘要时正文只截几行作参照
+            //（纯省略号，不给 more——细读的入口是摘要块和详情 sheet）。
+            if let summary = entry.displaySummary {
+                if let text = entry.contentText {
+                    // 空白折叠成单个空格：快照只有 3 行配额，正文开头的段落空行
+                    // 会白白吃掉一行
+                    Text(text.split(whereSeparator: \.isWhitespace).joined(separator: " "))
+                        .font(.subheadline)
+                        .lineLimit(3)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
+                AiSummaryBlock {
+                    TruncatableText(text: summary)
+                }
+            } else if let text = entry.contentText {
+                TruncatableText(text: text)
             }
             if let author = entry.author {
                 Text(author)

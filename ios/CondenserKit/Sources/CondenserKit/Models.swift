@@ -645,26 +645,6 @@ public enum RssFeed {
     }
 }
 
-/// 卡片正文的两种来源。两者对读者不是一回事：摘要是机器的转述，
-/// 不标出来就是在悄悄撒谎，所以来源随正文一起传出去，而不是只给一个字符串。
-public enum RssBody: Equatable, Sendable {
-    /// LLM 摘要（计划 Phase 3）
-    case summary(String)
-    /// feed 自带正文转成的纯文本
-    case excerpt(String)
-
-    public var text: String {
-        switch self {
-        case .summary(let t), .excerpt(let t): t
-        }
-    }
-
-    public var isSummary: Bool {
-        if case .summary = self { return true }
-        return false
-    }
-}
-
 /// TimelineItem 的 rss payload：一条归档的 feed 条目。
 public struct RssEntry: Codable, Equatable, Sendable {
     public let id: Int
@@ -741,12 +721,13 @@ public struct RssEntry: Codable, Equatable, Sendable {
         return text.isEmpty ? nil : text
     }
 
-    /// 卡片正文：有摘要就是摘要，没有才退化为 feed 正文的纯文本（计划 §0.4）
-    public var body: RssBody? {
-        if let summary, !summary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            return .summary(summary)
-        }
-        return contentText.map { .excerpt($0) }
+    /// 摘要块的内容：去掉首尾空白后非空才算有。摘要**不替代正文**——卡片先画
+    /// 正文开头几行作参照，摘要块跟在下面：只看得到机器转述的卡片没法让人
+    /// 快速判断文章本身（2026-08-23 改，此前有摘要就不给正文）。
+    public var displaySummary: String? {
+        guard let summary else { return nil }
+        let trimmed = summary.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
     }
 }
 
