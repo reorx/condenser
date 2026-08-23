@@ -102,7 +102,8 @@ struct MainView: View {
     /// 路由：tab/{timeline|subs|channels|saved} 切 tab；channel/{id} push 频道 timeline；
     /// hn 直接 push HN feed timeline；x[/feed] / rss[/下标] push 单 feed timeline；
     /// settings 切设置 tab；detail/{cid}/{mid}、
-    /// viewer/{cid}/{mid} 弹详情 sheet / 全屏图（消息须已在 timeline 首页中）。
+    /// viewer/{cid}/{mid} 弹详情 sheet / 全屏图（消息须已在 timeline 首页中）；
+    /// detail/{hn|rss|x}/… 弹另外三个源的详情（单独查一次，不必在首屏里）。
     /// 也可 `simctl openurl booted "condenser://debug/<route>"`
     /// （需在模拟器里手动点一次 Open 确认）。
     private func handleDebugURL(_ url: URL, reader: ReaderSession) {
@@ -155,6 +156,10 @@ struct MainView: View {
                 let feed = parts.dropFirst(2).first ?? XFeed.foryou
                 let id = parts.dropFirst(3).first
                 Task { debugDetail = await debugXItem(feed: feed, id: id, reader: reader) }
+            } else if parts.dropFirst().first == "hn" {
+                // detail/hn[/<story id>]：HN 在聚合流里，但走查想看的那条未必在首屏
+                let id = parts.dropFirst(2).first
+                Task { debugDetail = await debugHnItem(id: id, reader: reader) }
             } else if parts.dropFirst().first == "rss" {
                 // detail/rss[/<条目 id>]：RSS 在聚合流里，但首屏未必有它
                 // （未读窗口把存量都标了已读），所以同样单独查一次
@@ -192,6 +197,16 @@ struct MainView: View {
             return page.items.first { $0.x?.id == id }
         }
         return page.items.first { $0.x?.verdict?.isFinding == true } ?? page.items.first
+    }
+
+    /// 指定 id 的 story，或第一条 self-post（自文正文 + 预览卡是这个界面最想看的东西）
+    private func debugHnItem(id: String?, reader: ReaderSession) async -> TimelineItem? {
+        guard let page = try? await reader.api.timeline(limit: 50, source: SourceID.hn)
+        else { return nil }
+        if let id {
+            return page.items.first { $0.hn?.id == Int(id) }
+        }
+        return page.items.first { $0.hn?.text?.isEmpty == false } ?? page.items.first
     }
 
     /// 指定 id 的条目，或第一条带正文的（正文渲染是这个界面最想看的东西）。

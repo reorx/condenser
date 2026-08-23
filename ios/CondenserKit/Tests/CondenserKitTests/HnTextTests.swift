@@ -17,6 +17,14 @@ struct HnTextTests {
         #expect(hnPlainText(fromHTML: html) == "see https://example.com/very/long/path now")
     }
 
+    @Test("href 本身也是实体编码的——数字实体不解，正文里印的就是 &#x2F;")
+    func escapedHref() {
+        // 真实的 HN self-post（story 49402189）就是这个形状：href 里的斜杠是 &#x2F;，
+        // 换成 href 之后如果不解数字实体，读者看到的是一串编码
+        let html = #"<a href="https:&#x2F;&#x2F;xcancel.com&#x2F;moxie&#x2F;status&#x2F;209" rel="nofollow">https:&#x2F;&#x2F;xcancel.com&#x2F;mo...</a>"#
+        #expect(hnPlainText(fromHTML: html) == "https://xcancel.com/moxie/status/209")
+    }
+
     @Test("实体解码；&amp; 不被二次解码")
     func entities() {
         #expect(hnPlainText(fromHTML: "a &amp;&amp; b &lt;c&gt; &quot;d&quot; it&#x27;s") == #"a && b <c> "d" it's"#)

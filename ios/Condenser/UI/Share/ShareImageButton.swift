@@ -43,13 +43,12 @@ struct ShareImageButton: View {
         // 动作行是横向滚动的，分享按钮排在行尾，模拟器窗口又收不到合成手势——
         // 没有这个入口，出图这件事只能靠人在真机上点。走完真实流程（预载 → 渲染 →
         // 分享面板），生成的 PNG 留在 app 容器的临时目录里，拿得出来逐像素看。
-        .task {
-            guard ProcessInfo.processInfo.environment["CONDENSER_DEBUG_SHARE"] == "1" else { return }
-            // RSS 要等全文到手（card 在那之前是 nil），所以是轮询不是定时
-            for _ in 0..<20 where card == nil {
-                try? await Task.sleep(for: .milliseconds(300))
-            }
-            try? await Task.sleep(for: .milliseconds(500))
+        // `id:` 是必须的：RSS 的 card 要等全文到手才从 nil 变出来，而 task 闭包捕获的是
+        // **当时那个** struct 实例的 card——不给 id 的话它永远看着 nil（踩过）
+        .task(id: card?.key) {
+            guard ProcessInfo.processInfo.environment["CONDENSER_DEBUG_SHARE"] == "1",
+                  card != nil else { return }
+            try? await Task.sleep(for: .seconds(1))
             generate()
         }
         #endif

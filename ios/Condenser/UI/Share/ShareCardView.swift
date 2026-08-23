@@ -49,9 +49,6 @@ struct ShareCardView: View {
                     .font(.title3.weight(.semibold))
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
-            if !card.meta.isEmpty {
-                metaLine
-            }
             ForEach(Array(card.blocks.enumerated()), id: \.offset) { _, block in
                 blockView(block)
             }
@@ -84,9 +81,9 @@ struct ShareCardView: View {
         }
     }
 
-    private var metaLine: some View {
+    private func metaLine(_ items: [ShareMeta]) -> some View {
         HStack(spacing: 10) {
-            ForEach(Array(card.meta.enumerated()), id: \.offset) { _, meta in
+            ForEach(Array(items.enumerated()), id: \.offset) { _, meta in
                 switch meta {
                 case let .text(text):
                     Text(text).lineLimit(1)
@@ -108,6 +105,8 @@ struct ShareCardView: View {
             Text(linkified(text))
                 .font(.body)
                 .frame(maxWidth: .infinity, alignment: .leading)
+        case let .meta(items):
+            metaLine(items)
         case let .image(ref):
             ShareImageBox(ref: ref, images: images, cornerRadius: 10)
         case let .imageGrid(refs):

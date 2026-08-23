@@ -137,6 +137,7 @@ struct HnDetailSheet: View {
                     .font(.footnote)
             }
             .buttonStyle(.bordered)
+            ShareImageButton(card: ShareCard.build(item: item))
         }
     }
 }

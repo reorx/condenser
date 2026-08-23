@@ -18,15 +18,9 @@ public func hnPlainText(fromHTML html: String) -> String {
     // 其余标签剥掉
     text = text.replacingOccurrences(
         of: "<[^>]+>", with: "", options: .regularExpression)
-    // 常见实体（HN 转义集很小：& < > " '）。&amp; 必须最后解码，
-    // 否则 "&amp;lt;" 会被二次解码成 "<"
-    let entities = [
-        ("&lt;", "<"), ("&gt;", ">"),
-        ("&quot;", "\""), ("&#x27;", "'"), ("&#39;", "'"), ("&nbsp;", " "),
-        ("&amp;", "&"),
-    ]
-    for (entity, char) in entities {
-        text = text.replacingOccurrences(of: entity, with: char)
-    }
-    return text.trimmingCharacters(in: .whitespacesAndNewlines)
+    // 实体解码与 RSS 共用一份（含数字实体）。HN 的转义集确实很小，但 **href 本身
+    // 也是转义的**：斜杠写作 `&#x2F;`，而上面那条规则刚把链接换成了 href——
+    // 只认几个命名实体的话，正文里印出来的就是一串 `&#x2F;`（2026-08-23 从分享图上
+    // 看见的，抽屉里一直是这样）
+    return decodeEntities(text).trimmingCharacters(in: .whitespacesAndNewlines)
 }

@@ -202,6 +202,7 @@ struct XDetailSheet: View {
                 }
                 .buttonStyle(.bordered)
             }
+            ShareImageButton(card: ShareCard.build(item: item))
         }
     }
 

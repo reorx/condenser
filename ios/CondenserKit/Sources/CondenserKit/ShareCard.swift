@@ -70,6 +70,9 @@ public enum ShareMeta: Equatable, Sendable {
 /// 正文块序列里的一块。四个源的正文差异全在这里，渲染器只认这几种。
 public enum ShareBlock: Equatable, Sendable {
     case text(String)
+    /// 元信息行。之所以是块而不是卡片上的一个字段：它在四个源里的位置不一样
+    /// （HN 紧跟标题，X 在正文与引用推之后），而位置是抽屉里定好的观感
+    case meta([ShareMeta])
     case image(ShareImageRef)
     /// 多图方格（X 的多媒体推文；TG 相册按抽屉的样子逐张全宽，不并成方格）
     case imageGrid([ShareImageRef])
@@ -130,15 +133,13 @@ public struct ShareCard: Equatable, Sendable {
     public let subtitle: String?
     /// 标题行（HN story 与 RSS 条目的主角；TG / X 没有标题这回事）
     public let headline: String?
-    public let meta: [ShareMeta]
     public let blocks: [ShareBlock]
     /// 落款右侧的一小行
     public let footnote: String?
 
     public init(
         key: String, source: String, avatar: ShareAvatar, title: String, subtitle: String?,
-        headline: String? = nil, meta: [ShareMeta] = [], blocks: [ShareBlock] = [],
-        footnote: String? = nil
+        headline: String? = nil, blocks: [ShareBlock] = [], footnote: String? = nil
     ) {
         self.key = key
         self.source = source
@@ -146,7 +147,6 @@ public struct ShareCard: Equatable, Sendable {
         self.title = title
         self.subtitle = subtitle
         self.headline = headline
-        self.meta = meta
         self.blocks = blocks
         self.footnote = footnote
     }
@@ -179,16 +179,17 @@ public extension ShareCard {
                 add(quote.image)
             case let .linkCard(card):
                 add(card.image)
-            case .text, .summary, .fileChip, .note:
+            case .text, .meta, .summary, .fileChip, .note:
                 continue
             }
         }
         return refs
     }
 
-    /// 分享出去的文件名：接收端的聊天窗口里显示的就是这个
-    var fileName: String {
-        "condenser-\(key.replacingOccurrences(of: ":", with: "-")).png"
+    /// 分享出去的文件名（不含扩展名——格式由编码那一步定）：
+    /// 接收端的聊天窗口里显示的就是这个，不该是 IMG_0001
+    var fileBaseName: String {
+        "condenser-\(key.replacingOccurrences(of: ":", with: "-"))"
     }
 }
 
@@ -282,7 +283,8 @@ public extension ShareCard {
         if let domain = story.domain {
             meta.append(.text(domain))
         }
-        var blocks: [ShareBlock] = []
+        // 与抽屉同序：标题 → 元信息 → 自文正文 → 预览卡
+        var blocks: [ShareBlock] = [.meta(meta)]
         if let text = story.text, !text.isEmpty {
             blocks.append(.text(hnPlainText(fromHTML: text)))
         }
@@ -300,7 +302,7 @@ public extension ShareCard {
             title: "Hacker News",
             subtitle: submitted.map { "\(story.author.map { "\($0) · " } ?? "")提交于 \($0)" },
             headline: story.title ?? "(untitled)",
-            meta: meta, blocks: blocks,
+            blocks: blocks,
             // 头部已经印了提交时间，落款处域名才是新信息
             footnote: story.domain ?? submitted)
     }
@@ -338,10 +340,10 @@ public extension ShareCard {
                 text: nonEmpty(quote.text),
                 image: quote.media?.first.map(mediaRef))))
         }
-        var meta: [ShareMeta] = []
+        // 互动数排在最后，与抽屉同序：正文与引用推读完了，才轮到这条推的数字
         if let metrics = tweet.metrics {
-            meta = [.likes(metrics.likeCount), .retweets(metrics.retweetCount),
-                    .replies(metrics.replyCount)]
+            blocks.append(.meta([.likes(metrics.likeCount), .retweets(metrics.retweetCount),
+                                 .replies(metrics.replyCount)]))
         }
         let stamp = timestamp(tweet.createdAt ?? item.datetime)
         return ShareCard(
@@ -352,7 +354,7 @@ public extension ShareCard {
             } ?? .glyph(.x),
             title: tweet.displayName,
             subtitle: tweet.authorHandle.map { "@\($0) · \(stamp)" } ?? stamp,
-            meta: meta, blocks: blocks,
+            blocks: blocks,
             footnote: stamp)
     }
 

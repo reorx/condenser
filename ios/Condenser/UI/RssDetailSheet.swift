@@ -180,7 +180,16 @@ struct RssDetailSheet: View {
                 }
                 .buttonStyle(.bordered)
             }
+            ShareImageButton(card: shareCard)
         }
+    }
+
+    /// 分享图用的是**这张 sheet 取回来的全文**，不是列表载荷里那 500 字摘录。
+    /// 全文还没到手时给 nil（按钮画出来但按不动）——让人按下去拿到半篇文章，
+    /// 比让他多等一秒糟得多；取失败了则退回摘录，短，但分享得出去。
+    private var shareCard: ShareCard? {
+        guard articleLoaded else { return nil }
+        return ShareCard.build(item: item, articleBlocks: articleBlocks)
     }
 }
 

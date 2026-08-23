@@ -41,7 +41,7 @@ private extension ShareCard {
             case let .quote(quote): parts.append(contentsOf: [quote.name, quote.text].compactMap { $0 })
             case let .linkCard(card):
                 parts.append(contentsOf: [card.site, card.title, card.description].compactMap { $0 })
-            case .image, .imageGrid: continue
+            case .image, .imageGrid, .meta: continue
             }
         }
         return parts.joined(separator: "\n")
@@ -51,6 +51,7 @@ private extension ShareCard {
         blocks.map { block in
             switch block {
             case .text: "text"
+            case .meta: "meta"
             case .image: "image"
             case .imageGrid: "imageGrid"
             case .summary: "summary"
@@ -127,9 +128,11 @@ struct HnShareCardTests {
         let story = try #require(item.hn)
         let card = try #require(ShareCard.build(item: item))
         #expect(card.headline == story.title)
-        #expect(card.meta.contains(.score(story.score)))
-        #expect(card.meta.contains(.comments(story.commentsCount)))
-        #expect(card.meta.contains(.text(try #require(story.domain))))
+        // 元信息紧跟标题，与抽屉同序
+        #expect(card.blocks.first == .meta([
+            .score(story.score), .comments(story.commentsCount),
+            .text(try #require(story.domain)),
+        ]))
         #expect(card.avatar == .glyph(.hn))
     }
 
@@ -175,9 +178,12 @@ struct XShareCardTests {
         let card = try #require(ShareCard.build(item: item))
         #expect(card.title == tweet.displayName)
         #expect(card.subtitle?.contains("@\(try #require(tweet.authorHandle))") == true)
-        #expect(card.meta == [.likes(metrics.likeCount), .retweets(metrics.retweetCount),
-                              .replies(metrics.replyCount)])
-        #expect(card.blockKinds == ["text", "image"])
+        // 互动数排在正文与媒体之后，与抽屉同序
+        #expect(card.blockKinds == ["text", "image", "meta"])
+        #expect(card.blocks.last == .meta([
+            .likes(metrics.likeCount), .retweets(metrics.retweetCount),
+            .replies(metrics.replyCount),
+        ]))
     }
 
     @Test("判定不进图：同一条推文带不带 verdict，卡片一模一样")
@@ -373,7 +379,7 @@ struct ShareCardImageTests {
     func fileName() throws {
         let item = try #require(try shapes("x_shapes")["media"])
         let card = try #require(ShareCard.build(item: item))
-        #expect(card.fileName == "condenser-x-\(try #require(item.x).id).png")
+        #expect(card.fileBaseName == "condenser-x-\(try #require(item.x).id)")
     }
 
     @Test("未知信源的 envelope 没有卡片可画")
