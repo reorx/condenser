@@ -18,6 +18,13 @@ Because the clamp is an expression rather than a column, the computed value is
 selected as ``sort_at`` and carried into the envelope — so a saved snapshot, which
 replays without ever touching this table again, records the answer rather than
 having to recompute it from a rule that lives in SQL.
+
+The other thing to know before editing a query here is that there are **two**
+selects (2026-08-23). The reading surfaces name their columns and leave
+``content`` out — a feed body is somebody else's whole page, and a page of thirty
+was shipping thirty of them; they carry ``content_excerpt`` instead. Only
+``rows_by_id`` reads the body, for the three callers that are about the archive
+rather than the list: search, the saved snapshot, and ``GET /api/rss/entries/{id}``.
 """
 
 from typing import Optional
@@ -56,11 +63,25 @@ _FROM = """
     LEFT JOIN hidden_items hd ON hd.source = 'rss' AND hd.ref1 = e.id AND hd.ref2 = 0
 """
 
-_SELECT = (
-    f'SELECT e.*, {SORT_AT_SQL} AS sort_at, COALESCE(s.name, f.title) AS feed_title, '
+_FLAGS = (
+    f'{SORT_AT_SQL} AS sort_at, COALESCE(s.name, f.title) AS feed_title, '
     'CASE WHEN ri.ref1 IS NOT NULL THEN 1 ELSE 0 END AS is_read, '
     'CASE WHEN si.ref1 IS NOT NULL THEN 1 ELSE 0 END AS is_saved'
 )
+
+# Every entry column the list payload needs, spelled out — which is the point:
+# ``content`` is not among them (2026-08-23). A feed body is somebody else's whole
+# page, and ``e.*`` put one in every row of every timeline page. Naming the columns
+# is also what keeps it out: SQLite has no "all but one", and a new column added to
+# the payload has to be added here too — visible, unlike a body creeping back in.
+_LIST_COLS = (
+    'e.id, e.feed_url, e.guid, e.title, e.link, e.author, e.content_excerpt, e.summary, e.published_at, e.first_seen_at'
+)
+
+_SELECT = f'SELECT {_LIST_COLS}, {_FLAGS}'
+# The archive's own readers — full-text search, the saved snapshot, the detail
+# endpoint — read the row, body included (``rows_by_id``).
+_SELECT_FULL = f'SELECT e.*, {_FLAGS}'
 
 
 def active() -> bool:
@@ -160,11 +181,13 @@ def unread_count(feed: Optional[str] = None) -> int:
 
 
 def rows_by_id(entry_ids: list[int]) -> list[dict]:
-    """Entries by id with read/saved flags and the computed sort timestamp.
+    """Entries by id — **with the body** — plus read/saved flags and the sort timestamp.
 
     Deliberately **not** subscription-scoped (``telegram.units_by_key``'s rule):
-    the callers are full-text search and the saved-record snapshot, and both read
-    the archive rather than the reading list.
+    the callers are full-text search, the saved-record snapshot and the detail
+    endpoint, and all three read the archive rather than the reading list. They are
+    also why this one still selects ``content``: the split moved the body off the
+    *list*, not out of the archive.
     """
     if not entry_ids:
         return []
@@ -172,7 +195,7 @@ def rows_by_id(entry_ids: list[int]) -> list[dict]:
     for i in range(0, len(entry_ids), 500):  # SQLite's bound-variable limit
         chunk = entry_ids[i : i + 500]
         placeholders = ','.join('?' for _ in chunk)
-        rows.extend(_rows(f'{_SELECT} {_FROM} WHERE e.id IN ({placeholders})', tuple(chunk)))
+        rows.extend(_rows(f'{_SELECT_FULL} {_FROM} WHERE e.id IN ({placeholders})', tuple(chunk)))
     return rows
 
 

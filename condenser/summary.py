@@ -29,7 +29,6 @@ RSS content only arrives with a round, so a second timer would have nothing of
 its own to discover (``hn._fill_previews``' position, and the same reasoning).
 """
 
-import html
 import logging
 import re
 from typing import Callable, Optional
@@ -38,6 +37,7 @@ import httpx
 
 from . import db, search
 from .config import Settings
+from .text import plain_text  # noqa: F401 — re-exported: summary.plain_text is the historical name
 
 log = logging.getLogger('condenser.summary')
 
@@ -63,16 +63,6 @@ REQUEST_TIMEOUT = 60.0
 # its answer is a model overspending on the half that is billed at the high rate.
 MAX_OUTPUT_TOKENS = 400
 
-_TAG_RE = re.compile(r'<[^>]+>')
-# script/style *contents* are not prose: dropping only the tags would send a
-# stylesheet to the model, paying for the tokens and getting a worse summary.
-_NOISE_RE = re.compile(r'<(script|style)\b.*?</\1\s*>', re.IGNORECASE | re.DOTALL)
-# A block left unclosed (a body truncated mid-<script>) would slip past the pair
-# above, and _TAG_RE stripping only the opening tag leaves the whole script body
-# posing as prose — inflating the text past the min_chars gate and getting billed
-# as the article. Strip from any opener that survived to the end of the text.
-_UNCLOSED_NOISE_RE = re.compile(r'<(?:script|style)\b.*\Z', re.IGNORECASE | re.DOTALL)
-_WS_RE = re.compile(r'\s+')
 # A model asked for a summary often labels it first. The label is not the summary.
 _PREFIX_RE = re.compile(r'^\s*(摘要|总结|概要|Summary)\s*[:：]\s*', re.IGNORECASE)
 
@@ -111,21 +101,9 @@ def model_tag(settings: Settings) -> str:
 
 
 # --- text ---------------------------------------------------------------------
-
-
-def plain_text(value: Optional[str]) -> str:
-    """A feed body's HTML -> the prose a reader would see.
-
-    Not ``search._strip_html``: that one feeds a tokenizer, which does not care
-    about script contents or whitespace shape. This one feeds a language model,
-    where both are paid for by the token.
-    """
-    if not value:
-        return ''
-    text = _NOISE_RE.sub(' ', value)
-    text = _UNCLOSED_NOISE_RE.sub(' ', text)
-    text = _TAG_RE.sub(' ', text)
-    return _WS_RE.sub(' ', html.unescape(text)).strip()
+# ``plain_text`` lives in ``text.py`` since 2026-08-23 — the timeline's
+# ``content_excerpt`` is cut from the same stripping, and the payload layer
+# cannot import this module (it imports db, which imports items).
 
 
 def system_prompt() -> str:

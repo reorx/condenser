@@ -13,6 +13,8 @@ from typing import Optional, Union
 
 from pydantic import BaseModel
 
+from .text import ELLIPSIS, excerpt
+
 SOURCES = ('telegram', 'hn', 'x', 'rss')
 
 # The X feed keys that are not account handles. They live here rather than in x.py
@@ -179,8 +181,16 @@ def hn_envelope(row: dict, is_read: bool, is_saved: bool) -> dict:
     }
 
 
-def rss_payload(row: dict) -> dict:
+def rss_payload(row: dict, with_content: bool = False) -> dict:
     """The `rss` payload from a provider row (or, idempotently, a stored payload).
+
+    **The article body is not in here by default** (2026-08-23). A feed entry's
+    ``content`` is somebody else's whole page — 13.9KB on average in production,
+    7.1MB at the tail — and a list of thirty was shipping thirty of them. What the
+    list carries instead is ``content_excerpt``: the same prose, cut to
+    ``text.EXCERPT_CHARS`` and materialized at ingest, so the query does not even
+    read the body column. ``with_content=True`` is the two callers that want the
+    article: ``GET /api/rss/entries/{id}`` and the saved snapshot.
 
     ``sort_at`` is the timeline position — the feed's ``published_at`` clamped to
     our first sighting (``sources/rss.SORT_AT_SQL`` owns the rule). It rides in the
@@ -188,7 +198,13 @@ def rss_payload(row: dict) -> dict:
     running it again; ``published_at`` stays beside it, unclamped, so the detail
     pane can still show what the feed actually claimed.
     """
-    return {
+    # A record saved before the column existed has the body and no excerpt; cutting
+    # one here costs nothing (the snapshot is already in hand) and is the difference
+    # between a card with a body and a card with a blank.
+    text = row.get('content_excerpt')
+    if text is None:
+        text = excerpt(row.get('content'))
+    payload = {
         'id': row['id'],
         'guid': row.get('guid'),
         'feed_url': row.get('feed_url'),
@@ -196,18 +212,26 @@ def rss_payload(row: dict) -> dict:
         'title': row.get('title'),
         'link': row.get('link'),
         'author': row.get('author'),
-        'content': row.get('content'),
+        'content_excerpt': text,
+        # Whether the article goes on past the excerpt — the trailing ellipsis *is*
+        # that record, read back here so no client sniffs for a character. (A body
+        # that genuinely ends in one and fits is a false positive whose whole cost
+        # is a "more" that reveals nothing.)
+        'content_truncated': bool(text and text.endswith(ELLIPSIS)),
         # The LLM summary (plan §3). Null = short enough not to need one, not yet
-        # written, or given up on — the card degrades to truncated content either way.
+        # written, or given up on — the card shows the excerpt either way.
         'summary': row.get('summary'),
         'published_at': iso_utc(row.get('published_at')),
         'first_seen_at': iso_utc(row.get('first_seen_at')),
         'sort_at': iso_utc(row.get('sort_at')),
     }
+    if with_content:
+        payload['content'] = row.get('content')
+    return payload
 
 
-def rss_envelope(row: dict, is_read: bool, is_saved: bool) -> dict:
-    payload = rss_payload(row)
+def rss_envelope(row: dict, is_read: bool, is_saved: bool, with_content: bool = False) -> dict:
+    payload = rss_payload(row, with_content=with_content)
     return {
         'source': 'rss',
         'key': rss_key(payload['id']),

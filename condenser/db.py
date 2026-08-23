@@ -30,6 +30,7 @@ from telememo import db as tdb
 
 from . import search, vectors
 from .items import FORYOU_FEED, ItemKey
+from .text import excerpt
 
 log = logging.getLogger('condenser.db')
 
@@ -41,11 +42,18 @@ MESSAGES_OPTIONAL_FIELDS = {
 # Bumped when condenser's own table shapes change; recorded in app_meta on init so a
 # future startup can detect an upgrade and run a migration. Telememo manages its own
 # table migrations separately (init_db optional_fields / ALTER TABLE).
-SCHEMA_VERSION = 15
+SCHEMA_VERSION = 16
 
 # One-shot marker for the v14 admission backfill (see _migrate_hn_qualified_v14).
 # State, not shape: the columns can exist while the stamping has not happened.
 BACKFILL_META_KEY = 'hn_qualified_backfilled'
+
+# The v16 excerpt backfill's marker (see _backfill_rss_excerpts). It holds a
+# *version*, not a flag: the excerpt is derived data, so a change to the cut or
+# the stripping has to re-derive rather than migrate — the search index's
+# TOKENIZER_VERSION arrangement, one table smaller.
+RSS_EXCERPT_META_KEY = 'rss_excerpt_version'
+RSS_EXCERPT_VERSION = 1
 
 
 class CondenserBaseModel(Model):
@@ -440,6 +448,12 @@ class RssEntry(CondenserBaseModel):
     link = TextField(null=True)
     author = TextField(null=True)
     content = TextField(null=True)  # the feed's own HTML (content:encoded, else description)
+    # v16: the list payload's body — ``content`` stripped to prose and cut to
+    # ``text.EXCERPT_CHARS``. Materialized on the write side (``is_filtered``'s
+    # rule) so a timeline query never reads the article column at all, which is
+    # where the 7.1MB entry in production is paid for. Rebuildable: the body is
+    # still here, and RSS_EXCERPT_VERSION re-derives the lot.
+    content_excerpt = TextField(null=True)
     published_at = DateTimeField(null=True)
     first_seen_at = DateTimeField(index=True)
     # The LLM summary (plan §3, Phase 3), denormalized onto the entry the way
@@ -496,12 +510,14 @@ def init_db(db_path: str, vector_dims: int = 256) -> None:
     vectors.load()
     _migrate_subscriptions_v3()
     _migrate_hn_qualified_v14()
+    _migrate_rss_excerpt_v16()
     tdb.db.create_tables(CONDENSER_TABLES)
     _migrate_read_saved_v4()
     _migrate_hn_previews_v5()
     _migrate_feedback_reason_v9()
     _migrate_x_urls_v13()
     _backfill_hn_admission()
+    _backfill_rss_excerpts()
     _enable_wal(db_path)
     set_meta('schema_version', str(SCHEMA_VERSION))
     vectors.setup(vector_dims)
@@ -627,6 +643,61 @@ def _migrate_hn_qualified_v14() -> None:
     with tdb.db.atomic():
         tdb.db.execute_sql('ALTER TABLE hn_stories ADD COLUMN qualified_at DATETIME')
         tdb.db.execute_sql('ALTER TABLE hn_stories ADD COLUMN qualified_rank INTEGER')
+
+
+def _migrate_rss_excerpt_v16() -> None:
+    """Add the excerpt column to a pre-v16 ``rss_entries`` table.
+
+    Shape-based ADD COLUMN, the v5/v9/v13 pattern — placed **before**
+    ``create_tables`` with v14's, not because this column is indexed (it is not)
+    but because that is the position that is safe whether or not it ever becomes
+    one; the failure v14 found is silent until the next write.
+
+    The **backfill** is separate — see ``_backfill_rss_excerpts``.
+    """
+    cols = [r[1] for r in tdb.db.execute_sql('PRAGMA table_info(rss_entries)').fetchall()]
+    if not cols or 'content_excerpt' in cols:
+        return
+    tdb.db.execute_sql('ALTER TABLE rss_entries ADD COLUMN content_excerpt TEXT')
+
+
+def _backfill_rss_excerpts() -> None:
+    """Cut an excerpt for every archived entry that has no current one.
+
+    Unlike the v5/v9/v13 columns this one cannot stay NULL: the list payload
+    stopped carrying ``content``, so an un-backfilled upgrade is a timeline of
+    RSS cards with no body at all.
+
+    Keyed on a marker holding ``RSS_EXCERPT_VERSION`` rather than on the column's
+    presence, for the two reasons the v14 backfill states and one more: state is
+    not shape (a crash between the ALTER and the writing would satisfy a shape
+    check forever), and the excerpt is *derived* — changing the cut has to
+    re-derive the archive, which a boolean flag could never express.
+
+    Chunked, because the thing being read is exactly the thing this change exists
+    to avoid holding in memory: an archive whose largest single body is megabytes.
+    """
+    if get_meta(RSS_EXCERPT_META_KEY) == str(RSS_EXCERPT_VERSION):
+        return
+    stale = get_meta(RSS_EXCERPT_META_KEY) is not None
+    written, last_id = 0, 0
+    while True:
+        rows = tdb.db.execute_sql(
+            'SELECT id, content FROM rss_entries WHERE id > ? ORDER BY id LIMIT 200', (last_id,)
+        ).fetchall()
+        if not rows:
+            break
+        last_id = rows[-1][0]
+        with tdb.db.atomic():
+            for entry_id, content in rows:
+                text = excerpt(content)
+                if text is None:
+                    continue
+                tdb.db.execute_sql('UPDATE rss_entries SET content_excerpt = ? WHERE id = ?', (text, entry_id))
+                written += 1
+    set_meta(RSS_EXCERPT_META_KEY, str(RSS_EXCERPT_VERSION))
+    if written:
+        log.info('rss v16 excerpt %s wrote %s entries', 're-cut' if stale else 'backfill', written)
 
 
 def _backfill_hn_admission() -> None:
@@ -1115,6 +1186,10 @@ def delete_saved_item(source: str, ref1: int, ref2: int = 0) -> None:
     SavedItem.delete().where(
         (SavedItem.source == source) & (SavedItem.ref1 == ref1) & (SavedItem.ref2 == ref2)
     ).execute()
+
+
+def get_saved_item(source: str, ref1: int, ref2: int = 0) -> Optional[SavedItem]:
+    return SavedItem.get_or_none((SavedItem.source == source) & (SavedItem.ref1 == ref1) & (SavedItem.ref2 == ref2))
 
 
 def list_saved_items() -> list[SavedItem]:
@@ -2050,6 +2125,11 @@ def insert_rss_entries(rows: list[dict], read_before: Optional[datetime], now: d
     """
     if not rows:
         return 0
+    # Cut here rather than in the caller: the excerpt is the list payload's only
+    # view of the body, and a write path that could forget it is a card that
+    # renders blank. One place writes entries, so one place derives it.
+    for row in rows:
+        row['content_excerpt'] = excerpt(row.get('content'))
     with tdb.db.atomic():
         # Chunked: one INSERT binds a parameter per column per row, and a first
         # fetch of an archive-style feed can carry hundreds of entries at once.

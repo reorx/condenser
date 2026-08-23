@@ -11,9 +11,11 @@ same contract the other sources have.
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
-from .. import db
+from .. import db, records
 from ..auth import require_auth
+from ..items import rss_envelope
 from ..rss import RssManager, describe_subscription, normalize_feed_url, parse_opml
+from ..sources import rss as rss_source
 from ..types import RssOpmlBody, RssSubscribeBody, RssSubscriptionPatch
 
 router = APIRouter(prefix='/api', tags=['rss'], dependencies=[Depends(require_auth)])
@@ -111,6 +113,29 @@ def import_opml(body: RssOpmlBody, rss: RssManager = Depends(get_rss)):
     if counts['added']:
         rss.kick()
     return counts
+
+
+@router.get('/rss/entries/{entry_id}')
+def get_rss_entry(entry_id: int):
+    """One entry as a full item envelope — **with** the article body.
+
+    The other half of the 2026-08-23 split: the list carries a 500-character
+    excerpt, and the body is fetched per entry, by whoever actually opens one.
+    The shape is the ordinary envelope rather than a bespoke ``{content: ...}``
+    so a client renders it with the card/detail code it already has.
+
+    Not subscription-scoped — pausing a feed hides it from the reading list, it
+    does not make an entry the reader saved or found in search unopenable. Falls
+    back to the saved snapshot, which is where the article lives once retention
+    (or an unsubscribe-and-purge) has taken the archive row.
+    """
+    row = rss_source.get_row(entry_id)
+    if row is not None:
+        return rss_envelope(row, bool(row['is_read']), bool(row['is_saved']), with_content=True)
+    saved = records.rss_article(entry_id)
+    if saved is None:
+        raise HTTPException(status_code=404, detail='rss entry not found')
+    return saved
 
 
 @router.get('/rss/status')

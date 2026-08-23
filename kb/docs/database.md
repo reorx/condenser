@@ -12,7 +12,7 @@ tags:
 One SQLite file, shared between [telememo](https://pypi.org/project/telememo/) (a PyPI
 dependency) and condenser. condenser's peewee models bind to telememo's `db` instance, so
 everything runs on one connection. `SCHEMA_VERSION` lives in `condenser/db.py` (currently
-**15**).
+**16**).
 
 ## Table ownership
 
@@ -76,6 +76,33 @@ Virtual tables (`x_vec_labeled`, `search_index`) are created with raw SQL in `in
   SQL names what is *intentionally preserved*, not only what is removed.
 
 ## Schema changelog (newest first)
+
+### v16 — 2026-08-23 · RSS list excerpt
+
+Adds `rss_entries.content_excerpt` (shape-based ADD COLUMN): `content` stripped to
+prose and cut to `text.EXCERPT_CHARS` (500), so a timeline page carries an excerpt
+per item instead of an article. Production before the split: 1583 entries, **13.9KB
+of HTML on average, 7.1MB at the tail**, and every page of thirty shipped thirty of
+them.
+
+- **Materialized at ingest**, `is_filtered`'s rule, and that is where the win is:
+  the list query names its columns and leaves `content` out, so SQLite never reads
+  the body's overflow pages at all. Computing the cut per request would still have
+  read (and regexed) 7.1MB to show 500 characters of it.
+- Derived from a column that is still here, so it is a **rebuildable cache** — but
+  unlike `is_filtered` it cannot stay NULL on upgrade (the payload has nothing else
+  to show), hence a **marker-keyed backfill**, `app_meta.rss_excerpt_version`.
+  The marker holds `RSS_EXCERPT_VERSION`, not a flag: a change to the cut or the
+  stripping has to re-derive the archive, which is `TOKENIZER_VERSION`'s
+  arrangement one table smaller. Backfill reads the archive in chunks of 200 —
+  the megabyte body is exactly what must not be loaded all at once.
+- The ADD COLUMN runs **before** `create_tables` with v14's. This column is not
+  indexed, so the v14 trap does not apply today; the position is the one that stays
+  safe if it ever becomes indexed, and that failure is silent until the next write.
+- The article did not leave the database, only the list: search, the summariser and
+  the saved snapshot all still read `content` (`sources/rss.rows_by_id`), and
+  `GET /api/rss/entries/{id}` serves it per entry. Plan:
+  `kb/plans/2026-08-23-rss-list-excerpt-detail-endpoint.md`.
 
 ### v15 — 2026-08-20 · RSS source
 

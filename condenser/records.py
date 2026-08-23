@@ -86,7 +86,15 @@ def save_item(key: ItemKey) -> bool:
             return False
         # Like X's, the snapshot *is* the envelope payload — including the computed
         # sort timestamp, which no longer exists once the entry row is gone.
-        db.add_saved_item('rss', key.ref1, 0, rss_payload(row))
+        #
+        # ``with_content``: the *list* payload stopped carrying the article on
+        # 2026-08-23, but a snapshot is not a list — it is this module's promise
+        # that a saved record renders without its source tables, and an entry whose
+        # article is only in ``rss_entries`` would break that the moment retention
+        # (or an unsubscribe-and-purge) took the row. The cost is one query's worth
+        # of text at save time; the alternative is a saved article that can go
+        # missing. (Plan 2026-08-23 §5, option (a).)
+        db.add_saved_item('rss', key.ref1, 0, rss_payload(row, with_content=True))
         return True
     story = db.get_hn_story(key.ref1)
     if story is None:
@@ -135,8 +143,26 @@ def render_item(
         verdict, reason = (feedback or {}).get(triple, (None, None))
         return x_envelope(json.loads(rec.raw_data), is_read, True, verdict, reason)
     if rec.source == 'rss':
+        # The snapshot holds the article; this is a *list*, so it goes out with the
+        # excerpt like every other list. ``rss_article`` is the way to the body.
         return rss_envelope(json.loads(rec.raw_data), is_read, True)
     return hn_envelope(json.loads(rec.raw_data), is_read, True)
+
+
+def rss_article(entry_id: int) -> Optional[dict]:
+    """A saved entry's full-body envelope, out of its snapshot alone.
+
+    The fallback behind ``GET /api/rss/entries/{id}`` — and the reason the snapshot
+    stores the article at all. Retention keeps the rows of entries the reader
+    touched, so today this rarely fires; "rarely" is not the contract this module
+    makes, though, and a saved article that 404s would be the one failure a reader
+    could not work around.
+    """
+    rec = db.get_saved_item('rss', entry_id, 0)
+    if rec is None:
+        return None
+    is_read = db.is_item_read('rss', entry_id, 0)
+    return rss_envelope(json.loads(rec.raw_data), is_read, True, with_content=True)
 
 
 def _saved_read_triples() -> set[tuple[str, int, int]]:
