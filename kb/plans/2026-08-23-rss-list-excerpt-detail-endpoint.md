@@ -39,7 +39,9 @@ RSS 条目的 timeline envelope 目前携带整篇 `content` HTML：
    `RssCard`）同样生效，注意快照回放的条目也要能展开。
 4. **iOS**：`RssEntry` 增加 excerpt 字段；**`content` 保留为 optional**——旧收藏快照的
    payload 里仍有它，decode 不能炸（`SnapshotCache` 的契约版本号机制在
-   `ios/AGENTS.md`）。卡片直接用 excerpt（不再解析 HTML）；`RssDetailSheet` 打开时拉
+   `ios/AGENTS.md`）。卡片直接用 excerpt（不再解析 HTML）；注意 2026-08-23 起卡片
+   布局是「正文开头 3 行在上 + AiSummaryBlock 摘要块在下」（commit `76150c5`），
+   即**有摘要的卡片也要正文摘录**，excerpt 两种卡都用；`RssDetailSheet` 打开时拉
    详情接口取全文（loading 态；失败降级显示 excerpt）。顺手把 sheet 里的 plainText
    解析挪出渲染路径（task 里算一次存 state，别在 body 里反复算）。
 5. **收藏快照是本任务最容易想岔的地方**，两条路都成立，选一条并把理由写进注释：
