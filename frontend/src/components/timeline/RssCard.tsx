@@ -18,6 +18,8 @@ import { useUnreadIndicator } from '@/lib/unreadIndicator';
 import { cn } from '@/lib/utils';
 import type { ReadTarget, RssEntry, TimelineItem } from '@/lib/types';
 
+import { ForwardedBadge } from './ForwardedBadge';
+
 interface Props {
   /** Envelope with `rss` present. */
   item: TimelineItem;
@@ -157,6 +159,7 @@ function RssCardImpl({ item, observe, pendingKeys }: Props) {
         >
           <time>{timeLabel(shown)}</time>
         </button>
+        <ForwardedBadge item={item} />
         <button
           type="button"
           onClick={() => save.mutate({ key: item.key, saved: !item.is_saved })}

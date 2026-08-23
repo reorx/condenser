@@ -45,7 +45,7 @@ Two conventions this list exists to protect:
 | `LanguageOption` | One language checkbox-pill in `SettingsDialog`'s 语言 multi-select (toggle → immediate PATCH of the whole list) |
 | `SegmentedOption` | One icon-over-label button in a segmented control; shared by `SettingsDialog`'s theme + unread pickers |
 | `SettingsDialog` | Settings modal: Telegram account, theme, unread-indicator mode, 语言 (global language whitelist — X For You's ingest filter reads it), forward channel, devices, lock app. The Telegram row is status-aware: connected → phone + Disconnect, disconnected → a **Connect Telegram** link to `/connect-telegram`. That link is not decoration — since the gate stopped walling off multi-source installs (see `pages/` below), it is the only remaining entry to the Telegram login |
-| `Sidebar` | Left navigation: nav links (Unread first, `/` = Unread, `/?all=1` = All, then Saved / Search / Filters / Subscriptions), then one `SidebarSourceGroup` per source from `GET /api/sources`, settings |
+| `Sidebar` | Left navigation: nav links (Unread first, `/` = Unread, `/?all=1` = All, then Saved / Forwards / Search / Filters / Subscriptions — Forwards sits next to Saved because both are archives of *what I did to an item*, one bookmarked and one published), then one `SidebarSourceGroup` per source from `GET /api/sources`, settings |
 | `SidebarSourceGroup` | One collapsible source section (collapse persisted via `useCollapsedSources`): the full-width header row links to `/s/:source` (+ unread badge when collapsed) with the collapse chevron as its own right-edge target, rows = the source's enabled subscriptions, each dispatched to its source's own link component by the private `SidebarSubLink` (four sources address their subscriptions differently — a channel id, a feed key, a feed URL — so the row types stay separate and one function picks between them) |
 | `SidebarChannelLink` + `navLinkClass` | One Telegram channel link in a sidebar source group; also exports the shared nav-row className used by the top-level links |
 | `SidebarHnFeedLink` | One HN feed link in the sidebar's Hacker News group (routes to `/s/hn` — v1 has a single feed) |
@@ -80,7 +80,8 @@ Two conventions this list exists to protect:
 | `ItemDetailInfo` | The pane's top full-info label/value list, source-dispatched: TG = channel (avatar/name/@username), author, publish/edit times, forward origin, media count, item key; HN = source/type, author, submitted / front-page (上榜) / **admission (入选)** times — the gap between the last two is what the story spent earning its slot, and the pane is the only place a reader can see it; a story that was never admitted (search reaches those) has no 入选时间 row at all — score/comments, 当日入选第 N 条 + peak rank, domain, item key; X = author (avatar/name/@handle → profile), which feed it came from, publish + probe-fetch times, engagement, RT/quote/reply origin, media count, your 反馈 label when set (with its reason chip — the card shows the reason nowhere, so this is where you check what a past thumbs-down actually meant), verdict (Phase 4), item key |
 | `MessageStatsRow` | Live views (Eye) / forwards (Repeat2) / `ReactionChip` list for the pane's TG message via `useMessageStats` (fetched fresh on every pane open, never stored); renders nothing while pending, on error, or when the channel exposes no stats |
 | `ReactionChip` | One reaction bucket pill: emoji glyph ('custom'/'other' kinds degrade to a generic icon) + count; `chosen` (own reaction) highlights |
-| `ForwardDialog` | "转发到我的频道" modal (deliberately Chinese copy), source-generic since 2026-07-27 — takes the whole `TimelineItem` and posts its key to `POST /api/forward`. Telegram: non-empty comment = quote message (text + t.me link), empty = native forward. Other sources have no Telegram original, so the server renders title + link into a new message and the copy says so ("留空则只发标题和链接…" instead of "留空则原样转发…") — the hint is the only source-conditional bit. Success toast carries an「打开」action opening the landed message |
+| `ForwardDialog` | "转发到我的频道" modal (deliberately Chinese copy), source-generic since 2026-07-27 — takes the whole `TimelineItem` and posts its key to `POST /api/forward`. Telegram: non-empty comment = quote message (text + t.me link), empty = native forward. Other sources have no Telegram original, so the server renders title + link into a new message and the copy says so ("留空则只发标题和链接…" instead of "留空则原样转发…") — the hint is the only source-conditional bit. Success toast carries an「打开」action opening the landed message. Since 2026-08-23 a forward is also *recorded* server-side (schema v17), so success patches `forwarded_by_me: true` across the item caches and invalidates `['forwards']` — the badge lights without a refetch |
+| `ForwardedBadge` | The 「我转发过这条」 mark on the time line of all four cards: a small `Repeat2` (`MessageStatsRow`'s icon for forward *counts* — same vocabulary, other direction) with a native `title`. Reads `item.forwarded_by_me`, **not** `telegram.is_forwarded` — that one means "this post was forwarded *into* the channel I read", the opposite direction, and the two sit on the same card |
 | `LinkPreviewCard` | One self-fetched link preview (proxied image / Telegram-image fallback + site/title/description; `channelId` optional — absent for HN targets); shared by the pane and `HnCard`'s embedded preview |
 | `Lightbox` | Fullscreen media viewer with prev/next navigation |
 | `DatedItemRow` | One item under a full date line, dispatched by source (`MessageCard` / `HnCard` / `XCard` / `RssCard`). The row shape for the two views that are *not* a timeline — Saved and Search — both of which jump across days and sources, so each item states its own date instead of sitting under a shared day divider |
@@ -94,6 +95,12 @@ Two conventions this list exists to protect:
 | `SearchFilters` | The row under the search box: `SearchScopeMenu`, the All/Unread/Saved status chips, and the sort toggle. All three live in the URL, which is what makes a search a link. Status defaults to **All**, unlike the timeline's unread-first default — you search for something you remember reading at least as often as for something you haven't |
 | `SearchFilterChip` | One small icon+label button in that row. Header-scale, unlike `SegmentedOption` (a settings-sized card), so the row does not wrap to a second line on a phone |
 | `SearchResults` | The result list: flat `DatedItemRow`s + offset infinite scroll + the four states (loading / error / empty / results). Deliberately **not** wired to `useScrollToRead` — scrolling past a five-year-old message while hunting for a different one is not reading it. Every other card interaction (save, hide, feedback, the detail pane) works as it does elsewhere. A 422 renders as "nothing searchable", not as a failure: it means the box holds only punctuation or emoji |
+
+### `components/forwards/`
+
+| Component | Purpose |
+|---|---|
+| `ForwardRecordRow` | One row of the `/forwards` log: **the record's own metadata above the item it published** — time, the target channel *as configured at the time*, the comment verbatim (or 「原样转发，没有写评论」), an open-in-Telegram link and a delete button. The comment is drawn outside the card on purpose: it belongs to the forward, not to the item, and the same article can be forwarded twice with two different comments. The `item` half is a plain `DatedItemRow`; a record with **no snapshot** (a native TG forward reads no archive row, so it can publish a message we never stored) renders the metadata alone and says so. The delete `ConfirmDialog` states that only the local record goes — the message stays in the channel — because that is the one thing a reader could reasonably assume otherwise |
 
 ### `components/filters/`
 
@@ -131,7 +138,9 @@ Two conventions this list exists to protect:
 
 ## Where things live (non-components)
 
-- `pages/` — route screens (`TimelineView`, `RecordsView`, `SearchView`, `FiltersView`,
+- `pages/` — route screens (`TimelineView`, `RecordsView`, `ForwardsView` — the `/forwards`
+  publish log, offset-paged like search, no channel filter because a row belongs to one
+  act of forwarding rather than to a channel — `SearchView`, `FiltersView`,
   `SubscriptionsView`, `AppShell`, `AppLogin`, `TgLogin`, `AuthorizeView` — the
   device-authorization page cold-loaded by the iOS app; only needs the cookie session, so
   `App.tsx` renders it before the TG gate). **The TG gate is a wall only for a
@@ -161,6 +170,10 @@ Two conventions this list exists to protect:
   `useRssArticle` (one feed entry's article body, idle until the card's "more" is
   clicked — the list payload carries only an excerpt; `staleTime: Infinity`, a
   published document does not change under us),
+  `useForwards` + `useDeleteForward` (the offset-paged `['forwards']` log and its delete;
+  the delete is deliberately **not** optimistic and deliberately does **not** clear the
+  card's `forwarded_by_me` — a second record of the same item may still exist, and only
+  the server knows),
   `useMessageStats` (live pane stats, staleTime 0), `useAppMeta` + `useSetForwardChannel`
   (runtime app settings incl. the forward target channel), `useHideItem` + `useUnhideItem`
   (hide an item from every timeline via `POST /api/hidden`; optimistic removal + undo),

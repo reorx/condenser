@@ -16,6 +16,7 @@ import { useUnreadIndicator } from '@/lib/unreadIndicator';
 import { cn } from '@/lib/utils';
 import type { ReadTarget, TimelineItem, XTweet } from '@/lib/types';
 
+import { ForwardedBadge } from './ForwardedBadge';
 import { XFeedbackButtons } from './XFeedbackButtons';
 import { XMedia } from './XMedia';
 import { XQuoteCard } from './XQuoteCard';
@@ -133,6 +134,7 @@ function XCardImpl({ item, observe, pendingKeys }: Props) {
         >
           <time>{timeLabel(shownAt)}</time>
         </button>
+        <ForwardedBadge item={item} />
         <button
           type="button"
           onClick={() => save.mutate({ key: item.key, saved: !item.is_saved })}

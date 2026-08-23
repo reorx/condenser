@@ -6,6 +6,7 @@ import type {
   DayCount,
   Device,
   FilterPreviewResult,
+  ForwardRecordPage,
   ForwardResult,
   HnStatus,
   ItemFeedback,
@@ -291,6 +292,13 @@ export const api = {
     request<LinkPreview[]>(`/api/messages/${channelId}/${messageId}/previews`),
   // Generic single-URL preview (reusable for future feed types).
   urlPreview: (url: string) => request<LinkPreview>('/api/preview' + qs({ url })),
+
+  // ---- forward records (the publish log) ----
+  // Offset-paged like search: a log being browsed, not a queue being drained.
+  listForwards: (limit: number, offset: number) =>
+    request<ForwardRecordPage>(`/api/forwards?limit=${limit}&offset=${offset}`),
+  // Forgets the local record only — the message stays in the target channel.
+  deleteForward: (id: number) => del<{ ok: true }>(`/api/forwards/${id}`),
 
   // ---- records (saved) ----
   listRecords: () => request<TimelineItem[]>('/api/records'),

@@ -9,6 +9,7 @@ import { AppShell } from '@/pages/AppShell';
 import { AppLogin } from '@/pages/AppLogin';
 import { AuthorizeView } from '@/pages/AuthorizeView';
 import { FiltersView } from '@/pages/FiltersView';
+import { ForwardsView } from '@/pages/ForwardsView';
 import { RecordsView } from '@/pages/RecordsView';
 import { SearchView } from '@/pages/SearchView';
 import { SubscriptionsView } from '@/pages/SubscriptionsView';
@@ -69,6 +70,7 @@ export default function App() {
         {/* One feed inside a multi-feed source (X: For You / a followed account) */}
         <Route path="/s/:source/:feed" element={<TimelineView />} />
         <Route path="/saved" element={<RecordsView />} />
+        <Route path="/forwards" element={<ForwardsView />} />
         <Route path="/search" element={<SearchView />} />
         <Route path="/filters" element={<FiltersView />} />
         <Route path="/subscriptions" element={<SubscriptionsView />} />
