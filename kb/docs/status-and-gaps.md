@@ -1108,6 +1108,23 @@ iOS 详情 sheet 打开时取一次并把 HTML→纯文本**算一次存 state**
 ⚠️ **TestFlight 上的 iOS 1.1.0 (3) 解的是列表里的 `content`**，服务端先改会让它的无摘要
 RSS 卡片没正文（字段 optional，decode 不炸）。单用户项目，接受；下一个 build 带上就好。
 
+**iOS：RSS 详情按需取全文 + 正文里带图** (2026-08-23, iOS)。上一条的 iOS 端补完（计划
+`kb/plans/2026-08-23-ios-rss-article-images.md`，起因是读者反馈 rss:677 在 iOS 上看不到
+图片——列表不再带 `content` 之后，图片跟着 HTML 一起从客户端消失了）。Kit 新增
+`RssBlocks.swift`：全文 HTML → 文本块 + 图片块。**不另写一套 HTML 处理**——先把
+`<img>` 换成私用区占位符（U+E001，`<pre>` 用的 U+E000 的下一个码位）、跑完
+`rssPlainText` 既有管线、再按占位符切块，两条路径共享同一份规则；副产物是对的行为：
+藏在 `<script>` 里的 `<img>` 连占位符一起被丢掉。src 相对路径按文章 link 解析、只留
+http/https，data: 占位图回落 `data-src`/`data-original`（WordPress lazy-load 插件的
+发法）；width/height 属性带出来给 UI 预留纵横比。`RssDetailSheet` 把解析结果算一次存
+state：文字块 → `SelectableTextView`，图片块 → 走 /api/preview/image 代理的图片视图
+（骨架按属性纵横比占位、加载完换天然比例淡入），点图进 `ImageViewerScreen`（收全文
+所有图、从点中那张起，可左右翻）。`SnapshotCache` 契约 v2→v3：旧快照没有摘录，
+decode 得出来但画成空白卡片，按 miss 换目录。卡片仍不放图（列表的账刚瘦下来，每条
+一张图的请求要单独算一轮）。241 Kit 全绿（+14 `rssBlocks` 用例，BDD 先写）；模拟器
+走查（rss:677 灌进 `tmp/rss-fixes-dev.db`）验了四样：两图都渲染、打开即有摘录、
+查看器可翻页、断网降级「正文加载失败」——截图 `tmp/2026-08-23-ios-rss-images/`。
+
 Still open: subscription
 "delete-with-messages" option (Q4 / `?purge=1`) and the backfill batch-interval sleep.
 Full checklist: `kb/sessions/2026-06-09-backend-remaining-work.md`.

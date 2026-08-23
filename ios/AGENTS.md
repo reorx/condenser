@@ -9,7 +9,7 @@ read/save 按 item key（`tg:{cid}:{mid}` / `hn:{sid}`）上报；订阅数据�
 （All + 已添加信源，驱动 `TimelineStore.source`）；tab 2「频道」→「订阅」（信源 → 订阅两级，
 TG 行进频道 timeline，HN 行进 `HnFeedTimelineScreen`）；HN 卡片/详情（`HnCard`/`HnDetailSheet`，
 self-post HTML 经 Kit 的 `hnPlainText` 转纯文本）；`SnapshotCache` 目录带契约版本号
-（`condenser-snapshots-v2`，旧快照 decode 失败按 miss）。多信源计划见
+（`condenser-snapshots-v3`，旧快照 decode 失败按 miss）。多信源计划见
 `../kb/plans/2026-07-19-multi-source-hn.md`。
 
 **X 信息源（Phase 5，2026-07-25）**：envelope 多了 `x`（`XTweet`）与源通用的
@@ -48,9 +48,9 @@ chip 行（手机上一行摆不下这些中文标签），只在「这一下确
 `XDetailSheet` 的「反馈」行回显，卡片上不画。
 
 **RSS 信息源（Phase 6，2026-08-21）**：envelope 多了 `rss`（`RssEntry`）。这个源没有
-判定、没有反馈、没有媒体，卡片（`RssCard` + `RssGlyph`）与 sheet（`RssDetailSheet`）
+判定、没有反馈，卡片（`RssCard` + `RssGlyph`）与 sheet（`RssDetailSheet`）
 是四个源里最简单的一对，订阅行 / 单 feed 视图（`RssFeedTimelineScreen`）照 HN/X 的
-形状。四处值得记：
+形状。五处值得记：
 
 - **feed key 是整个 feed URL**（读者输入什么就用什么作键，`RssFeed.label` 在学到标题前
   回落成去掉 scheme 的 URL）。所以 debug 路由 `rss[/<下标>]` 用下标而不是 key——URL
@@ -69,15 +69,26 @@ chip 行（手机上一行摆不下这些中文标签），只在「这一下确
   剥好的约 500 字纯文本，`content` 只有 `GET /api/rss/entries/{id}` 与改版前存下的
   收藏快照才带（feed 正文平均 13.9KB、最长一条 7.1MB，一页 30 条全带就是一次几 MB
   的下载）。Kit 面因此是两个属性：`contentText` 走摘录（卡片用；旧快照里没有摘录时
-  才回落去解析 `content`），`articleText` 才解析全文。`RssDetailSheet` 打开时
+  才回落去解析 `content`），全文只在详情 sheet 解析。`RssDetailSheet` 打开时
   `reader.api.rssEntry(id:)` 取一次，到手前先显示摘录 + 「正在加载全文…」，失败就停在
-  摘录上——**解析结果算一次存 state**，那是一整篇的正则，放在 body 里每次重渲染都会
-  重跑（正是这次排查 RSS 卡顿找到的另一半）。后端计划
+  摘录上——**解析结果（块序列，见下条）算一次存 state**，那是一整篇的正则，放在
+  body 里每次重渲染都会重跑（正是这次排查 RSS 卡顿找到的另一半）。后端计划
   `../kb/plans/2026-08-23-rss-list-excerpt-detail-endpoint.md`。
 - **`rssPlainText` 不是 `hnPlainText` 的推广**，三条规则刻意相反：链接保留锚文本
   （HN 换成 href 是因为它截断显示文本）、`<script>`/`<style>` 连内容一起丢、源码换行
   按空白处理（只有块级标签断行，否则句子会在中间硬折），`<pre>` 是唯一例外——整块
   摘出去、处理完再放回来，代码的缩进才留得住。
+- **正文里的图渲染成块**（2026-08-23，起因是 rss:677 在 iOS 上看不到图）：Kit 的
+  `RssBlocks.swift` 把全文 HTML 切成文本块 + 图片块（`rssBlocks(fromHTML:baseURL:)`）。
+  **不是另一套 HTML 处理**：先把 `<img>` 换成私用区占位符（U+E001，`<pre>` 用的
+  U+E000 的下一个码位）、跑完 `rssPlainText` 既有管线、再按占位符切块，两条路径共享
+  同一份规则——副产物是 `<script>` 里的 `<img>` 连占位符一起消失。src 相对路径按文章
+  link 解析、只留 http/https，data: 占位图回落 `data-src`/`data-original`（WordPress
+  lazy-load 插件的发法）；width/height 属性给 UI 预留纵横比（缺省 4:3，加载完换图片
+  天然比例淡入）。图走 /api/preview/image 代理，点图进 `ImageViewerScreen`（收全文
+  所有图、从点中那张起）。**卡片仍不放图**——列表的账刚瘦下来，每条一张图的请求要
+  单独算一轮。快照契约随之 v2→v3（旧快照没摘录，decode 得出来但画成空白卡片，按
+  miss）。计划 `../kb/plans/2026-08-23-ios-rss-article-images.md`。
 - 信源方块的底色是琥珀而不是系统 `.orange`：`HnGlyph` 已经是纯橙，两个方块在同一条
   时间线上前后相邻，颜色一样就等于没有信源标记（走查才发现的，单看 RSS 卡片没问题）。
 
