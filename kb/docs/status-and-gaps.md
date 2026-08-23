@@ -1064,6 +1064,39 @@ feed 上就是这个形状」这句在生产上兑现了）。抽查摘要 120-1
 这正是要看的那件事：**已摘要的条目不会复入，`skip:short` 哨兵也挡住了那条短文**，否则
 每轮 20 条的上限就成了每轮 20 条的账单。容器 0.18% CPU / 155MiB，公网 200。
 
+**RSS 列表载荷瘦身：摘录进列表、全文按需取** (2026-08-23, schema v16)。RSS 的 timeline
+envelope 一直在带整篇 `content` HTML。生产实测：1583 条归档，**平均 13.9KB，20 条
+>100KB，最大一条 7.1MB**——一页 30 条就是 30 篇文章，翻页碰上那条 7MB 的就是一次 7MB+
+下载。iOS 端还额外付一次：`RssEntry.contentText` 是计算属性，每次重渲染都对全文重跑一遍
+`rssPlainText`。这就是「iOS RSS 加载慢」排查的两个结论。
+
+改法（计划 `kb/plans/2026-08-23-rss-list-excerpt-detail-endpoint.md`）：列表带
+`content_excerpt`（纯文本、500 字、**ingest 时算好存列**），全文挪到
+`GET /api/rss/entries/{id}`。存列而不是查询时现算，是因为真正的省在于**列表 SQL 根本不
+读那一列**——`sources/rss.py` 从此有两个 select，阅读面逐列点名（`e.*` 会让正文悄悄溜
+回来），只有 `rows_by_id` 读正文，服务于搜索 / 收藏快照 / 详情接口三个调用方。
+
+三个决定值得记：
+
+* **收藏快照仍存全文**（计划 §5 方案 a）。`records.py` 的既有承诺是「快照回放不依赖源
+  表」，正文只在 `rss_entries` 里的话，retention 一扫就没了。详情接口查不到行时回落到
+  快照——浏览器走查里删掉源表行后收藏卡片照样展开，证的就是这条。
+* **v16 的回填 marker 记的是版本号不是布尔**（`app_meta.rss_excerpt_version`）。摘录是
+  派生数据，改了裁法就得重切整个归档，`TOKENIZER_VERSION` 的同一套安排。这一列也不能像
+  v5/v9/v13 那样留 NULL——列表载荷已经没有别的正文可显示了。
+* **`plain_text` 搬进新的 `condenser/text.py`**：剥标签这件事现在有计费（摘要输入）与不
+  计费（列表摘录）两个用途，而 `items.py` 要用它、`summary.py` 又 import `db`（db import
+  items）。一个没有包内依赖的模块是唯一能让载荷层共用它的形状。
+
+量化（本地 dev 库，141 条、正文合计 877KB）：`GET /api/timeline?source=rss&limit=30`
+**74,820 → 32,468 字节，-57%**；库里 877KB 正文对应 69KB 摘录（7.8%）。生产正文比 dev 大
+一倍，降幅只会更大。web 的 more 改成懒加载全文（`useRssArticle`，`staleTime: Infinity`），
+iOS 详情 sheet 打开时取一次并把 HTML→纯文本**算一次存 state**。731 backend (+17)、
+179 web、227 Kit 全绿；走查截图 `tmp/2026-08-23-rss-list-excerpt/`。
+
+⚠️ **TestFlight 上的 iOS 1.1.0 (3) 解的是列表里的 `content`**，服务端先改会让它的无摘要
+RSS 卡片没正文（字段 optional，decode 不炸）。单用户项目，接受；下一个 build 带上就好。
+
 Still open: subscription
 "delete-with-messages" option (Q4 / `?purge=1`) and the backfill batch-interval sleep.
 Full checklist: `kb/sessions/2026-06-09-backend-remaining-work.md`.
