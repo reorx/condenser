@@ -136,6 +136,8 @@ struct MessageDetailSheet: View {
                 }
                 .buttonStyle(.bordered)
             }
+            ShareImageButton(card: ShareCard.build(
+                item: item, channelTitle: reader.channelTitle(for: message)))
         }
         .sensoryFeedback(.success, trigger: copied) { _, new in new }
     }

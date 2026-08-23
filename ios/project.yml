@@ -48,6 +48,9 @@ targets:
         # 本地 dev 后端是 http://localhost，放行本地明文（不影响线上 https）
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true
+        # 详情抽屉的「分享图片」：系统分享面板里的「存储图像」需要这条声明，
+        # 缺了它这一项会直接崩。只写入、从不读取相册（没有 NSPhotoLibraryUsageDescription）
+        NSPhotoLibraryAddUsageDescription: 从分享面板选择「存储图像」时，需要把生成的图片写入相册。Condenser 不会读取你的照片。
         # 认证回调 condenser://auth（spec: kb/plans/2026-07-16-ios-reader-app.md）
         CFBundleURLTypes:
           - CFBundleURLName: com.reorx.condenser.auth
