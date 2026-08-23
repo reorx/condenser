@@ -1,8 +1,8 @@
 import SwiftUI
 import CondenserKit
 
-/// feed 条目详情 bottom sheet：标题 + 来源信息 + 全文（HTML 转纯文本，链接可点）
-/// + 收藏 / 转发 / 打开原文。
+/// feed 条目详情 bottom sheet：标题 + 来源信息 + 全文（文本块 + 图片块，链接可点、
+/// 点图进全屏查看器）+ 收藏 / 转发 / 打开原文。
 ///
 /// 卡片上截断的正文在这里给全的，所以这张 sheet 对 RSS 比对别的源更重要：
 /// 很多 feed 直接把整篇文章发过来，读完根本不用出 app。
@@ -14,11 +14,12 @@ struct RssDetailSheet: View {
     @Environment(ReaderSession.self) private var reader
 
     @State private var safariItem: SafariItem?
-    /// 全文的纯文本。列表载荷只带约 500 字的摘录（2026-08-23），所以这张 sheet
-    /// 打开时单独取一次全文；nil = 还没到手，此时先显示摘录。
-    @State private var articleText: String?
-    /// 取全文这件事有没有走完。与 `articleText != nil` 不是一回事：只发标题+链接的
-    /// feed 取回来也是空正文，那是成功，不是还在转圈。
+    @State private var viewerItem: ImageViewerItem?
+    /// 全文解析出的块序列。列表载荷只带约 500 字的摘录（2026-08-23），所以这张
+    /// sheet 打开时单独取一次全文；nil = 还没到手，此时先显示摘录。
+    @State private var articleBlocks: [RssBlock]?
+    /// 取全文这件事有没有走完。与 `articleBlocks != nil` 不是一回事：只发标题+链接
+    /// 的 feed 取回来也是空正文，那是成功，不是还在转圈。
     @State private var articleLoaded = false
     @State private var articleFailed = false
 
@@ -51,6 +52,9 @@ struct RssDetailSheet: View {
             SafariView(url: item.url)
                 .ignoresSafeArea()
         }
+        .fullScreenCover(item: $viewerItem) { item in
+            ImageViewerScreen(item: item)
+        }
     }
 
     /// sheet 自己的按钮不走 openURL 环境（那是给子树用的，读到的是外层列表的
@@ -61,11 +65,23 @@ struct RssDetailSheet: View {
 
     /// 正文区：全文到手前先给摘录——一段真的正文开头总比一块空白好读，
     /// 取失败了也就停在这段上，而不是把正文清空。
-    /// HTML→纯文本的解析在 `loadArticle` 里算一次存进 state，不放在 body 里：
+    /// HTML→块的解析在 `loadArticle` 里算一次存进 state，不放在 body 里：
     /// 那是一整篇的正则，SwiftUI 每次重渲染都会重跑一遍。
     @ViewBuilder
     private var articleSection: some View {
-        if let text = articleText ?? entry.contentText {
+        if let blocks = articleBlocks, !blocks.isEmpty {
+            ForEach(Array(blocks.enumerated()), id: \.offset) { index, block in
+                switch block {
+                case let .text(text):
+                    SelectableTextView(text: text)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                case let .image(image):
+                    RssArticleImageView(image: image) {
+                        openViewer(blocks, at: index)
+                    }
+                }
+            }
+        } else if let text = entry.contentText {
             SelectableTextView(text: text)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -83,19 +99,34 @@ struct RssDetailSheet: View {
         }
     }
 
-    /// 快照里已经带全文的条目（改版前存下的收藏）直接用，不必再问一次网络。
+    /// 快照里已经带全文的条目（改版前存下的收藏）直接解析，不必再问一次网络。
+    /// 相对路径的图片按文章 link 解析成绝对 URL。
     private func loadArticle() async {
-        if let text = entry.articleText {
-            articleText = text
+        if let content = entry.content {
+            articleBlocks = rssBlocks(fromHTML: content, baseURL: entry.articleURL)
             articleLoaded = true
             return
         }
         do {
-            articleText = try await reader.api.rssEntry(id: entry.id).rss?.articleText
+            if let content = try await reader.api.rssEntry(id: entry.id).rss?.content {
+                articleBlocks = rssBlocks(fromHTML: content, baseURL: entry.articleURL)
+            }
         } catch {
             articleFailed = true
         }
         articleLoaded = true
+    }
+
+    /// 查看器收全文所有图片并从点中的那张起，所以在里面能左右翻
+    private func openViewer(_ blocks: [RssBlock], at blockIndex: Int) {
+        let urls = blocks.compactMap { block -> String? in
+            guard case let .image(image) = block else { return nil }
+            return image.src
+        }
+        let start = blocks[..<blockIndex].reduce(0) { count, block in
+            if case .image = block { count + 1 } else { count }
+        }
+        viewerItem = ImageViewerItem(urls: urls, startIndex: start)
     }
 
     private var header: some View {
@@ -150,5 +181,62 @@ struct RssDetailSheet: View {
                 .buttonStyle(.bordered)
             }
         }
+    }
+}
+
+/// 正文里的一张图：宽度撑满内容列，先按 `<img>` 属性的纵横比（缺省 4:3）画骨架
+/// 占位，加载完换成图片自己的天然比例淡入——属性在时两者一致不跳动，属性缺时
+/// 只在此刻调整一次。图片走 /api/preview/image 代理，读一篇文章不会让源站看到
+/// 读者的 IP（与推文媒体同一条规则）。
+private struct RssArticleImageView: View {
+    let image: RssImage
+    var onTap: () -> Void
+
+    @Environment(ReaderSession.self) private var reader
+
+    @State private var loaded: UIImage?
+    @State private var failed = false
+
+    var body: some View {
+        Group {
+            if let loaded {
+                Image(uiImage: loaded)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .transition(.opacity)
+            } else {
+                Color(.secondarySystemBackground)
+                    .aspectRatio(placeholderRatio, contentMode: .fit)
+                    .overlay {
+                        if failed {
+                            Image(systemName: "photo")
+                                .foregroundStyle(.tertiary)
+                        }
+                    }
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .contentShape(RoundedRectangle(cornerRadius: 8))
+        .onTapGesture {
+            // 代理都取不回来的图，查看器里也只会失败一次，不如不开
+            if !failed { onTap() }
+        }
+        .task(id: image.src) {
+            failed = false
+            do {
+                let request = reader.api.authedRequest(reader.api.proxiedImageURL(image.src))
+                let result = try await ImageLoader.shared.load(request)
+                withAnimation(.easeIn(duration: 0.15)) { loaded = result }
+            } catch {
+                failed = true
+            }
+        }
+    }
+
+    private var placeholderRatio: CGFloat {
+        guard let width = image.width, let height = image.height, width > 0, height > 0
+        else { return 4 / 3 }
+        return CGFloat(width) / CGFloat(height)
     }
 }
