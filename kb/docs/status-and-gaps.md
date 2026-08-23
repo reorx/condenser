@@ -1088,10 +1088,21 @@ envelope 一直在带整篇 `content` HTML。生产实测：1583 条归档，**�
   计费（列表摘录）两个用途，而 `items.py` 要用它、`summary.py` 又 import `db`（db import
   items）。一个没有包内依赖的模块是唯一能让载荷层共用它的形状。
 
+⚠️ **动手时挖出一个平方级正则，先修了才敢发**（TDD，commit `8f3e156`）。
+`plain_text` 剥 `<script>`/`<style>` 用的是 `<(script|style)\b.*?</\1\s*>`：碰上「开了
+不关」的 opener，引擎会从每个候选位置一路扫到文末。实测 64KB 0.37s、256KB 6.6s、
+**1MB 97s**——按这个斜率，生产那条 7.1MB 的归档要跑一个多小时。以前这条路径只在摘要
+候选上跑，够不着那条；而 `excerpt` 每次 ingest 都跑、v16 回填还要把整个归档过一遍，
+于是**升级重启会卡死在那一行上**。改成手写扫描（每次 `search` 从上次停的位置继续，
+整趟线性），顺带把「未闭合就丢到文末」那条规则并了进来——本来就是同一件事。修后 4MB
+最坏形状 2.8ms、4MB 普通正文 66ms。基准脚本与结果在
+`tmp/2026-08-23-rss-list-excerpt/bench_excerpt.py` / `bench.log`。教训是老一套：
+**一个只在窄路径上跑过的函数，换到宽路径之前先量它的斜率**。
+
 量化（本地 dev 库，141 条、正文合计 877KB）：`GET /api/timeline?source=rss&limit=30`
 **74,820 → 32,468 字节，-57%**；库里 877KB 正文对应 69KB 摘录（7.8%）。生产正文比 dev 大
 一倍，降幅只会更大。web 的 more 改成懒加载全文（`useRssArticle`，`staleTime: Infinity`），
-iOS 详情 sheet 打开时取一次并把 HTML→纯文本**算一次存 state**。731 backend (+17)、
+iOS 详情 sheet 打开时取一次并把 HTML→纯文本**算一次存 state**。732 backend (+18)、
 179 web、227 Kit 全绿；走查截图 `tmp/2026-08-23-rss-list-excerpt/`。
 
 ⚠️ **TestFlight 上的 iOS 1.1.0 (3) 解的是列表里的 `content`**，服务端先改会让它的无摘要
