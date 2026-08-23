@@ -17,6 +17,7 @@ Plan: kb/plans/2026-08-20-rss-source-opml-llm-summary.md §3 / §10 Phase 3.
 import asyncio
 import json
 import os
+import time
 from datetime import timedelta
 
 import httpx
@@ -442,6 +443,32 @@ def test_plain_text_strips_an_unclosed_script_or_style_block():
     text = summary_mod.plain_text(open_style)
     assert 'color: red' not in text
     assert 'Intro.' in text
+
+
+def test_plain_text_strips_noise_in_linear_time():
+    """A page full of unclosed ``<script`` openers must not take quadratic time.
+
+    Regression, 2026-08-23. The old rule was one regex per opener —
+    ``<(script|style)\\b.*?</\\1\\s*>`` — and an opener with no closer makes the
+    engine scan to the end of the document *from every candidate position*.
+    Measured: 64KB = 0.37s, 256KB = 6.6s, 1MB = 97s, which puts production's
+    largest archived entry (7.1MB) past an hour. Harmless while this only ran on
+    summary candidates; not harmless once ``text.excerpt`` runs it at every ingest
+    and over the whole archive in the v16 backfill.
+
+    Lives beside the other ``plain_text`` tests rather than with the excerpt's:
+    one home for what this function does is worth more than filing by module.
+    """
+    body = '<p>a</p><script src="x">' * (256 * 1024 // 24)
+    start = time.perf_counter()
+    text = summary_mod.plain_text(body)
+    elapsed = time.perf_counter() - start
+
+    # The bound is deliberately loose (measured ~4ms after the fix, 6.6s before):
+    # this test is about the exponent, not about milliseconds on any given machine.
+    assert elapsed < 1.0, f'plain_text took {elapsed:.1f}s on 256KB — the quadratic path is back'
+    # ...and it still does the job: everything from the first unclosed opener on is gone
+    assert text == 'a'
 
 
 def test_plain_text_survives_nothing():

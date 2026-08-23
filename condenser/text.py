@@ -25,16 +25,41 @@ EXCERPT_CHARS = 500
 ELLIPSIS = '…'
 
 _TAG_RE = re.compile(r'<[^>]+>')
+_WS_RE = re.compile(r'\s+')
+
 # script/style *contents* are not prose: dropping only the tags would send a
 # stylesheet to the model, paying for the tokens and getting a worse summary —
 # and would print JavaScript on a timeline card.
-_NOISE_RE = re.compile(r'<(script|style)\b.*?</\1\s*>', re.IGNORECASE | re.DOTALL)
-# A block left unclosed (a body truncated mid-<script>) would slip past the pair
-# above, and _TAG_RE stripping only the opening tag leaves the whole script body
-# posing as prose — inflating the text past the min_chars gate and getting billed
-# as the article. Strip from any opener that survived to the end of the text.
-_UNCLOSED_NOISE_RE = re.compile(r'<(?:script|style)\b.*\Z', re.IGNORECASE | re.DOTALL)
-_WS_RE = re.compile(r'\s+')
+_NOISE_OPEN_RE = re.compile(r'<(script|style)\b', re.IGNORECASE)
+_NOISE_CLOSE_RE = {tag: re.compile(rf'</{tag}\s*>', re.IGNORECASE) for tag in ('script', 'style')}
+
+
+def _drop_noise(value: str) -> str:
+    """Remove every ``<script>`` / ``<style>`` block, contents included.
+
+    A hand-written scan rather than the obvious ``<(script|style)\\b.*?</\\1\\s*>``
+    substitution, and the reason is measured: that pattern is **quadratic** on a
+    page carrying openers that never close, because the non-greedy tail rescans to
+    the end of the document from every candidate. 64KB took 0.37s, 256KB 6.6s, 1MB
+    97s — and production's largest archived entry is 7.1MB. Here each ``search``
+    resumes where the last one stopped, so the whole pass is one sweep of the
+    string (regression test in tests/test_rss_summary.py).
+
+    An **unclosed** opener drops everything after it. That is not a fallback, it is
+    the rule: a body truncated mid-``<script>`` would otherwise leak its source as
+    "prose", inflating the text past the summariser's length gate and getting
+    billed as the article.
+    """
+    out, pos = [], 0
+    while (opener := _NOISE_OPEN_RE.search(value, pos)) is not None:
+        out.append(value[pos : opener.start()])
+        out.append(' ')
+        closer = _NOISE_CLOSE_RE[opener.group(1).lower()].search(value, opener.end())
+        if closer is None:
+            return ''.join(out)
+        pos = closer.end()
+    out.append(value[pos:])
+    return ''.join(out)
 
 
 def plain_text(value: Optional[str]) -> str:
@@ -46,9 +71,7 @@ def plain_text(value: Optional[str]) -> str:
     """
     if not value:
         return ''
-    text = _NOISE_RE.sub(' ', value)
-    text = _UNCLOSED_NOISE_RE.sub(' ', text)
-    text = _TAG_RE.sub(' ', text)
+    text = _TAG_RE.sub(' ', _drop_noise(value))
     return _WS_RE.sub(' ', html.unescape(text)).strip()
 
 
