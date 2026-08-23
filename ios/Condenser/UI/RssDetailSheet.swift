@@ -36,6 +36,7 @@ struct RssDetailSheet: View {
             .padding(16)
         }
         .readingFontScale()
+        .edgeSwipeToDismiss()
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
         .externalLinks(safari: $safariItem)
@@ -82,12 +83,9 @@ struct RssDetailSheet: View {
         }
     }
 
-    /// 摘要与原文正文长得一样，所以必须有一行字说清楚正在读的是转述
+    /// 摘要与原文正文长得一样，所以装进引用块（与卡片同款）而不是混排在正文上方
     private func summarySection(_ text: String) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Label("AI 摘要", systemImage: "sparkles")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
+        AiSummaryBlock {
             SelectableTextView(text: text)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }

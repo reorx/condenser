@@ -39,9 +39,12 @@ struct RssCard: View {
             header
             title
             if let body = entry.body {
-                TruncatableText(text: body.text)
                 if body.isSummary {
-                    summaryChip
+                    AiSummaryBlock {
+                        TruncatableText(text: body.text)
+                    }
+                } else {
+                    TruncatableText(text: body.text)
                 }
             }
             if let author = entry.author {
@@ -100,16 +103,6 @@ struct RssCard: View {
             .font(.subheadline.weight(.medium))
             .multilineTextAlignment(.leading)
             .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    /// 正文是摘要时的微标；不做成图标是因为它要能被读出来，而不是被认出来
-    private var summaryChip: some View {
-        Text("AI 摘要")
-            .font(.caption2.weight(.semibold))
-            .foregroundStyle(.secondary)
-            .padding(.horizontal, 5)
-            .padding(.vertical, 1)
-            .background(Color(.secondarySystemBackground), in: Capsule())
     }
 
     /// 显示的是 feed 声明的发布时间；被钳过的排序位置在详情里说明，
