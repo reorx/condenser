@@ -290,7 +290,6 @@ private struct ShareImageBox: View {
                     Image(uiImage: loaded)
                         .resizable()
                         .aspectRatio(contentMode: .fit)
-                        .frame(maxHeight: maxHeight)
                 }
             } else {
                 ShareStyle.fill
@@ -302,7 +301,9 @@ private struct ShareImageBox: View {
                     }
             }
         }
-        .frame(maxWidth: square ?? .infinity)
+        // maxHeight 要罩住两个分支：只罩住「取到了」那支的话，引用推里缺的那张图
+        // 会画出一块比真图高得多的灰块
+        .frame(maxWidth: square ?? .infinity, maxHeight: maxHeight)
         .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
     }
 

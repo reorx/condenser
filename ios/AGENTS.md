@@ -94,6 +94,17 @@ chip 行（手机上一行摆不下这些中文标签），只在「这一下确
 
 计划见 `../kb/plans/2026-08-20-rss-source-opml-llm-summary.md`。
 
+**分享图片（2026-08-23，四个源）**：详情抽屉动作行行尾的「分享图片」把这条内容渲成一张
+长图交给系统分享面板（`UI/Share/`）。**不截抽屉、另画卡片**——`ImageRenderer` 不渲染
+UIKit 桥接视图，而抽屉正文正是 `SelectableTextView`。内容取舍在 Kit 的 `ShareCard`
+（源无关模型 + `build(item:channelTitle:articleBlocks:)`，26 个测试盯着「哪些东西会跟着
+图发出去」：X 的判定与反馈不进、TG 的实时统计不进、RSS 用全文不用摘录）；app 侧一个渲染器
+画四个源，外观定死（浅色 + 标准字号 + 常量颜色）。⚠️ **位图超过 8192px 高就渲成全黑图且
+不报错**，所以流程是先量后画：量到的高度决定 scale，装不下直接报「太长」。
+细节（PNG/JPEG 分路、预载超时与占位块、`CONDENSER_DEBUG_SHARE=1` 走查入口、Info.plist
+新增的相册写入声明）见 `../kb/docs/ios.md`「分享图片」，计划
+`../kb/plans/2026-08-23-ios-share-image.md`。
+
 **外链统一出口（2026-07-29）**：所有外链都过 `ExternalLink.swift` 的
 `openExternalURL(_:fallback:)`——X 的推文 / 主页链接先试 `twitter://` 深链进 X app
 （scheme 是改名前注册的，X 一直认；打不开再试一次 x.com 的 universal link），
@@ -335,9 +346,14 @@ sheet / 全屏图片浏览器（消息须在 timeline 首页内，路由会等�
 `detail/x/<feed>[/<tweet id>]` 弹推文详情——X 条目单独走一次网络查，因为 For You
 根本不在 `reader.timeline.items` 里；省略 id 时挑该 feed 第一条有判定的（判定证据
 正是这个界面最值得看的部分）；
+`detail/hn[/<story id>]` 弹 story 详情（省略 id 时挑第一条 self-post——自文正文 +
+预览卡是这个界面最值得看的部分）；
 `detail/rss[/<条目 id>]` 弹条目详情——同样单独查，而且要**翻页**（最多 8 页）：
 归档按时间倒序，值得看的怪例（中文长文、缺字段的）都排在两百多位；
 省略 id 时挑第一条有正文的；
+再加 `CONDENSER_DEBUG_SHARE=1` 则抽屉一出现就自动按「分享图片」——动作行是横向滚动的，
+那个按钮排在行尾，模拟器窗口收不到合成手势；产物在 app 容器的 `tmp/`
+（`xcrun simctl get_app_container booted com.reorx.condenser data`）；
 `forward/<item key>[/<comment>]` 直接弹转发 dialog（条目不必在首页内，只用 key，
 例如 `forward/tg:-1001:123` / `forward/hn:44123` / `forward/x:2080…`；带第 3 段
 则 1s 后自动提交——**真实转发落地目标频道**，`-` 表示不带评论，中文评论需

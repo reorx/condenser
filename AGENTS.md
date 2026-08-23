@@ -255,9 +255,9 @@ Native SwiftUI read-only client, pure-CLI workflow (xcodegen `project.yml` + Mak
 simulator via `simctl`). Two layers: `CondenserKit/` local SPM package (pure logic +
 Swift Testing) and `Condenser/` app target. Device-token auth, envelope-based
 multi-source timeline (TG / HN / X / RSS cards), scroll-to-read, saved / subscriptions /
-settings tabs, DEBUG deep-link walkthroughs. **1.0.0 submitted for App Store review
-2026-08-16** (paid USD 2.00, manual release); the RSS card landed after that submission
-and rides the next build — a shipped client that meets an unknown source draws blank
+settings tabs, share-as-image from every detail sheet, DEBUG deep-link walkthroughs.
+**1.0.0 submitted for App Store review 2026-08-16** (paid USD 2.00, manual release);
+the RSS card landed after that submission and rides the next build — a shipped client that meets an unknown source draws blank
 rows, which is why `CONDENSER_RSS_ENABLED` still ships false.
 
 Details in `kb/docs/ios.md`: the phase-by-phase feature history with the design

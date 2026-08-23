@@ -156,6 +156,51 @@ Three decisions worth keeping:
 with `RssCard` is on the phone, `CONDENSER_RSS_ENABLED` stays false in production: a
 shipped client that meets an unknown `source` renders a blank row (the X Phase 2 lesson).
 
+## 分享图片（2026-08-23，四个源）
+
+四个详情抽屉的 `ItemActionRow` 行尾多一个「分享图片」：把这条内容渲成一张长图，交给系统
+分享面板。截屏只截得到一屏，长文分享出去总是半截；而这个 app 连的是自托管实例，链接对外
+没有意义——图是唯一能把一条完整内容原样递给别人的形态。计划与 grilling 结论：
+`kb/plans/2026-08-23-ios-share-image.md`。
+
+- **不截抽屉，另画卡片。** `ImageRenderer` 不渲染 UIKit 桥接视图，而抽屉正文恰好是
+  `SelectableTextView`（`UITextView`）——直接渲染那块是空白。所以卡片是纯 SwiftUI，
+  正文 `Text`，图片一律注入预载好的 `UIImage`：`ImageRenderer` 是同步一帧，视图里出现
+  任何 async 加载都渲不进去。
+- **内容取舍在 Kit（`ShareCard.swift`），不在视图里。** 源无关的模型（头像/标记 + 名称 +
+  副标题 + 标题 + 块序列 + 落款），`ShareCard.build(item:channelTitle:articleBlocks:)`
+  一个入口分派四个源。这么做是为了让「哪些东西会跟着图发给别人」有测试盯着：X 的判定与
+  反馈不进图（断言方式是「同一条推文带不带 verdict，卡片一模一样」——`ShareCard` 是
+  `Equatable`）、TG 的实时统计不进图（那是「此刻」的数字，印进一张会传播的图里只会过期）、
+  RSS 用详情取回的**全文**而不是列表摘录（全文没到手时按钮按不动）。元信息行是**块**
+  不是字段，因为它在四个源里的位置不一样（HN 紧跟标题、X 在正文与引用推之后）。
+- **外观定死。** 固定浅色 + 固定字号（`readingFontScale` 刻意不生效：图是给收图的人看的，
+  不该继承分享者的主题与字号），颜色全部写常量——`ImageRenderer` 解析 UIKit 动态色走的是
+  进程当前的 trait collection，只靠 `\.colorScheme` 环境挡不住深色（深色模拟器上实测）。
+  同理信源标记在这里重画了一份，没复用 `HnGlyph`/`XGlyph`/`RssGlyph`（那三个里有
+  `Color.primary` 与 `Color(.systemBackground)`）。
+- ⚠️ **位图高度超过 8192px 时，渲染不报错，给你一张全黑图。** 逐级实测：800×6526px
+  正常，1200×9789px 全黑（`uiImage` 照样返回 UIImage、`pngData()` 返回 nil、JPEG 给出
+  一张黑的）。所以是**先量后画**：`render` 只量尺寸不给绘制回调，量到的高度决定 scale
+  （≤2730pt 走 scale 3 ≈ 1200px 宽，再长按 8192px 反推，下限 1x），装不下就报「这条内容
+  太长了（约 N 屏）」。一篇阮一峰周刊 17555pt ≈ 21 屏正是被挡住的那类——**拒绝而不是切成
+  多张**是拍过板的决定。
+- **PNG 还是 JPEG 按高度分。** ≤4096px 走 PNG（文字边缘干净），更长走 JPEG q0.9——PNG 对
+  照片几乎不压缩，一篇图多的长文能到十几 MB，而这些图是要发出去的。实测 TG 1200×1428
+  PNG 532KB、X 1200×3134 PNG 1.6MB、云风博客全文 1005×8191 JPEG 3.1MB。
+- **预载每张图 5 秒上限、并发跑**，到点没到的画灰色占位块（沿用后端给的纵横比，版面不塌），
+  上限 24 张。一张挂掉的图不该让整次分享失败。
+- 分享面板直接从最上层 VC present（`ActivityShare.swift`）：`ShareLink` 要求初始化时就
+  持有成品数据，与「点了才生成」相性差；包成 SwiftUI sheet 的根视图则会先弹一张空白 sheet。
+  产物落 `FileManager.temporaryDirectory`，面板关闭后删。文件名是 `condenser-<item key>`，
+  接收端看到的不是 IMG_0001。
+- Info.plist 多了 `NSPhotoLibraryAddUsageDescription`——分享面板里的「存储图像」缺了它会
+  直接崩。**下个 build 提审会看到这条新权限声明**，只写入不读取。
+- 走查入口：`SIMCTL_CHILD_CONDENSER_DEBUG_SHARE=1` 配合 `detail/...` 路由，抽屉一出现就
+  自动按那个按钮（动作行是横向滚动的，分享按钮排在行尾，而模拟器窗口收不到合成手势）。
+  它的 `.task` 必须带 `id: card?.key`——RSS 的 card 要等全文到手才从 nil 变出来，而 task
+  闭包捕获的是**当时那个** struct 实例的 card（踩过）。
+
 **签名与 App Store 就绪（2026-08-12）**: 发布素材已全部就位 —— AppIcon 资产目录
 （`Condenser/Assets.xcassets`，1024 单尺寸/不透明/满幅，由 `tmp/make_ios_appicon.py`
 按 PWA 同款漏斗+水滴设计生成）、`MARKETING_VERSION`/`CURRENT_PROJECT_VERSION`、

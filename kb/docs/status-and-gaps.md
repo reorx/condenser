@@ -1125,6 +1125,35 @@ decode 得出来但画成空白卡片，按 miss 换目录。卡片仍不放图�
 走查（rss:677 灌进 `tmp/rss-fixes-dev.db`）验了四样：两图都渲染、打开即有摘录、
 查看器可翻页、断网降级「正文加载失败」——截图 `tmp/2026-08-23-ios-rss-images/`。
 
+**iOS：详情抽屉「分享图片」** (2026-08-23, iOS)。四个抽屉的动作行各加一个按钮，把这条
+内容渲成一张长图交给系统分享面板（计划 `kb/plans/2026-08-23-ios-share-image.md`）。截屏
+只截得到一屏，长文分享出去总是半截；而这个 app 连的是自托管实例，链接对外没有意义——
+图是唯一能把一条完整内容原样递给别人的形态。**不截抽屉、另画卡片**：`ImageRenderer`
+不渲染 UIKit 桥接视图，而抽屉正文恰好是 `SelectableTextView`（`UITextView`），直接渲
+出来那块是空白。Kit 新增源无关的 `ShareCard`（头像/标记 + 名称 + 副标题 + 标题 + 块序列
++ 落款），四个源的取舍在那里做完并由 26 个测试盯着：X 的判定与反馈不进图（断言「同一条
+推文带不带 verdict，卡片一模一样」）、TG 的实时统计不进图、RSS 用详情取回的全文而不是
+列表摘录、图片去重且封顶 24 张。app 侧一个渲染器画四个源，颜色写死 + 环境强制 light
+（`ImageRenderer` 解析 UIKit 动态色走的是进程当前 trait collection，只靠 `\.colorScheme`
+挡不住深色——深色模拟器上实测过）。
+
+这次真正的发现是一堵墙：**位图高度超过 8192px 时，渲染不报错，给你一张全黑图**。同一张
+卡片逐级实测——800×6526px 内容正常，1200×9789px 全黑（`uiImage` 照样返回 UIImage，
+`pngData()` 返回 nil，JPEG 给出一张黑的），全程没有任何异常。于是流程是**先量后画**：
+`ImageRenderer.render` 只量尺寸不给绘制回调，量到的高度决定 scale（≤2730pt 走 scale 3，
+再长按 8192px 反推，下限 1x），装不下的直接报「这条内容太长了（约 N 屏）」。一篇阮一峰
+周刊 17555pt ≈ 21 屏，就是被这条挡住的那种内容——用户拍板：报错拒绝，不切成多张。
+编码分两路：常见卡片（≤4096px）PNG，长图 JPEG q0.9（PNG 对照片几乎不压缩，一篇图多的
+长文能到十几 MB，而这些图是要发给人的）。实测 TG 1200×1428 PNG 532KB、X 1200×3134 PNG
+1.6MB、云风博客全文 1005×8191 JPEG 3.1MB。
+
+顺带修掉一个抽屉里一直存在、被分享图照出来的老问题：`hnPlainText` 只认几个命名实体，
+而 HN 的 href 本身是转义的（斜杠写作 `&#x2F;`），链接那条规则又刚把锚文本换成 href——
+正文里印出来的就是一串 `&#x2F;`。改用与 RSS 共用的实体解码（含数字实体），先写复现测试。
+268 Kit 全绿；四个源逐个在模拟器上出图验收（DEBUG 入口 `CONDENSER_DEBUG_SHARE=1`：动作
+行是横向滚动的，分享按钮排在行尾，模拟器窗口收不到合成手势），截图与产物在
+`tmp/2026-08-23-ios-share-image/`。
+
 Still open: subscription
 "delete-with-messages" option (Q4 / `?purge=1`) and the backfill batch-interval sleep.
 Full checklist: `kb/sessions/2026-06-09-backend-remaining-work.md`.
