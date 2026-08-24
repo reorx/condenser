@@ -12,15 +12,17 @@ struct XDetailSheet: View {
     var onFeedback: (ItemFeedback) -> Void
     var onReason: (ItemFeedbackReason) -> Void
 
+    @Environment(ReaderSession.self) private var reader
     @State private var safariItem: SafariItem?
+    @State private var annotations = ItemAnnotationsModel()
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
                 header
                 if let body = tweet.bodyText {
-                    SelectableTextView(text: body, urlEntities: tweet.urls)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                    // 引用推卡（XQuoteCard）刻意不接标注——那是别人的条目
+                    AnnotatedTextView(text: body, urlEntities: tweet.urls, model: annotations)
                 }
                 if let article = tweet.article, article.title != nil {
                     XArticleCard(article: article)
@@ -30,6 +32,7 @@ struct XDetailSheet: View {
                     XQuoteCard(quote: quote)
                 }
                 metaLine
+                AnnotationFooterView(model: annotations)
                 Divider()
                 feedbackRow
                 if let verdict = tweet.verdict {
@@ -42,6 +45,13 @@ struct XDetailSheet: View {
             .padding(16)
         }
         .readingFontScale()
+        .task {
+            // 标注锚在 t.co 替换后的屏幕字符串上（xDisplayedText 与 linkifiedNS
+            // 共享同一条替换规则）
+            annotations.configure(
+                item: item, api: reader.api,
+                blocks: tweet.bodyText.map { [xDisplayedText($0, urlEntities: tweet.urls)] })
+        }
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
         .externalLinks(safari: $safariItem)

@@ -1205,6 +1205,38 @@ v17 建表干净跑过，`/forwards` 渲染、无快照记录退化成 `item: nu
 iOS 的 `forwardedByMe` + 转发记录 tab（等 1.0.0 出审核队列，和 RSS 卡片一批发）；
 转发时自动标记已读/收藏（转发是发布动作，不是阅读状态）。
 
+## 2026-08-24 · 标注：条目 note + 正文高亮（schema v18，后端 + Kit + iOS UI）
+
+计划 `kb/plans/2026-08-24-annotations.md`（grilling 会话敲定的 11 条决策都在里面）。
+`saved_items` 升格为「用户操作过的条目表」：`is_saved`/`note`/`annotations` 三列
+（v18；**v17 被同日上午合并的 forward-records 占了**，这轮从计划里的 v17 顺延），
+行生命周期不变式 = 行存在 ⟺ 收藏 ∨ note ∨ 标注。要点：
+
+- `DEFAULT 1` 即是全部数据迁移；JSON 列读改写全 IMMEDIATE 不嵌套（快照构建刻意留在
+  锁外，`records.py` 编排）；首条 note/标注照常拍快照——X/RSS retention 会抽走源行。
+- 下发**没有**给四个 provider 加列：`records.stamp_notes` 抄了同一天早上刚落地的
+  `forwards.stamp` 后置盖章（稀疏行，一条查询盖全页）。`is_saved = 1` 收紧波及
+  provider CASE、search 的 saved 过滤、forwards 联表、verdict 训练集五处查询
+  （note-only 行不算正标签——note 可能写的是「这条是错的」）；retention 豁免
+  故意维持「行存在即资产」。changelog 细节在 `kb/docs/database.md` v18。
+- 锚点 = `{quote, prefix, suffix}` 引文三元组，锚在**屏幕显示的派生文本**上；Kit
+  `Annotations.swift:locateAnnotation` 纯函数：精确搜 → 空白折叠兜底（管线断行漂移
+  仍命中）→ 多处命中 prefix/suffix 打分，`block` 只做 tie-break；找不到 = 孤儿
+  （nil），抽屉尾部列出引文与评论，不静默丢数据。X 的定位底本是 t.co 替换后的
+  `xDisplayedText`（与 `linkifiedNS` 共享替换规则）。
+- iOS：`SelectableTextView` 全走系统编辑菜单（选中插「高亮」、tap 命中最短高亮后
+  `presentEditMenu`「评论/删除」，不自绘 popover）；`ItemAnnotationsModel` +
+  `AnnotatedTextView` 四抽屉共用；条目评论抽屉「转发」= 先 `POST /api/note` 再开
+  预填的 `ForwardDialog(initialComment:)`；卡片批注角标（靛蓝 `text.bubble.fill`）；
+  `RecordsStore.unsave` 对带标注的行只翻旗标不移除。RSS 摘录回落态高亮入口禁用
+  （摘录不是定位底本）；引用推卡与 AI 摘要块刻意不接标注。
+
+767 backend (+15)、300 Kit (+19) 全绿。模拟器走查在 dev 库上做（造数走 API、完了
+清干净）：四源高亮渲染、孤儿区块、收藏页“空心星 + 角标”的未收藏标注行、unsave
+不变式都验过，截图 `tmp/2026-08-24-ios-annotations/`。**选中→高亮 / 点高亮弹菜单 /
+评论抽屉这三段手势交互模拟器自动化不了，待真机手动过**。v1 明确不做：分享图渲染
+高亮、note/评论进 FTS（见计划 §11）。Web UI 本轮不动（unsave 语义已在后端改对）。
+
 Still open: subscription
 "delete-with-messages" option (Q4 / `?purge=1`) and the backfill batch-interval sleep.
 Full checklist: `kb/sessions/2026-06-09-backend-remaining-work.md`.

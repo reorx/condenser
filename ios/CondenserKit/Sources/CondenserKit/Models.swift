@@ -884,6 +884,13 @@ public struct TimelineItem: Codable, Equatable, Sendable, Identifiable {
 
     public var id: String { key }
 
+    /// 有没有用户写下的东西（note 或高亮）——收藏列表的批注角标、
+    /// unsave 的「翻旗标还是移除」分支都问这一个问题。
+    public var hasNotes: Bool {
+        if let note, !note.isEmpty { return true }
+        return !(annotations ?? []).isEmpty
+    }
+
     public init(
         source: String, key: String, datetime: Date, isRead: Bool, isSaved: Bool,
         feedback: ItemFeedback? = nil, feedbackReason: ItemFeedbackReason? = nil,

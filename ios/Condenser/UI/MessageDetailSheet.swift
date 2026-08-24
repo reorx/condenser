@@ -13,6 +13,7 @@ struct MessageDetailSheet: View {
     @State private var viewerItem: ImageViewerItem?
     @State private var copied = false
     @State private var stats: MessageStats?
+    @State private var annotations = ItemAnnotationsModel()
 
     var body: some View {
         ScrollView {
@@ -25,14 +26,14 @@ struct MessageDetailSheet: View {
                     forwardBox
                 }
                 if let text = message.text, !text.isEmpty {
-                    SelectableTextView(text: text)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                    AnnotatedTextView(text: text, model: annotations)
                 }
                 images
                 if let webpage = message.webpage {
                     // 点击卡片打开链接：WebPagePreviewCard 自带 openURL 点击，走下方环境接管
                     WebPagePreviewCard(message: message, webpage: webpage)
                 }
+                AnnotationFooterView(model: annotations)
                 Divider()
                 actions
             }
@@ -40,6 +41,11 @@ struct MessageDetailSheet: View {
         }
         .readingFontScale()
         .task {
+            // 标注锚在消息正文原样文本上（TG 正文没有派生管线）
+            let text = message.text
+            annotations.configure(
+                item: item, api: reader.api,
+                blocks: (text?.isEmpty == false) ? [text!] : nil)
             // 实时 stats 拉不到（掉线/限流/消息已删）就不显示，不打断阅读
             stats = try? await reader.api.messageStats(
                 channelID: message.channelID, messageID: message.id)

@@ -9,6 +9,9 @@ struct ForwardDialog: View {
     let itemKey: String
     /// 只影响文案：留空时到底是「原样转发」还是「只发标题和链接」，两件事不一样
     let isTelegram: Bool
+    /// 预填评论（条目评论抽屉的「转发」入口）。在这里继续改只影响发出的消息，
+    /// 不回写 note——note 在打开本弹窗之前已经落库。
+    var initialComment: String? = nil
     #if DEBUG
     /// CLI 走查（debug 路由 forward/<item key>/<comment>）：就绪后自动填入并提交，
     /// "" = 不带评论。真实网络请求，真实落地目标频道。
@@ -47,6 +50,9 @@ struct ForwardDialog: View {
         .presentationDetents([.medium])
         .presentationDragIndicator(.visible)
         .task {
+            if let initialComment, comment.isEmpty {
+                comment = initialComment
+            }
             // 先确认目标频道已配置，未配置时直接引导，不必等提交才报 422
             if let meta = try? await reader.api.appMeta() {
                 phase = meta.forwardChannel == nil ? .notConfigured : .ready

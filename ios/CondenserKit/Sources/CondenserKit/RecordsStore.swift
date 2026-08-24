@@ -40,9 +40,23 @@ public final class RecordsStore {
         isLoading = false
     }
 
-    /// 取消收藏：乐观移除；失败按原位置放回（错误文案交给调用方展示）
+    /// 取消收藏：乐观移除；失败按原位置放回（错误文案交给调用方展示）。
+    /// 带 note/标注的条目例外（v18 不变式）：服务端只翻 is_saved、行保留，
+    /// 所以本地同样只翻旗标——移除了下次刷新它又回来，读起来像 bug。
     public func unsave(_ item: TimelineItem) async {
         guard let index = items.firstIndex(where: { $0.key == item.key }) else { return }
+        if item.hasNotes {
+            items[index].isSaved = false
+            do {
+                try await api.deleteRecord(key: item.key)
+            } catch {
+                if let rollback = items.firstIndex(where: { $0.key == item.key }) {
+                    items[rollback].isSaved = true
+                }
+                handle(error)
+            }
+            return
+        }
         let removed = items.remove(at: index)
         do {
             try await api.deleteRecord(key: item.key)

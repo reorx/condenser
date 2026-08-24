@@ -15,7 +15,12 @@ tags:
 > Phase 2 Kit 已完成 ✅（`ItemAnnotation` + envelope 字段、`Annotations.swift`
 > 重定位纯函数——精确搜 → 空白折叠兜底 → prefix/suffix 打分、block 提示只当
 > tie-break；API 四调用走具体 `APIClient` 不进协议，`rssEntry` 先例）。
-> Phase 3 iOS UI 未动。
+> Phase 3 iOS UI 已完成 ✅（`SelectableTextView` 高亮 + 系统编辑菜单、
+> `ItemAnnotationsModel` / `AnnotatedTextView` 接四个抽屉、条目评论抽屉
+> `ItemNoteSheet` 保存/转发链、卡片批注角标、`RecordsStore.unsave` 翻旗标分支）。
+> 模拟器走查截图：`tmp/2026-08-24-ios-annotations/`（四源高亮渲染、孤儿区块、
+> 收藏页角标、unsave 不变式均已验证；**选中→高亮 / 点高亮弹菜单 / 评论抽屉的
+> 手势交互无法在模拟器自动化，待真机手动过一遍**）。
 
 作为 `2026-08-23-ios-share-image.md` 的后续：对任意信息源的条目可以写一条整体 note，
 或对正文选中文字加一条或多条 annotation（高亮 + 可选评论）。数据在服务端，v1 只在

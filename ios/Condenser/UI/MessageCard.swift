@@ -61,6 +61,7 @@ struct MessageCard: View {
                 }
             }
             Spacer(minLength: 8)
+            AnnotationBadge(item: item)
             Button(action: onToggleSaved) {
                 Image(systemName: isSaved ? "star.fill" : "star")
                     .foregroundStyle(isSaved ? .orange : .secondary)

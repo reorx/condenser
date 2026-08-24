@@ -105,6 +105,26 @@ UIKit 桥接视图，而抽屉正文正是 `SelectableTextView`。内容取舍�
 新增的相册写入声明）见 `../kb/docs/ios.md`「分享图片」，计划
 `../kb/plans/2026-08-23-ios-share-image.md`。
 
+**标注（2026-08-24，四个源）**：条目 note + 正文高亮，数据全在服务端（schema v18，
+envelope 与 `feedback` 平级多了 `note` / `annotations`）。Kit 面：`ItemAnnotation` 模型、
+`locateAnnotation` 重定位纯函数（锚点是 `{quote, prefix, suffix}` 引文三元组，锚在
+**屏幕显示的派生文本**上——精确搜 → 空白折叠兜底 → 上下文打分，`block` 只做
+tie-break；nil = 孤儿）、`APIClient` 四调用（不进 `CondenserAPI` 协议，`rssEntry`
+先例）、`TimelineItem.hasNotes`、`RecordsStore.unsave` 对带标注的行只翻旗标不移除
+（服务端不变式：行存在 ⟺ 收藏 ∨ note ∨ 标注）。app 面：`SelectableTextView` 长出
+`highlights`（浅黄底 + 深黄下划线）+ 系统编辑菜单（选中插「高亮」；tap 命中**范围
+最短**的高亮后 `presentEditMenu`「评论/删除」，不自绘 popover）；
+`ItemAnnotationsModel` + `AnnotatedTextView`（`UI/ItemAnnotations.swift`）四个详情
+sheet 共用，孤儿高亮列在抽屉尾部（引文 + 评论 + 删除），`AnnotationBadge` 是卡片上的
+靛蓝角标——收藏列表因 v18 会列出「只标注未收藏」的行，靠它和空心星区分。
+`ItemActionButtons` 的「评论」按钮（有 note 时 filled + 靛蓝）开 `ItemNoteSheet`：
+重开即编辑、清空保存 = 删除；「转发」= 先 `POST /api/note` 再切到预填的
+`ForwardDialog(initialComment:)`（`.sheet(item:)` 换 item 自带先收后弹）。三条边界：
+X 的定位底本是 t.co 替换后的 `xDisplayedText`（与 `linkifiedNS` 共享替换规则，改一处
+必须连改另一处）；RSS 摘录回落态高亮入口禁用（摘录不是定位底本），标注的 block 下标
+数**文本块序列**（图块不占号）；引用推卡与 AI 摘要块刻意不接标注（别人的条目 / 生成物）。
+计划 `../kb/plans/2026-08-24-annotations.md`。
+
 **外链统一出口（2026-07-29）**：所有外链都过 `ExternalLink.swift` 的
 `openExternalURL(_:fallback:)`——X 的推文 / 主页链接先试 `twitter://` 深链进 X app
 （scheme 是改名前注册的，X 一直认；打不开再试一次 x.com 的 universal link），

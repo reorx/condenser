@@ -8,7 +8,15 @@ struct HnDetailSheet: View {
     let story: HnStory
     var onToggleSaved: () -> Void
 
+    @Environment(ReaderSession.self) private var reader
     @State private var safariItem: SafariItem?
+    @State private var annotations = ItemAnnotationsModel()
+
+    /// self-post 正文的**屏幕文本**——标注锚在它上面，渲染与定位必须同一份派生
+    private var bodyText: String? {
+        guard let text = story.text, !text.isEmpty else { return nil }
+        return hnPlainText(fromHTML: text)
+    }
 
     var body: some View {
         ScrollView {
@@ -18,20 +26,26 @@ struct HnDetailSheet: View {
                     .font(.title3.weight(.semibold))
                     .frame(maxWidth: .infinity, alignment: .leading)
                 metaLine
-                if let text = story.text, !text.isEmpty {
-                    SelectableTextView(text: hnPlainText(fromHTML: text))
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                if let text = bodyText {
+                    AnnotatedTextView(text: text, model: annotations)
                 }
                 if let preview = story.preview, preview.error == nil,
                    preview.title != nil || preview.description != nil {
                     previewCard(preview)
                 }
+                AnnotationFooterView(model: annotations)
                 Divider()
                 actions
             }
             .padding(16)
         }
         .readingFontScale()
+        .task {
+            // 外链 story 没有可标注文字（排除项兜底 = 条目级 note）：blocks = nil，
+            // 高亮入口自然禁用
+            annotations.configure(
+                item: item, api: reader.api, blocks: bodyText.map { [$0] })
+        }
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
         .externalLinks(safari: $safariItem)

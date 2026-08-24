@@ -22,6 +22,7 @@ struct RssDetailSheet: View {
     /// 的 feed 取回来也是空正文，那是成功，不是还在转圈。
     @State private var articleLoaded = false
     @State private var articleFailed = false
+    @State private var annotations = ItemAnnotationsModel()
 
     var body: some View {
         ScrollView {
@@ -33,10 +34,12 @@ struct RssDetailSheet: View {
                 metaLine
                 // 摘要在上、全文在下，两样都给：卡片上只放得下一个，
                 // 但读者点进来是要读文章的，不是要读它的转述
+                // （摘要块刻意不接标注——生成物，模型一换就重写）
                 if let summary = entry.summary, !summary.isEmpty {
                     summarySection(summary)
                 }
                 articleSection
+                AnnotationFooterView(model: annotations)
                 Divider()
                 actions
             }
@@ -70,11 +73,13 @@ struct RssDetailSheet: View {
     @ViewBuilder
     private var articleSection: some View {
         if let blocks = articleBlocks, !blocks.isEmpty {
+            // 标注的 block 下标数的是**文本块序列**（图块不占号）：图块的增删
+            // 比文本块的重排常见得多，锚点提示能多活几次管线升级
+            let textIndices = Self.textBlockIndices(blocks)
             ForEach(Array(blocks.enumerated()), id: \.offset) { index, block in
                 switch block {
                 case let .text(text):
-                    SelectableTextView(text: text)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                    AnnotatedTextView(text: text, block: textIndices[index] ?? 0, model: annotations)
                 case let .image(image):
                     RssArticleImageView(image: image) {
                         openViewer(blocks, at: index)
@@ -82,6 +87,8 @@ struct RssDetailSheet: View {
                 }
             }
         } else if let text = entry.contentText {
+            // 摘录回落态：全文没到手，定位没有底本，高亮入口禁用（model.blocks
+            // 仍是 nil），已有标注也不上色——摘录里的范围是错的
             SelectableTextView(text: text)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -102,19 +109,45 @@ struct RssDetailSheet: View {
     /// 快照里已经带全文的条目（改版前存下的收藏）直接解析，不必再问一次网络。
     /// 相对路径的图片按文章 link 解析成绝对 URL。
     private func loadArticle() async {
+        // blocks 先给 nil：全文到手前高亮入口保持禁用（摘录不是定位底本）
+        annotations.configure(item: item, api: reader.api, blocks: nil, usesBlocks: true)
         if let content = entry.content {
             articleBlocks = rssBlocks(fromHTML: content, baseURL: entry.articleURL)
             articleLoaded = true
+            annotations.setBlocks(Self.textBlocks(articleBlocks))
             return
         }
         do {
             if let content = try await reader.api.rssEntry(id: entry.id).rss?.content {
                 articleBlocks = rssBlocks(fromHTML: content, baseURL: entry.articleURL)
+                annotations.setBlocks(Self.textBlocks(articleBlocks))
             }
         } catch {
             articleFailed = true
         }
         articleLoaded = true
+    }
+
+    /// 文本块字符串序列（标注的定位底本；图块不在其中）
+    private static func textBlocks(_ blocks: [RssBlock]?) -> [String]? {
+        guard let blocks else { return nil }
+        let texts = blocks.compactMap { block -> String? in
+            if case let .text(text) = block { text } else { nil }
+        }
+        return texts.isEmpty ? nil : texts
+    }
+
+    /// 全块下标 → 文本块下标（图块不占号）
+    private static func textBlockIndices(_ blocks: [RssBlock]) -> [Int: Int] {
+        var mapping: [Int: Int] = [:]
+        var next = 0
+        for (index, block) in blocks.enumerated() {
+            if case .text = block {
+                mapping[index] = next
+                next += 1
+            }
+        }
+        return mapping
     }
 
     /// 查看器收全文所有图片并从点中的那张起，所以在里面能左右翻

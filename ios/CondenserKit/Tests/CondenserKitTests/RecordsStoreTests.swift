@@ -58,6 +58,49 @@ struct RecordsStoreTests {
         #expect(store.error != nil)
     }
 
+    @Test("unsave 带标注的条目：不移除，只翻 isSaved（v18 不变式：行还在服务端列表里）")
+    func unsaveKeepsAnnotatedRow() async {
+        let api = StubAPI()
+        var annotated = makeItem(id: 5, isSaved: true)
+        annotated.annotations = [ItemAnnotation(id: 1, quote: "q")]
+        api.recordsResults = [.success([annotated])]
+        let store = RecordsStore(api: api)
+        await store.loadInitial()
+        await store.unsave(store.items[0])
+        #expect(store.items.map(\.key) == ["tg:1:5"], "带标注的行留在列表")
+        #expect(store.items[0].isSaved == false)
+        #expect(api.deleteCalls == ["tg:1:5"])
+    }
+
+    @Test("unsave 带标注的条目失败 → isSaved 翻回")
+    func unsaveAnnotatedRollsBack() async {
+        let api = StubAPI()
+        var annotated = makeItem(id: 5, isSaved: true)
+        annotated.note = "想法"
+        api.recordsResults = [.success([annotated])]
+        let store = RecordsStore(api: api)
+        await store.loadInitial()
+        api.recordError = APIError.http(status: 500, detail: nil)
+        await store.unsave(store.items[0])
+        #expect(store.items[0].isSaved == true)
+        #expect(store.error != nil)
+    }
+
+    @Test("hasNotes：note 或 annotations 任一非空为真（角标与 unsave 分支共用）")
+    func hasNotes() {
+        var item = makeItem(id: 1)
+        #expect(!item.hasNotes)
+        item.note = ""
+        #expect(!item.hasNotes, "空串不算有 note")
+        item.note = "n"
+        #expect(item.hasNotes)
+        item.note = nil
+        item.annotations = []
+        #expect(!item.hasNotes, "空列表不算有标注")
+        item.annotations = [ItemAnnotation(id: 1, quote: "q")]
+        #expect(item.hasNotes)
+    }
+
     @Test("401 → onUnauthorized 回调")
     func unauthorized() async {
         let api = StubAPI()

@@ -34,6 +34,18 @@ func linkified(_ text: String, urlEntities: [XUrlEntity]? = nil) -> AttributedSt
     return attr
 }
 
+/// `linkifiedNS` 替换完 t.co 之后**屏幕上实际显示**的纯字符串。标注锚点锚在它
+/// 上面（不是 payload 原文），所以重定位与渲染必须共享同一条替换规则——改这里
+/// 必须连 `linkifiedNS` 的替换分支一起改，反之亦然。
+func xDisplayedText(_ text: String, urlEntities: [XUrlEntity]? = nil) -> String {
+    var out = text
+    for entity in urlEntities ?? [] {
+        guard let expanded = entity.expandedURL, URL(string: expanded) != nil else { continue }
+        out = out.replacingOccurrences(of: entity.url, with: entity.displayURL ?? expanded)
+    }
+    return out
+}
+
 /// UITextView（详情 sheet 可选择正文）用的同款链接标注，输出 NSAttributedString
 func linkifiedNS(_ text: String, font: UIFont, urlEntities: [XUrlEntity]? = nil) -> NSAttributedString {
     let attr = NSMutableAttributedString(string: text, attributes: [
