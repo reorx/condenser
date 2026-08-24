@@ -12,7 +12,10 @@ tags:
 > **进度**（2026-08-24）：Phase 1 后端已完成 ✅（schema 落地为 **v18** —— v17 被同日合并的
 > forward-records 占用；note/annotations 下发未加 provider 列，沿用 `forwards.stamp` 的
 > 后置盖章模式，见 `records.stamp_notes`；`kb/docs/database.md` v18 changelog 有全部决策）。
-> Phase 2 Kit / Phase 3 iOS UI 未动。
+> Phase 2 Kit 已完成 ✅（`ItemAnnotation` + envelope 字段、`Annotations.swift`
+> 重定位纯函数——精确搜 → 空白折叠兜底 → prefix/suffix 打分、block 提示只当
+> tie-break；API 四调用走具体 `APIClient` 不进协议，`rssEntry` 先例）。
+> Phase 3 iOS UI 未动。
 
 作为 `2026-08-23-ios-share-image.md` 的后续：对任意信息源的条目可以写一条整体 note，
 或对正文选中文字加一条或多条 annotation（高亮 + 可选评论）。数据在服务端，v1 只在

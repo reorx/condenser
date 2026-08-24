@@ -153,6 +153,51 @@ struct APIClientTests {
         #expect(captured.url?.path() == "/api/records/tg:1:2")
     }
 
+    @Test("note：POST /api/note，覆盖语义（空串照发，那是清除）")
+    func setNoteBody() async throws {
+        var captured = MockURLProtocol.respond(status: 200, json: #"{"ok": true}"#)
+        try await makeClient().setNote(key: "rss:9", note: "想法")
+        #expect(captured.method == "POST")
+        #expect(captured.url?.path() == "/api/note")
+        #expect(captured.bodyJSON?["key"] as? String == "rss:9")
+        #expect(captured.bodyJSON?["note"] as? String == "想法")
+
+        captured = MockURLProtocol.respond(status: 200, json: #"{"ok": true}"#)
+        try await makeClient().setNote(key: "rss:9", note: "")
+        #expect(captured.bodyJSON?["note"] as? String == "")
+    }
+
+    @Test("annotations：POST 建高亮，服务端发的 id/created_at 解码回来")
+    func addAnnotationRequest() async throws {
+        let captured = MockURLProtocol.respond(status: 200, json: #"""
+        {"ok": true,
+         "annotation": {"id": 3, "quote": "q", "prefix": "p", "suffix": "s",
+                        "block": 1, "comment": "c", "created_at": "2026-08-24T01:00:00Z"}}
+        """#)
+        let ann = try await makeClient().addAnnotation(
+            key: "tg:1:2", quote: "q", prefix: "p", suffix: "s", block: 1, comment: "c")
+        #expect(ann.id == 3)
+        #expect(ann.block == 1)
+        #expect(captured.method == "POST")
+        #expect(captured.url?.path() == "/api/annotations")
+        #expect(captured.bodyJSON?["quote"] as? String == "q")
+        #expect(captured.bodyJSON?["block"] as? Int == 1)
+    }
+
+    @Test("annotations：PATCH 评论 / DELETE 高亮，key+id 进路径")
+    func annotationEditEndpoints() async throws {
+        var captured = MockURLProtocol.respond(status: 200, json: #"{"ok": true}"#)
+        try await makeClient().updateAnnotationComment(key: "x:99", id: 2, comment: "改")
+        #expect(captured.method == "PATCH")
+        #expect(captured.url?.path() == "/api/annotations/x:99/2")
+        #expect(captured.bodyJSON?["comment"] as? String == "改")
+
+        captured = MockURLProtocol.respond(status: 200, json: #"{"ok": true}"#)
+        try await makeClient().deleteAnnotation(key: "x:99", id: 2)
+        #expect(captured.method == "DELETE")
+        #expect(captured.url?.path() == "/api/annotations/x:99/2")
+    }
+
     @Test("媒体与头像 URL builder")
     func mediaURLs() {
         let client = makeClient()

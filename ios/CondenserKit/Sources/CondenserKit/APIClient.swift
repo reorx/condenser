@@ -114,6 +114,48 @@ public final class APIClient: @unchecked Sendable {
         try await send(request(path: "/api/feedback/\(key)", method: "DELETE"))
     }
 
+    // MARK: - 标注（schema v18；rssEntry 同款：只在具体类型上，不进 CondenserAPI 协议）
+
+    /// 条目级 note，覆盖语义：每次发完整文本，空串 = 清除（也就是删除，没有单独端点）。
+    public func setNote(key: String, note: String) async throws {
+        struct Body: Encodable {
+            let key: String
+            let note: String
+        }
+        try await send(request(path: "/api/note", method: "POST", body: Body(key: key, note: note)))
+    }
+
+    /// 建一条高亮；id 与 created_at 由服务端在写锁里分配，解码回来交给 UI 后续编辑。
+    public func addAnnotation(
+        key: String, quote: String, prefix: String, suffix: String,
+        block: Int? = nil, comment: String? = nil
+    ) async throws -> ItemAnnotation {
+        struct Body: Encodable {
+            let key: String
+            let quote: String
+            let prefix: String
+            let suffix: String
+            let block: Int?
+            let comment: String?
+        }
+        struct Reply: Decodable { let annotation: ItemAnnotation }
+        let data = try await send(request(
+            path: "/api/annotations", method: "POST",
+            body: Body(key: key, quote: quote, prefix: prefix, suffix: suffix, block: block, comment: comment)))
+        return try decoder.decode(Reply.self, from: data).annotation
+    }
+
+    /// 改/清（空串）一条高亮的评论；清评论留高亮，删高亮是下面的 DELETE。
+    public func updateAnnotationComment(key: String, id: Int, comment: String) async throws {
+        struct Body: Encodable { let comment: String }
+        try await send(request(
+            path: "/api/annotations/\(key)/\(id)", method: "PATCH", body: Body(comment: comment)))
+    }
+
+    public func deleteAnnotation(key: String, id: Int) async throws {
+        try await send(request(path: "/api/annotations/\(key)/\(id)", method: "DELETE"))
+    }
+
     public func fetchOlder(channelID: Int, count: Int = 200) async throws -> Int {
         struct Reply: Decodable { let fetched: Int }
         let data = try await send(request(

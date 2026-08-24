@@ -815,6 +815,38 @@ public enum ItemFeedbackReason: String, Codable, Sendable, CaseIterable {
     }
 }
 
+/// 正文里的一条高亮标注（schema v18）。锚点是引文三元组（W3C TextQuoteSelector）：
+/// `quote` 是真值，`prefix`/`suffix` 在多处命中时挑最像的那处；`block` 只是 RSS
+/// 分块正文的搜索提示，失效就全文搜（重定位见 Annotations.swift）。
+/// `id` 是条目内自增的，由服务端在写锁里分配。
+public struct ItemAnnotation: Codable, Equatable, Sendable, Identifiable {
+    public let id: Int
+    public let quote: String
+    public let prefix: String?
+    public let suffix: String?
+    public let block: Int?
+    public var comment: String?
+    public let createdAt: Date?
+
+    enum CodingKeys: String, CodingKey {
+        case id, quote, prefix, suffix, block, comment
+        case createdAt = "created_at"
+    }
+
+    public init(
+        id: Int, quote: String, prefix: String? = nil, suffix: String? = nil,
+        block: Int? = nil, comment: String? = nil, createdAt: Date? = nil
+    ) {
+        self.id = id
+        self.quote = quote
+        self.prefix = prefix
+        self.suffix = suffix
+        self.block = block
+        self.comment = comment
+        self.createdAt = createdAt
+    }
+}
+
 /// 多信源条目 envelope：telegram / hn / x / rss 恰有其一。
 /// key 是全局唯一 item id，也是 read/save API 的出入参。
 public struct TimelineItem: Codable, Equatable, Sendable, Identifiable {
@@ -833,6 +865,10 @@ public struct TimelineItem: Codable, Equatable, Sendable, Identifiable {
     /// 与 feedback 平级而不是嵌进去：老版本 App 把 feedback 当字符串解，
     /// 改成对象会让整页解码失败——而 App 是用户单独装的，未必跟服务端一起升。
     public var feedbackReason: ItemFeedbackReason?
+    /// 条目级评论（schema v18）；nil = 没写过 / 旧服务器不带这个字段
+    public var note: String?
+    /// 正文高亮列表（schema v18）；nil = 没有 / 旧服务器不带这个字段
+    public var annotations: [ItemAnnotation]?
     public var telegram: DisplayMessage?
     public var hn: HnStory?
     public var x: XTweet?
@@ -843,7 +879,7 @@ public struct TimelineItem: Codable, Equatable, Sendable, Identifiable {
         case isRead = "is_read"
         case isSaved = "is_saved"
         case feedbackReason = "feedback_reason"
-        case feedback, telegram, hn, x, rss
+        case feedback, note, annotations, telegram, hn, x, rss
     }
 
     public var id: String { key }
@@ -851,6 +887,7 @@ public struct TimelineItem: Codable, Equatable, Sendable, Identifiable {
     public init(
         source: String, key: String, datetime: Date, isRead: Bool, isSaved: Bool,
         feedback: ItemFeedback? = nil, feedbackReason: ItemFeedbackReason? = nil,
+        note: String? = nil, annotations: [ItemAnnotation]? = nil,
         telegram: DisplayMessage? = nil, hn: HnStory? = nil, x: XTweet? = nil,
         rss: RssEntry? = nil
     ) {
@@ -861,6 +898,8 @@ public struct TimelineItem: Codable, Equatable, Sendable, Identifiable {
         self.isSaved = isSaved
         self.feedback = feedback
         self.feedbackReason = feedbackReason
+        self.note = note
+        self.annotations = annotations
         self.telegram = telegram
         self.hn = hn
         self.x = x
