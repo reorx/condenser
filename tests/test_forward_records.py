@@ -51,6 +51,7 @@ def test_a_forward_lands_a_record_with_everything_it_took(env):
 
         r = client.post('/api/forward', json={'key': f'hn:{STORY_ID}', 'comment': '值得一读'})
         assert r.status_code == 200, r.text
+        assert r.json()['recorded'] is True
 
         (rec,) = _records()
         assert (rec.source, rec.ref1, rec.ref2) == ('hn', STORY_ID, 0)
@@ -160,8 +161,34 @@ def test_bookkeeping_failure_never_costs_a_second_message(env, monkeypatch):
         r = client.post('/api/forward', json={'key': f'hn:{STORY_ID}', 'comment': 'hi'})
         assert r.status_code == 200
         assert r.json()['link'] == 'https://t.me/mychannel/999'
+        # …but the loss is *named*: a client that lit the forwarded badge here
+        # would watch it silently go out on the next fetch, with the comment gone.
+        assert r.json()['recorded'] is False
         assert send_message.await_count == 1
         assert _records() == []
+
+
+def test_a_numeric_target_gets_a_valid_private_link(env):
+    """A forward target configured as a bot-api-style ``-100…`` id must not leak
+    its marker prefix into the ``/c/`` link — since v17 that link is frozen into
+    the record, so a wrong one here is a dead 「打开」 button forever."""
+    with _client() as client:
+        _login(client)
+        seed_story()
+        _armed(client)
+        db.set_meta('forward_channel', '-1001234567890')
+
+        r = client.post('/api/forward', json={'key': f'hn:{STORY_ID}'})
+        assert r.status_code == 200, r.text
+        assert r.json()['link'] == 'https://t.me/c/1234567890/999'
+
+        # a bare short id (no marker) passes through as-is
+        db.set_meta('forward_channel', '1234567890')
+        seed_story(id=STORY_ID + 1)
+        r = client.post('/api/forward', json={'key': f'hn:{STORY_ID + 1}'})
+        assert r.json()['link'] == 'https://t.me/c/1234567890/999'
+
+        assert [rec.link for rec in _records()] == ['https://t.me/c/1234567890/999'] * 2
 
 
 def test_a_snapshotless_item_is_still_recorded(env):
@@ -322,6 +349,20 @@ def test_saved_records_and_search_carry_the_stamp_too(env):
 
         (hit,) = client.get('/api/search', params={'q': 'sqlite'}).json()['items']
         assert hit['forwarded_by_me'] is True
+
+
+def test_the_forward_log_itself_carries_the_stamp(env):
+    """`/forwards` is made of forwarded items by definition — but the flag must
+    still be present on its envelopes, or the one view where every card was
+    forwarded shows no badge while Saved and Search show it on the same item."""
+    with _client() as client:
+        _login(client)
+        seed_story()
+        _armed(client)
+        client.post('/api/forward', json={'key': f'hn:{STORY_ID}'})
+
+        (entry,) = client.get('/api/forwards').json()['items']
+        assert entry['item']['forwarded_by_me'] is True
 
 
 def test_x_items_keep_their_string_key_when_stamped(env):

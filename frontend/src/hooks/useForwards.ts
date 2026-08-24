@@ -2,6 +2,7 @@ import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-q
 import { toast } from 'sonner';
 
 import { api, errorMessage } from '@/lib/api';
+import { invalidateItemLists } from '@/lib/itemCaches';
 import type { ForwardRecordPage } from '@/lib/types';
 
 export const FORWARDS_PAGE_SIZE = 30;
@@ -31,15 +32,16 @@ export type ForwardsQuery = ReturnType<typeof useForwards>;
  *
  * The item's `forwarded_by_me` badge is **not** patched back off here — a
  * second record of the same item may still exist, and only the server knows.
- * The next timeline load answers it; getting it wrong locally would tell the
- * reader they never forwarded something they did.
+ * Getting it wrong locally would tell the reader they never forwarded something
+ * they did — so instead every item list is invalidated and the server restates
+ * the flag (staleTime alone would leave a dead badge lit for its 30s).
  */
 export function useDeleteForward() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: number) => api.deleteForward(id),
     onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ['forwards'] });
+      invalidateItemLists(qc);
       toast.success('已删除转发记录，频道里的消息还在');
     },
     onError: (e) => toast.error(errorMessage(e, '删除失败')),

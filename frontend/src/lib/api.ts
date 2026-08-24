@@ -295,8 +295,7 @@ export const api = {
 
   // ---- forward records (the publish log) ----
   // Offset-paged like search: a log being browsed, not a queue being drained.
-  listForwards: (limit: number, offset: number) =>
-    request<ForwardRecordPage>(`/api/forwards?limit=${limit}&offset=${offset}`),
+  listForwards: (limit: number, offset: number) => request<ForwardRecordPage>('/api/forwards' + qs({ limit, offset })),
   // Forgets the local record only — the message stays in the target channel.
   deleteForward: (id: number) => del<{ ok: true }>(`/api/forwards/${id}`),
 

@@ -116,5 +116,9 @@ def list_rendered(limit: int = 30, offset: int = 0) -> dict:
         if rec.raw_data is not None:
             triple = (rec.source, rec.ref1, rec.ref2)
             item = records.render_item(rec, read_triples, feedback, is_saved=triple in saved_triples)
+            # True by construction — the enclosing record *is* a forward — but the
+            # flag must still be present: every other list surface stamps it, and
+            # the one view made of forwarded items showing no badge reads wrong.
+            item['forwarded_by_me'] = True
         items.append({'record': _record_payload(rec), 'item': item})
     return {'items': items, 'has_more': has_more}

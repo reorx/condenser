@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useMemo } from 'react';
 import { Repeat2 } from 'lucide-react';
 
 import { ForwardRecordRow } from '@/components/forwards/ForwardRecordRow';
 import { IconBadge, PageHeader } from '@/components/PageHeader';
 import { Spinner } from '@/components/Spinner';
 import { useForwards } from '@/hooks/useForwards';
+import { useInfiniteScrollSentinel } from '@/hooks/useInfiniteScrollSentinel';
 
 /**
  * The forward log: which items I published into my own channel, and what I wrote
@@ -19,21 +20,7 @@ export function ForwardsView() {
   const query = useForwards();
   const entries = useMemo(() => query.data?.pages.flatMap((p) => p.items) ?? [], [query.data]);
 
-  // Infinite scroll: same sentinel + rootMargin as SearchResults.
-  const sentinel = useRef<HTMLDivElement | null>(null);
-  const { hasNextPage, isFetchingNextPage, fetchNextPage } = query;
-  useEffect(() => {
-    const el = sentinel.current;
-    if (!el) return;
-    const io = new IntersectionObserver(
-      (es) => {
-        if (es[0]?.isIntersecting && hasNextPage && !isFetchingNextPage) void fetchNextPage();
-      },
-      { rootMargin: '600px 0px' },
-    );
-    io.observe(el);
-    return () => io.disconnect();
-  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
+  const sentinel = useInfiniteScrollSentinel(query);
 
   return (
     <>

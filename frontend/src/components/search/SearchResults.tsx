@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useMemo } from 'react';
 import { SearchX } from 'lucide-react';
 
 import { Spinner } from '@/components/Spinner';
 import { DatedItemRow } from '@/components/timeline/DatedItemRow';
 import { Button } from '@/components/ui/button';
+import { useInfiniteScrollSentinel } from '@/hooks/useInfiniteScrollSentinel';
 import type { SearchQuery } from '@/hooks/useSearch';
 import { ApiError } from '@/lib/api';
 
@@ -18,21 +19,7 @@ import { ApiError } from '@/lib/api';
 export function SearchResults({ query }: { query: SearchQuery }) {
   const items = useMemo(() => query.data?.pages.flatMap((p) => p.items) ?? [], [query.data]);
 
-  // Infinite scroll, same sentinel + rootMargin as the timeline.
-  const sentinel = useRef<HTMLDivElement | null>(null);
-  const { hasNextPage, isFetchingNextPage, fetchNextPage } = query;
-  useEffect(() => {
-    const el = sentinel.current;
-    if (!el) return;
-    const io = new IntersectionObserver(
-      (entries) => {
-        if (entries[0]?.isIntersecting && hasNextPage && !isFetchingNextPage) void fetchNextPage();
-      },
-      { rootMargin: '600px 0px' },
-    );
-    io.observe(el);
-    return () => io.disconnect();
-  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
+  const sentinel = useInfiniteScrollSentinel(query);
 
   if (query.isPending) {
     return (

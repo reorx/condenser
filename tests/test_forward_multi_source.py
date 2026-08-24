@@ -101,7 +101,7 @@ def test_forward_hn_story_renders_title_link_plus_source_line(env):
 
         r = client.post('/api/forward', json={'key': f'hn:{STORY_ID}', 'comment': '值得一读'})
         assert r.status_code == 200, r.text
-        assert r.json() == {'status': 'ok', 'mode': 'quote', 'link': 'https://t.me/mychannel/999'}
+        assert r.json() == {'status': 'ok', 'mode': 'quote', 'link': 'https://t.me/mychannel/999', 'recorded': True}
 
         assert _sent_text(send_message) == (
             '值得一读\n\n'
@@ -219,7 +219,7 @@ def test_forward_tg_key_still_uses_native_forward(env):
         send_message, forward_messages = _armed(client)
 
         r = client.post('/api/forward', json={'key': 'tg:5:100'})
-        assert r.json() == {'status': 'ok', 'mode': 'forward', 'link': 'https://t.me/mychannel/999'}
+        assert r.json() == {'status': 'ok', 'mode': 'forward', 'link': 'https://t.me/mychannel/999', 'recorded': True}
         assert forward_messages.await_args.kwargs['from_peer'] == '@technews'
         send_message.assert_not_awaited()
 

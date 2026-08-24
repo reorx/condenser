@@ -80,7 +80,7 @@ Two conventions this list exists to protect:
 | `ItemDetailInfo` | The pane's top full-info label/value list, source-dispatched: TG = channel (avatar/name/@username), author, publish/edit times, forward origin, media count, item key; HN = source/type, author, submitted / front-page (上榜) / **admission (入选)** times — the gap between the last two is what the story spent earning its slot, and the pane is the only place a reader can see it; a story that was never admitted (search reaches those) has no 入选时间 row at all — score/comments, 当日入选第 N 条 + peak rank, domain, item key; X = author (avatar/name/@handle → profile), which feed it came from, publish + probe-fetch times, engagement, RT/quote/reply origin, media count, your 反馈 label when set (with its reason chip — the card shows the reason nowhere, so this is where you check what a past thumbs-down actually meant), verdict (Phase 4), item key |
 | `MessageStatsRow` | Live views (Eye) / forwards (Repeat2) / `ReactionChip` list for the pane's TG message via `useMessageStats` (fetched fresh on every pane open, never stored); renders nothing while pending, on error, or when the channel exposes no stats |
 | `ReactionChip` | One reaction bucket pill: emoji glyph ('custom'/'other' kinds degrade to a generic icon) + count; `chosen` (own reaction) highlights |
-| `ForwardDialog` | "转发到我的频道" modal (deliberately Chinese copy), source-generic since 2026-07-27 — takes the whole `TimelineItem` and posts its key to `POST /api/forward`. Telegram: non-empty comment = quote message (text + t.me link), empty = native forward. Other sources have no Telegram original, so the server renders title + link into a new message and the copy says so ("留空则只发标题和链接…" instead of "留空则原样转发…") — the hint is the only source-conditional bit. Success toast carries an「打开」action opening the landed message. Since 2026-08-23 a forward is also *recorded* server-side (schema v17), so success patches `forwarded_by_me: true` across the item caches and invalidates `['forwards']` — the badge lights without a refetch |
+| `ForwardDialog` | "转发到我的频道" modal (deliberately Chinese copy), source-generic since 2026-07-27 — takes the whole `TimelineItem` and posts its key to `POST /api/forward`. Telegram: non-empty comment = quote message (text + t.me link), empty = native forward. Other sources have no Telegram original, so the server renders title + link into a new message and the copy says so ("留空则只发标题和链接…" instead of "留空则原样转发…") — the hint is the only source-conditional bit. Success toast carries an「打开」action opening the landed message. Since 2026-08-23 a forward is also *recorded* server-side (schema v17), so success patches `forwarded_by_me: true` across the item caches and invalidates `['forwards']` — the badge lights without a refetch. Unless the response says `recorded: false` (the message went out but the server lost the record write): then a warning toast says so and nothing is patched, because a badge lit on a lost record silently un-lights on the next fetch |
 | `ForwardedBadge` | The 「我转发过这条」 mark on the time line of all four cards: a small `Repeat2` (`MessageStatsRow`'s icon for forward *counts* — same vocabulary, other direction) with a native `title`. Reads `item.forwarded_by_me`, **not** `telegram.is_forwarded` — that one means "this post was forwarded *into* the channel I read", the opposite direction, and the two sit on the same card |
 | `LinkPreviewCard` | One self-fetched link preview (proxied image / Telegram-image fallback + site/title/description; `channelId` optional — absent for HN targets); shared by the pane and `HnCard`'s embedded preview |
 | `Lightbox` | Fullscreen media viewer with prev/next navigation |
@@ -172,8 +172,11 @@ Two conventions this list exists to protect:
   published document does not change under us),
   `useForwards` + `useDeleteForward` (the offset-paged `['forwards']` log and its delete;
   the delete is deliberately **not** optimistic and deliberately does **not** clear the
-  card's `forwarded_by_me` — a second record of the same item may still exist, and only
-  the server knows),
+  card's `forwarded_by_me` locally — a second record of the same item may still exist, and
+  only the server knows, so it invalidates every item list and lets the server restate the
+  flag),
+  `useInfiniteScrollSentinel` (the one paged-list tail sentinel — rootMargin + in-flight
+  guard — shared by Timeline / SearchResults / ForwardsView so the tuning can't drift),
   `useMessageStats` (live pane stats, staleTime 0), `useAppMeta` + `useSetForwardChannel`
   (runtime app settings incl. the forward target channel), `useHideItem` + `useUnhideItem`
   (hide an item from every timeline via `POST /api/hidden`; optimistic removal + undo),
@@ -196,11 +199,15 @@ Two conventions this list exists to protect:
   wrapper for HN self-post HTML), `linkify.tsx`, `extractUrls.ts` (shared URL
   regex/extraction for linkify + the detail pane), `itemDetailPane.tsx` (the detail pane's
   context: the open `TimelineItem` envelope), `theme.tsx`, `unreadIndicator.tsx`,
-  `itemCaches.ts` (the three caches that hold item envelopes — the paged timelines,
-  the paged search results, the flat saved list — plus `patchItem` / `removeItem` /
+  `itemCaches.ts` (the caches that hold item envelopes — the paged timelines,
+  the paged search results, the flat saved list, and the `['forwards']` log whose
+  pages hold `{record, item}` **entries** rather than bare items (its own accessors,
+  never appended to the paged-keys list) — plus `patchItem` / `removeItem` /
   `findItem` over all of them. Listed in one place because the same card can be on
   screen in two of them at once, and patching only the timeline is how one copy ends up
-  showing a filled bookmark while its twin shows an empty one),
+  showing a filled bookmark while its twin shows an empty one. `removeItem` deliberately
+  skips the saved list *and* the forward log: both are archives of the reader's own acts,
+  so a hide leaves them alone),
   `queryClient.ts`, `utils.ts`, `pwa.ts` (standalone-window resize), `swUpdate.ts`
   (PWA background-update flow: vite-plugin-pwa prompt mode — the SW precaches the app
   shell so the installed app opens instantly from local cache, a new build found in the

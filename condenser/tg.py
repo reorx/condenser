@@ -109,11 +109,20 @@ def channel_message_url(channel_id: int, message_id: int) -> str:
 
 
 def _sent_message_url(target: str | int, message_id: int) -> str:
-    """t.me link for a message that just landed in the forward target channel."""
+    """t.me link for a message that just landed in the forward target channel.
+
+    A bare-id target takes the ``/c/`` form, which wants the *bare* channel id:
+    a bot-api-style ``-100…`` id keeps a marker prefix (and a minus) that a
+    ``/c/`` link must not carry — and since v17 this URL is frozen into
+    ``forward_records.link``, so getting it wrong here is forever.
+    """
     username = _target_username(target)
     if username:
         return f'https://t.me/{username}/{message_id}'
-    return f'https://t.me/c/{target}/{message_id}'
+    cid = str(target)
+    if cid.startswith('-100'):
+        cid = cid[4:]
+    return f'https://t.me/c/{cid.lstrip("-")}/{message_id}'
 
 
 def _convert_reactions(reactions) -> list[ReactionCount]:
@@ -489,10 +498,14 @@ class TgManager:
         sent_id = sent[0].id if isinstance(sent, list) else sent.id
         mode = 'quote' if comment else 'forward'
         link = _sent_message_url(target, sent_id)
-        self._record_forward(key, comment, configured, sent_id, link, mode)
-        return {'status': 'ok', 'mode': mode, 'link': link}
+        # `recorded` rides along so the client can tell a kept record from a lost
+        # one — still a 200 either way (a retry would post the message twice),
+        # but a lost record must not light the forwarded badge or claim the
+        # comment was kept.
+        recorded = self._record_forward(key, comment, configured, sent_id, link, mode)
+        return {'status': 'ok', 'mode': mode, 'link': link, 'recorded': recorded}
 
-    def _record_forward(self, key: ItemKey, comment: str, target: str, message_id: int, link: str, mode: str) -> None:
+    def _record_forward(self, key: ItemKey, comment: str, target: str, message_id: int, link: str, mode: str) -> bool:
         """Append the publish to ``forward_records``. Swallows every failure.
 
         ⚠️ This is a deliberate inversion of the project rule that low-level
@@ -502,6 +515,8 @@ class TgManager:
         failed forward, the reader would press the button again, and the channel
         would carry the same post twice. **Losing a row is cheaper than sending a
         second message**, so nothing in here is allowed to reach the caller.
+        Returns whether the row was actually written, so the response can say a
+        loss happened instead of the badge lighting and then silently going out.
 
         ``target`` is the *configured* string, not the normalized peer: it is a
         snapshot of where the message went, and it is what ``_normalize_target``
@@ -531,6 +546,8 @@ class TgManager:
             )
         except Exception:
             log.exception('failed to record forward of %s', key.key)
+            return False
+        return True
 
     # ---- subscription orchestration (used by routers) ----
     def _register_subscription(self, info: ChannelInfo) -> ChannelInfo:

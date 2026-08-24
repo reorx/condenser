@@ -641,6 +641,10 @@ export interface ForwardResult {
   mode: 'quote' | 'forward';
   /** t.me link of the message that just landed in the target channel. */
   link: string;
+  /** False = the message went out but the local record could not be written
+   *  (still a 200 — a retry would post the message twice). The UI must not
+   *  light the forwarded badge on it. */
+  recorded: boolean;
 }
 
 /**

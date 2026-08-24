@@ -145,7 +145,7 @@ def test_forward_empty_comment_uses_native_forward(env):
 
         r = client.post('/api/messages/5/100/forward', json={})
         assert r.status_code == 200
-        assert r.json() == {'status': 'ok', 'mode': 'forward', 'link': 'https://t.me/mychannel/999'}
+        assert r.json() == {'status': 'ok', 'mode': 'forward', 'link': 'https://t.me/mychannel/999', 'recorded': True}
 
         assert forward_messages.await_args.args[0] == '@mychannel'
         assert forward_messages.await_args.args[1] == 100
@@ -164,7 +164,7 @@ def test_forward_with_comment_sends_quote_message_with_link(env):
 
         r = client.post('/api/messages/5/100/forward', json={'comment': '值得一读'})
         assert r.status_code == 200
-        assert r.json() == {'status': 'ok', 'mode': 'quote', 'link': 'https://t.me/mychannel/1000'}
+        assert r.json() == {'status': 'ok', 'mode': 'quote', 'link': 'https://t.me/mychannel/1000', 'recorded': True}
 
         assert send_message.await_args.args[0] == '@mychannel'
         assert send_message.await_args.args[1] == '值得一读\n\nhttps://t.me/technews/100'
