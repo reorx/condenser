@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
@@ -14,15 +14,25 @@ interface ForwardDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   item: TimelineItem;
+  /** Prefill for the comment box — the 条目评论「保存并转发」chain hands the just-saved
+   *  note over. Editing it here changes only the outgoing message, never the note
+   *  (which is already persisted by the time this dialog opens — iOS's rule). */
+  initialComment?: string;
 }
 
 /** 转发到 app_meta.forward_channel 配置的频道。Telegram 条目：评论非空 → 文字 + t.me 链接
  *  的新消息，留空 → 原生 forward。其他信源没有「原生转发」这回事，服务端把标题和链接渲染成
  *  一条新消息，留空就是只发这条，不加评论。 */
-export function ForwardDialog({ open, onOpenChange, item }: ForwardDialogProps) {
+export function ForwardDialog({ open, onOpenChange, item, initialComment }: ForwardDialogProps) {
   const [comment, setComment] = useState('');
   const isTelegram = item.source === 'telegram';
   const qc = useQueryClient();
+
+  // Seed the box on open; a plain open (no prefill) starts empty as before.
+  useEffect(() => {
+    if (open) setComment(initialComment ?? '');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
   const forward = useMutation({
     mutationFn: () => api.forwardItem(item.key, comment.trim() || undefined),

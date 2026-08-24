@@ -1237,6 +1237,40 @@ iOS 的 `forwardedByMe` + 转发记录 tab（等 1.0.0 出审核队列，和 RSS
 评论抽屉这三段手势交互模拟器自动化不了，待真机手动过**。v1 明确不做：分享图渲染
 高亮、note/评论进 FTS（见计划 §11）。Web UI 本轮不动（unsave 语义已在后端改对）。
 
+## 2026-08-24 · Web 标注 + RSS 全文进抽屉（前端补齐 v18 的另一半）
+
+iOS 标注落地当天把 web 侧补上，交互对齐 iOS、实现尊重平台。三件事一起动：
+
+**RSS 全文进详情抽屉。** 卡片不再就地展开（`RssBody` 退役）：「查看全文」和时间按钮
+一样打开 `ItemDetailPane`，全文在抽屉里 lazy fetch + DOMPurify 渲染（加载中/失败回落
+摘录，文案同 iOS）。有 AI 摘要的条目过去在卡上**没有任何看正文的入口**（摘要顶掉了
+excerpt 和 more），现在「查看全文」在摘要下常驻。抽屉加宽到 `sm:max-w-xl` —— 它从
+信息面板变成了阅读面。四个源的正文都进了抽屉（`ItemDetailBody`）：TG 消息文本、HN
+自荐帖 HTML、X 派生文本（`xBodyText` 从 XCard 提到 `lib/xUrls`，卡片与抽屉共用一份
+派生 —— iOS `xDisplayedText` 同款耦合约束）、RSS 全文。
+
+**高亮。** `lib/annotate.ts` 是 CondenserKit `Annotations.swift` 的行为等价移植（同一
+批测试用例钉住：精确搜 → 空白折叠兜底 → prefix/suffix 打分 ×2、block 提示只配平局）；
+`lib/domText.ts` 做 DOM 半边（text-node 扁平索引、offset↔Range、caret-from-point）。
+渲染走 **CSS Custom Highlight API**（`::highlight(condenser-annotation)`，不碰 React
+拥有的节点）；选中文字浮出「高亮」按钮（Medium 式，iOS 编辑菜单的 web 对应物；靠近
+容器顶部时翻到选区下方，走查抓到的裁切 bug）；点高亮弹 评论/删除 小菜单（最短命中
+优先，同 iOS 重叠规则）；孤儿高亮列在正文尾部，绝不静默丢。web 创建的标注 `block`
+发 null（整流渲染没有块概念），iOS 的 block 提示在 web 只当 tie-break —— 两端互认。
+
+**条目评论。** 动作行「评论」按钮（收藏和转发之间，有 note 转靛蓝实心）→ Dialog，
+覆盖语义（清空保存 = 删除），「保存并转发」先落库再带评论开 `ForwardDialog`
+（`initialComment` 参数，编辑只影响发出的消息）。四张卡时间行加 `AnnotationBadge`
+（靛蓝 `MessageSquareText`，`hasNotes` = note ∨ annotations）。数据层：`useNote`
+（useFeedback 式 previous 回滚 + invalidate `['records']`）、`useItemAnnotations`
+（pane 本地镜像按 envelope 对象 identity 键控 —— savedOverride 的安排；add 不乐观，
+id 是服务端发的）。
+
+前端 226 tests 全绿（+26：定位算法 13、domText 9、note 对话框、badge、抽屉正文、
+RssCard 改版）。agent-browser 全链路走查：选中→高亮→落库（`is_saved=0` 行带
+annotations ✓）→点高亮→评论→条目评论→Saved 页未收藏标注行（空心书签 + 角标）→
+冷加载重开抽屉高亮重定位成功。截图 `tmp/2026-08-24-web-annotations/`。
+
 Still open: subscription
 "delete-with-messages" option (Q4 / `?purge=1`) and the backfill batch-interval sleep.
 Full checklist: `kb/sessions/2026-06-09-backend-remaining-work.md`.

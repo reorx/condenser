@@ -134,3 +134,17 @@
     @apply text-sky-600 underline-offset-2 hover:underline break-words dark:text-sky-400;
   }
 }
+
+/* Annotation highlights (schema v18): painted via the CSS Custom Highlight API by
+   `AnnotatedText` — no DOM mutation, so React keeps sole ownership of the text
+   nodes. Same look as iOS: soft yellow wash + a darker underline. `::highlight`
+   only accepts color/background/decoration properties. */
+::highlight(condenser-annotation) {
+  background-color: rgb(250 204 21 / 0.35);
+  text-decoration: underline;
+  text-decoration-color: rgb(180 83 9 / 0.8);
+}
+.dark ::highlight(condenser-annotation) {
+  background-color: rgb(250 204 21 / 0.22);
+  text-decoration-color: rgb(217 119 6 / 0.8);
+}

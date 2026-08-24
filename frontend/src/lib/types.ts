@@ -268,6 +268,24 @@ export type ItemFeedback = 'up' | 'down';
  *  planned model (kb/notes/2026-07-24-x-verdict-multi-channel-discussion.md). */
 export type ItemFeedbackReason = 'topic' | 'promo' | 'ai_slop' | 'engagement_farming' | 'author';
 
+/**
+ * One highlight on an item's body text (W3C TextQuoteSelector shape, schema v18).
+ * `quote` is the truth; `prefix` / `suffix` disambiguate repeated occurrences at
+ * relocation time (`lib/annotate.ts`). `block` is an RSS-only hint from iOS (which
+ * derived text block the quote was made in) — the web renders the article as one
+ * flow, so it sends null and only uses a stored one as a locate tie-break.
+ */
+export interface ItemAnnotation {
+  /** Per-item id, assigned by the server — the edit/delete handle. */
+  id: number;
+  quote: string;
+  prefix: string | null;
+  suffix: string | null;
+  block: number | null;
+  comment: string | null;
+  created_at: string | null;
+}
+
 /** Multi-source item envelope: exactly one of `telegram` / `hn` / `x` / `rss` is present. */
 export interface TimelineItem {
   source: Source;
@@ -290,6 +308,10 @@ export interface TimelineItem {
    * are deliberately different for that reason. Absent on older payloads.
    */
   forwarded_by_me?: boolean;
+  /** The reader's item-level note (schema v18); ''/null = none. Absent on older payloads. */
+  note?: string | null;
+  /** The reader's highlights on this item's body (schema v18). Absent on older payloads. */
+  annotations?: ItemAnnotation[] | null;
   telegram?: DisplayMessage;
   hn?: HnStory;
   x?: XTweet;

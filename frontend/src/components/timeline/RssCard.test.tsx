@@ -10,10 +10,17 @@ vi.mock('@/lib/api', () => ({
 }));
 
 import { api } from '@/lib/api';
+import { ItemDetailPaneProvider, useItemDetailPane } from '@/lib/itemDetailPane';
 import { UnreadIndicatorProvider } from '@/lib/unreadIndicator';
 import type { RssEntry, TimelineItem } from '@/lib/types';
 
 import { RssCard } from './RssCard';
+
+/** Reads the pane context so a test can see what a card opened. */
+function OpenProbe() {
+  const { open } = useItemDetailPane();
+  return <div data-testid="open-key">{open?.key ?? ''}</div>;
+}
 
 function makeEntry(over: Partial<RssEntry> = {}): RssEntry {
   return {
@@ -44,12 +51,6 @@ function makeItem(over: Partial<RssEntry> = {}, read = true): TimelineItem {
     is_saved: false,
     rss,
   };
-}
-
-/** What GET /api/rss/entries/{id} answers: the same envelope, plus the article. */
-function articleItem(content: string): TimelineItem {
-  const item = makeItem({ content_truncated: true });
-  return { ...item, rss: { ...item.rss!, content } };
 }
 
 function wrap(ui: ReactNode) {
@@ -110,38 +111,33 @@ describe('RssCard', () => {
     expect(screen.queryByText('AI 摘要')).toBeNull();
   });
 
-  it('does not offer "more" for a body that already fits', () => {
-    // content_truncated is the server saying "this is the whole thing"; a toggle
-    // over it would fetch an article to reveal nothing.
+  it('does not offer 查看全文 for a body that already fits', () => {
+    // content_truncated is the server saying "this is the whole thing"; an entry
+    // over it would open a pane to reveal nothing new.
     wrap(<RssCard item={makeItem()} />);
-    expect(screen.queryByRole('button', { name: 'more' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '查看全文' })).toBeNull();
   });
 
-  it('fetches the article on "more" and renders it sanitized', async () => {
-    vi.mocked(api.rssEntry).mockResolvedValue(
-      articleItem('<p>the whole article</p><script>window.hacked = true</script>'),
+  it('opens the detail pane on 查看全文 instead of expanding in place', async () => {
+    // The article renders (and gets fetched) in the detail pane only — the iOS
+    // arrangement. The card itself never fetches anything.
+    wrap(
+      <ItemDetailPaneProvider>
+        <RssCard item={makeItem({ content_truncated: true })} />
+        <OpenProbe />
+      </ItemDetailPaneProvider>,
     );
-    const { container } = wrap(<RssCard item={makeItem({ content_truncated: true })} />);
-    // nothing is fetched until the reader asks: that is the point of the split
+    await userEvent.setup().click(screen.getByRole('button', { name: '查看全文' }));
+
+    expect(screen.getByTestId('open-key')).toHaveTextContent('rss:77');
     expect(api.rssEntry).not.toHaveBeenCalled();
-
-    await userEvent.setup().click(screen.getByRole('button', { name: 'more' }));
-
-    expect(api.rssEntry).toHaveBeenCalledWith(77);
-    expect(await screen.findByText('the whole article')).toBeInTheDocument();
-    expect(container.querySelector('script')).toBeNull();
-    expect(screen.getByRole('button', { name: 'less' })).toBeInTheDocument();
   });
 
-  it('keeps showing the excerpt when the article cannot be fetched', async () => {
-    // A failed expand degrades to what the card already had, rather than blanking
-    // the body — the excerpt is still a true (if short) rendering of the entry.
-    vi.mocked(api.rssEntry).mockRejectedValue(new Error('offline'));
-    wrap(<RssCard item={makeItem({ content_truncated: true })} />);
-    await userEvent.setup().click(screen.getByRole('button', { name: 'more' }));
-
-    expect(await screen.findByText('正文加载失败')).toBeInTheDocument();
-    expect(screen.getByText('the feed body')).toBeInTheDocument();
+  it('offers 查看全文 under a summary — the pane is the only route to the source text', () => {
+    // A summary replaces the excerpt entirely, so without this button an entry
+    // with one has no path from the card to what the feed actually said.
+    wrap(<RssCard item={makeItem({ summary: '摘要。' })} />);
+    expect(screen.getByRole('button', { name: '查看全文' })).toBeInTheDocument();
   });
 
   it('renders a plain title when the entry has no link', () => {

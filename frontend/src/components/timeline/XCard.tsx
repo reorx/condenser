@@ -11,11 +11,12 @@ import { compactNumber, fullDateLabel, timeLabel } from '@/lib/format';
 import { useItemDetailPane } from '@/lib/itemDetailPane';
 import { linkify } from '@/lib/linkify';
 import { xProfileUrl } from '@/lib/sources';
-import { stripTrailingMediaTco, urlEntityMap } from '@/lib/xUrls';
+import { xBodyText } from '@/lib/xUrls';
 import { useUnreadIndicator } from '@/lib/unreadIndicator';
 import { cn } from '@/lib/utils';
-import type { ReadTarget, TimelineItem, XTweet } from '@/lib/types';
+import type { ReadTarget, TimelineItem } from '@/lib/types';
 
+import { AnnotationBadge } from './AnnotationBadge';
 import { ForwardedBadge } from './ForwardedBadge';
 import { XFeedbackButtons } from './XFeedbackButtons';
 import { XMedia } from './XMedia';
@@ -29,22 +30,6 @@ interface Props {
   observe?: (el: Element | null, target: ReadTarget) => (() => void) | void;
   /** Keys judged read but awaiting server confirmation (green "syncing" state). */
   pendingKeys?: Set<string>;
-}
-
-/** The text to print as the tweet body, or null when there is nothing left to print.
- *  Two upstream quirks are absorbed here: retweets arrive only as an 'RT @orig: …'
- *  prefix (bird flattens them — the prefix becomes the caption instead), and a
- *  long-form post's `text` *is* its article title, which the article card already
- *  shows. A trailing t.co the url entities don't know stands for the media shown
- *  right below (X's own UI hides it too). */
-function bodyText(tweet: XTweet): string | null {
-  if (!tweet.text) return null;
-  let text = tweet.rt_of_handle ? tweet.text.replace(/^RT @[A-Za-z0-9_]{1,15}:\s*/, '') : tweet.text;
-  if (tweet.article?.title && tweet.article.title.trim() === text.trim()) return null;
-  // urls null (old rows / a tweet with no outbound links) counts as an empty set:
-  // a trailing t.co beside media is the media's self-link either way.
-  text = stripTrailingMediaTco(text, urlEntityMap(tweet.urls), (tweet.media?.length ?? 0) > 0);
-  return text || null;
 }
 
 function MetricChip({ icon, value }: { icon: React.ReactNode; value: number }) {
@@ -81,7 +66,7 @@ function XCardImpl({ item, observe, pendingKeys }: Props) {
     tweet.feed_kind === 'home'
       ? `${fullDateLabel(shownAt)} · seen ${fullDateLabel(tweet.first_seen_at)}`
       : fullDateLabel(shownAt);
-  const body = bodyText(tweet);
+  const body = xBodyText(tweet);
   const metrics = tweet.metrics;
 
   return (
@@ -135,6 +120,7 @@ function XCardImpl({ item, observe, pendingKeys }: Props) {
           <time>{timeLabel(shownAt)}</time>
         </button>
         <ForwardedBadge item={item} />
+        <AnnotationBadge item={item} />
         <button
           type="button"
           onClick={() => save.mutate({ key: item.key, saved: !item.is_saved })}

@@ -9,6 +9,7 @@ import type {
   ForwardRecordPage,
   ForwardResult,
   HnStatus,
+  ItemAnnotation,
   ItemFeedback,
   ItemFeedbackReason,
   JoinedChannel,
@@ -303,6 +304,20 @@ export const api = {
   listRecords: () => request<TimelineItem[]>('/api/records'),
   saveRecord: (key: string) => post<{ ok: true }>('/api/records', { key }),
   deleteRecord: (key: string) => del<{ ok: true }>(`/api/records/${encodeURIComponent(key)}`),
+
+  // ---- notes + annotations (schema v18) ----
+  // Overwrite semantics: the whole text every time, '' clears (that is the delete).
+  setNote: (key: string, note: string) => post<{ ok: true }>('/api/note', { key, note }),
+  // The server assigns the per-item id + created_at and hands the stored annotation back.
+  addAnnotation: (body: { key: string; quote: string; prefix: string; suffix: string; block?: number | null }) =>
+    post<{ ok: true; annotation: ItemAnnotation }>('/api/annotations', body),
+  // The comment, whole; ''/null clears it while the highlight stays.
+  setAnnotationComment: (key: string, id: number, comment: string | null) =>
+    request<{ ok: true }>(`/api/annotations/${encodeURIComponent(key)}/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ comment }),
+    }),
+  deleteAnnotation: (key: string, id: number) => del<{ ok: true }>(`/api/annotations/${encodeURIComponent(key)}/${id}`),
 };
 
 /** URL for the media proxy; `thumb` requests the small preview. */

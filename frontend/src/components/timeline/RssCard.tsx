@@ -3,21 +3,24 @@
 // excerpt when there is not (plan §0.4). Which of the two you are reading is marked,
 // because a summary is a machine's paraphrase and a card that hides that is lying
 // quietly.
-import { memo, useCallback, useState } from 'react';
+//
+// The full article does NOT expand in place (2026-08-24): 「查看全文」 opens the
+// item detail pane, which fetches and renders it — the iOS arrangement (detail =
+// the sheet, card = the scan surface), and the pane is also where highlighting
+// lives, so there is exactly one rendering of the article to annotate.
+import { memo, useCallback } from 'react';
 import { Bookmark } from 'lucide-react';
 
 import { RssGlyph } from '@/components/RssGlyph';
-import { Spinner } from '@/components/Spinner';
-import { useRssArticle } from '@/hooks/useRssArticle';
 import { useSaveToggle } from '@/hooks/useSaveToggle';
 import { fullDateLabel, timeLabel } from '@/lib/format';
 import { useItemDetailPane } from '@/lib/itemDetailPane';
-import { sanitizeHtml } from '@/lib/sanitize';
 import { rssFeedLabel } from '@/lib/sources';
 import { useUnreadIndicator } from '@/lib/unreadIndicator';
 import { cn } from '@/lib/utils';
-import type { ReadTarget, RssEntry, TimelineItem } from '@/lib/types';
+import type { ReadTarget, TimelineItem } from '@/lib/types';
 
+import { AnnotationBadge } from './AnnotationBadge';
 import { ForwardedBadge } from './ForwardedBadge';
 
 interface Props {
@@ -27,69 +30,6 @@ interface Props {
   observe?: (el: Element | null, target: ReadTarget) => (() => void) | void;
   /** Keys judged read but awaiting server confirmation (green "syncing" state). */
   pendingKeys?: Set<string>;
-}
-
-/** Tailwind for the article HTML once it has been fetched. */
-const ARTICLE_PROSE = cn(
-  'text-sm leading-relaxed break-words text-foreground/90',
-  '[&_a]:break-all [&_a]:underline [&_a]:underline-offset-2 [&_p]:mt-2 [&_p:first-child]:mt-0',
-  '[&_pre]:mt-2 [&_pre]:overflow-x-auto [&_pre]:rounded [&_pre]:bg-muted/50 [&_pre]:p-2 [&_pre]:text-xs',
-  // Feed bodies carry full-resolution images, and one 1600px photo makes a card
-  // taller than the viewport — the timeline stops being scannable at the first
-  // illustrated post. Capped rather than dropped: the picture is part of the post,
-  // and the original is one click away. Height only, so the browser keeps the
-  // aspect ratio itself.
-  '[&_img]:mt-2 [&_img]:max-h-80 [&_img]:max-w-full [&_img]:rounded',
-);
-
-/** The entry's body: the list's plain-text excerpt, with the article behind "more".
- *
- * The timeline payload stopped carrying feed bodies on 2026-08-23 — they averaged
- * 13.9KB and topped out at 7.1MB, thirty per page — so what is on the card is the
- * backend's already-stripped excerpt (no markup, nothing to sanitize), and clicking
- * "more" fetches the article from `/api/rss/entries/{id}`. Only used when there is
- * no summary.
- */
-function RssBody({ entry }: { entry: RssEntry }) {
-  const [expanded, setExpanded] = useState(false);
-  const article = useRssArticle(expanded ? entry.id : null);
-  const html = article.data?.rss?.content ?? null;
-  // "more" is offered on the server's word (`content_truncated`), not on a length
-  // guess here: the excerpt is cut server-side, and only that side knows whether
-  // anything was left behind. Once the article is in hand the toggle stays, to
-  // fold it back up.
-  const expandable = entry.content_truncated || expanded;
-
-  return (
-    <div className="mt-1">
-      {expanded && html ? (
-        <div
-          className={ARTICLE_PROSE}
-          // eslint-disable-next-line react/no-danger
-          dangerouslySetInnerHTML={{ __html: sanitizeHtml(html) }}
-        />
-      ) : (
-        <p className={cn('text-sm leading-relaxed break-words text-foreground/90', !expanded && 'line-clamp-5')}>
-          {entry.content_excerpt}
-        </p>
-      )}
-      {expandable && (
-        <div className="mt-1 flex items-center gap-1.5">
-          <button
-            type="button"
-            onClick={() => setExpanded((v) => !v)}
-            className="text-xs font-medium text-sky-600 hover:underline dark:text-sky-400"
-          >
-            {expanded ? 'less' : 'more'}
-          </button>
-          {expanded && article.isPending && <Spinner className="size-3 text-muted-foreground" />}
-          {/* A failed expand degrades to the excerpt above rather than blanking the
-              body — it is still a true rendering of the entry, just a short one. */}
-          {expanded && article.isError && <span className="text-xs text-muted-foreground">正文加载失败</span>}
-        </div>
-      )}
-    </div>
-  );
 }
 
 function RssCardImpl({ item, observe, pendingKeys }: Props) {
@@ -117,6 +57,10 @@ function RssCardImpl({ item, observe, pendingKeys }: Props) {
     rss.published_at && rss.published_at !== item.datetime
       ? `${fullDateLabel(rss.published_at)} · 时间线位置 ${fullDateLabel(item.datetime)}`
       : fullDateLabel(item.datetime);
+  // 「查看全文」 is offered on the server's word (`content_truncated`) when the card
+  // shows the excerpt; a summary hides the excerpt entirely, so with one the entry
+  // to the source text is always offered.
+  const hasMore = rss.summary ? true : rss.content_truncated;
 
   return (
     <article
@@ -160,6 +104,7 @@ function RssCardImpl({ item, observe, pendingKeys }: Props) {
           <time>{timeLabel(shown)}</time>
         </button>
         <ForwardedBadge item={item} />
+        <AnnotationBadge item={item} />
         <button
           type="button"
           onClick={() => save.mutate({ key: item.key, saved: !item.is_saved })}
@@ -196,7 +141,23 @@ function RssCardImpl({ item, observe, pendingKeys }: Props) {
           </span>
         </div>
       ) : (
-        rss.content_excerpt && <RssBody entry={rss} />
+        rss.content_excerpt && (
+          <p className="mt-1 line-clamp-5 text-sm leading-relaxed break-words text-foreground/90">
+            {rss.content_excerpt}
+          </p>
+        )
+      )}
+
+      {hasMore && (
+        <div className="mt-1">
+          <button
+            type="button"
+            onClick={() => openPane(item)}
+            className="text-xs font-medium text-sky-600 hover:underline dark:text-sky-400"
+          >
+            查看全文
+          </button>
+        </div>
       )}
 
       {rss.author && <div className="mt-1 truncate text-xs text-muted-foreground">{rss.author}</div>}

@@ -10,6 +10,7 @@ import { useUnreadIndicator } from '@/lib/unreadIndicator';
 import { cn } from '@/lib/utils';
 import type { DisplayMessage, ReadTarget, TimelineItem } from '@/lib/types';
 
+import { AnnotationBadge } from './AnnotationBadge';
 import { ForwardedBadge } from './ForwardedBadge';
 import { MessageMedia } from './MessageMedia';
 import { WebPagePreview } from './WebPagePreview';
@@ -105,6 +106,7 @@ function MessageCardImpl({ item, channelLabel, observe, pendingKeys }: Props) {
           <time>{timeLabel(msg.date)}</time>
         </button>
         <ForwardedBadge item={item} />
+        <AnnotationBadge item={item} />
         <button
           type="button"
           onClick={() => save.mutate({ key: item.key, saved: !item.is_saved })}

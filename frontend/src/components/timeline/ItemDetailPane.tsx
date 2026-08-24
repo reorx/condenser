@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Bookmark, ExternalLink, EyeOff, Forward, Info } from 'lucide-react';
+import { Bookmark, ExternalLink, EyeOff, Forward, Info, MessageSquare } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
@@ -7,6 +7,7 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAppMeta } from '@/hooks/useAppMeta';
 import { useHideItem, useUnhideItem } from '@/hooks/useHideItem';
+import { useItemAnnotations } from '@/hooks/useItemAnnotations';
 import { useLinkPreviews, useUrlPreview } from '@/hooks/useLinkPreviews';
 import { useSaveToggle } from '@/hooks/useSaveToggle';
 import { useSubscriptions } from '@/hooks/useSubscriptions';
@@ -18,7 +19,9 @@ import type { TimelineItem } from '@/lib/types';
 import { cn } from '@/lib/utils';
 
 import { ForwardDialog } from './ForwardDialog';
+import { ItemDetailBody } from './ItemDetailBody';
 import { ItemDetailInfo } from './ItemDetailInfo';
+import { ItemNoteDialog } from './ItemNoteDialog';
 import { LinkPreviewCard } from './LinkPreviewCard';
 import { MessageStatsRow } from './MessageStatsRow';
 
@@ -37,9 +40,11 @@ function CardSkeleton() {
 
 /**
  * Right-side item detail pane: full info block on top, the item's actions right under
- * it (save + forward, every source; live TG stats share the row), link previews in the
- * middle, original link + hide at the bottom. Mounted once (in AppShell) and driven by
- * the ItemDetailPane context, so it works across views.
+ * it (save + note + forward, every source; live TG stats share the row), then the
+ * scrollable middle — the annotatable body (`ItemDetailBody`; RSS fetches its full
+ * article here) followed by link previews — and original link + hide at the bottom.
+ * Mounted once (in AppShell) and driven by the ItemDetailPane context, so it works
+ * across views.
  */
 export function ItemDetailPane() {
   const { open, close } = useItemDetailPane();
@@ -78,9 +83,22 @@ export function ItemDetailPane() {
 
   const meta = useAppMeta();
   const [forwardOpen, setForwardOpen] = useState(false);
+  // Prefill for ForwardDialog when opened through the note dialog's 保存并转发
+  // chain; a plain 转发 click clears it first.
+  const [forwardComment, setForwardComment] = useState<string | undefined>(undefined);
+  const [noteOpen, setNoteOpen] = useState(false);
 
   const hide = useHideItem();
   const unhide = useUnhideItem();
+
+  // The pane's annotation model (highlights); local-state mirror + cache patches.
+  const annotations = useItemAnnotations(open);
+
+  // The item's note, with the savedOverride arrangement below: the envelope is a
+  // click-time snapshot, so a save from this pane mirrors itself here, keyed on
+  // the envelope object so a reopen with a fresh cache object drops the override.
+  const [noteOverride, setNoteOverride] = useState<{ item: TimelineItem; note: string } | null>(null);
+  const currentNote = noteOverride?.item === open ? noteOverride.note : (open?.note ?? '');
 
   // The context holds the envelope captured at click time, so `is_saved` is a snapshot.
   // While the pane is open the only writer is the button below, so mirroring its own
@@ -130,10 +148,14 @@ export function ItemDetailPane() {
         if (!next) {
           close();
           setForwardOpen(false);
+          setForwardComment(undefined);
+          setNoteOpen(false);
         }
       }}
     >
-      <SheetContent side="right" className="gap-0 p-0">
+      {/* Wider than the sheet default (28rem): since the RSS article moved in
+          here, the pane is a reading surface, not just an info block. */}
+      <SheetContent side="right" className="gap-0 p-0 sm:max-w-xl">
         <SheetHeader className="border-b">
           <SheetTitle className="flex items-center gap-2">
             <Info className="size-4" /> 条目详情
@@ -168,6 +190,16 @@ export function ItemDetailPane() {
               <Bookmark className={cn('size-4', isSaved && 'fill-current')} />
               {isSaved ? '已收藏' : '收藏'}
             </Button>
+            {/* iOS 的动作行顺序：收藏、评论、转发。有评论时按钮转靛蓝实心。 */}
+            <Button
+              variant="outline"
+              size="sm"
+              className={cn('shrink-0', currentNote && 'text-indigo-500 hover:text-indigo-500')}
+              onClick={() => setNoteOpen(true)}
+            >
+              <MessageSquare className={cn('size-4', currentNote && 'fill-current')} />
+              评论
+            </Button>
             <Button
               variant="outline"
               size="sm"
@@ -177,6 +209,7 @@ export function ItemDetailPane() {
                   toast.info('请先在设置中配置转发的目标频道。');
                   return;
                 }
+                setForwardComment(undefined);
                 setForwardOpen(true);
               }}
             >
@@ -186,35 +219,42 @@ export function ItemDetailPane() {
           </div>
         )}
 
-        <div className="flex-1 space-y-3 overflow-y-auto p-4">
-          <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">链接预览</p>
-          {pending ? (
-            <>
-              <CardSkeleton />
-              {/* A Telegram message can carry several links; the single-URL sources
+        <div className="flex-1 overflow-y-auto">
+          {/* 正文区：可高亮的条目文本（RSS 在这里加载全文）。 */}
+          {open && <ItemDetailBody item={open} annotations={annotations} />}
+
+          <div className="space-y-3 p-4">
+            <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">链接预览</p>
+            {pending ? (
+              <>
+                <CardSkeleton />
+                {/* A Telegram message can carry several links; the single-URL sources
                   never show two placeholders for one card that is coming. */}
-              {!story && !entry && <CardSkeleton />}
-            </>
-          ) : query.isError ? (
-            <div className="flex flex-col items-center gap-3 py-8 text-center text-sm text-muted-foreground">
-              <p>{errorMessage(query.error, '链接预览加载失败。')}</p>
-              <Button variant="outline" size="sm" onClick={() => query.refetch()}>
-                重试
-              </Button>
-            </div>
-          ) : previews.length === 0 ? (
-            <p className="py-8 text-center text-sm text-muted-foreground">
-              {story
-                ? '自荐帖，无外部链接 — 讨论即内容。'
-                : tweet
-                  ? '该推文没有外部链接。'
-                  : entry
-                    ? '该条目没有原文链接。'
-                    : '消息中没有链接。'}
-            </p>
-          ) : (
-            previews.map((p, i) => <LinkPreviewCard key={`${p.url}-${i}`} channelId={msgRef?.channel_id} preview={p} />)
-          )}
+                {!story && !entry && <CardSkeleton />}
+              </>
+            ) : query.isError ? (
+              <div className="flex flex-col items-center gap-3 py-8 text-center text-sm text-muted-foreground">
+                <p>{errorMessage(query.error, '链接预览加载失败。')}</p>
+                <Button variant="outline" size="sm" onClick={() => query.refetch()}>
+                  重试
+                </Button>
+              </div>
+            ) : previews.length === 0 ? (
+              <p className="py-8 text-center text-sm text-muted-foreground">
+                {story
+                  ? '自荐帖，无外部链接 — 讨论即内容。'
+                  : tweet
+                    ? '该推文没有外部链接。'
+                    : entry
+                      ? '该条目没有原文链接。'
+                      : '消息中没有链接。'}
+              </p>
+            ) : (
+              previews.map((p, i) => (
+                <LinkPreviewCard key={`${p.url}-${i}`} channelId={msgRef?.channel_id} preview={p} />
+              ))
+            )}
+          </div>
         </div>
 
         {open && (
@@ -255,7 +295,28 @@ export function ItemDetailPane() {
           </div>
         )}
 
-        {open && <ForwardDialog open={forwardOpen} onOpenChange={setForwardOpen} item={open} />}
+        {open && (
+          <ForwardDialog open={forwardOpen} onOpenChange={setForwardOpen} item={open} initialComment={forwardComment} />
+        )}
+        {open && (
+          <ItemNoteDialog
+            open={noteOpen}
+            onOpenChange={setNoteOpen}
+            item={open}
+            note={currentNote}
+            onSaved={(note) => setNoteOverride({ item: open, note })}
+            onForward={(note) => {
+              // 评论已落库；带着它进转发弹窗（在那边再改只影响发出的消息）。
+              setNoteOpen(false);
+              if (!meta.data?.forward_channel) {
+                toast.info('评论已保存。转发需要先在设置中配置目标频道。');
+                return;
+              }
+              setForwardComment(note);
+              setForwardOpen(true);
+            }}
+          />
+        )}
       </SheetContent>
     </Sheet>
   );
