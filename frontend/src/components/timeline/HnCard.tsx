@@ -15,6 +15,7 @@ import { useUnreadIndicator } from '@/lib/unreadIndicator';
 import { cn } from '@/lib/utils';
 import type { ReadTarget, TimelineItem } from '@/lib/types';
 
+import { ForwardedBadge } from './ForwardedBadge';
 import { LinkPreviewCard } from './LinkPreviewCard';
 
 interface Props {
@@ -121,6 +122,7 @@ function HnCardImpl({ item, observe, pendingKeys }: Props) {
         >
           <time>{timeLabel(hn.submitted_at ?? item.datetime)}</time>
         </button>
+        <ForwardedBadge item={item} />
         {isJob && (
           <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium tracking-wide uppercase">Job</span>
         )}

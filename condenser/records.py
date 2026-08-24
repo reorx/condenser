@@ -64,26 +64,24 @@ def _hn_snapshot(story: db.HNStory) -> dict:
     return payload
 
 
-def save_item(key: ItemKey) -> bool:
-    """Snapshot + persist a record for an item key. Returns False if the source item is missing."""
+def build_item_snapshot(key: ItemKey) -> Optional[dict]:
+    """The source-decoupled snapshot for any item key, or None if its row is gone.
+
+    Split out of ``save_item`` (2026-08-23) because saving is no longer the only
+    thing that takes one: a forward record snapshots the item it published, for
+    the same reason and with the same shape (``forwards.py``).
+    """
     if key.source == 'telegram':
-        snapshot = build_snapshot(key.ref1, key.ref2)
-        if snapshot is None:
-            return False
-        db.add_saved_item('telegram', key.ref1, key.ref2, snapshot)
-        return True
+        return build_snapshot(key.ref1, key.ref2)
     if key.source == 'x':
         row = x_source.get_row(key.ref1)
-        if row is None:
-            return False
         # the snapshot *is* the envelope payload (quote already nested), so the
         # record replays without x_tweets / x_feed_items
-        db.add_saved_item('x', key.ref1, 0, x_payload(row))
-        return True
+        return x_payload(row) if row is not None else None
     if key.source == 'rss':
         row = rss_source.get_row(key.ref1)
         if row is None:
-            return False
+            return None
         # Like X's, the snapshot *is* the envelope payload — including the computed
         # sort timestamp, which no longer exists once the entry row is gone.
         #
@@ -94,12 +92,17 @@ def save_item(key: ItemKey) -> bool:
         # (or an unsubscribe-and-purge) took the row. The cost is one query's worth
         # of text at save time; the alternative is a saved article that can go
         # missing. (Plan 2026-08-23 §5, option (a).)
-        db.add_saved_item('rss', key.ref1, 0, rss_payload(row, with_content=True))
-        return True
+        return rss_payload(row, with_content=True)
     story = db.get_hn_story(key.ref1)
-    if story is None:
+    return _hn_snapshot(story) if story is not None else None
+
+
+def save_item(key: ItemKey) -> bool:
+    """Snapshot + persist a record for an item key. Returns False if the source item is missing."""
+    snapshot = build_item_snapshot(key)
+    if snapshot is None:
         return False
-    db.add_saved_item('hn', key.ref1, 0, _hn_snapshot(story))
+    db.add_saved_item(key.source, key.ref1, key.ref2, snapshot)
     return True
 
 
@@ -127,26 +130,37 @@ def _render_tg_display(raw_data: str) -> Optional[dict]:
 
 
 def render_item(
-    rec: db.SavedItem,
+    rec,
     read_triples: set[tuple[str, int, int]],
     feedback: Optional[dict[tuple[str, int, int], tuple[Optional[str], Optional[str]]]] = None,
+    is_saved: bool = True,
 ) -> Optional[dict]:
-    """Render one saved row into an item envelope (is_saved always True)."""
+    """Render one snapshot row into an item envelope.
+
+    ``rec`` is duck-typed on ``source`` / ``ref1`` / ``ref2`` / ``raw_data`` rather
+    than typed as ``db.SavedItem``: a ``db.ForwardRecord`` carries the same four
+    and replays the same way.
+
+    ``is_saved`` defaults to True because the saved view is where every row *is*
+    saved. A forward record is not — the reader published it, which says nothing
+    about whether they bookmarked it — so that view passes the real flag; hard-
+    coding True there would light the bookmark on every card.
+    """
     triple = (rec.source, rec.ref1, rec.ref2)
     is_read = triple in read_triples
     if rec.source == 'telegram':
         display = _render_tg_display(rec.raw_data)
         if display is None:
             return None
-        return tg_envelope(display, is_read, True)
+        return tg_envelope(display, is_read, is_saved)
     if rec.source == 'x':
         verdict, reason = (feedback or {}).get(triple, (None, None))
-        return x_envelope(json.loads(rec.raw_data), is_read, True, verdict, reason)
+        return x_envelope(json.loads(rec.raw_data), is_read, is_saved, verdict, reason)
     if rec.source == 'rss':
         # The snapshot holds the article; this is a *list*, so it goes out with the
         # excerpt like every other list. ``rss_article`` is the way to the body.
-        return rss_envelope(json.loads(rec.raw_data), is_read, True)
-    return hn_envelope(json.loads(rec.raw_data), is_read, True)
+        return rss_envelope(json.loads(rec.raw_data), is_read, is_saved)
+    return hn_envelope(json.loads(rec.raw_data), is_read, is_saved)
 
 
 def rss_article(entry_id: int) -> Optional[dict]:
@@ -190,6 +204,10 @@ def _saved_feedback() -> dict[tuple[str, int, int], tuple[Optional[str], Optiona
 
 def list_rendered_records() -> list[dict]:
     """All saved records rendered from their snapshots, newest first."""
+    # Imported here, not at module scope: forwards.py renders *its* records through
+    # this module, so the two only meet at call time (search.py's arrangement).
+    from . import forwards
+
     read_triples = _saved_read_triples()
     feedback = _saved_feedback()
     out = []
@@ -197,4 +215,4 @@ def list_rendered_records() -> list[dict]:
         rendered = render_item(rec, read_triples, feedback)
         if rendered is not None:
             out.append(rendered)
-    return out
+    return forwards.stamp(out)

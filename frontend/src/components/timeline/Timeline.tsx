@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useMemo } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { ArrowUp, Inbox } from 'lucide-react';
 
 import { AllChannelsHidden } from '@/components/ChannelFilter';
 import { Spinner } from '@/components/Spinner';
 import { Button } from '@/components/ui/button';
+import { useInfiniteScrollSentinel } from '@/hooks/useInfiniteScrollSentinel';
 import { useNewContent } from '@/hooks/useNewContent';
 import { useScrollToRead } from '@/hooks/useScrollToRead';
 import { useChannelLabels, useSubscriptions } from '@/hooks/useSubscriptions';
@@ -96,22 +97,7 @@ export function Timeline({
     void query.refetch();
   }
 
-  // Infinite scroll: load more when the sentinel nears the viewport.
-  const sentinel = useRef<HTMLDivElement | null>(null);
-  useEffect(() => {
-    const el = sentinel.current;
-    if (!el) return;
-    const io = new IntersectionObserver(
-      (entries) => {
-        if (entries[0]?.isIntersecting && query.hasNextPage && !query.isFetchingNextPage) {
-          void query.fetchNextPage();
-        }
-      },
-      { rootMargin: '600px 0px' },
-    );
-    io.observe(el);
-    return () => io.disconnect();
-  }, [query.hasNextPage, query.isFetchingNextPage, query.fetchNextPage]);
+  const sentinel = useInfiniteScrollSentinel(query);
 
   if (query.isPending) {
     return <TimelineSkeleton />;

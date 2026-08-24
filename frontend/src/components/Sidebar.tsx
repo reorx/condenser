@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Bookmark, Filter, Inbox, Radio, Search, Settings, Sparkles } from 'lucide-react';
+import { Bookmark, Filter, Inbox, Radio, Repeat2, Search, Settings, Sparkles } from 'lucide-react';
 import { NavLink, useLocation } from 'react-router-dom';
 
 import { SettingsDialog } from '@/components/SettingsDialog';
@@ -46,6 +46,11 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
         <NavLink to="/saved" className={navLinkClass} onClick={onNavigate}>
           <Bookmark className="size-4" />
           Saved
+        </NavLink>
+        {/* 转发记录紧跟 Saved：两个都是「我对这条做过什么」的档案，一个是收藏，一个是发布。 */}
+        <NavLink to="/forwards" className={navLinkClass} onClick={onNavigate}>
+          <Repeat2 className="size-4" />
+          Forwards
         </NavLink>
         <NavLink to="/search" className={navLinkClass} onClick={onNavigate}>
           <Search className="size-4" />

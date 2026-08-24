@@ -282,6 +282,14 @@ export interface TimelineItem {
   feedback?: ItemFeedback | null;
   /** The label's reason chip; null = the reader skipped it (a valid, lossless label). */
   feedback_reason?: ItemFeedbackReason | null;
+  /**
+   * "I have republished this into my own channel at least once" (schema v17).
+   *
+   * ⚠️ Not to be confused with `telegram.is_forwarded`, which points the *other*
+   * way — that post was forwarded *into* the channel I subscribe to. The names
+   * are deliberately different for that reason. Absent on older payloads.
+   */
+  forwarded_by_me?: boolean;
   telegram?: DisplayMessage;
   hn?: HnStory;
   x?: XTweet;
@@ -633,6 +641,42 @@ export interface ForwardResult {
   mode: 'quote' | 'forward';
   /** t.me link of the message that just landed in the target channel. */
   link: string;
+  /** False = the message went out but the local record could not be written
+   *  (still a 200 — a retry would post the message twice). The UI must not
+   *  light the forwarded badge on it. */
+  recorded: boolean;
+}
+
+/**
+ * One row of `GET /api/forwards` — a publish that happened, plus the item it
+ * published. `item` is rendered from a snapshot taken at forward time, so it
+ * survives retention; it is **null** when there was no snapshot to take (a
+ * native Telegram forward needs no archived row), in which case the comment and
+ * the link are still the record's real body.
+ */
+export interface ForwardRecordEntry {
+  record: ForwardRecordMeta;
+  item: TimelineItem | null;
+}
+
+export interface ForwardRecordMeta {
+  id: number;
+  /** The item key, so a record can address the item it published. */
+  key: string;
+  source: Source;
+  /** What the reader wrote; null = forwarded as-is. */
+  comment: string | null;
+  mode: 'quote' | 'forward';
+  /** The forward channel **as configured at the time** — it can have changed since. */
+  target: string;
+  message_id: number;
+  link: string;
+  created_at: string;
+}
+
+export interface ForwardRecordPage {
+  items: ForwardRecordEntry[];
+  has_more: boolean;
 }
 
 /** GET /api/app/meta — runtime app settings. */

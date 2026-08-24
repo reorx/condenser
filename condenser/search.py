@@ -716,6 +716,7 @@ def render(rows: list[dict]) -> list[dict]:
     and the cascade that follows it, and the honest answer for one stale row is
     to show one fewer result — the ``total`` beside it is off by the same one.
     """
+    from . import forwards
     from .items import hn_envelope, rss_envelope, x_envelope
     from .sources import hn as hn_source
     from .sources import rss as rss_source
@@ -756,4 +757,4 @@ def render(rows: list[dict]) -> list[dict]:
             )
         if envelope is not None:
             out.append(envelope)
-    return out
+    return forwards.stamp(out)

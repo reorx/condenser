@@ -1154,6 +1154,57 @@ decode 得出来但画成空白卡片，按 miss 换目录。卡片仍不放图�
 行是横向滚动的，分享按钮排在行尾，模拟器窗口收不到合成手势），截图与产物在
 `tmp/2026-08-23-ios-share-image/`。
 
+## 2026-08-23 · 转发变成有记录的动作（schema v17，后端 + Web）
+
+转发从 2026-07-27 起就是 source-generic 的，但一直是**一次性动作**：消息发进
+`@reorx_share`，condenser 这边不留痕迹。于是两件事查不到 ——「这条我转过没有」（RSS 一天
+上百条，重复转发是迟早的事）和「我当时写了什么」。第二件更贵：条目是别人写的，评论是
+我写的，而它只存在于那条 Telegram 消息的正文里。计划
+`kb/plans/2026-08-23-forward-records.md`（本轮不做 iOS —— 1.0.0 还在审核队列）。
+
+新表 `forward_records`（v17，新表直接 `create_tables`，无迁移）是**日志不是标记**：自增
+主键 + `(source, ref1, ref2)` **非唯一**索引。其他三元组表都是复合主键的状态表，这张不能
+是 —— 同一篇文章换个评论再转一次是真实行为，覆盖旧行就等于把「我当时怎么想的」删了。
+两列快照：`raw_data` 是 `saved_items.raw_data` 的同款（`cleanup.py` 的保留期会删 X/RSS 旧行，
+三个月前那条转发的源行大概率已经没了），`target` 是转发**当时**的 `app_meta.forward_channel`
+—— 这个值会变，读实时值等于让记录改写自己的历史。`comment` 空评论存 **NULL** 不存 `''`。
+
+四个决定：
+
+1. **记账失败不能让转发失败。** `tg._record_forward` 开了两个 `try/except` 全吞，和「低层
+   函数不写 try/except」的项目规则相反，理由写进了注释：走到这一步消息已经发到 Telegram
+   了，不可撤销。此时抛异常 → 接口 500 → 客户端认为没发出去 → 用户点第二次 → 频道里两条
+   一样的消息。**丢一行记录，好过多发一条消息。**两个 guard 而不是一个：快照坏了也不该
+   赔上评论，那是只有用户写得出来的部分。回归护栏 `test_bookkeeping_failure_never_costs_a_second_message`
+   （验证过：去掉 `except` 它就红）。
+2. **`forwarded_by_me` 事后盖章，不进各 source 的 SQL。** `is_read` / `is_saved` 是五段
+   LEFT JOIN + 四个 envelope 函数签名换来的；转发是一天个位数的动作，一次
+   `SELECT DISTINCT` 就够。落点四个：`timeline.query_timeline` / `query_new`、`search.render`、
+   `records.list_rendered_records`。
+3. **字段名不能叫 `is_forwarded`** —— telegram payload 里已经有一个，意思正相反（「这条是
+   从别处转发**进**我订阅的频道的」），两个含义相反的同名字段同时出现在一张卡片上，一定会
+   被读错一次然后被信任。
+4. **删记录不动 Telegram 上那条消息**，`DELETE /api/forwards/{id}` 和确认框文案都点明这一点；
+   路由里**没有 POST** —— 记录由转发这个动作产生，能单独写一条就等于能声称发过一条没发的消息。
+
+顺手把 `records.py` 拆开了：`build_item_snapshot(key)` 从 `save_item()` 里抽出来（RSS 那段
+`with_content=True` 的理由整段跟着走），`render_item` 加 `is_saved` 参数 —— 原来写死 True，
+转发视图借用会让每张卡都亮着书签。两个函数都按鸭子类型吃 `SavedItem` / `ForwardRecord`。
+
+Web：`/forwards` 视图 + 侧栏一项（`Repeat2`，跟 `MessageStatsRow` 表示转发数同一套语汇），
+`ForwardRecordRow` 把这次转发的元信息画在条目**上方** —— 评论是记录的属性不是条目的属性；
+四张卡片的时间那一行加 `ForwardedBadge`；转发成功后 `patchItem` 打 `forwarded_by_me: true`
++ invalidate `['forwards']`，角标立刻亮。
+
+750 backend (+18)、185 web (+6) 全绿。走查在一份**生产形态 dev 库的拷贝**（7.3MB）上做：
+v17 建表干净跑过，`/forwards` 渲染、无快照记录退化成 `item: null`、删除确认与 toast、
+时间线/搜索的角标都验过，截图 `tmp/2026-08-23-forward-records/`。**「真转一条」这步没做**
+—— 那会往 `@reorx_share` 真的发消息，留给用户自己跑；写入路径由后端测试覆盖。
+
+未采纳（留给下一轮）：详情抽屉里列这条的历史转发（字段已在 envelope 里，成本接近零）；
+iOS 的 `forwardedByMe` + 转发记录 tab（等 1.0.0 出审核队列，和 RSS 卡片一批发）；
+转发时自动标记已读/收藏（转发是发布动作，不是阅读状态）。
+
 Still open: subscription
 "delete-with-messages" option (Q4 / `?purge=1`) and the backfill batch-interval sleep.
 Full checklist: `kb/sessions/2026-06-09-backend-remaining-work.md`.

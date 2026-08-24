@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
 import { Spinner } from '@/components/Spinner';
@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
 import { api, errorMessage } from '@/lib/api';
+import { patchItem } from '@/lib/itemCaches';
 import type { TimelineItem } from '@/lib/types';
 
 interface ForwardDialogProps {
@@ -21,14 +22,26 @@ interface ForwardDialogProps {
 export function ForwardDialog({ open, onOpenChange, item }: ForwardDialogProps) {
   const [comment, setComment] = useState('');
   const isTelegram = item.source === 'telegram';
+  const qc = useQueryClient();
 
   const forward = useMutation({
     mutationFn: () => api.forwardItem(item.key, comment.trim() || undefined),
     onSuccess: (res) => {
       setComment('');
       onOpenChange(false);
+      const openAction = { label: '打开', onClick: () => window.open(res.link, '_blank') };
+      // recorded=false：消息发出去了，但服务端没能落下那行记录（依然 200 —— 重试会发
+      // 第二条）。此时角标不能亮：它下一次刷新就会无声熄灭，评论也不在 /forwards 里。
+      if (res.recorded === false) {
+        toast.warning('已发送，但本地转发记录保存失败', { action: openAction });
+        return;
+      }
+      // 服务端已经落了一行记录（schema v17）：角标立刻亮，转发列表下次打开是新的。
+      // 这个 patch 只会把 false 改成 true，所以不需要回滚 —— 发送已经成功了。
+      patchItem(qc, item.key, { forwarded_by_me: true });
+      void qc.invalidateQueries({ queryKey: ['forwards'] });
       toast.success(res.mode === 'quote' ? '已发布带评论的新消息' : '已转发到你的频道', {
-        action: { label: '打开', onClick: () => window.open(res.link, '_blank') },
+        action: openAction,
       });
     },
     onError: (e) => toast.error(errorMessage(e, '转发失败')),

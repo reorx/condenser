@@ -17,6 +17,7 @@ from .routers import (
     auth,
     channels,
     cleanup,
+    forwards,
     hn,
     media,
     messages,
@@ -106,6 +107,7 @@ def create_app() -> FastAPI:
     app.include_router(sources.router)
     app.include_router(cleanup.router)
     app.include_router(search.router)
+    app.include_router(forwards.router)
 
     # 4. serve the React build (if present) as static assets at '/'
     static_dir = os.getenv('CONDENSER_STATIC_DIR', str(Path(__file__).resolve().parent.parent / 'frontend' / 'dist'))
