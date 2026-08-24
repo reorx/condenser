@@ -140,6 +140,38 @@ class RecordBody(BaseModel):
     key: str
 
 
+class NoteBody(BaseModel):
+    """Item-level note, overwrite semantics: the whole text every time, and an
+    empty string clears it (which is also the delete — no separate endpoint)."""
+
+    key: str
+    note: str = Field(max_length=20000)
+
+
+class AnnotationCreateBody(BaseModel):
+    """One highlight on an item's body text (W3C TextQuoteSelector shape).
+
+    ``quote`` is the truth; ``prefix`` / ``suffix`` disambiguate repeated
+    occurrences at relocation time. ``block`` is an RSS-only *hint* (which text
+    block the quote was made in) — a stale one falls back to full-text search on
+    the client, so the server never validates it against anything.
+    """
+
+    key: str
+    quote: str = Field(min_length=1, max_length=5000)
+    prefix: str = Field(default='', max_length=500)
+    suffix: str = Field(default='', max_length=500)
+    block: Optional[int] = Field(default=None, ge=0)
+    comment: Optional[str] = Field(default=None, max_length=20000)
+
+
+class AnnotationPatch(BaseModel):
+    """The comment, whole (NoteBody's overwrite rule): ''/absent clears it while
+    the highlight stays — deleting the highlight is the DELETE endpoint."""
+
+    comment: Optional[str] = Field(default=None, max_length=20000)
+
+
 class HideBody(BaseModel):
     """Item key to hide from every timeline surface."""
 

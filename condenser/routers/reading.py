@@ -11,7 +11,16 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from .. import db, records, timeline
 from ..auth import require_auth
-from ..types import FeedbackBody, HideBody, ReadBody, ReadBulkBody, RecordBody
+from ..types import (
+    AnnotationCreateBody,
+    AnnotationPatch,
+    FeedbackBody,
+    HideBody,
+    NoteBody,
+    ReadBody,
+    ReadBulkBody,
+    RecordBody,
+)
 from .common import parse_key_or_422
 
 router = APIRouter(prefix='/api', tags=['reading'], dependencies=[Depends(require_auth)])
@@ -117,6 +126,41 @@ def post_record(body: RecordBody):
 
 @router.delete('/records/{key}')
 def delete_record(key: str):
-    k = parse_key_or_422(key)
-    db.delete_saved_item(k.source, k.ref1, k.ref2)
+    # v18: an unsave, not a row delete — the row survives while a note or an
+    # annotation still needs it (db.unsave_item owns the invariant).
+    db.unsave_item(parse_key_or_422(key))
+    return {'ok': True}
+
+
+@router.post('/note')
+def post_note(body: NoteBody):
+    """Set/overwrite an item's note; '' clears it. Creates the record row (with
+    its snapshot, unsaved) when this is the first thing the reader wrote."""
+    if not records.set_note(parse_key_or_422(body.key), body.note):
+        raise HTTPException(status_code=404, detail='item not found')
+    return {'ok': True}
+
+
+@router.post('/annotations')
+def post_annotation(body: AnnotationCreateBody):
+    """Add one highlight; the server assigns the per-item id + created_at and
+    hands the stored annotation back (the client needs the id to edit it)."""
+    annotation = records.add_annotation(
+        parse_key_or_422(body.key), body.quote, body.prefix, body.suffix, body.block, body.comment
+    )
+    if annotation is None:
+        raise HTTPException(status_code=404, detail='item not found')
+    return {'ok': True, 'annotation': annotation}
+
+
+@router.patch('/annotations/{key}/{annotation_id}')
+def patch_annotation(key: str, annotation_id: int, body: AnnotationPatch):
+    if not db.update_annotation_comment(parse_key_or_422(key), annotation_id, body.comment or None):
+        raise HTTPException(status_code=404, detail='annotation not found')
+    return {'ok': True}
+
+
+@router.delete('/annotations/{key}/{annotation_id}')
+def delete_annotation(key: str, annotation_id: int):
+    db.delete_annotation(parse_key_or_422(key), annotation_id)
     return {'ok': True}

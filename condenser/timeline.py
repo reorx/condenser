@@ -12,7 +12,7 @@ import base64
 import json
 from typing import Optional
 
-from . import db, forwards
+from . import db, forwards, records
 from .items import norm_ts
 from .sources import hn as hn_source
 from .sources import rss as rss_source
@@ -170,9 +170,9 @@ def query_timeline(
     head_cursor = encode_cursor_map(heads) if heads else None
 
     return {
-        # Post-hoc stamp rather than a fifth LEFT JOIN in every provider — see
-        # forwards.stamp for why this one flag is not carried by the queries.
-        'items': forwards.stamp([u.envelope for u in taken]),
+        # Post-hoc stamps rather than more LEFT JOINs in every provider — see
+        # forwards.stamp / records.stamp_notes for why these are not in the queries.
+        'items': records.stamp_notes(forwards.stamp([u.envelope for u in taken])),
         'next_cursor': next_cursor,
         'end_cursor': end_cursor,
         'head_cursor': head_cursor,
@@ -211,7 +211,7 @@ def query_new(
         else:
             units += hn_source.fetch_new(anchors[s], limit, unread_only=unread_only)
     units.sort(key=lambda u: u.sort_ts, reverse=True)
-    return {'count': len(units), 'items': forwards.stamp([u.envelope for u in units[:limit]])}
+    return {'count': len(units), 'items': records.stamp_notes(forwards.stamp([u.envelope for u in units[:limit]]))}
 
 
 def query_days(

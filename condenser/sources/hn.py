@@ -207,7 +207,7 @@ def _fetch(where: list[str], params: list, descending: bool, limit: int) -> list
     order = 'DESC' if descending else 'ASC'
     sql = (
         'SELECT h.*, CASE WHEN ri.ref1 IS NOT NULL THEN 1 ELSE 0 END AS is_read, '
-        'CASE WHEN si.ref1 IS NOT NULL THEN 1 ELSE 0 END AS is_saved '
+        'CASE WHEN si.is_saved = 1 THEN 1 ELSE 0 END AS is_saved '
         'FROM hn_stories h '
         "LEFT JOIN read_items ri ON ri.source = 'hn' AND ri.ref1 = h.id "
         "LEFT JOIN saved_items si ON si.source = 'hn' AND si.ref1 = h.id "
@@ -306,7 +306,7 @@ def rows_by_id(story_ids: list[int]) -> dict[int, dict]:
     placeholders = ','.join('?' for _ in story_ids)
     cur = tdb.db.execute_sql(
         'SELECT h.*, CASE WHEN ri.ref1 IS NOT NULL THEN 1 ELSE 0 END AS is_read, '
-        'CASE WHEN si.ref1 IS NOT NULL THEN 1 ELSE 0 END AS is_saved '
+        'CASE WHEN si.is_saved = 1 THEN 1 ELSE 0 END AS is_saved '
         'FROM hn_stories h '
         "LEFT JOIN read_items ri ON ri.source = 'hn' AND ri.ref1 = h.id "
         "LEFT JOIN saved_items si ON si.source = 'hn' AND si.ref1 = h.id "

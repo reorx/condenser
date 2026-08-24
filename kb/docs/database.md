@@ -12,7 +12,7 @@ tags:
 One SQLite file, shared between [telememo](https://pypi.org/project/telememo/) (a PyPI
 dependency) and condenser. condenser's peewee models bind to telememo's `db` instance, so
 everything runs on one connection. `SCHEMA_VERSION` lives in `condenser/db.py` (currently
-**17**).
+**18**).
 
 ## Table ownership
 
@@ -76,6 +76,46 @@ Virtual tables (`x_vec_labeled`, `search_index`) are created with raw SQL in `in
   SQL names what is *intentionally preserved*, not only what is removed.
 
 ## Schema changelog (newest first)
+
+### v18 — 2026-08-24 · Item notes + annotations
+
+Adds `saved_items.is_saved` / `note` / `annotations` (shape-based ADD COLUMNs,
+before `create_tables` — the v14/v16 position). The table is promoted from "the
+bookmarks table" to "the items the reader acted on": `is_saved` becomes one state
+among three, beside an item-level note and a JSON list of quote-anchored
+highlights (`{id, quote, prefix, suffix, block?, comment?, created_at}` — the W3C
+TextQuoteSelector model; ids increment per item, assigned server-side inside the
+write lock).
+
+- **`DEFAULT 1` on `is_saved` is the whole data migration**: every pre-v18 row
+  exists because the reader bookmarked it, so the default states what was already
+  true and no backfill step is needed.
+- **Row lifecycle invariant**: a row exists iff `is_saved` OR `note` OR
+  `annotations` is non-empty. Un-saving an annotated item flips the flag and keeps
+  the row (`db.unsave_item`); deleting the last annotation of an unsaved, note-less
+  row deletes the row — no shells. A first note/annotation on an untouched item
+  creates the row **with the full `records.build_item_snapshot`**, because X/RSS
+  retention takes source rows out from under old items and a highlight whose text
+  is gone would dangle.
+- **`annotations` is a JSON column, so every edit is a read-modify-write** — all
+  write paths (`db.set_note` / `add_annotation` / `update_annotation_comment` /
+  `delete_annotation` / `unsave_item`) run under `atomic(lock_type='IMMEDIATE')`,
+  never nested (the `tests/test_db_locking.py` rule). Snapshot *building* stays
+  outside the lock: the orchestrators in `records.py` pre-build it only when the
+  pre-check saw no row, and a lost race wastes one build, never holds the lock.
+- **`is_saved = 1` ripples into every "is it saved" read**: the four providers'
+  envelope CASE, search's `status=saved` filter, `forwards.py`'s saved join, and —
+  deliberately — the verdict's training queries (`x_labeled_samples`,
+  `x_pending_verdict_rows`, `x_describable_rows`, `x_prospective_rows`,
+  `x_verdict_label_coverage`): a row held up by a note alone is not an
+  endorsement, the note may well say "this is wrong". **Retention exemptions are
+  the exception**: `_x_untouched` / `_DELETE_RSS_ENTRIES` keep testing bare row
+  existence, because an annotated item is a user asset whichever flags it carries.
+- `note` / `annotations` reach clients as envelope fields via
+  `records.stamp_notes` — `forwards.stamp`'s post-hoc arrangement, same rationale
+  (sparse, single-digits-per-day rows vs. two more columns through five provider
+  queries). `GET /api/records` now lists un-saved rows too, with the real
+  `is_saved` per envelope. Plan: `kb/plans/2026-08-24-annotations.md`.
 
 ### v17 — 2026-08-23 · Forward records
 

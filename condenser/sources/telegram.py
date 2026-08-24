@@ -30,7 +30,7 @@ _SELECT_COLS = """
     m.fwd_from_user_name AS fwd_from_user_name, m.fwd_from_message_id AS fwd_from_message_id,
     m.fwd_original_date AS fwd_original_date, m.fwd_post_author AS fwd_post_author,
     CASE WHEN rm.ref1 IS NOT NULL THEN 1 ELSE 0 END AS is_read,
-    CASE WHEN sv.ref1 IS NOT NULL THEN 1 ELSE 0 END AS is_saved
+    CASE WHEN sv.is_saved = 1 THEN 1 ELSE 0 END AS is_saved
 """
 
 _FROM = """

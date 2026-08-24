@@ -138,7 +138,7 @@ _COLS = """
     q.text AS q_text, q.created_at AS q_created_at, q.media AS q_media, q.metrics AS q_metrics,
     q.urls AS q_urls,
     CASE WHEN ri.ref1 IS NOT NULL THEN 1 ELSE 0 END AS is_read,
-    CASE WHEN si.ref1 IS NOT NULL THEN 1 ELSE 0 END AS is_saved,
+    CASE WHEN si.is_saved = 1 THEN 1 ELSE 0 END AS is_saved,
     fb.verdict AS feedback, fb.reason AS feedback_reason
 """
 

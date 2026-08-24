@@ -131,7 +131,8 @@ def get_rss_entry(entry_id: int):
     """
     row = rss_source.get_row(entry_id)
     if row is not None:
-        return rss_envelope(row, bool(row['is_read']), bool(row['is_saved']), with_content=True)
+        envelope = rss_envelope(row, bool(row['is_read']), bool(row['is_saved']), with_content=True)
+        return records.stamp_notes([envelope])[0]
     saved = records.rss_article(entry_id)
     if saved is None:
         raise HTTPException(status_code=404, detail='rss entry not found')

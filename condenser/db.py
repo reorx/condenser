@@ -42,7 +42,7 @@ MESSAGES_OPTIONAL_FIELDS = {
 # Bumped when condenser's own table shapes change; recorded in app_meta on init so a
 # future startup can detect an upgrade and run a migration. Telememo manages its own
 # table migrations separately (init_db optional_fields / ALTER TABLE).
-SCHEMA_VERSION = 17
+SCHEMA_VERSION = 18
 
 # One-shot marker for the v14 admission backfill (see _migrate_hn_qualified_v14).
 # State, not shape: the columns can exist while the stamping has not happened.
@@ -131,12 +131,33 @@ class HiddenItem(CondenserBaseModel):
 
 
 class SavedItem(CondenserBaseModel):
-    """Saved record (user asset): a source-decoupled JSON snapshot, triple-keyed."""
+    """An item the reader acted on (v18) — a source-decoupled JSON snapshot, triple-keyed.
+
+    Until v18 this was the bookmarks table and the row's existence *was* the
+    bookmark. Now ``is_saved`` is one state among three: a row exists iff it is
+    saved, **or** carries an item-level ``note``, **or** carries ``annotations``
+    (a JSON list of quote-anchored highlights, each
+    ``{id, quote, prefix, suffix, block?, comment?, created_at}`` — the W3C
+    TextQuoteSelector model; ids increment per item and are assigned here).
+    Un-saving an annotated item therefore flips the flag and keeps the row; the
+    row is deleted only when all three are empty (no shells).
+
+    The snapshot is taken for note/annotation-only rows exactly as for saves:
+    X/RSS retention takes source rows out from under old items, and a highlight
+    whose text is gone would dangle.
+
+    ⚠️ ``annotations`` is a JSON column, so every edit is a read-modify-write —
+    all write paths go through ``atomic(lock_type='IMMEDIATE')``, never nested
+    (the ``tests/test_db_locking.py`` rule).
+    """
 
     source = CharField()
     ref1 = IntegerField()
     ref2 = IntegerField(default=0)
     raw_data = TextField()
+    is_saved = BooleanField(default=True, constraints=[SQL('DEFAULT 1')])
+    note = TextField(null=True)  # item-level comment; never '' (empty clears)
+    annotations = TextField(null=True)  # JSON list; never '[]' (empty clears)
     created_at = DateTimeField(default=datetime.now)
 
     class Meta:
@@ -557,6 +578,7 @@ def init_db(db_path: str, vector_dims: int = 256) -> None:
     _migrate_subscriptions_v3()
     _migrate_hn_qualified_v14()
     _migrate_rss_excerpt_v16()
+    _migrate_saved_items_v18()
     tdb.db.create_tables(CONDENSER_TABLES)
     _migrate_read_saved_v4()
     _migrate_hn_previews_v5()
@@ -705,6 +727,24 @@ def _migrate_rss_excerpt_v16() -> None:
     if not cols or 'content_excerpt' in cols:
         return
     tdb.db.execute_sql('ALTER TABLE rss_entries ADD COLUMN content_excerpt TEXT')
+
+
+def _migrate_saved_items_v18() -> None:
+    """Add the note/annotation columns to a pre-v18 ``saved_items`` table.
+
+    Shape-based ADD COLUMNs before ``create_tables``, the v14/v16 position. The
+    ``DEFAULT 1`` on ``is_saved`` *is* the data migration: every pre-v18 row
+    exists because the reader bookmarked it, so the default states what was
+    already true and no backfill is needed. ``note`` / ``annotations`` stay NULL
+    — nothing existed to migrate.
+    """
+    cols = [r[1] for r in tdb.db.execute_sql('PRAGMA table_info(saved_items)').fetchall()]
+    if not cols or 'is_saved' in cols:
+        return
+    with tdb.db.atomic():
+        tdb.db.execute_sql('ALTER TABLE saved_items ADD COLUMN is_saved INTEGER NOT NULL DEFAULT 1')
+        tdb.db.execute_sql('ALTER TABLE saved_items ADD COLUMN note TEXT')
+        tdb.db.execute_sql('ALTER TABLE saved_items ADD COLUMN annotations TEXT')
 
 
 def _backfill_rss_excerpts() -> None:
@@ -1223,15 +1263,164 @@ def get_feedback(source: str, ref1: int, ref2: int = 0) -> tuple[Optional[str], 
 
 
 def add_saved_item(source: str, ref1: int, ref2: int, raw_data: dict) -> None:
+    """Save an item. An existing row (a note/annotation created it first) just has
+    its flag flipped — its snapshot, note and annotations are all older than this
+    click and none of them is what the click is about."""
     SavedItem.insert(
-        source=source, ref1=ref1, ref2=ref2, raw_data=json.dumps(raw_data), created_at=_now()
-    ).on_conflict_ignore().execute()
+        source=source, ref1=ref1, ref2=ref2, raw_data=json.dumps(raw_data), is_saved=True, created_at=_now()
+    ).on_conflict(
+        conflict_target=[SavedItem.source, SavedItem.ref1, SavedItem.ref2],
+        update={SavedItem.is_saved: True},
+    ).execute()
 
 
 def delete_saved_item(source: str, ref1: int, ref2: int = 0) -> None:
     SavedItem.delete().where(
         (SavedItem.source == source) & (SavedItem.ref1 == ref1) & (SavedItem.ref2 == ref2)
     ).execute()
+
+
+def _row_annotations(row: SavedItem) -> list[dict]:
+    return json.loads(row.annotations) if row.annotations else []
+
+
+def _drop_saved_row_if_empty(row: SavedItem) -> bool:
+    """Enforce the v18 invariant's delete half: a row that is neither saved nor
+    noted nor annotated goes away entirely. Returns True if it did."""
+    if row.is_saved or row.note or row.annotations:
+        return False
+    delete_saved_item(row.source, row.ref1, row.ref2)
+    return True
+
+
+def set_item_saved_flag(k: ItemKey) -> None:
+    """Re-save a row that already exists (its snapshot/notes stay as they are)."""
+    SavedItem.update(is_saved=True).where(
+        (SavedItem.source == k.source) & (SavedItem.ref1 == k.ref1) & (SavedItem.ref2 == k.ref2)
+    ).execute()
+
+
+def unsave_item(k: ItemKey) -> None:
+    """The unsave click: flip the flag, keep the row while a note or annotation
+    still needs it (the v18 invariant). Intentionally preserved: the snapshot,
+    the note and every annotation — un-bookmarking is not un-writing."""
+    with tdb.db.atomic(lock_type='IMMEDIATE'):
+        row = get_saved_item(*k.triple)
+        if row is None:
+            return
+        row.is_saved = False
+        if not _drop_saved_row_if_empty(row):
+            SavedItem.update(is_saved=False).where(
+                (SavedItem.source == k.source) & (SavedItem.ref1 == k.ref1) & (SavedItem.ref2 == k.ref2)
+            ).execute()
+
+
+def _create_noted_row(k: ItemKey, snapshot: Optional[dict], **fields) -> bool:
+    """Insert the row a first note/annotation needs; False = no snapshot to pin it to."""
+    if snapshot is None:
+        return False
+    SavedItem.create(
+        source=k.source,
+        ref1=k.ref1,
+        ref2=k.ref2,
+        raw_data=json.dumps(snapshot),
+        is_saved=False,
+        created_at=_now(),
+        **fields,
+    )
+    return True
+
+
+def set_note(k: ItemKey, note: Optional[str], snapshot: Optional[dict]) -> bool:
+    """Overwrite the item-level note (None clears). Returns False = item not found.
+
+    ``snapshot`` is the prebuilt ``records.build_item_snapshot`` result, used only
+    if the row has to be created — building it is a source-table read, so it stays
+    outside this transaction and the caller only builds one when the pre-check saw
+    no row (a race just wastes the build, never the lock).
+    """
+    with tdb.db.atomic(lock_type='IMMEDIATE'):
+        row = get_saved_item(*k.triple)
+        if row is None:
+            if note is None:
+                return True  # clearing a note that never existed
+            return _create_noted_row(k, snapshot, note=note)
+        row.note = note
+        if not _drop_saved_row_if_empty(row):
+            SavedItem.update(note=note).where(
+                (SavedItem.source == k.source) & (SavedItem.ref1 == k.ref1) & (SavedItem.ref2 == k.ref2)
+            ).execute()
+        return True
+
+
+def _write_annotations(k: ItemKey, row: SavedItem, annotations: list[dict]) -> None:
+    row.annotations = json.dumps(annotations, ensure_ascii=False) if annotations else None
+    if not _drop_saved_row_if_empty(row):
+        SavedItem.update(annotations=row.annotations).where(
+            (SavedItem.source == k.source) & (SavedItem.ref1 == k.ref1) & (SavedItem.ref2 == k.ref2)
+        ).execute()
+
+
+def add_annotation(k: ItemKey, fields: dict, snapshot: Optional[dict]) -> Optional[dict]:
+    """Append one highlight; assigns the per-item id + created_at here, inside the
+    lock, so two concurrent adds cannot mint the same id. Returns the stored dict,
+    or None = item not found (no row and no snapshot to create one from)."""
+    with tdb.db.atomic(lock_type='IMMEDIATE'):
+        row = get_saved_item(*k.triple)
+        if row is None:
+            if not _create_noted_row(k, snapshot):
+                return None
+            row = get_saved_item(*k.triple)
+        annotations = _row_annotations(row)
+        ann = {
+            'id': max((a['id'] for a in annotations), default=0) + 1,
+            **fields,
+            'created_at': _now().strftime('%Y-%m-%dT%H:%M:%SZ'),
+        }
+        _write_annotations(k, row, annotations + [ann])
+        return ann
+
+
+def update_annotation_comment(k: ItemKey, annotation_id: int, comment: Optional[str]) -> bool:
+    """Set or clear (None) one highlight's comment; False = row or id unknown."""
+    with tdb.db.atomic(lock_type='IMMEDIATE'):
+        row = get_saved_item(*k.triple)
+        if row is None:
+            return False
+        annotations = _row_annotations(row)
+        target = next((a for a in annotations if a['id'] == annotation_id), None)
+        if target is None:
+            return False
+        target['comment'] = comment
+        _write_annotations(k, row, annotations)
+        return True
+
+
+def delete_annotation(k: ItemKey, annotation_id: int) -> None:
+    """Remove one highlight, comment included; idempotent like the feedback delete."""
+    with tdb.db.atomic(lock_type='IMMEDIATE'):
+        row = get_saved_item(*k.triple)
+        if row is None:
+            return
+        annotations = [a for a in _row_annotations(row) if a['id'] != annotation_id]
+        _write_annotations(k, row, annotations)
+
+
+def noted_saved_items() -> dict[str, tuple[Optional[str], Optional[list]]]:
+    """item key -> (note, annotations) for every row that carries either.
+
+    The whole set in one query, ``forwarded_triples``'s arrangement and rationale:
+    notes are a single-digits-per-day creation, and the alternative was two more
+    columns through five provider queries and four envelope signatures.
+    """
+    cur = tdb.db.execute_sql(
+        'SELECT source, ref1, ref2, note, annotations FROM saved_items '
+        'WHERE note IS NOT NULL OR annotations IS NOT NULL'
+    )
+    return {
+        ItemKey(source=source, ref1=ref1, ref2=ref2).key: (note, json.loads(annotations) if annotations else None)
+        for source, ref1, ref2, note, annotations in cur.fetchall()
+    }
 
 
 def get_saved_item(source: str, ref1: int, ref2: int = 0) -> Optional[SavedItem]:
@@ -1777,7 +1966,12 @@ def x_labeled_samples() -> dict[int, str]:
     dropped from both sides instead of letting a tie-break pick a direction.
     """
     labels = {row.ref1: row.verdict for row in ItemFeedback.select().where(ItemFeedback.source == 'x')}
-    saved = {row.ref1 for row in SavedItem.select(SavedItem.ref1).where(SavedItem.source == 'x')}
+    # is_saved only (v18): a row held up by a note/annotation alone is not an
+    # endorsement — the note may well say "this is wrong".
+    saved = {
+        row.ref1
+        for row in SavedItem.select(SavedItem.ref1).where((SavedItem.source == 'x') & (SavedItem.is_saved == True))  # noqa: E712
+    }
     samples = {tid: verdict for tid, verdict in labels.items() if not (verdict == 'down' and tid in saved)}
     samples.update({tid: 'save' for tid in saved if labels.get(tid) != 'down'})
     return samples
@@ -1880,7 +2074,7 @@ def x_pending_verdict_rows(since: datetime, limit: int) -> list[dict]:
             'LEFT JOIN x_tweets q ON q.id = t.quote_of '
             'WHERE f.channel_id = ? AND f.verdict IS NULL AND f.first_seen_at >= ? '
             "AND NOT EXISTS (SELECT 1 FROM item_feedback fb WHERE fb.source = 'x' AND fb.ref1 = f.tweet_id) "
-            "AND NOT EXISTS (SELECT 1 FROM saved_items si WHERE si.source = 'x' AND si.ref1 = f.tweet_id) "
+            "AND NOT EXISTS (SELECT 1 FROM saved_items si WHERE si.source = 'x' AND si.ref1 = f.tweet_id AND si.is_saved = 1) "
             'ORDER BY f.first_seen_at DESC LIMIT ?',
             (FORYOU_FEED, since.strftime('%Y-%m-%d %H:%M:%S'), limit),
         )
@@ -1939,7 +2133,7 @@ def x_describable_rows(since: datetime, limit: int, model: str) -> list[dict]:
             f'{_JUDGE_COLS} '
             'LEFT JOIN x_attributes a ON a.tweet_id = t.id AND a.model = ? '
             "LEFT JOIN item_feedback fb ON fb.source = 'x' AND fb.ref1 = t.id "
-            "LEFT JOIN saved_items si ON si.source = 'x' AND si.ref1 = t.id "
+            "LEFT JOIN saved_items si ON si.source = 'x' AND si.ref1 = t.id AND si.is_saved = 1 "
             'LEFT JOIN x_feed_items f ON f.tweet_id = t.id AND f.channel_id = ? '
             'WHERE a.tweet_id IS NULL AND t.text IS NOT NULL '
             '  AND (fb.ref1 IS NOT NULL OR si.ref1 IS NOT NULL OR f.first_seen_at >= ?) '
@@ -1975,7 +2169,7 @@ def x_prospective_rows() -> list[dict]:
             'FROM x_feed_items f '
             'LEFT JOIN x_tweets t ON t.id = f.tweet_id '
             "LEFT JOIN item_feedback fb ON fb.source = 'x' AND fb.ref1 = f.tweet_id "
-            "LEFT JOIN saved_items si ON si.source = 'x' AND si.ref1 = f.tweet_id "
+            "LEFT JOIN saved_items si ON si.source = 'x' AND si.ref1 = f.tweet_id AND si.is_saved = 1 "
             'WHERE f.channel_id = ? AND f.verdict IS NOT NULL '
             'AND (fb.ref1 IS NOT NULL OR si.ref1 IS NOT NULL) '
             'ORDER BY f.first_seen_at',
@@ -1996,7 +2190,7 @@ def x_verdict_label_coverage() -> list[dict]:
             'SELECT f.verdict AS verdict, COUNT(*) AS judged, '
             "SUM(EXISTS (SELECT 1 FROM read_items r WHERE r.source = 'x' AND r.ref1 = f.tweet_id)) AS read, "
             "SUM(EXISTS (SELECT 1 FROM item_feedback fb WHERE fb.source = 'x' AND fb.ref1 = f.tweet_id) "
-            "  OR EXISTS (SELECT 1 FROM saved_items si WHERE si.source = 'x' AND si.ref1 = f.tweet_id)) AS labeled "
+            "  OR EXISTS (SELECT 1 FROM saved_items si WHERE si.source = 'x' AND si.ref1 = f.tweet_id AND si.is_saved = 1)) AS labeled "
             'FROM x_feed_items f WHERE f.channel_id = ? AND f.verdict IS NOT NULL '
             'GROUP BY f.verdict ORDER BY f.verdict',
             (FORYOU_FEED,),

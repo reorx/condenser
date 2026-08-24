@@ -73,16 +73,18 @@ def _record_payload(rec: db.ForwardRecord) -> dict:
     }
 
 
-def _joined(table: str) -> set[tuple[str, int, int]]:
+def _joined(table: str, extra: str = '') -> set[tuple[str, int, int]]:
     """The forwarded triples that also appear in ``table``, batched like records.py's.
 
     Read and saved state stay *live* (they are not in the snapshot) for the same
     reason feedback does in ``records.py``: they are state the reader keeps
     editing, so a record replays the item and joins its current markers.
+    ``extra`` narrows the join — saved_items rows exist for note/annotation-only
+    items since v18, and only ``is_saved = 1`` is a bookmark.
     """
     cur = tdb.db.execute_sql(
         f'SELECT DISTINCT f.source, f.ref1, f.ref2 FROM forward_records f '
-        f'JOIN {table} t ON t.source = f.source AND t.ref1 = f.ref1 AND t.ref2 = f.ref2'
+        f'JOIN {table} t ON t.source = f.source AND t.ref1 = f.ref1 AND t.ref2 = f.ref2{extra}'
     )
     return set(cur.fetchall())
 
@@ -105,7 +107,7 @@ def list_rendered(limit: int = 30, offset: int = 0) -> dict:
     rows = db.list_forward_records(limit + 1, offset)
     has_more = len(rows) > limit
     read_triples = _joined('read_items')
-    saved_triples = _joined('saved_items')
+    saved_triples = _joined('saved_items', ' AND t.is_saved = 1')
     feedback = _feedback()
 
     items = []
@@ -121,4 +123,5 @@ def list_rendered(limit: int = 30, offset: int = 0) -> dict:
             # the one view made of forwarded items showing no badge reads wrong.
             item['forwarded_by_me'] = True
         items.append({'record': _record_payload(rec), 'item': item})
+    records.stamp_notes([entry['item'] for entry in items if entry['item'] is not None])
     return {'items': items, 'has_more': has_more}

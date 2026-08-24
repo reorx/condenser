@@ -66,7 +66,7 @@ _FROM = """
 _FLAGS = (
     f'{SORT_AT_SQL} AS sort_at, COALESCE(s.name, f.title) AS feed_title, '
     'CASE WHEN ri.ref1 IS NOT NULL THEN 1 ELSE 0 END AS is_read, '
-    'CASE WHEN si.ref1 IS NOT NULL THEN 1 ELSE 0 END AS is_saved'
+    'CASE WHEN si.is_saved = 1 THEN 1 ELSE 0 END AS is_saved'
 )
 
 # Every entry column the list payload needs, spelled out — which is the point:

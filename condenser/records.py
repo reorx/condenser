@@ -98,12 +98,71 @@ def build_item_snapshot(key: ItemKey) -> Optional[dict]:
 
 
 def save_item(key: ItemKey) -> bool:
-    """Snapshot + persist a record for an item key. Returns False if the source item is missing."""
+    """Snapshot + persist a record for an item key. Returns False if the source item is missing.
+
+    An already-existing row (a note/annotation created it, v18) only needs its
+    flag flipped, so the snapshot is not rebuilt — and must not be *required*:
+    the source row may be long gone while the annotation kept the record alive.
+    """
+    if db.get_saved_item(*key.triple) is not None:
+        db.set_item_saved_flag(key)
+        return True
     snapshot = build_item_snapshot(key)
     if snapshot is None:
         return False
     db.add_saved_item(key.source, key.ref1, key.ref2, snapshot)
     return True
+
+
+def set_note(key: ItemKey, note: str) -> bool:
+    """Overwrite the item-level note ('' clears). Returns False = item not found.
+
+    The snapshot is built out here, before ``db.set_note``'s IMMEDIATE
+    transaction, and only when the pre-check saw no row — source-table reads do
+    not belong inside the write lock, and a lost race merely wastes one build.
+    """
+    cleaned = note or None
+    snapshot = None
+    if cleaned is not None and db.get_saved_item(*key.triple) is None:
+        snapshot = build_item_snapshot(key)
+        if snapshot is None:
+            return False
+    return db.set_note(key, cleaned, snapshot)
+
+
+def add_annotation(
+    key: ItemKey,
+    quote: str,
+    prefix: str,
+    suffix: str,
+    block: Optional[int],
+    comment: Optional[str],
+) -> Optional[dict]:
+    """Append one highlight; returns the stored dict (id + created_at assigned by
+    the db layer, inside the lock), or None = item not found."""
+    snapshot = None
+    if db.get_saved_item(*key.triple) is None:
+        snapshot = build_item_snapshot(key)
+        if snapshot is None:
+            return None
+    fields = {'quote': quote, 'prefix': prefix, 'suffix': suffix, 'block': block, 'comment': comment or None}
+    return db.add_annotation(key, fields, snapshot)
+
+
+def stamp_notes(items: list[dict]) -> list[dict]:
+    """Set ``note`` / ``annotations`` on every envelope in place (``forwards.stamp``'s
+    arrangement, same rationale: one query for a sparse, single-digits-per-day
+    kind of row instead of two more columns through every provider query). Like
+    feedback, both stay out of the snapshot — they are live state the reader
+    keeps editing, so a replayed record joins the current text."""
+    if not items:
+        return items
+    noted = db.noted_saved_items()
+    for item in items:
+        note, annotations = noted.get(item['key'], (None, None))
+        item['note'] = note
+        item['annotations'] = annotations
+    return items
 
 
 def _render_tg_display(raw_data: str) -> Optional[dict]:
@@ -176,7 +235,8 @@ def rss_article(entry_id: int) -> Optional[dict]:
     if rec is None:
         return None
     is_read = db.is_item_read('rss', entry_id, 0)
-    return rss_envelope(json.loads(rec.raw_data), is_read, True, with_content=True)
+    envelope = rss_envelope(json.loads(rec.raw_data), is_read, bool(rec.is_saved), with_content=True)
+    return stamp_notes([envelope])[0]
 
 
 def _saved_read_triples() -> set[tuple[str, int, int]]:
@@ -203,7 +263,9 @@ def _saved_feedback() -> dict[tuple[str, int, int], tuple[Optional[str], Optiona
 
 
 def list_rendered_records() -> list[dict]:
-    """All saved records rendered from their snapshots, newest first."""
+    """All records rendered from their snapshots, newest first — the un-saved rows
+    included (v18): an item the reader annotated has to be findable somewhere, and
+    this list is that somewhere. ``is_saved`` on each envelope says which is which."""
     # Imported here, not at module scope: forwards.py renders *its* records through
     # this module, so the two only meet at call time (search.py's arrangement).
     from . import forwards
@@ -212,7 +274,7 @@ def list_rendered_records() -> list[dict]:
     feedback = _saved_feedback()
     out = []
     for rec in db.list_saved_items():
-        rendered = render_item(rec, read_triples, feedback)
+        rendered = render_item(rec, read_triples, feedback, is_saved=bool(rec.is_saved))
         if rendered is not None:
             out.append(rendered)
-    return forwards.stamp(out)
+    return stamp_notes(forwards.stamp(out))

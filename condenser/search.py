@@ -618,8 +618,10 @@ _EXCLUSIONS = (
 _STATUS_SQL = {
     'unread': f'NOT EXISTS (SELECT 1 FROM read_items r '
     f'  WHERE r.source = {TABLE}.source AND r.ref1 = {TABLE}.ref1 AND r.ref2 = {TABLE}.ref2)',
+    # ``is_saved = 1`` (v18): a row held up by a note/annotation alone is not a
+    # bookmark, and this filter answers "what did I save".
     'saved': f'EXISTS (SELECT 1 FROM saved_items s '
-    f'  WHERE s.source = {TABLE}.source AND s.ref1 = {TABLE}.ref1 AND s.ref2 = {TABLE}.ref2)',
+    f'  WHERE s.source = {TABLE}.source AND s.ref1 = {TABLE}.ref1 AND s.ref2 = {TABLE}.ref2 AND s.is_saved = 1)',
 }
 
 _ORDER_SQL = {'recent': 'ts DESC, rowid DESC', 'relevance': 'rank, ts DESC'}
@@ -716,7 +718,7 @@ def render(rows: list[dict]) -> list[dict]:
     and the cascade that follows it, and the honest answer for one stale row is
     to show one fewer result — the ``total`` beside it is off by the same one.
     """
-    from . import forwards
+    from . import forwards, records
     from .items import hn_envelope, rss_envelope, x_envelope
     from .sources import hn as hn_source
     from .sources import rss as rss_source
@@ -757,4 +759,4 @@ def render(rows: list[dict]) -> list[dict]:
             )
         if envelope is not None:
             out.append(envelope)
-    return forwards.stamp(out)
+    return records.stamp_notes(forwards.stamp(out))
