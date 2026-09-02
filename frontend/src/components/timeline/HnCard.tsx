@@ -1,7 +1,8 @@
 // A Hacker News story card: title as the main act (external link, or the comments
-// page for self-posts), score/comments/domain/day-rank meta, sanitized self-post
-// text behind a clamp toggle, muted job posts, and the shared details-pane entry
-// on the submitted time.
+// page for self-posts), the AI summary under it when the server wrote one (marked
+// as machine words, RssCard's chip), score/comments/domain/day-rank meta, sanitized
+// self-post text behind a clamp toggle, muted job posts, and the shared
+// details-pane entry on the submitted time.
 import { memo, useCallback, useState } from 'react';
 import { Bookmark } from 'lucide-react';
 
@@ -77,6 +78,12 @@ function HnCardImpl({ item, observe, pendingKeys }: Props) {
   const commentsUrl = hnCommentsUrl(hn.id);
   const isJob = hn.type === 'job';
   const isActive = open?.key === item.key;
+  // Under a summary the preview's description says the same thing a second time
+  // (the summary was written from the article the description opens), so the
+  // preview keeps only its title / image / site line — and is dropped outright
+  // when the description was all it had.
+  const preview = hn.url && hn.preview ? (hn.summary ? { ...hn.preview, description: null } : hn.preview) : null;
+  const showPreview = !!preview && !!(preview.title || preview.description || preview.image);
   // Three read states: pending (judged read, sync unconfirmed) > unread > read.
   const isPending = pendingKeys?.has(item.key) ?? false;
   const timeTitle = `${fullDateLabel(hn.submitted_at ?? item.datetime)} · on front page ${fullDateLabel(item.datetime)}`;
@@ -156,6 +163,19 @@ function HnCardImpl({ item, observe, pendingKeys }: Props) {
 
       {!hn.url && hn.text && <HnSelfText text={hn.text} />}
 
+      {/* The LLM summary (schema v19): what the article says, then what the thread
+          makes of it — the reader decides from here whether to open either. Under
+          the title and above the meta line, in RssCard's exact dress, so machine
+          words look the same on every card that carries them. */}
+      {hn.summary && (
+        <div className="mt-1.5">
+          <p className="text-sm leading-relaxed break-words text-foreground/90">{hn.summary}</p>
+          <span className="mt-1 inline-block rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
+            AI 摘要
+          </span>
+        </div>
+      )}
+
       <div className={cn('mt-1 flex items-center gap-2 text-xs text-muted-foreground', isJob && 'opacity-70')}>
         {hn.day_rank != null && (
           <span title="Which of the day's slots it took" className="font-medium text-orange-600 dark:text-orange-400">
@@ -179,9 +199,9 @@ function HnCardImpl({ item, observe, pendingKeys }: Props) {
         )}
       </div>
 
-      {hn.url && hn.preview && (hn.preview.title || hn.preview.description || hn.preview.image) && (
+      {showPreview && (
         <div className="mt-2">
-          <LinkPreviewCard preview={hn.preview} />
+          <LinkPreviewCard preview={preview} />
         </div>
       )}
     </article>

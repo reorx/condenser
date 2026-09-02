@@ -109,6 +109,26 @@ struct ModelsDecodingTests {
         #expect(preview.url.hasPrefix("http"))
     }
 
+    @Test("hn_shapes.json：summary 缺字段解为 nil（v19 之前的载荷），有值时 displaySummary 给出")
+    func hnSummary() throws {
+        let shapes = try decoder.decode(
+            [String: TimelineItem].self, from: loadFixture("hn_shapes"))
+        let link = try #require(shapes["link"]?.hn)
+        #expect(link.summary == nil)
+        #expect(link.displaySummary == nil)
+        let summarized = try #require(shapes["preview"]?.hn)
+        #expect(summarized.summary?.isEmpty == false)
+        #expect(summarized.displaySummary == summarized.summary)
+    }
+
+    @Test("HnStory.displaySummary：空白摘要不算有")
+    func hnBlankSummary() throws {
+        let json = #"{"id": 1, "score": 0, "comments_count": 0, "backfilled": false, "summary": "  \n"}"#
+        let story = try decoder.decode(HnStory.self, from: Data(json.utf8))
+        #expect(story.summary != nil)
+        #expect(story.displaySummary == nil)
+    }
+
     @Test("message_shapes.json：转发与网页预览形态（telegram payload）")
     func messageShapes() throws {
         let shapes = try decoder.decode(

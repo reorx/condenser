@@ -31,7 +31,7 @@ func makeHnItem(id: Int, url: String? = "https://example.com/a", isRead: Bool = 
         id: id, title: "story \(id)", url: url, domain: url.flatMap { URL(string: $0)?.host() },
         author: "pg", type: "story", text: url == nil ? "<p>self text</p>" : nil,
         submittedAt: date, firstSeenAt: date, score: 100, commentsCount: 42,
-        dayRank: 3, peakRank: 1, backfilled: false, preview: nil)
+        dayRank: 3, peakRank: 1, backfilled: false, preview: nil, summary: nil)
     return TimelineItem(
         source: SourceID.hn, key: "hn:\(id)", datetime: date,
         isRead: isRead, isSaved: false, hn: story)

@@ -18,6 +18,7 @@ struct HnGlyph: View {
 }
 
 /// Hacker News story 卡片：标题为主体（点击 → 原文，self-post → 评论页）、
+/// 有服务端摘要时接一个 AI 摘要块、
 /// score / 评论数（点击 → HN 评论页）/ domain / 当日排名，job 弱化。
 /// 已读/收藏态在外层 TimelineItem envelope 上。整卡 tap（列表层）→ 详情 sheet。
 struct HnCard: View {
@@ -33,6 +34,13 @@ struct HnCard: View {
         VStack(alignment: .leading, spacing: 8) {
             header
             title
+            // 服务端摘要（schema v19）：标题下、元信息行上——看它决定要不要点开。
+            // 与 RssCard 同一个 AiSummaryBlock，机器转述在每张卡上长一个样。
+            if let summary = story.displaySummary {
+                AiSummaryBlock {
+                    TruncatableText(text: summary)
+                }
+            }
             metaLine
         }
         .padding(.horizontal, 16)

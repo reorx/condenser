@@ -27,6 +27,7 @@ function makeStory(over: Partial<HnStory> = {}): HnStory {
     peak_rank: 1,
     backfilled: false,
     preview: null,
+    summary: null,
     ...over,
   };
 }
@@ -147,5 +148,35 @@ describe('HnCard', () => {
   it('renders no preview card when the preview has no content', () => {
     wrap(<HnCard item={makeItem({ preview: makePreview({ title: null, description: null, image: null }) })} />);
     expect(screen.queryByText('Example Site')).toBeNull();
+  });
+
+  it('shows the AI summary under the title, and says that it is one', () => {
+    wrap(<HnCard item={makeItem({ summary: '这篇文章讲了三件事。讨论主要在争论第二件。' })} />);
+    expect(screen.getByText('这篇文章讲了三件事。讨论主要在争论第二件。')).toBeInTheDocument();
+    expect(screen.getByText('AI 摘要')).toBeInTheDocument();
+    // Under the title, above the meta line: the reader decides from it whether to open.
+    const title = screen.getByRole('link', { name: 'A story' });
+    const summary = screen.getByText('这篇文章讲了三件事。讨论主要在争论第二件。');
+    const meta = screen.getByText('120 points');
+    expect(title.compareDocumentPosition(summary) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(summary.compareDocumentPosition(meta) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('shows no summary block without one', () => {
+    wrap(<HnCard item={makeItem()} />);
+    expect(screen.queryByText('AI 摘要')).toBeNull();
+  });
+
+  it('drops the preview description under a summary — same information twice', () => {
+    wrap(<HnCard item={makeItem({ summary: '摘要。', preview: makePreview() })} />);
+    expect(screen.getByText('Og title')).toBeInTheDocument();
+    expect(screen.getByText('Example Site')).toBeInTheDocument();
+    expect(screen.queryByText('Og description')).toBeNull();
+  });
+
+  it('renders no preview card under a summary when the description was all it had', () => {
+    wrap(<HnCard item={makeItem({ summary: '摘要。', preview: makePreview({ title: null, image: null }) })} />);
+    expect(screen.queryByText('Example Site')).toBeNull();
+    expect(screen.queryByText('Og description')).toBeNull();
   });
 });

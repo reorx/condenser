@@ -176,6 +176,7 @@ export function ItemDetailInfo({ item, sub }: Props) {
         </DetailRow>
       )}
       {hn.domain && <DetailRow label="域名">{hn.domain}</DetailRow>}
+      {hn.summary && <DetailRow label="AI 摘要">{hn.summary}</DetailRow>}
       <DetailRow label="条目 ID">{item.key}</DetailRow>
     </dl>
   );

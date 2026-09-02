@@ -236,6 +236,11 @@ Prompt（`hn_summary.system_prompt`）：中文；先 2-3 句说文章讲了什�
 
 ## 4. Phase C —— HN 摘要的展示
 
+> **状态：✅ 已完成 2026-09-02**（Web `HnCard` / `ItemDetailInfo`、preview 画廊；iOS Kit
+> `HnStory.summary` + `displaySummary`、`HnCard` / `HnDetailSheet` / 分享图；验收图
+> `tmp/2026-09-02-hn-summary-display/`）。与本节的一处出入：`ItemDetailBody` 不加摘要块，
+> 抽屉里只有 Info 行——HN 的 body 只有自提帖正文，再画一遍就是三处同文。iOS 随下一个 build。
+
 - `HnCard`：标题下、meta 行上，`rss.summary` 的同款段落（`text-foreground/90`，机器
   转述的视觉标识与 RssCard 保持一致）。有 summary 时 `LinkPreviewCard` 的 description
   省略（信息重复）。

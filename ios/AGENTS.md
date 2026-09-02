@@ -8,7 +8,8 @@ read/save 按 item key（`tg:{cid}:{mid}` / `hn:{sid}`）上报；订阅数据�
 （`SourceGroup`/`SourceSub`，`/api/subscriptions` 不再使用）；Timeline 左上角信源切换 Menu
 （All + 已添加信源，驱动 `TimelineStore.source`）；tab 2「频道」→「订阅」（信源 → 订阅两级，
 TG 行进频道 timeline，HN 行进 `HnFeedTimelineScreen`）；HN 卡片/详情（`HnCard`/`HnDetailSheet`，
-self-post HTML 经 Kit 的 `hnPlainText` 转纯文本）；`SnapshotCache` 目录带契约版本号
+self-post HTML 经 Kit 的 `hnPlainText` 转纯文本；有服务端摘要时标题下接 RSS 同款
+`AiSummaryBlock`，`HnStory.displaySummary`，2026-09-02）；`SnapshotCache` 目录带契约版本号
 （`condenser-snapshots-v3`，旧快照 decode 失败按 miss）。多信源计划见
 `../kb/plans/2026-07-19-multi-source-hn.md`。
 

@@ -92,6 +92,11 @@ export interface HnStory {
   backfilled: boolean;
   /** Ingest-prefetched preview for `url`; null while unfetched / failed / self-post. */
   preview: LinkPreview | null;
+  /** The LLM summary (schema v19, `hn_summary.py`): 2-3 sentences on the article
+   *  and 1-2 on what the thread makes of it. Null = not written yet, the thread
+   *  had not formed when the story was admitted, or given up on. The card shows
+   *  it under the title and drops the preview's description (same information). */
+  summary: string | null;
 }
 
 /** The `rss` payload of a TimelineItem: one archived feed entry. */

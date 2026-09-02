@@ -254,6 +254,9 @@ public struct HnStory: Codable, Equatable, Sendable {
     public let backfilled: Bool
     /// ingest 预取的 url 元数据；未取到/self-post 为 nil
     public let preview: LinkPreview?
+    /// LLM 摘要（schema v19，`hn_summary.py`）：2-3 句文章讲了什么 + 1-2 句讨论怎么看。
+    /// nil = 还没写 / 入选时讨论未成形 / 已放弃。缺字段解为 nil，旧 build 不受影响。
+    public let summary: String?
 
     enum CodingKeys: String, CodingKey {
         case id, title, url, domain, author, type, text
@@ -263,7 +266,7 @@ public struct HnStory: Codable, Equatable, Sendable {
         case commentsCount = "comments_count"
         case dayRank = "day_rank"
         case peakRank = "peak_rank"
-        case backfilled, preview
+        case backfilled, preview, summary
     }
 
     /// HN 评论页（客户端自拼）
@@ -274,6 +277,14 @@ public struct HnStory: Codable, Equatable, Sendable {
     /// 原文链接；nil = self-post
     public var externalURL: URL? {
         url.flatMap(URL.init(string:))
+    }
+
+    /// 摘要块的内容：去掉首尾空白后非空才算有（`RssEntry.displaySummary` 同款）。
+    /// 卡片放在标题下、元信息行上——看摘要决定要不要点开，是它存在的全部理由。
+    public var displaySummary: String? {
+        guard let summary else { return nil }
+        let trimmed = summary.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
     }
 
     /// 标题点击目标：原文，self-post 回落评论页

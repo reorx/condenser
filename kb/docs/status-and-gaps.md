@@ -1308,7 +1308,33 @@ Plan `kb/plans/2026-09-02-vibe-reader-link-mode-and-hn-summary.md` 的 Phase B�
 - **真实冒烟** `tmp/2026-09-02-hn-summary/smoke.py`（借本地 ATTR key 调一次
   qwen3.7-flash）：anthropic.com / danluu.com / mozilla 博客三条头版文章抽取全部
   成功，输出正是 plan 要的两段形状，见同目录 `smoke-output.txt`。
-- 待做：Phase C（Web `HnCard` / `ItemDetailInfo` 展示 + iOS Kit `HnStory.summary`）。
+- Phase C（展示）同日落地，见下一节。
+
+## 2026-09-02 · HN 摘要的展示（plan Phase C，Web + iOS）
+
+同一 plan 的 Phase C：后端写进 `hn_stories.summary` 的东西终于有人看。两端都是
+「照 RSS 的样子」——机器转述在每张卡上得长一个样，读者才不用每次重新学它是什么。
+
+- **Web** `HnCard`：标题下、元信息行上，`RssCard` 同款段落 + 「AI 摘要」chip。
+  有摘要时 `LinkPreviewCard` 的 description **省略**（摘要正是从它打开的那篇文章
+  写出来的，同一信息两遍）——只剩 description 的预览卡整张不画。`ItemDetailInfo`
+  加「AI 摘要」行。`ItemDetailBody` **不**加块：plan 只要求 Info 行，且 HN 的 body
+  本来只有自提帖正文，抽屉里再画一遍就是三处同文。preview 画廊第一条 HN mock 带
+  摘要 + 预览，`/preview.html` 即可肉眼验。测试 +6（`HnCard.test` 4：段落位置、
+  无摘要无 chip、description 省略、只剩 description 时不画预览卡；
+  `ItemDetailPane.test` 1；`HnStory` 字面量补 `summary: null` 4 处）。前端 231 全绿。
+- **iOS Kit** `HnStory.summary: String?`（缺字段解 nil，旧 build 不受影响）+
+  `displaySummary`（`RssEntry` 同款 trim 规则）。`HnCard` 标题下 `AiSummaryBlock`
+  + `TruncatableText`；`HnDetailSheet` 元信息行下、正文 / 预览卡前，`SelectableTextView`
+  不可标注（机器的话，RSS 的规则）；分享图 `ShareCard.hn` 元信息后接 `.summary` 块。
+  Kit 测试 +3（fixture `hn_shapes.json` 的 preview 形态带摘要、缺字段 nil、空白不算有、
+  分享图块序）；287 全绿。**随下一个 build 走**，与 RSS 卡同一批。
+- **验收** `tmp/2026-09-02-hn-summary-display/`：Web 深浅色卡片 + 详情抽屉（preview
+  画廊）；iOS 列表 + 详情 sheet（本地后端 + 两条手工写入的摘要，看完已还原为 NULL，
+  摘要管线在那次运行里关着，没花钱）。
+- 踩到一个：`pnpm dev` 现在走 `portless`，无 TTY 时起不来；无人值守走查直接
+  `pnpm exec vite --port 5792 --strictPort`，且它只绑 IPv6 的 `localhost`——
+  agent-browser 要开 `http://localhost:5792`，`127.0.0.1` 会 ECONNREFUSED。
 
 Still open: subscription
 "delete-with-messages" option (Q4 / `?purge=1`) and the backfill batch-interval sleep.

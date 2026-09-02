@@ -283,8 +283,11 @@ public extension ShareCard {
         if let domain = story.domain {
             meta.append(.text(domain))
         }
-        // 与抽屉同序：标题 → 元信息 → 自文正文 → 预览卡
+        // 与抽屉同序：标题 → 元信息 → AI 摘要 → 自文正文 → 预览卡
         var blocks: [ShareBlock] = [.meta(meta)]
+        if let summary = story.displaySummary {
+            blocks.append(.summary(summary))
+        }
         if let text = story.text, !text.isEmpty {
             blocks.append(.text(hnPlainText(fromHTML: text)))
         }

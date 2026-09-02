@@ -32,6 +32,7 @@ function makeItem(): TimelineItem {
     peak_rank: 1,
     backfilled: false,
     preview: null,
+    summary: null,
   };
   return { source: 'hn', key: 'hn:101', datetime: hn.first_seen_at, is_read: true, is_saved: false, hn };
 }

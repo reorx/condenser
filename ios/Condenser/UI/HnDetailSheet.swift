@@ -1,8 +1,8 @@
 import SwiftUI
 import CondenserKit
 
-/// HN story 详情 bottom sheet：标题 + 提交信息 + self-post 正文（HTML 转纯文本，
-/// 链接可点）+ 打开原文 / 打开评论 动作。
+/// HN story 详情 bottom sheet：标题 + 提交信息 + AI 摘要块（有则显示）+ self-post 正文
+///（HTML 转纯文本，链接可点）+ 打开原文 / 打开评论 动作。
 struct HnDetailSheet: View {
     let item: TimelineItem
     let story: HnStory
@@ -26,6 +26,13 @@ struct HnDetailSheet: View {
                     .font(.title3.weight(.semibold))
                     .frame(maxWidth: .infinity, alignment: .leading)
                 metaLine
+                // 摘要块在正文 / 预览卡之前：RssDetailSheet 的顺序。不可标注——机器的话
+                if let summary = story.displaySummary {
+                    AiSummaryBlock {
+                        SelectableTextView(text: summary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
                 if let text = bodyText {
                     AnnotatedTextView(text: text, model: annotations)
                 }

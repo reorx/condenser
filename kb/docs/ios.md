@@ -201,6 +201,18 @@ shipped client that meets an unknown `source` renders a blank row (the X Phase 2
   它的 `.task` 必须带 `id: card?.key`——RSS 的 card 要等全文到手才从 nil 变出来，而 task
   闭包捕获的是**当时那个** struct 实例的 card（踩过）。
 
+## HN 摘要（2026-09-02，plan Phase C）
+
+服务端给 HN story 写的摘要（schema v19，`hn_summary.py`）在 iOS 上的落点，照 RSS 的样子：
+Kit `HnStory.summary: String?`（缺字段解 nil，所以 v19 之前的载荷与旧 build 都不受影响）+
+`displaySummary`（`RssEntry` 同款：trim 后非空才算有）。`HnCard` 标题下、元信息行上放
+`AiSummaryBlock`（与 RSS 卡同一个视图——机器转述在每张卡上得长一个样）；`HnDetailSheet`
+元信息行下、正文 / 预览卡前，`SelectableTextView`，**不可标注**（机器的话，RSS 定的规则）；
+分享图 `ShareCard.hn` 元信息块后接 `.summary` 块，与 sheet 同序。与 RSS 卡不同的是 HN
+卡本来就没有正文可作参照（外链 story 什么都没有），所以摘要块直接跟在标题下，不存在
+「摘要顶掉原文开头」的问题。随下一个 build 走，与 `RssCard` 同一批。验收图
+`tmp/2026-09-02-hn-summary-display/`（本地后端 + 手工写入两条摘要，看完已还原）。
+
 **签名与 App Store 就绪（2026-08-12）**: 发布素材已全部就位 —— AppIcon 资产目录
 （`Condenser/Assets.xcassets`，1024 单尺寸/不透明/满幅，由 `tmp/make_ios_appicon.py`
 按 PWA 同款漏斗+水滴设计生成）、`MARKETING_VERSION`/`CURRENT_PROJECT_VERSION`、

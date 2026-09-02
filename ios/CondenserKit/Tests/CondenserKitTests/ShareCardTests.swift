@@ -166,6 +166,17 @@ struct HnShareCardTests {
         let item = try #require(try shapes("hn_shapes")["link"])
         #expect(ShareCard.build(item: item)?.footnote == item.hn?.domain)
     }
+
+    @Test("服务端摘要进图，紧跟元信息、排在预览卡前——与 sheet 同序；没有就没有这块")
+    func summary() throws {
+        let all = try shapes("hn_shapes")
+        let summarized = try #require(all["preview"])
+        let card = try #require(ShareCard.build(item: summarized))
+        #expect(card.blockKinds.prefix(2) == ["meta", "summary"])
+        #expect(card.blockKinds.contains("linkCard"))
+        let plain = try #require(all["link"])
+        #expect(ShareCard.build(item: plain)?.blockKinds.contains("summary") == false)
+    }
 }
 
 @Suite("分享卡片 · X")

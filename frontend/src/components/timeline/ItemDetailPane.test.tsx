@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, waitFor } from '@testing-library/react';
+import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import type { TimelineItem, TimelinePage } from '@/lib/types';
@@ -97,6 +97,7 @@ const hnItem: TimelineItem = {
       tg_image_message_id: null,
       error: null,
     },
+    summary: null,
   },
 };
 
@@ -176,6 +177,14 @@ describe('ItemDetailPane', () => {
     renderPane({ ...hnItem, hn: { ...hnItem.hn!, qualified_at: null, day_rank: null } });
     expect(screen.getByText('上榜时间')).toBeInTheDocument();
     expect(screen.queryByText('入选时间')).not.toBeInTheDocument();
+  });
+
+  it('lists the AI summary of a story, and skips the row without one', async () => {
+    renderPane({ ...hnItem, hn: { ...hnItem.hn!, summary: '文章讲了 X。讨论认为 Y。' } });
+    expect(screen.getByText('文章讲了 X。讨论认为 Y。')).toBeInTheDocument();
+    cleanup();
+    renderPane(hnItem);
+    expect(screen.queryByText('AI 摘要')).not.toBeInTheDocument();
   });
 
   it('saves by key and flips the label, then unsaves on a second click', async () => {

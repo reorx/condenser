@@ -67,6 +67,7 @@ export function makeHnItem(
     peak_rank: null,
     backfilled: false,
     preview: null,
+    summary: null,
     ...over,
   };
   return {
@@ -203,6 +204,21 @@ export const dayItems: TimelineItem[] = [
     comments_count: 42,
     day_rank: 3,
     peak_rank: 5,
+    // A story with a server-side summary (schema v19): the block sits under the
+    // title, and the preview below it loses its description (same information).
+    summary:
+      '作者做了一个自托管的阅读器，把 Telegram 频道、Hacker News、X 和 RSS 合并成一条时间线，并给条目加了服务端摘要。' +
+      '讨论里多数人肯定"看过即读"的设计，争议点在于用 MTProto 用户账号读取频道是否会触碰 Telegram 的服务条款。',
+    preview: {
+      url: 'https://example.com/condenser',
+      title: 'Condenser — a timeline reader in the Google Reader mold',
+      description: 'This description is dropped on the card: the summary above already covers it.',
+      image: null,
+      site_name: 'example.com',
+      source: 'fetched',
+      tg_image_message_id: null,
+      error: null,
+    },
   }),
   makeHnItem(
     {
