@@ -331,7 +331,10 @@ def _strip_html(value: Optional[str]) -> str:
 
 
 def hn_document(row: dict) -> str:
-    return ' '.join(p for p in (row.get('title') or '', _strip_html(row.get('text'))) if p)
+    """Title, self-post body, and — since v19 — the summary, for the reason
+    ``rss_document`` gives: it is what the card shows."""
+    parts = (row.get('title') or '', _strip_html(row.get('text')), row.get('summary') or '')
+    return ' '.join(p for p in parts if p)
 
 
 def index_hn_story(row: dict) -> None:
@@ -348,6 +351,22 @@ def index_hn_story(row: dict) -> None:
         delete_item('hn', row['id'])
         return
     index_item('hn', row['id'], 0, hn_document(row), row.get('first_seen_at'))
+
+
+def index_hn_stories(story_ids: list[int]) -> None:
+    """Re-index stories by id (``index_rss_entries``' counterpart) — the summary
+    pipeline's hook, since a summary lands long after the ingest-time document."""
+    if not _available or not story_ids:
+        return
+    placeholders = ','.join('?' for _ in story_ids)
+    cur = tdb.db.execute_sql(
+        f'SELECT id, title, text, summary, first_seen_at, is_dead FROM hn_stories WHERE id IN ({placeholders})',
+        tuple(story_ids),
+    )
+    columns = [c[0] for c in cur.description]
+    with tdb.db.atomic():
+        for values in cur.fetchall():
+            index_hn_story(dict(zip(columns, values)))
 
 
 def rss_document(row: dict) -> str:
@@ -519,7 +538,7 @@ def _rebuild_telegram() -> int:
 def _rebuild_hn() -> int:
     # is_dead = 0 matches sources/hn.py's ranking. Without it every rebuild would
     # silently undo every mark_hn_story_dead deletion.
-    cur = tdb.db.execute_sql('SELECT id, title, text, first_seen_at FROM hn_stories WHERE is_dead = 0')
+    cur = tdb.db.execute_sql('SELECT id, title, text, summary, first_seen_at FROM hn_stories WHERE is_dead = 0')
     columns = [c[0] for c in cur.description]
     rows = []
     for values in cur.fetchall():

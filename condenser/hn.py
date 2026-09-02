@@ -21,7 +21,7 @@ from urllib.parse import urlsplit
 
 import httpx
 
-from . import db, preview, search
+from . import db, hn_summary, preview, search
 from .config import Settings
 from .sources import hn as hn_source
 
@@ -77,11 +77,21 @@ class HNManager:
     refresh_concurrency = 10
 
     def __init__(
-        self, settings: Settings, fetch_json: Optional[Callable] = None, fetch_preview: Optional[Callable] = None
+        self,
+        settings: Settings,
+        fetch_json: Optional[Callable] = None,
+        fetch_preview: Optional[Callable] = None,
+        fetch_article: Optional[Callable] = None,
+        summarize: Optional[Callable] = None,
     ):
         self.settings = settings
         self._fetch_json = fetch_json or self._http_fetch_json
         self._fetch_preview = fetch_preview or preview.get_preview
+        # None = hn_summary.run_round uses the real fetch and the real (billed)
+        # call. Injected in tests for the reason fetch_json is: no test may reach
+        # the network, and none may spend.
+        self._fetch_article = fetch_article
+        self._summarize = summarize
         self._client: Optional[httpx.AsyncClient] = None
         self._tasks: set[asyncio.Task] = set()
         self._wake = asyncio.Event()
@@ -158,6 +168,7 @@ class HNManager:
             await self._backfill_eligible_days()
             await self._fill_previews()
             self._qualify()
+            await self._summarize_round()
         except Exception as e:  # noqa: BLE001 — top-level loop guard (spec: log + skip round)
             log.exception('hn poll round failed')
             db.set_meta('hn_last_error', str(e))
@@ -262,15 +273,37 @@ class HNManager:
     def _qualify(self) -> int:
         """Decide what joins the timeline this round (``sources/hn.qualify``).
 
-        Last step of the round, on purpose. Scores must be fresh — the floors read
-        them — and by running after the preview prefetch a story is usually
+        The last step of *admission*, on purpose. Scores must be fresh — the floors
+        read them — and by running after the preview prefetch a story is usually
         admitted with its link-preview card already filled, instead of appearing
-        bare for one interval.
+        bare for one interval. Only the summary round follows it, and that one
+        reads the stamp this writes: a story admitted here is a candidate there.
         """
         stamped = hn_source.qualify(self._now(), self.settings.condenser_hn_refresh_hours)
         if stamped:
             log.info('hn admitted %s stories', stamped)
         return stamped
+
+    # ---- summaries (plan 2026-09-02 Phase B) ----
+    async def _summarize_round(self) -> dict:
+        """Run the summary pipeline at the tail of the round, after admission.
+
+        Guarded on its own (``RssManager._summarize_round``'s arrangement): sampling
+        is this source's job and summarizing is an extra, so a pipeline that throws
+        must not cost the round its ``last_poll_at`` — by this point everything
+        else has already happened.
+        """
+        try:
+            return await hn_summary.run_round(
+                self.settings,
+                fetch_json=self._fetch_json,
+                fetch_article=self._fetch_article,
+                summarize=self._summarize,
+                now=self._now(),
+            )
+        except Exception as e:  # noqa: BLE001 — an extra must not sink the round
+            log.exception('hn summary round failed')
+            return {'summarized': 0, 'provider_error': str(e)}
 
     # ---- link preview prefetch ----
     async def _fill_previews(self) -> None:
@@ -402,4 +435,6 @@ class HNManager:
             'stories_total': total,
             'stories_today': today_count,
             'backfill_pending_days': sorted(self._pending_days()),
+            # The billed half of this source reports itself here (plan §3.4 fence 4).
+            'summary': hn_summary.counts(self.settings, now=self._now()),
         }

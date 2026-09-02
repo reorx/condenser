@@ -163,6 +163,9 @@ def hn_payload(row: dict) -> dict:
         'peak_rank': row.get('peak_rank'),
         'backfilled': bool(row.get('backfilled')),
         'preview': _json_field(row.get('preview')),
+        # v19: the LLM summary (hn_summary.py); null until one is written, or forever
+        # for a story that had nothing to read. The card falls back to the preview.
+        'summary': row.get('summary'),
     }
 
 

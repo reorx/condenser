@@ -1271,6 +1271,45 @@ RssCard 改版）。agent-browser 全链路走查：选中→高亮→落库（`
 annotations ✓）→点高亮→评论→条目评论→Saved 页未收藏标注行（空心书签 + 角标）→
 冷加载重开抽屉高亮重定位成功。截图 `tmp/2026-08-24-web-annotations/`。
 
+## 2026-09-02 · HN 条目服务端摘要（schema v19，后端）
+
+Plan `kb/plans/2026-09-02-vibe-reader-link-mode-and-hn-summary.md` 的 Phase B，
+先于联动（Phase A）独立落地——不依赖扩展，上线即有用。HN 卡片将像 RSS 卡片一样
+带 2-3 句中文说文章、1-2 句说 HN 讨论的主流反应；用途是**点开之前的判断**。
+
+- **数据**：`hn_stories` 加 `summary` / `summary_model` / `summary_attempts`，照抄
+  `rss_entries` 三件套；shape-based ADD COLUMN 放 `create_tables` 之前（v14 的
+  排序陷阱正是在这张表上发现的）。无回填。
+- **模块** `condenser/hn_summary.py`，不往 `summary.py` 塞分支：`summary.py` 抽出
+  通用传输 `complete(system, user)`（`summarize_entry` 变成它的一层包装；状态码
+  归责逻辑只此一份），HN 自带 prompt、候选 SQL、round。fence 与 RSS 一致：开关
+  `CONDENSER_HN_SUMMARY_ENABLED`、每轮 `CONDENSER_HN_SUMMARY_BATCH=10`、
+  `/api/hn/status.summary`；**key 复用 `CONDENSER_SUMMARY_API_KEY`**（生产
+  2026-08-23 已配，本次上线不需要改服务器 `.env`）。
+- **原料**：文章 = `preview._fetch_capped`（同 UA / 超时，自己的 1 MiB cap）→
+  `readability-lxml`（新依赖）→ `text.plain_text` → 截 6000 字；自提帖用 `text`
+  列。讨论 = Algolia `items/{id}` 一次拿整棵树（走 `HNManager` 既有的
+  `fetch_json` 缝），顶层评论按返回顺序 + 最多两层回复，缩进拼接，截 6000 字。
+  失败归责（plan §0.7）：抓不到文章 → prompt 明说「未能获取文章内容」并附
+  preview description，不计 attempts；Algolia 失败 → 本轮跳过、不计、不决定；
+  什么都没有（无正文、无描述、无评论、非自提）→ 记 `skip:empty` 决定（RSS
+  `skip:short` 的安排），否则年龄门槛永不关闭、它会每轮回来。
+- **门槛**：admitted（`qualified_at`）+ 未读 + 活着且是 story + 讨论成形
+  （评论 ≥ 10 **或** 上榜 ≥ 3h）。一条只总结一次，v1 不做「评论翻倍后刷新」。
+  挂在 `poll_once` 尾巴、`_qualify` 之后（当轮 admitted 当轮即候选），
+  `_summarize_round` 独立 try/except，摘要炸了不能吞掉 `last_poll_at`。
+- **下发**：`items.hn_payload.summary`（null = 没有），快照自然带上；`search.hn_document`
+  加 summary，round 末 `search.index_hn_stories(ids)` 重索引（`index_rss_entries`
+  的对应物）。不 bump `TOKENIZER_VERSION`。
+- **测试** `tests/test_hn_summary.py` 30 条，零网络：候选门槛、降级、自提帖、
+  三次失败放弃、provider 挂了当轮即停且后面的一条都不碰、Algolia 失败下一轮再来、
+  status 计数、poll 接线、v19 升级（含 integrity_check）、readability 抽取、
+  文章抓取的 MockTransport 真路径（非 HTML → None）。后端 796 全绿。
+- **真实冒烟** `tmp/2026-09-02-hn-summary/smoke.py`（借本地 ATTR key 调一次
+  qwen3.7-flash）：anthropic.com / danluu.com / mozilla 博客三条头版文章抽取全部
+  成功，输出正是 plan 要的两段形状，见同目录 `smoke-output.txt`。
+- 待做：Phase C（Web `HnCard` / `ItemDetailInfo` 展示 + iOS Kit `HnStory.summary`）。
+
 Still open: subscription
 "delete-with-messages" option (Q4 / `?purge=1`) and the backfill batch-interval sleep.
 Full checklist: `kb/sessions/2026-06-09-backend-remaining-work.md`.

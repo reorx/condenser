@@ -12,7 +12,7 @@ tags:
 One SQLite file, shared between [telememo](https://pypi.org/project/telememo/) (a PyPI
 dependency) and condenser. condenser's peewee models bind to telememo's `db` instance, so
 everything runs on one connection. `SCHEMA_VERSION` lives in `condenser/db.py` (currently
-**18**).
+**19**).
 
 ## Table ownership
 
@@ -76,6 +76,20 @@ Virtual tables (`x_vec_labeled`, `search_index`) are created with raw SQL in `in
   SQL names what is *intentionally preserved*, not only what is removed.
 
 ## Schema changelog (newest first)
+
+### v19 — 2026-09-02 · HN story summaries
+
+Adds `hn_stories.summary` / `summary_model` / `summary_attempts` — the `rss_entries`
+triple (v15) copied column for column, semantics untouched: `summary_model` is
+**provenance, not a re-do contract**, and it also carries the decision sentinel
+(`hn_summary.SKIP_EMPTY` = "looked, nothing to read"), which is what keeps a story
+with no article, no preview description and no comments from re-entering every
+batch forever. Shape-based ADD COLUMNs before `create_tables`
+(`_migrate_hn_summary_v19`, the v14/v16/v18 position — on the very table v14
+found the ordering trap on). Historical rows stay NULL, no backfill: the pipeline
+reads NULL as "not yet", and its own gate (admitted + unread + discussion formed)
+decides what is still worth one. Pipeline: `condenser/hn_summary.py`; plan
+`kb/plans/2026-09-02-vibe-reader-link-mode-and-hn-summary.md` §3.
 
 ### v18 — 2026-08-24 · Item notes + annotations
 

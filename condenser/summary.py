@@ -164,15 +164,28 @@ async def summarize_entry(
     open through a backoff only delays the rest of the batch. What matters here is
     which of the two exceptions comes out — see the module docstring.
     """
+    return await complete(system_prompt(), user_prompt(title, text), settings, client=client)
+
+
+async def complete(system: str, user: str, settings: Settings, client: Optional[httpx.AsyncClient] = None) -> str:
+    """One chat completion against the summary provider: ``system`` + ``user`` in,
+    a cleaned answer out (or one of the two exceptions above).
+
+    The transport the two summary pipelines share (plan 2026-09-02 §3.4): the RSS
+    one wraps its prompts around it here, the HN one (``hn_summary``) brings its
+    own. What is *shared* is exactly the part that decides whose fault a failure
+    is — the status-code split below — so the two pipelines cannot drift into
+    charging the same outage differently.
+    """
     if not available(settings):
         raise ProviderUnavailable('no summary API key configured')
     if client is not None:
-        return await _post(client, title, text, settings)
+        return await _post(client, system, user, settings)
     async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as own:
-        return await _post(own, title, text, settings)
+        return await _post(own, system, user, settings)
 
 
-async def _post(client: httpx.AsyncClient, title: Optional[str], text: str, settings: Settings) -> str:
+async def _post(client: httpx.AsyncClient, system: str, user: str, settings: Settings) -> str:
     try:
         resp = await client.post(
             f'{settings.condenser_summary_base_url.rstrip("/")}/chat/completions',
@@ -180,8 +193,8 @@ async def _post(client: httpx.AsyncClient, title: Optional[str], text: str, sett
             json={
                 'model': settings.condenser_summary_model,
                 'messages': [
-                    {'role': 'system', 'content': system_prompt()},
-                    {'role': 'user', 'content': user_prompt(title, text)},
+                    {'role': 'system', 'content': system},
+                    {'role': 'user', 'content': user},
                 ],
                 'temperature': 0.2,
                 'max_tokens': MAX_OUTPUT_TOKENS,
@@ -204,7 +217,7 @@ async def _post(client: httpx.AsyncClient, title: Optional[str], text: str, sett
     data = resp.json()
     # DEBUG rather than INFO: it is one line per entry, and the round already logs
     # its own totals. Turn it on when you want to know what a batch actually costs.
-    log.debug('rss summary usage: %s', data.get('usage'))
+    log.debug('summary usage: %s', data.get('usage'))
     choices = data.get('choices')
     if not choices:
         raise SummaryError('provider returned no choices')

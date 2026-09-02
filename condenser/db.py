@@ -42,7 +42,7 @@ MESSAGES_OPTIONAL_FIELDS = {
 # Bumped when condenser's own table shapes change; recorded in app_meta on init so a
 # future startup can detect an upgrade and run a migration. Telememo manages its own
 # table migrations separately (init_db optional_fields / ALTER TABLE).
-SCHEMA_VERSION = 18
+SCHEMA_VERSION = 19
 
 # One-shot marker for the v14 admission backfill (see _migrate_hn_qualified_v14).
 # State, not shape: the columns can exist while the stamping has not happened.
@@ -302,6 +302,14 @@ class HNStory(CondenserBaseModel):
     # Which admission slot of its day this took — the card's badge. Stored rather
     # than computed, so it stops jumping between two refreshes.
     qualified_rank = IntegerField(null=True)
+    # v19: the LLM summary, the ``rss_entries`` triple copied column for column and
+    # semantics for semantics (plan 2026-09-02 §3.1). ``summary_model`` is
+    # provenance, not a re-do contract (``summary.model_tag``), and it also
+    # carries the decision sentinels (``hn_summary.SKIP_EMPTY``) — "looked, nothing
+    # to read" is a state, or the story re-enters every batch forever.
+    summary = TextField(null=True)
+    summary_model = TextField(null=True)
+    summary_attempts = IntegerField(default=0)
 
     class Meta:
         table_name = 'hn_stories'
@@ -579,6 +587,7 @@ def init_db(db_path: str, vector_dims: int = 256) -> None:
     _migrate_hn_qualified_v14()
     _migrate_rss_excerpt_v16()
     _migrate_saved_items_v18()
+    _migrate_hn_summary_v19()
     tdb.db.create_tables(CONDENSER_TABLES)
     _migrate_read_saved_v4()
     _migrate_hn_previews_v5()
@@ -745,6 +754,23 @@ def _migrate_saved_items_v18() -> None:
         tdb.db.execute_sql('ALTER TABLE saved_items ADD COLUMN is_saved INTEGER NOT NULL DEFAULT 1')
         tdb.db.execute_sql('ALTER TABLE saved_items ADD COLUMN note TEXT')
         tdb.db.execute_sql('ALTER TABLE saved_items ADD COLUMN annotations TEXT')
+
+
+def _migrate_hn_summary_v19() -> None:
+    """Add the summary columns to a pre-v19 ``hn_stories`` table.
+
+    Shape-based ADD COLUMNs before ``create_tables``, the v14/v16/v18 position —
+    this table is the one v14 found the ordering trap on. Historical rows stay
+    NULL: the pipeline reads "no summary" as "not yet", and its gate decides what
+    is still worth one (unread + admitted), so no backfill is needed or wanted.
+    """
+    cols = [r[1] for r in tdb.db.execute_sql('PRAGMA table_info(hn_stories)').fetchall()]
+    if not cols or 'summary' in cols:
+        return
+    with tdb.db.atomic():
+        tdb.db.execute_sql('ALTER TABLE hn_stories ADD COLUMN summary TEXT')
+        tdb.db.execute_sql('ALTER TABLE hn_stories ADD COLUMN summary_model TEXT')
+        tdb.db.execute_sql('ALTER TABLE hn_stories ADD COLUMN summary_attempts INTEGER NOT NULL DEFAULT 0')
 
 
 def _backfill_rss_excerpts() -> None:
@@ -2572,6 +2598,67 @@ def set_rss_summary_decision(entry_id: int, decision: str) -> None:
 def bump_rss_summary_attempts(entry_id: int) -> None:
     """Charge one failed attempt to this entry (``hn.bump_hn_preview_attempts``)."""
     RssEntry.update(summary_attempts=RssEntry.summary_attempts + 1).where(RssEntry.id == entry_id).execute()
+
+
+# --- hn summaries (condenser/hn_summary.py) -----------------------------------
+
+# "Waiting for a summary", as SQL — the ``_RSS_SUMMARY_WHERE`` arrangement: one
+# copy for the pipeline's candidate query and the status count.
+#
+# **Admitted** (``qualified_at``): only a story on the timeline is in front of the
+# reader (v14). **Unread**: the one condition that is purely about not spending.
+# **Live, and a story**: a job has no discussion and a dead story no surface.
+# **Formed**: a story is summarized once (plan §3.3), so it waits until there is
+# a discussion to summarize — enough comments, or enough hours on the front page
+# that there will not be many more.
+_HN_SUMMARY_FROM = """
+    FROM hn_stories h
+    LEFT JOIN read_items ri ON ri.source = 'hn' AND ri.ref1 = h.id AND ri.ref2 = 0
+"""
+_HN_SUMMARY_WHERE = (
+    'h.qualified_at IS NOT NULL AND h.summary_model IS NULL AND h.summary_attempts < ? '
+    "AND ri.ref1 IS NULL AND h.is_dead = 0 AND h.type = 'story' "
+    'AND (h.comments_count >= ? OR h.first_seen_at <= ?)'
+)
+
+
+def hn_stories_needing_summary(limit: int, max_attempts: int, min_comments: int, seen_before: datetime) -> list[dict]:
+    """The next stories to summarize, newest first (the ``rss_entries`` reasoning:
+    a backlog drains over rounds, and the top of the list is what the reader opens)."""
+    cur = tdb.db.execute_sql(
+        f'SELECT h.id, h.title, h.url, h.text, h.comments_count, h.preview {_HN_SUMMARY_FROM} '
+        f'WHERE {_HN_SUMMARY_WHERE} ORDER BY h.qualified_at DESC, h.id DESC LIMIT ?',
+        (max_attempts, min_comments, seen_before, limit),
+    )
+    columns = [c[0] for c in cur.description]
+    return [dict(zip(columns, row)) for row in cur.fetchall()]
+
+
+def hn_summary_counts(max_attempts: int, min_comments: int, seen_before: datetime) -> dict[str, int]:
+    """What ``/api/hn/status`` reports: the backlog, the spend, and the give-ups."""
+    pending = tdb.db.execute_sql(
+        f'SELECT COUNT(*) {_HN_SUMMARY_FROM} WHERE {_HN_SUMMARY_WHERE}', (max_attempts, min_comments, seen_before)
+    ).fetchone()[0]
+    done = tdb.db.execute_sql('SELECT COUNT(*) FROM hn_stories WHERE summary IS NOT NULL').fetchone()[0]
+    failed = tdb.db.execute_sql(
+        'SELECT COUNT(*) FROM hn_stories WHERE summary IS NULL AND summary_attempts >= ?', (max_attempts,)
+    ).fetchone()[0]
+    return {'pending': pending, 'done': done, 'failed': failed}
+
+
+def set_hn_summary(story_id: int, summary: str, model: str) -> None:
+    HNStory.update(summary=summary, summary_model=model).where(HNStory.id == story_id).execute()
+
+
+def set_hn_summary_decision(story_id: int, decision: str) -> None:
+    """Record a decision *not* to summarize (``hn_summary.SKIP_EMPTY``) —
+    ``set_rss_summary_decision``'s twin: ``summary`` stays NULL, the pipeline stops
+    reconsidering the story."""
+    HNStory.update(summary_model=decision).where(HNStory.id == story_id).execute()
+
+
+def bump_hn_summary_attempts(story_id: int) -> None:
+    HNStory.update(summary_attempts=HNStory.summary_attempts + 1).where(HNStory.id == story_id).execute()
 
 
 # --- daily cleanup (condenser/cleanup.py) -------------------------------------

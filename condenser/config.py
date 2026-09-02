@@ -113,6 +113,28 @@ class Settings(BaseSettings):
     # unknown body parameter, and this source's provider is meant to be an env change.
     condenser_summary_disable_thinking: bool = True
 
+    # --- hn story summaries (condenser/hn_summary.py) ---
+    # The third per-item billed component (plan 2026-09-02 §3). Its own switch and
+    # batch cap, but **the RSS key** (`condenser_summary_api_key`) and provider:
+    # same purpose, same model, and a second key would be one more place to
+    # configure the same thing. No key, no HN summaries — the RSS rule.
+    condenser_hn_summary_enabled: bool = True
+    # Stories per sampling round. Each costs one Algolia request, one article fetch
+    # and one LLM call, serially; 10 per 10-minute round drains a day's admissions
+    # (20-30) inside the hour they land.
+    condenser_hn_summary_batch: int = 10
+    # A story is summarized once, so it waits until the discussion has formed:
+    # this many comments **or** this many hours on the front page, whichever first.
+    condenser_hn_summary_min_comments: int = 10
+    condenser_hn_summary_min_age_hours: int = 3
+    # The article fetch: a byte cap of its own (the preview fetch reads 2MB for a
+    # <head>; an article body is what we want here, and 1MiB of HTML is already
+    # far more prose than the model will be shown) and the two truncation points
+    # for the prompt — article text and flattened discussion, each in characters.
+    condenser_hn_summary_max_bytes: int = 1_048_576
+    condenser_hn_summary_max_article_chars: int = 6000
+    condenser_hn_summary_max_discussion_chars: int = 6000
+
     # --- embeddings (condenser/embedding.py) ---
     # OpenAI-compatible endpoint; the provider lives entirely in these four vars so
     # switching vendors is an env change, not a code change. With no API key the

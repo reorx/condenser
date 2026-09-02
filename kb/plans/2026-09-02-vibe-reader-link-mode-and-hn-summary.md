@@ -136,6 +136,13 @@ set-link；点「不再提示」写 localStorage 后不再弹。
 
 ## 3. Phase B —— HN 服务端摘要（后端）
 
+> **状态：✅ 已完成 2026-09-02**（`condenser/hn_summary.py`、schema v19、
+> `tests/test_hn_summary.py` 30 条；真实冒烟 `tmp/2026-09-02-hn-summary/`）。
+> 实现与本节的两处出入：(1) `summary.py` 抽出的共用传输函数叫 `complete(system, user)`；
+> (2) 多了一个 `skip:empty` 决定——无正文、无 preview description、无评论时不调模型且
+> 不再重进 batch（否则年龄门槛永不关闭）。status 块的 `given_up` 按 `summary.counts()`
+> 的既有形状叫 `failed`。
+
 ### 3.1 数据（schema v19）
 
 `hn_stories` 加三列，**照抄** `rss_entries` 的三件套，语义一字不改：

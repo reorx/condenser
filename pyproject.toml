@@ -29,6 +29,7 @@ dependencies = [
     "lxml>=5.0",
     "sqlite-vec>=0.1.9",
     "feedparser>=6.0.14",
+    "readability-lxml>=0.9",
 ]
 
 [project.optional-dependencies]
