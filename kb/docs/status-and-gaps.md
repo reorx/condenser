@@ -1336,6 +1336,35 @@ Plan `kb/plans/2026-09-02-vibe-reader-link-mode-and-hn-summary.md` 的 Phase B�
   `pnpm exec vite --port 5792 --strictPort`，且它只绑 IPv6 的 `localhost`——
   agent-browser 要开 `http://localhost:5792`，`127.0.0.1` 会 ECONNREFUSED。
 
+## 2026-09-03 · HN 采集 vs hckrnews 评估 + 关账后补票（plan 2026-09-03）
+
+问题：我们的 HN 采集能不能当 hckrnews.com Top 20 的等效替代品。拿生产库 `hn_stories`
+（只读导出）和 hckrnews 逐日 `data/YYYYMMDD.js` 对比了纯实时采集的 41 天
+（07-22..08-31）；hckrnews 的 Top N 定义从其前端 JS 读出来复现（第 N 名分数做阈值、
+并列一起显示、N 按当天跨度比例缩、dead 隐藏）。数据与脚本 `tmp/2026-09-03-hn-vs-hckrnews/`
+（本机），结论进了 plan §0。
+
+- **Top 10 完全等效**（410/410）。**Top 20**：v14 前（事后按分排名）召回 98.9% /
+  精确 98.1%；v14 后（按速率放行，现行）召回 93.8% / 精确 90.5%，缺口全在第 18–32
+  名边缘带；存档覆盖 96%，漏的全是低分（中位 18 分）；分数快照与 hck 中位比 1.000。
+- **根因是 v14 的固有性质，不是采集缺陷**：每天约 62 条最终 ≥50，线只放 20；昨天的
+  落选者（分数已定型、中位 302、87% 在 hck Top 20）在 00:10 以 300 分对十几分赢下
+  今天的早班名额，今天自己的故事只剩 6–12 个名额，140–305 分的被挤掉（18 天 20 条）。
+  198 条跨日盖章里只有 21% 是午夜前 4 小时首见的——所以「挪预算日边界到 UTC 08:00」
+  被数据否掉（代理指标只降四成，对落选者机制零作用）；「按存档日计数」会破掉
+  「今天分组下条目数 ≤ budget(t)」的不变量且让落选者永远进不来，也否掉。
+- **落地：关账后补票。** 每轮 `_qualify` 之后 `_top_up`：D−2 每轮、D−1 过午后，
+  调 `stamp_history(day)` 把当天按最终分前 N 里没盖章的补上，**盖在 `first_seen_at`**
+  （用户拍板：落在存档日分组、游标后面，`/timeline/new` 不报，回溯某天时那天是完整的
+  前 N）。`db.stamp_hn_history` 去掉了 `taken` 配额计数（它按盖章日数，直播盖章下一天
+  的章通常已是 N，补票会一条都补不上）——谓词 `day_rank <= N` 本身最多命中 N 条，
+  hckrnews 导入「不翻倍」的性质不变，三个调用方成了同一个动作；`day` 过滤推进窗口函数
+  子查询。模拟（最终分数，上界）：召回 98.6%，每天 +1.1 条，精确率不变。
+- 测试 +7（`test_hn_admission` 6：对齐到前 N、落在原位不在头部、直播赢家掉出前 N
+  仍保留、幂等且追涨、D−2 全天 / D−1 过午、feed 暂停不补；`test_hn` 1：轮次里跑，
+  且先把今天的线花光——否则直播判定会先以 now 把它盖了，这是对的）；803 全绿。
+- 两周后重跑 `compare.py`（`LIVE_FROM` 设上线日）看召回是否 ≥97%、每天放行 21–22。
+
 Still open: subscription
 "delete-with-messages" option (Q4 / `?purge=1`) and the backfill batch-interval sleep.
 Full checklist: `kb/sessions/2026-06-09-backend-remaining-work.md`.

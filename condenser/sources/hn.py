@@ -22,6 +22,11 @@ Admission is therefore **one-way**. A stamped story stays, whatever its score do
 next, and the day quota stops meaning "the N best of that day" (a retrospective
 view filter) and starts meaning "N a day" (a prospective rate). The two floors
 survive unchanged as candidate conditions — see ``qualify``.
+
+Since plan 2026-09-03 the rate has a retrospective complement: once a day has
+closed, ``top_up`` trues it up to its final top N, stamping each missing story
+where it already sits (``stamp_history``). "N a day" and "the N best of that
+day" are both true then — the first prospectively, the second a day later.
 """
 
 import json
@@ -178,11 +183,13 @@ def qualify(now: datetime, window_hours: int) -> int:
 
 
 def stamp_history(day: Optional[str] = None) -> int:
-    """Stamp a closed day (or the whole archive) where its stories already sit.
+    """True a closed day (or the whole archive) up to its final top N, stamping
+    each story where it already sits.
 
-    Used by the v14 backfill and by the hckrnews import — both hand us days that
-    were over before we could judge them live, and stamping those at ``now`` would
-    dump months-old stories at the top of the timeline.
+    Three callers, one meaning: the v14 backfill and the hckrnews import hand us
+    days that were over before we could judge them live, and the round's
+    ``top_up`` hands us the days that closed under the live judge. Stamping any of
+    those at ``now`` would put old stories at the top of the timeline.
     """
     cfg = stored_config()
     # 'half' caps itself per day inside the rank predicate (it is a share of that
@@ -190,6 +197,53 @@ def stamp_history(day: Optional[str] = None) -> int:
     # cap at all — only the fixed modes hand down a number.
     quota = None if cfg.mode in ('all', 'half') else _MODE_TOP.get(cfg.mode, 20)
     return db.stamp_hn_history(cfg, quota, day=day)
+
+
+# --- the day-close top-up (plan 2026-09-03) ----------------------------------
+#
+# The rate line is prospective: each slot goes to the best candidate *at that
+# tick*, and yesterday's leftovers (settled at ~300 points) win the early ticks
+# against today's fresh arrivals. So a day can close with a story the final
+# scores put inside its top N that never got a slot. Measured against hckrnews
+# on 18 production days: 93.8% recall of its top 20, twenty misses at 140-305
+# points — ~1 a day. Truing a closed day up to its final top N recovers them
+# (98.6% in simulation) without touching the line, the one-way stamp or the
+# admission-day accounting, all of which stay exactly as plan 2026-08-14 set
+# them.
+#
+# The story is stamped at its own first_seen_at — under its archive day, behind
+# the reader's cursor. That is the reader's decision (plan 2026-09-03 §1.2): a day
+# looked up later is complete, and /timeline/new deliberately does not report it.
+
+# A day is trued up once its latest story has had this long of score refreshes.
+TOP_UP_DELAY_HOURS = 12
+
+
+def top_up_days(now: datetime) -> list[str]:
+    """The closed days a round trues up at ``now``, oldest first.
+
+    D-2 all day: its last stories (first seen 23:59) refresh until D's midnight,
+    so their scores can still move. D-1 from noon: half a day of refreshes for
+    its latest story. Nothing older — past the 48h window scores are frozen, and
+    a day D-3 was already trued up on every round of D-1.
+    """
+    today = now.date()
+    days = [str(today - timedelta(days=2))]
+    if now.hour >= TOP_UP_DELAY_HOURS:
+        days.append(str(today - timedelta(days=1)))
+    return days
+
+
+def top_up(now: datetime) -> int:
+    """Run the top-up for every closed day due at ``now``; returns how many were stamped.
+
+    A round action, gated like ``qualify``: a paused feed admits nothing, live or
+    late. One-way stamps make it idempotent, so running it every round costs two
+    queries and stamps a story the moment a late score climb carries it in.
+    """
+    if feed_config() is None:
+        return 0
+    return sum(stamp_history(day) for day in top_up_days(now))
 
 
 # --- read path ---------------------------------------------------------------

@@ -954,3 +954,30 @@ def test_an_imported_day_is_stamped_by_the_round_that_imported_it(env):
     assert all(s is not None for s in stamps)
     # stamped where they sit, not at now — otherwise a week of history lands on top
     assert all(str(s).startswith(str(day)) for s in stamps)
+
+
+def test_a_round_tops_up_the_day_that_closed(env):
+    """After the live judge, the round trues up the closed days (plan 2026-09-03):
+    a story the final scores put inside yesterday's top N, that never won a slot
+    on the rate line, is stamped at its own first_seen_at — under yesterday, not
+    at the head of the timeline."""
+    fetch = FakeFetch()
+    mgr = make_manager(fetch)  # NOW is 12:00 UTC: yesterday has just become eligible
+    subscribe_front()
+    db.update_hn_subscription('front', config={'display_mode': 'top10', 'min_score': 50})
+    fetch.set(TOPSTORIES, [])
+
+    # Today's line is spent (budget ceil(10 * 12/24) = 5), so the live judge — which
+    # runs first and would otherwise take this story at now — has no slot for it.
+    for i in range(5):
+        at = NOW - timedelta(hours=2)
+        db.insert_hn_story(id=810 + i, title=f'today {i}', first_seen_at=at, day=str(TODAY), score=300)
+        db.stamp_hn_qualified(810 + i, at, i + 1)
+        fetch.set(item_url(810 + i), story(810 + i, score=300))
+    seen = datetime.combine(TODAY - timedelta(days=1), datetime.min.time()) + timedelta(hours=9)
+    db.insert_hn_story(id=800, title='late riser', first_seen_at=seen, day=str(seen.date()), score=200)
+    fetch.set(item_url(800), story(800, score=200))  # inside the 48h refresh window
+
+    asyncio.run(mgr.poll_once())
+
+    assert db.get_hn_story(800).qualified_at == seen

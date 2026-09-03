@@ -562,6 +562,148 @@ def test_a_paused_subscription_keeps_its_history_through_the_upgrade(env):
         assert len(_ids(client)) == 4
 
 
+# --- D: the day-close top-up (plan 2026-09-03) --------------------------------
+#
+# The rate budget is prospective and one-way, so a day can end with a story the
+# final scores put inside its top N that never won a slot: the line was spent on
+# the best-at-the-tick, and the next day's early slots went to yesterday's other
+# leftovers. Measured against hckrnews on 18 production days: 93.8% recall of its
+# top 20, twenty misses at 140-305 points. The top-up trues a *closed* day up to
+# its final top N — stamping where the story already sits, not at now.
+
+YESTERDAY = (NOON - timedelta(days=1)).date()
+
+
+def _closed_day(sid, hours, days_ago=1, **over):
+    """A story archived ``days_ago`` days before the seed day, first seen at ``hours``
+    UTC, that the judge has not admitted. Returns its first_seen_at."""
+    at = datetime.combine(NOON.date() - timedelta(days=days_ago), datetime.min.time()) + timedelta(hours=hours)
+    _pending(sid, 0, first_seen_at=at, day=str(at.date()), **over)
+    return at
+
+
+def test_a_closed_day_is_trued_up_to_its_final_top_n(env):
+    """Three live winners hold slots 1-3; the top-up hands ranks 4-10 to the best
+    of the rest, by final score, and each lands at its own first_seen_at."""
+    with _client() as client:
+        _login(client)
+        subscribe_hn()
+        _config()
+        for i in range(3):
+            at = _closed_day(3000 + i, 8 + i, score=300)
+            db.stamp_hn_qualified(3000 + i, at + timedelta(minutes=10), i + 1)
+        seen = {}
+        for i in range(12):
+            seen[3010 + i] = _closed_day(3010 + i, 10 + i * 0.5, score=200 - i)
+        _closed_day(3030, 20, score=40)  # below the floor: never, whatever the rank
+
+        assert hn_source.top_up(NOON) == 7  # top10: ranks 4..10
+
+        stamped = {s.id: s for s in db.HNStory.select().where(db.HNStory.qualified_at.is_null(False))}
+        assert set(stamped) == {3000, 3001, 3002, *range(3010, 3017)}
+        for sid in range(3010, 3017):
+            assert stamped[sid].qualified_at == seen[sid]
+            assert stamped[sid].qualified_rank == sid - 3010 + 4
+        days = {d['date']: d['count'] for d in client.get('/api/timeline/days').json()}
+        assert days == {str(YESTERDAY): 10}
+
+
+def test_a_top_up_lands_where_the_story_sits_not_at_the_head(env):
+    """The contract the reader decided on (plan §1.2): a topped-up story goes under
+    its archive day, behind the cursor. The new-content poll does not report it;
+    the day's page and the unread count do. A day looked up later is complete."""
+    with _client() as client:
+        _login(client)
+        subscribe_hn()
+        _config()
+        seed_hn(3100, 0, score=300)  # today's visible story gives the page a head cursor
+        _closed_day(3101, 9, score=250)
+        head = client.get('/api/timeline').json()['head_cursor']
+
+        assert hn_source.top_up(NOON) == 1
+
+        assert client.get('/api/timeline/new', params={'after': head}).json()['count'] == 0
+        assert _ids(client, date=str(YESTERDAY)) == [3101]
+        assert _ids(client) == [3100, 3101]
+        assert _hn_unread(client) == 2
+
+
+def test_a_live_winner_that_fell_out_of_the_final_top_n_keeps_its_slot(env):
+    """Admission stays one-way: the top-up adds, it never trades. A day can end
+    with N plus the live winners the final scores demoted."""
+    with _client() as client:
+        _login(client)
+        subscribe_hn()
+        _config()
+        at = _closed_day(3200, 1, score=60)
+        db.stamp_hn_qualified(3200, at + timedelta(minutes=10), 1)
+        db.update_hn_snapshot(3200, score=30, comments_count=0, updated_at=NOON)
+        for i in range(10):
+            _closed_day(3210 + i, 2 + i, score=200)
+
+        assert hn_source.top_up(NOON) == 10
+        assert len(_ids(client, date=str(YESTERDAY))) == 11
+        assert 3200 in _ids(client, date=str(YESTERDAY))
+
+
+def test_the_top_up_is_idempotent_and_keeps_chasing_late_scores(env):
+    """It runs every round, so a second pass must stamp nothing — and a story whose
+    score is still climbing after the day closed gets in when it crosses the line."""
+    with _client() as client:
+        _login(client)
+        subscribe_hn()
+        _config()
+        for i in range(10):
+            _closed_day(3300 + i, 2 + i, score=200)
+        _closed_day(3320, 22, score=45)  # still climbing at midnight
+
+        assert hn_source.top_up(NOON) == 10
+        assert hn_source.top_up(NOON + timedelta(minutes=10)) == 0
+
+        db.update_hn_snapshot(3320, score=400, comments_count=0, updated_at=NOON)
+        assert hn_source.top_up(NOON + timedelta(minutes=20)) == 1
+        assert len(_ids(client, date=str(YESTERDAY))) == 11
+
+
+def test_the_day_before_yesterday_all_day_and_yesterday_after_noon(env):
+    """Which days count as closed: D-2 always (its last stories' 48h refresh runs
+    until D's midnight, so their scores can still move all day), D-1 only once its
+    latest story has had half a day of refreshes."""
+    d = NOON.date()
+    two, one = str(d - timedelta(days=2)), str(d - timedelta(days=1))
+    assert hn_source.top_up_days(NOON.replace(hour=8)) == [two]
+    assert hn_source.top_up_days(NOON.replace(hour=12)) == [two, one]
+    assert hn_source.top_up_days(NOON.replace(hour=23, minute=59)) == [two, one]
+
+    with _client() as client:
+        _login(client)
+        subscribe_hn()
+        _config()
+        _closed_day(3400, 5, days_ago=2, score=200)
+        _closed_day(3401, 5, days_ago=1, score=200)
+        _pending(3402, 0, score=200)  # today: the live judge's business, never the top-up's
+
+        assert hn_source.top_up(NOON.replace(hour=8)) == 1
+        assert _ids(client) == [3400]
+        assert hn_source.top_up(NOON.replace(hour=12)) == 1
+        assert _ids(client) == [3401, 3400]
+
+
+def test_a_paused_feed_is_not_topped_up(env):
+    """A round action, gated like the live judge. ``stamp_history`` itself keeps
+    working on a paused feed — that is the import/migration path, not this one."""
+    with _client() as client:
+        _login(client)
+        subscribe_hn()
+        _config()
+        _closed_day(3500, 5, score=200)
+        db.update_hn_subscription('front', enabled=False)
+        assert hn_source.top_up(NOON) == 0
+
+        db.update_hn_subscription('front', enabled=True)
+        assert hn_source.top_up(NOON) == 1
+
+
 # --- D: replay ---------------------------------------------------------------
 
 

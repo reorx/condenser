@@ -168,6 +168,7 @@ class HNManager:
             await self._backfill_eligible_days()
             await self._fill_previews()
             self._qualify()
+            self._top_up()
             await self._summarize_round()
         except Exception as e:  # noqa: BLE001 — top-level loop guard (spec: log + skip round)
             log.exception('hn poll round failed')
@@ -282,6 +283,19 @@ class HNManager:
         stamped = hn_source.qualify(self._now(), self.settings.condenser_hn_refresh_hours)
         if stamped:
             log.info('hn admitted %s stories', stamped)
+        return stamped
+
+    def _top_up(self) -> int:
+        """True the closed days up to their final top N (``sources/hn.top_up``,
+        plan 2026-09-03) — right after the live judge, on the same fresh scores.
+
+        The one admission that stamps where the story sits rather than at now, so
+        the summary round that follows sees it as an ordinary admitted story and
+        ``/timeline/new`` deliberately does not.
+        """
+        stamped = hn_source.top_up(self._now())
+        if stamped:
+            log.info('hn topped up %s stories', stamped)
         return stamped
 
     # ---- summaries (plan 2026-09-02 Phase B) ----

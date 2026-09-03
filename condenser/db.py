@@ -1747,23 +1747,28 @@ _LEGACY_RANKED = """
            ROW_NUMBER() OVER (PARTITION BY h.day ORDER BY h.score DESC, h.id ASC) AS day_rank,
            COUNT(*) OVER (PARTITION BY h.day) AS day_total
     FROM hn_stories h
-    WHERE h.is_dead = 0
+    WHERE h.is_dead = 0 {day_filter}
 """
 
 
 def stamp_hn_history(cfg, quota: Optional[int], day: Optional[str] = None) -> int:
-    """Stamp a historical day (or the whole archive) at each story's own ``first_seen_at``.
+    """True a closed day (or the whole archive) up to its final top N, stamping
+    each story at its own ``first_seen_at``.
 
-    Two callers, one meaning — *these stories belong where they already are*: the
-    v14 backfill, and the hckrnews import, which hands us days that closed before
-    we were watching. A live round never uses this; it stamps at ``now``, so a
-    newly admitted story lands at the head of the timeline.
+    Three callers, one meaning — *these stories belong where they already are*:
+    the v14 backfill, the hckrnews import (days that closed before we were
+    watching) and, since plan 2026-09-03, the round's day-close top-up (days
+    that closed under the live judge). The live judge itself never comes here; it
+    stamps at ``now``, so a newly admitted story lands at the head of the timeline.
 
-    ``quota`` is the day's fixed capacity (None for 'all'/'half', whose own rank
-    predicate already caps them). Already-stamped rows are skipped *and* count
-    against it, so re-importing a day the sampler was already watching — which
-    happens to every new subscriber on their third day — tops the day up instead
-    of doubling it. Returns the number stamped.
+    ``quota`` is the day's N (None for 'all'/'half', whose own rank predicate
+    already caps them), and it is a *rank* predicate, not a count: the day's top
+    N by final score are stamped wherever they are missing, and stories the live
+    judge admitted outside that set stay (admission is one-way), so a day can end
+    with N plus those. That is the top-up's whole point, and it is also why
+    re-importing a day the sampler was already watching — every new subscriber's
+    third day — fills the day rather than doubling it: the predicate matches at
+    most N rows. Returns the number stamped.
     """
     where = ['r.qualified_at IS NULL', _legacy_mode_where(cfg.mode, quota)[0]]
     params = list(_legacy_mode_where(cfg.mode, quota)[1])
@@ -1773,23 +1778,17 @@ def stamp_hn_history(cfg, quota: Optional[int], day: Optional[str] = None) -> in
     if cfg.max_peak_rank > 0:
         where.append('(r.peak_rank IS NULL OR r.peak_rank <= ?)')
         params.append(cfg.max_peak_rank)
-    if day is not None:
-        where.append('r.day = ?')
-        params.append(day)
+    # The day filter goes *inside* the ranked subquery: the rank partitions by
+    # day, so it is the same rank, and the top-up runs this every round.
+    ranked = _LEGACY_RANKED.format(day_filter='AND h.day = ?' if day is not None else '')
+    inner = [day] if day is not None else []
     cur = tdb.db.execute_sql(
-        f'SELECT r.id, r.day, r.first_seen_at, r.day_rank FROM ({_LEGACY_RANKED}) r '
+        f'SELECT r.id, r.first_seen_at, r.day_rank FROM ({ranked}) r '
         f'WHERE {" AND ".join(where)} ORDER BY r.day, r.day_rank',
-        tuple(params),
+        (*inner, *params),
     )
-    taken: dict[str, int] = {}
     stamped = 0
-    for story_id, story_day, first_seen_at, day_rank in cur.fetchall():
-        if quota is not None:
-            if story_day not in taken:
-                taken[story_day] = hn_qualified_count(story_day)
-            if taken[story_day] >= quota:
-                continue
-            taken[story_day] += 1
+    for story_id, first_seen_at, day_rank in cur.fetchall():
         stamp_hn_qualified(story_id, first_seen_at, day_rank)
         stamped += 1
     return stamped
