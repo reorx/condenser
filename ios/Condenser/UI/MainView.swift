@@ -83,6 +83,7 @@ struct MainView: View {
         // iPhone 上仍是底部 tab 栏；Mac（与 iPad）上变成侧栏——四个 tab 就是 Mac 阅读器
         // 的标准形状（Mail / News 都这样），底部 tab 栏在桌面窗口里是个错位的手机件
         .tabViewStyle(.sidebarAdaptable)
+        .macSidebarHost()
         #if DEBUG
         .onOpenURL { handleDebugURL($0, reader: reader) }
         .sheet(item: $debugDetail) { item in

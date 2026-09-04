@@ -14,7 +14,7 @@ struct AiSummaryBlock<Content: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Label("AI 摘要", systemImage: "sparkles")
-                .font(.caption.weight(.semibold))
+                .readingFont(.caption, weight: .semibold)
                 .foregroundStyle(tint)
             content
         }

@@ -54,12 +54,12 @@ struct HnCard: View {
             HnGlyph()
             VStack(alignment: .leading, spacing: 1) {
                 Text("Hacker News")
-                    .font(.subheadline.weight(.semibold))
+                    .readingFont(.subheadline, weight: .semibold)
                     .lineLimit(1)
                 HStack(spacing: 4) {
                     ReadStateDot(item: item, showsUnread: showsUnread)
                     Text(captionText)
-                        .font(.caption)
+                        .readingFont(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
@@ -80,7 +80,7 @@ struct HnCard: View {
             openURL(story.primaryURL)
         } label: {
             Text(story.title ?? "(untitled)")
-                .font(.subheadline.weight(.medium))
+                .readingFont(.subheadline, weight: .medium)
                 .multilineTextAlignment(.leading)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -108,14 +108,14 @@ struct HnCard: View {
             }
             if story.isJob {
                 Text("JOB")
-                    .font(.caption2.weight(.semibold))
+                    .readingFont(.caption2, weight: .semibold)
                     .padding(.horizontal, 5)
                     .padding(.vertical, 1)
                     .background(Color(.secondarySystemBackground), in: Capsule())
             }
             Spacer(minLength: 0)
         }
-        .font(.caption)
+        .readingFont(.caption)
         .foregroundStyle(.secondary)
     }
 

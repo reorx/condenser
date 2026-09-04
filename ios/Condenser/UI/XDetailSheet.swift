@@ -71,11 +71,11 @@ struct XDetailSheet: View {
             XAvatarView(handle: tweet.authorHandle, name: tweet.authorName, size: 40)
             VStack(alignment: .leading, spacing: 2) {
                 Text(tweet.displayName)
-                    .font(.headline)
+                    .readingFont(.headline)
                     .lineLimit(1)
                 if let handle = tweet.authorHandle {
                     Text("@\(handle)")
-                        .font(.caption)
+                        .readingFont(.caption)
                         .foregroundStyle(.secondary)
                 }
             }
@@ -87,7 +87,7 @@ struct XDetailSheet: View {
     private var metaLine: some View {
         if let handle = tweet.rtOfHandle {
             Label("转推自 @\(handle)", systemImage: "arrow.2.squarepath")
-                .font(.caption)
+                .readingFont(.caption)
                 .foregroundStyle(.secondary)
         }
         if let metrics = tweet.metrics {
@@ -100,7 +100,7 @@ struct XDetailSheet: View {
                     .labelStyle(CompactMetaLabelStyle())
                 Spacer(minLength: 0)
             }
-            .font(.caption)
+            .readingFont(.caption)
             .foregroundStyle(.secondary)
         }
     }
@@ -110,15 +110,15 @@ struct XDetailSheet: View {
     private var feedbackRow: some View {
         HStack {
             Text("反馈")
-                .font(.subheadline.weight(.medium))
+                .readingFont(.subheadline, weight: .medium)
             Spacer()
             if let reason = item.feedbackReason {
                 Text(reason.label)
-                    .font(.caption)
+                    .readingFont(.caption)
                     .foregroundStyle(.secondary)
             }
             XFeedbackButtons(feedback: item.feedback, onFeedback: onFeedback, onReason: onReason)
-                .font(.body)
+                .readingFont(.body)
         }
     }
 
@@ -128,20 +128,20 @@ struct XDetailSheet: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
                 Text("判定")
-                    .font(.subheadline.weight(.medium))
+                    .readingFont(.subheadline, weight: .medium)
                 Spacer()
                 Text(verdictLabel(verdict))
-                    .font(.subheadline)
+                    .readingFont(.subheadline)
                     .foregroundStyle(verdictTone(verdict))
             }
             if let score = tweet.verdictMeta?.score {
                 Text("打分 \(score, specifier: "%.2f")")
-                    .font(.caption)
+                    .readingFont(.caption)
                     .foregroundStyle(.secondary)
             }
             if let reason = tweet.verdictMeta?.reason {
                 Text(reasonLabel(reason))
-                    .font(.caption)
+                    .readingFont(.caption)
                     .foregroundStyle(.secondary)
             }
             ForEach(tweet.verdictMeta?.neighbors ?? [], id: \.tweetID) { neighbor in
@@ -151,7 +151,7 @@ struct XDetailSheet: View {
             // 旧判定没有 channels 块，这一段整体不出现。
             if let channels = tweet.verdictMeta?.channels, !channels.isEmpty {
                 Text("各通道投票")
-                    .font(.caption)
+                    .readingFont(.caption)
                     .foregroundStyle(.secondary)
                 ForEach(channels.sorted(by: { $0.key < $1.key }), id: \.key) { key, channel in
                     XVerdictChannelRow(key: key, channel: channel)
@@ -159,7 +159,7 @@ struct XDetailSheet: View {
             }
             if let model = tweet.verdictMeta?.model {
                 Text(model)
-                    .font(.caption2)
+                    .readingFont(.caption2)
                     .foregroundStyle(.tertiary)
             }
         }
@@ -179,7 +179,7 @@ struct XDetailSheet: View {
                 infoRow("抓取于", seen.formatted(date: .abbreviated, time: .shortened))
             }
         }
-        .font(.caption)
+        .readingFont(.caption)
         .foregroundStyle(.secondary)
     }
 
@@ -199,7 +199,7 @@ struct XDetailSheet: View {
                 open(tweet.tweetURL)
             } label: {
                 Label("在 X 上打开", systemImage: "arrow.up.forward.app")
-                    .font(.footnote)
+                    .readingFont(.footnote)
             }
             .buttonStyle(.bordered)
             if let profile = tweet.profileURL {
@@ -207,7 +207,7 @@ struct XDetailSheet: View {
                     open(profile)
                 } label: {
                     Label("作者主页", systemImage: "person")
-                        .font(.footnote)
+                        .readingFont(.footnote)
                 }
                 .buttonStyle(.bordered)
             }
@@ -267,18 +267,18 @@ struct XVerdictChannelRow: View {
             }
             if let record = channel.record {
                 Text(record)
-                    .font(.caption2)
+                    .readingFont(.caption2)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             } else if !channel.evidence.isEmpty {
                 Text(channel.evidence.map { "\($0.name) \(String(format: "%+.2f", $0.weight))" }
                     .joined(separator: " · "))
-                    .font(.caption2)
+                    .readingFont(.caption2)
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
             }
         }
-        .font(.caption)
+        .readingFont(.caption)
     }
 
     private var name: String {
@@ -326,7 +326,7 @@ struct XVerdictNeighborRow: View {
                 .foregroundStyle(.secondary)
             Spacer(minLength: 0)
         }
-        .font(.caption)
+        .readingFont(.caption)
         .contentShape(Rectangle())
         .onTapGesture {
             openURL(xTweetURL(id: neighbor.tweetID, handle: neighbor.handle))

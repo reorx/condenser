@@ -71,12 +71,12 @@ struct MessageDetailSheet: View {
                 title: source?.name ?? reader.channelTitle(for: message), size: 40)
             VStack(alignment: .leading, spacing: 2) {
                 Text(source?.name ?? reader.channelTitle(for: message))
-                    .font(.headline)
+                    .readingFont(.headline)
                     .lineLimit(1)
                 Text(source != nil
                     ? "Forwarded by \(reader.channelTitle(for: message)) · \(dateText)"
                     : dateText)
-                    .font(.caption)
+                    .readingFont(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
@@ -87,7 +87,7 @@ struct MessageDetailSheet: View {
     /// 隐藏来源的转发（无名字可展示）才走这行降级标记
     private var forwardBox: some View {
         Label("转发", systemImage: "arrowshape.turn.up.right")
-            .font(.footnote)
+            .readingFont(.footnote)
             .foregroundStyle(.secondary)
     }
 
@@ -109,7 +109,7 @@ struct MessageDetailSheet: View {
         let others = message.mediaItems.filter { $0.hasMedia && $0.mediaType != "photo" && $0.mediaType != "webpage" }
         ForEach(others, id: \.messageID) { item in
             Label(item.mediaType ?? "附件", systemImage: "doc.fill")
-                .font(.footnote)
+                .readingFont(.footnote)
                 .foregroundStyle(.secondary)
         }
     }
@@ -128,7 +128,7 @@ struct MessageDetailSheet: View {
                 } label: {
                     Label(copied ? "已复制" : "复制全文",
                           systemImage: copied ? "checkmark" : "doc.on.doc")
-                        .font(.footnote)
+                        .readingFont(.footnote)
                 }
                 .buttonStyle(.bordered)
                 .tint(copied ? .green : nil)
@@ -137,7 +137,7 @@ struct MessageDetailSheet: View {
                let url = URL(string: "https://t.me/\(username)/\(message.id)") {
                 Link(destination: url) {
                     Label("在 Telegram 打开", systemImage: "paperplane")
-                        .font(.footnote)
+                        .readingFont(.footnote)
                 }
                 .buttonStyle(.bordered)
             }

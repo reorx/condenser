@@ -24,7 +24,7 @@ private let contextChars = 30
 
 /// 详情 sheet 正文：UITextView 包装，支持长按后拖动选择柄选取部分文字
 /// （SwiftUI Text 的 textSelection 只能整段拷贝）。链接点击仍走 openURL
-/// 环境（→ 应用内 Safari），字号跟随 readingFontScale 设定的 dynamicTypeSize。
+/// 环境（→ 应用内 Safari），字号跟随 readingFontScale 设定的档位（iPhone 经 dynamicTypeSize，Mac 经显式点值）。
 ///
 /// 标注（2026-08-24）：`highlights` 把已定位的标注画成浅黄底 + 深黄下划线；
 /// `onHighlightSelection` 非 nil 时系统选中菜单里插一项「高亮」；点已有高亮
@@ -40,6 +40,7 @@ struct SelectableTextView: UIViewRepresentable {
     var onAnnotationDelete: ((Int) -> Void)? = nil
 
     @Environment(\.dynamicTypeSize) private var typeSize
+    @Environment(\.readingFontScale) private var readingScale
     @Environment(\.openURL) private var openURL
 
     func makeUIView(context: Context) -> UITextView {
@@ -65,16 +66,25 @@ struct SelectableTextView: UIViewRepresentable {
         return view
     }
 
+    /// iPhone 按 readingFontScale 设的 dynamicTypeSize 取系统表；Mac 没有 Dynamic Type，
+    /// 按档位的显式点值（与 SwiftUI 侧 `readingFont(.body)` 同一张表）
+    private var bodyFont: UIFont {
+        if Platform.isMac {
+            return .systemFont(ofSize: ReadingTextStyle.body.pointSize(for: readingScale))
+        }
+        return .preferredFont(
+            forTextStyle: .body,
+            compatibleWith: UITraitCollection(
+                preferredContentSizeCategory: typeSize.contentSizeCategory))
+    }
+
     func updateUIView(_ view: UITextView, context: Context) {
         context.coordinator.openURL = openURL
         context.coordinator.highlights = highlights
         context.coordinator.onHighlightSelection = onHighlightSelection
         context.coordinator.onAnnotationComment = onAnnotationComment
         context.coordinator.onAnnotationDelete = onAnnotationDelete
-        let font = UIFont.preferredFont(
-            forTextStyle: .body,
-            compatibleWith: UITraitCollection(
-                preferredContentSizeCategory: typeSize.contentSizeCategory))
+        let font = bodyFont
         let attributed = NSMutableAttributedString(
             attributedString: linkifiedNS(text, font: font, urlEntities: urlEntities))
         let length = attributed.length

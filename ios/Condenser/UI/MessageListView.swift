@@ -167,7 +167,7 @@ struct MessageListView: View {
             }
             if let error = store.error {
                 Text(error)
-                    .font(.caption)
+                    .readingFont(.caption)
                     .foregroundStyle(.red)
                     .padding(.vertical, 12)
             }
@@ -232,7 +232,7 @@ struct MessageListView: View {
                 Label("继续上拉获取更早消息", systemImage: "arrow.up")
             }
         }
-        .font(.caption)
+        .readingFont(.caption)
         .foregroundStyle(.secondary)
         .frame(maxWidth: .infinity)
         .padding(.vertical, 20)
@@ -259,10 +259,10 @@ struct MessageListView: View {
     private var emptyState: some View {
         VStack(spacing: 8) {
             Image(systemName: "tray")
-                .font(.largeTitle)
+                .readingFont(.largeTitle)
                 .foregroundStyle(.tertiary)
             Text(emptyLabel)
-                .font(.subheadline)
+                .readingFont(.subheadline)
                 .foregroundStyle(.secondary)
         }
         .padding(.top, 120)
@@ -277,7 +277,7 @@ struct MessageListView: View {
                 Task { await jumpToNewest() }
             } label: {
                 Label("\(count) 条新内容", systemImage: "arrow.up")
-                    .font(.footnote.weight(.semibold))
+                    .readingFont(.footnote, weight: .semibold)
                     .padding(.leading, 14)
                     .padding(.trailing, 10)
                     .padding(.vertical, 9)
@@ -291,7 +291,7 @@ struct MessageListView: View {
                 pillCount = nil
             } label: {
                 Image(systemName: "xmark")
-                    .font(.footnote.weight(.bold))
+                    .readingFont(.footnote, weight: .bold)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 9)
                     .contentShape(Rectangle())

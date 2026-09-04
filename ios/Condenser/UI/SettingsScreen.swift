@@ -76,6 +76,7 @@ struct SettingsScreen: View {
             }
         }
         .navigationTitle("设置")
+        .macSidebarToggleToolbar()
         .navigationBarTitleDisplayMode(.inline)
         .task {
             // 回填已配置的目标频道；拉不到就留空（保存路径会报错兜底）
@@ -149,7 +150,8 @@ struct SettingsScreen: View {
     }
 }
 
-/// 字号预览：静态 mock 消息卡片（不依赖网络/真实数据），布局与 MessageCard 一致
+/// 字号预览：静态 mock 消息卡片（不依赖网络/真实数据），布局与 MessageCard 一致；
+/// 文字走 `readingFont`，所以 Mac 上也随档位变（`.font(.xxx)` 在那里不会）
 private struct FontScalePreviewCard: View {
     let scale: FontScale
 
@@ -161,15 +163,15 @@ private struct FontScalePreviewCard: View {
                     .frame(width: 36, height: 36)
                     .overlay {
                         Text("凝")
-                            .font(.subheadline.weight(.semibold))
+                            .readingFont(.subheadline, weight: .semibold)
                             .foregroundStyle(.tint)
                     }
                 VStack(alignment: .leading, spacing: 1) {
                     Text("Condenser 精选")
-                        .font(.subheadline.weight(.semibold))
+                        .readingFont(.subheadline, weight: .semibold)
                         .lineLimit(1)
                     Text("5 分钟前")
-                        .font(.caption)
+                        .readingFont(.caption)
                         .foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 8)
@@ -177,10 +179,10 @@ private struct FontScalePreviewCard: View {
                     .foregroundStyle(.secondary)
             }
             Text("这是消息卡片的字号预览。滑动上方滑块，正文会像这样实时缩放，方便找到最舒适的阅读大小。")
-                .font(.subheadline)
+                .readingFont(.subheadline)
         }
         .padding(.vertical, 4)
-        .dynamicTypeSize(scale.dynamicTypeSize)
+        .readingFontScale(scale)
         .animation(.snappy(duration: 0.15), value: scale)
     }
 }

@@ -29,7 +29,7 @@ struct RssDetailSheet: View {
             VStack(alignment: .leading, spacing: 14) {
                 header
                 Text(entry.displayTitle)
-                    .font(.title3.weight(.semibold))
+                    .readingFont(.title3, weight: .semibold)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 metaLine
                 // 摘要在上、全文在下，两样都给：卡片上只放得下一个，
@@ -96,11 +96,11 @@ struct RssDetailSheet: View {
                 ProgressView().controlSize(.small)
                 Text("正在加载全文…")
             }
-            .font(.caption)
+            .readingFont(.caption)
             .foregroundStyle(.secondary)
         } else if articleFailed {
             Text("正文加载失败")
-                .font(.caption)
+                .readingFont(.caption)
                 .foregroundStyle(.secondary)
         }
     }
@@ -166,11 +166,11 @@ struct RssDetailSheet: View {
             RssGlyph(size: 40)
             VStack(alignment: .leading, spacing: 2) {
                 Text(entry.feedLabel)
-                    .font(.headline)
+                    .readingFont(.headline)
                     .lineLimit(1)
                 if let published = entry.publishedAt {
                     Text("\(entry.author.map { "\($0) · " } ?? "")发布于 \(published.formatted(date: .abbreviated, time: .shortened))")
-                        .font(.caption)
+                        .readingFont(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
@@ -187,7 +187,7 @@ struct RssDetailSheet: View {
             Label(
                 "时间线位置 \(item.datetime.formatted(date: .abbreviated, time: .shortened))",
                 systemImage: "clock.arrow.circlepath")
-                .font(.caption)
+                .readingFont(.caption)
                 .foregroundStyle(.secondary)
         }
     }
@@ -208,7 +208,7 @@ struct RssDetailSheet: View {
                     open(url)
                 } label: {
                     Label("打开原文", systemImage: "safari")
-                        .font(.footnote)
+                        .readingFont(.footnote)
                 }
                 .buttonStyle(.bordered)
             }

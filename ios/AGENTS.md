@@ -447,6 +447,31 @@ Catalyst 的 SFSafariViewController 本来就是转手给 Safari）。
   DerivedData 里的 Condenser.app，`tell application id … to activate` 会被 LaunchServices
   解析到旧那份并把它启动起来（跑的是老代码）；③ 截图前先 `activate` 把窗口拉到前台，
   `screencapture -R` 截的是屏幕区域，被终端盖住就是终端。
+- **字号档位在 Mac 上不走 Dynamic Type**（2026-09-04 用户反馈滑块无效、字偏小）：Catalyst 的
+  Mac idiom 没有 Dynamic Type，实测 `UIFont.preferredFont(forTextStyle:compatibleWith:)` 对任何
+  content size category 都答同一尺寸（body 13 / subheadline 11），`.dynamicTypeSize` 随之成了
+  空操作；而卡片正文用的 `.subheadline` 在 Mac 表里只有 11pt（iPhone 15pt），这就是偏小的原因。
+  修法：阅读界面的文字样式一律用 `.readingFont(.subheadline[, weight:])` 而不是 `.font(.xxx)`
+  （`UI/ReadingFontScale.swift`）——iPhone 上仍是 Dynamic Type 样式，Mac 上按环境里的档位换成
+  显式点值，表在 Kit 的 `ReadingTextStyle`（基准 = iOS 默认表，四档倍率对着 body 15/17/19/21，
+  所以「正常」在两端一样大）。`readingFontScale()` Mac 上写的是这个环境值；`SelectableTextView`
+  的 UIFont 同表；分享图没挂档位、拿到缺省「正常」= iOS 尺寸，两端出图从此一致（之前 Mac 上
+  分享图是 13pt 的）。⚠️ 阅读界面新加文字别写 `.font(.caption)`——iPhone 看不出问题，Mac 上
+  那一处不随滑块变。
+- **侧栏可收起**（同日）：`.sidebarAdaptable` 的 TabView 在 Catalyst 上底层是 tabSidebar 模式的
+  `UITabBarController`，SwiftUI 没暴露收起入口、也不像 `NavigationSplitView` 自带按钮。
+  `UI/MacSidebar.swift`：AppStorage 开关 `condenser.mac.sidebarHidden` → `MacSidebarApplier`
+  （挂在 TabView `.background` 的 UIView，进 window / 开关变时写 `tab.sidebar.isHidden`，公开
+  API）；四个 tab 根界面 `.macSidebarToggleToolbar()` 放工具栏按钮，View 菜单「显示/隐藏侧栏」
+  **⌥⌘S**（Finder 同款）。两条弯路：UIKit 已在响应链注册了 ⌃⌘S → `toggleSidebar:`，自己再挂
+  ⌃⌘S 建菜单时因重复**直接崩**；而那个 `toggleSidebar:` 用 `sendAction` 发上去什么也不发生，
+  所以不借它。Catalyst 的 NavigationStack 工具栏不分左右，按钮落在标题右侧那组里。
+- **走查再补三个坑**（`tmp/2026-09-04-mac-sidebar-fontscale/` 有脚本）：④ `tell app to activate`
+  不一定抢得到前台（Sequoia 起限制），要 `tell application "System Events" to set frontmost of
+  process "Condenser" to true`；⑤ 自己 post 的 CGEvent 点击点不动 SwiftUI 工具栏按钮（列表行、
+  普通按钮都能点），`tell application "System Events" to click at {x, y}` 才行；⑥ 开着详情抽屉的
+  实例 AppleScript quit 会报「User canceled」，而且**同 bundle 的第二个实例起不来**（看起来像
+  新构建没生效）——先 `key code 53`（Esc）关抽屉再 quit。
 - **商店侧还没做**（待 iOS 审核解掉后）：Mac App Distribution + Mac Installer Distribution
   证书、`make archive` 的 Catalyst 变体、ASC 加 macOS 平台版本 + Mac 截图、单独过审。
 

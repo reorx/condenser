@@ -36,7 +36,7 @@ struct ItemActionButtons: View {
     var body: some View {
         Button(action: onToggleSaved) {
             Label(item.isSaved ? "已收藏" : "收藏", systemImage: item.isSaved ? "star.fill" : "star")
-                .font(.footnote)
+                .readingFont(.footnote)
         }
         .buttonStyle(.bordered)
         .tint(item.isSaved ? .orange : nil)
@@ -45,7 +45,7 @@ struct ItemActionButtons: View {
             noteFlow = .editor
         } label: {
             Label("评论", systemImage: currentNote.isEmpty ? "text.bubble" : "text.bubble.fill")
-                .font(.footnote)
+                .readingFont(.footnote)
         }
         .buttonStyle(.bordered)
         .tint(currentNote.isEmpty ? nil : .indigo)
@@ -68,7 +68,7 @@ struct ItemActionButtons: View {
             showForward = true
         } label: {
             Label("转发", systemImage: "arrowshape.turn.up.forward")
-                .font(.footnote)
+                .readingFont(.footnote)
         }
         .buttonStyle(.bordered)
         // sheet 挂在转发按钮本身。别把这几个按钮包进 Group 再往 Group 上挂——

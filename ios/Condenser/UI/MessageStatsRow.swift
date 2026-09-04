@@ -28,7 +28,7 @@ struct MessageStatsRow: View {
             Image(systemName: icon)
             Text(count, format: .number.notation(.compactName))
         }
-        .font(.footnote)
+        .readingFont(.footnote)
         .foregroundStyle(.secondary)
     }
 }
@@ -46,7 +46,7 @@ private struct ReactionChipView: View {
             }
             Text(reaction.count, format: .number.notation(.compactName))
         }
-        .font(.footnote)
+        .readingFont(.footnote)
         .foregroundStyle(reaction.chosen ? Color.accentColor : .secondary)
         .padding(.horizontal, 8)
         .padding(.vertical, 3)

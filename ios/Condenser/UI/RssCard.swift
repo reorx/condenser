@@ -47,7 +47,7 @@ struct RssCard: View {
                     // 空白折叠成单个空格：快照只有 3 行配额，正文开头的段落空行
                     // 会白白吃掉一行
                     Text(text.split(whereSeparator: \.isWhitespace).joined(separator: " "))
-                        .font(.subheadline)
+                        .readingFont(.subheadline)
                         .lineLimit(3)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
@@ -59,7 +59,7 @@ struct RssCard: View {
             }
             if let author = entry.author {
                 Text(author)
-                    .font(.caption)
+                    .readingFont(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
@@ -74,12 +74,12 @@ struct RssCard: View {
             RssGlyph()
             VStack(alignment: .leading, spacing: 1) {
                 Text(entry.feedLabel)
-                    .font(.subheadline.weight(.semibold))
+                    .readingFont(.subheadline, weight: .semibold)
                     .lineLimit(1)
                 HStack(spacing: 4) {
                     ReadStateDot(item: item, showsUnread: showsUnread)
                     Text(captionText)
-                        .font(.caption)
+                        .readingFont(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
@@ -111,7 +111,7 @@ struct RssCard: View {
 
     private var titleText: some View {
         Text(entry.displayTitle)
-            .font(.subheadline.weight(.medium))
+            .readingFont(.subheadline, weight: .medium)
             .multilineTextAlignment(.leading)
             .frame(maxWidth: .infinity, alignment: .leading)
     }

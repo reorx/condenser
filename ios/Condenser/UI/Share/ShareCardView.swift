@@ -46,7 +46,7 @@ struct ShareCardView: View {
             header
             if let headline = card.headline {
                 Text(headline)
-                    .font(.title3.weight(.semibold))
+                    .readingFont(.title3, weight: .semibold)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             ForEach(Array(card.blocks.enumerated()), id: \.offset) { _, block in
@@ -68,11 +68,11 @@ struct ShareCardView: View {
             ShareAvatarView(avatar: card.avatar, images: images, size: 40)
             VStack(alignment: .leading, spacing: 2) {
                 Text(card.title)
-                    .font(.headline)
+                    .readingFont(.headline)
                     .lineLimit(1)
                 if let subtitle = card.subtitle {
                     Text(subtitle)
-                        .font(.caption)
+                        .readingFont(.caption)
                         .foregroundStyle(ShareStyle.secondary)
                         .lineLimit(1)
                 }
@@ -94,7 +94,7 @@ struct ShareCardView: View {
             }
             Spacer(minLength: 0)
         }
-        .font(.caption)
+        .readingFont(.caption)
         .foregroundStyle(ShareStyle.secondary)
     }
 
@@ -103,7 +103,7 @@ struct ShareCardView: View {
         switch block {
         case let .text(text):
             Text(linkified(text))
-                .font(.body)
+                .readingFont(.body)
                 .frame(maxWidth: .infinity, alignment: .leading)
         case let .meta(items):
             metaLine(items)
@@ -114,7 +114,7 @@ struct ShareCardView: View {
         case let .summary(text):
             AiSummaryBlock {
                 Text(text)
-                    .font(.body)
+                    .readingFont(.body)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
         case let .quote(quote):
@@ -123,14 +123,14 @@ struct ShareCardView: View {
             linkCard(link)
         case let .fileChip(label):
             Label(label, systemImage: "doc.fill")
-                .font(.caption)
+                .readingFont(.caption)
                 .foregroundStyle(ShareStyle.secondary)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 6)
                 .background(ShareStyle.fill, in: Capsule())
         case let .note(text):
             Text(text)
-                .font(.caption)
+                .readingFont(.caption)
                 .foregroundStyle(ShareStyle.secondary)
         }
     }
@@ -161,11 +161,11 @@ struct ShareCardView: View {
             HStack(spacing: 6) {
                 ShareAvatarView(avatar: quote.avatar, images: images, size: 18)
                 Text(quote.name)
-                    .font(.caption.weight(.semibold))
+                    .readingFont(.caption, weight: .semibold)
                     .lineLimit(1)
                 if let handle = quote.handle {
                     Text("@\(handle)")
-                        .font(.caption2)
+                        .readingFont(.caption2)
                         .foregroundStyle(ShareStyle.secondary)
                         .lineLimit(1)
                 }
@@ -173,7 +173,7 @@ struct ShareCardView: View {
             }
             if let text = quote.text {
                 Text(text)
-                    .font(.caption)
+                    .readingFont(.caption)
                     .lineLimit(6)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -194,17 +194,17 @@ struct ShareCardView: View {
             VStack(alignment: .leading, spacing: 2) {
                 if let site = link.site {
                     Text(site)
-                        .font(.caption.weight(.semibold))
+                        .readingFont(.caption, weight: .semibold)
                         .foregroundStyle(ShareStyle.accent)
                 }
                 if let title = link.title {
                     Text(title)
-                        .font(.caption.weight(.medium))
+                        .readingFont(.caption, weight: .medium)
                         .lineLimit(3)
                 }
                 if let description = link.description {
                     Text(description)
-                        .font(.caption)
+                        .readingFont(.caption)
                         .foregroundStyle(ShareStyle.secondary)
                         .lineLimit(4)
                 }
@@ -235,11 +235,11 @@ struct ShareCardView: View {
                     .frame(width: 16, height: 16)
                     .clipShape(RoundedRectangle(cornerRadius: 4))
                 Text("Condenser")
-                    .font(.caption2.weight(.semibold))
+                    .readingFont(.caption2, weight: .semibold)
                 Spacer(minLength: 8)
                 if let footnote = card.footnote {
                     Text(footnote)
-                        .font(.caption2)
+                        .readingFont(.caption2)
                         .lineLimit(1)
                 }
             }

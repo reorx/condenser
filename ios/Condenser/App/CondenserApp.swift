@@ -15,5 +15,6 @@ struct CondenserApp: App {
             }
             .environment(session)
         }
+        .commands { MacSidebarCommands() }
     }
 }

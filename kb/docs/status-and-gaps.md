@@ -1416,6 +1416,30 @@ macOS SDK）+ 沙盒 entitlements、`UI/Platform.swift`（侧栏 / 限宽阅读�
   审核不要叠在一起。
 - 验收图 `tmp/2026-09-04-mac-catalyst/`。
 
+## 2026-09-04 · Mac 版两处修正：字号档位真的生效 + 侧栏可收起
+
+用户拿 Mac 版一用就报了两条：设置页的字号滑块拖到哪一档都没变化（预览和正文都不动），
+且现有字号偏小；侧栏收不起来。
+
+- **字号**：根因是 Catalyst「Optimize for Mac」idiom **没有 Dynamic Type**——探针实测
+  `UIFont.preferredFont(forTextStyle:compatibleWith:)` 对 S 到 AX-L 每个 category 都答
+  body 13 / subheadline 11，`UIFontMetrics` 也不缩放，SwiftUI 的 `.dynamicTypeSize` 随之成了
+  空操作；而卡片正文用的 `.subheadline` 在 Mac 表里只有 11pt（iPhone 15pt），「偏小」就是它。
+  修法不是绕 Dynamic Type，而是阅读界面改用 `.readingFont(style[, weight:])`：iPhone 上仍是
+  原来的文字样式，Mac 上按环境档位换成显式点值。点值表在 Kit `ReadingTextStyle`（基准 = iOS
+  默认表，四档倍率对着 body 15/17/19/21，同一档两端一样大），111 处 `.font(...)` 脚本迁移
+  （卡片 / 四个抽屉 / 标注 / 分享图），`SelectableTextView` 的 UIFont 同表。副产物：分享图在
+  Mac 上以前是 13pt 表画的，现在与 iPhone 一致。Kit +5 测试（292 全过），iOS 模拟器构建通过。
+- **侧栏**：`.sidebarAdaptable` TabView 底层的 `UITabBarController.sidebar.isHidden` 是公开
+  API，探针一写就收起。接成 AppStorage 开关 + 工具栏按钮（四个 tab 根界面）+ View 菜单
+  「显示/隐藏侧栏」⌥⌘S，重启保持。两条弯路：⌃⌘S 已被 UIKit 一个内置的 `toggleSidebar:`
+  key command 占着（自己再注册建菜单时崩），而那个动作 `sendAction` 发上去毫无反应、菜单里
+  也没它的项——所以用 Finder 的 ⌥⌘S 并直接写 `isHidden`。
+- **走查坑 +3**（记在 `ios/AGENTS.md`）：`activate` 抢不到前台要走 System Events
+  `set frontmost`；CGEvent 合成点击点不动 SwiftUI 工具栏按钮，`System Events click at` 才行；
+  开着抽屉的实例 quit 报 User canceled 且第二个实例起不来（Esc 关抽屉再 quit）。
+- 截图与脚本 `tmp/2026-09-04-mac-sidebar-fontscale/`（`shot.sh` / `winlist` / `click2`）。
+
 ## 2026-09-05 · Vibe Reader 联动 Phase D —— 状态回传角标
 
 Plan `kb/plans/2026-09-02-vibe-reader-link-mode-and-hn-summary.md` §5，对方仓库 Phase 3

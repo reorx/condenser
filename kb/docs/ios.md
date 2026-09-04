@@ -277,6 +277,14 @@ data-protection keychain**，ad-hoc 签名的构建 `SecItemAdd` 静默 -34018�
 （不写 Xcode 不嵌 profile），`KeychainStore.write` 也从此把失败写进 OSLog。工程细节、
 走查的三个坑与商店侧待办见 `ios/AGENTS.md`「Mac Catalyst」。
 
+**同日下午的两处 Mac 修正**（用户实机反馈）：字号滑块在 Mac 上无效且字偏小——Catalyst 的
+Mac idiom 根本没有 Dynamic Type（任何 category 都是 body 13 / subheadline 11），卡片正文的
+`.subheadline` 只有 11pt。阅读界面的 `.font(.xxx)` 全部换成 `.readingFont(.xxx)`（111 处，
+脚本迁移），iPhone 上行为不变，Mac 上按档位取显式点值，表在 Kit `ReadingTextStyle`（基准 iOS
+默认表，「正常」两端一样大；5 个测试）。侧栏不能收起——底层 `UITabBarController.sidebar.isHidden`
+接到 AppStorage 开关，工具栏按钮 + View 菜单 ⌥⌘S（⌃⌘S 被 UIKit 一个不管用的内置命令占着，
+重复注册直接崩）。截图 `tmp/2026-09-04-mac-sidebar-fontscale/`。
+
 ## 阅读现场恢复 + 蓝色胶囊（2026-09-07）
 
 Plan `kb/plans/2026-09-07-ios-state-restore-new-content-pill.md`。把 2026-07-22 的「冷启动

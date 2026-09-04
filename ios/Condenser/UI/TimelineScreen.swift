@@ -16,6 +16,7 @@ struct TimelineScreen: View {
             emptyLabel: reader.unreadOnly ? "没有未读消息" : "暂无内容")
             .navigationTitle(navTitle)
             .navigationBarTitleDisplayMode(.inline)
+            .macSidebarToggleToolbar()
             .toolbar { toolbarContent }
             .task { await reader.loadSources() }
             .onChange(of: scenePhase) { _, phase in

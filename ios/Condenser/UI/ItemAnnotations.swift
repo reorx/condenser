@@ -115,7 +115,7 @@ struct AnnotationBadge: View {
     var body: some View {
         if item.hasNotes {
             Image(systemName: "text.bubble.fill")
-                .font(.caption)
+                .readingFont(.caption)
                 .foregroundStyle(.indigo.opacity(0.7))
         }
     }
@@ -161,20 +161,20 @@ struct AnnotationFooterView: View {
     var body: some View {
         if let error = model.error {
             Text(error)
-                .font(.caption)
+                .readingFont(.caption)
                 .foregroundStyle(.red)
         }
         let orphans = model.orphans
         if !orphans.isEmpty {
             VStack(alignment: .leading, spacing: 8) {
                 Label("失效的高亮（原文已变，引文保留）", systemImage: "highlighter")
-                    .font(.caption.weight(.semibold))
+                    .readingFont(.caption, weight: .semibold)
                     .foregroundStyle(.secondary)
                 ForEach(orphans) { annotation in
                     HStack(alignment: .top, spacing: 8) {
                         VStack(alignment: .leading, spacing: 4) {
                             Text(annotation.quote)
-                                .font(.footnote)
+                                .readingFont(.footnote)
                                 .foregroundStyle(.secondary)
                                 .padding(6)
                                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -183,14 +183,14 @@ struct AnnotationFooterView: View {
                                     in: RoundedRectangle(cornerRadius: 6))
                             if let comment = annotation.comment, !comment.isEmpty {
                                 Text(comment)
-                                    .font(.footnote)
+                                    .readingFont(.footnote)
                             }
                         }
                         Button {
                             Task { await model.deleteAnnotation(annotation.id) }
                         } label: {
                             Image(systemName: "trash")
-                                .font(.caption)
+                                .readingFont(.caption)
                                 .foregroundStyle(.secondary)
                         }
                         .buttonStyle(.plain)
@@ -224,7 +224,7 @@ struct AnnotationCommentSheet: View {
         NavigationStack {
             VStack(alignment: .leading, spacing: 12) {
                 Text(quote)
-                    .font(.footnote)
+                    .readingFont(.footnote)
                     .foregroundStyle(.secondary)
                     .lineLimit(4)
                     .padding(8)
@@ -237,7 +237,7 @@ struct AnnotationCommentSheet: View {
                     .overlay(alignment: .topLeading) {
                         if text.isEmpty {
                             Text(initialComment.isEmpty ? "对这段高亮写点什么…" : "清空保存 = 删除评论（高亮保留）")
-                                .font(.footnote)
+                                .readingFont(.footnote)
                                 .foregroundStyle(.tertiary)
                                 .padding(.top, 14)
                                 .padding(.leading, 11)
@@ -246,7 +246,7 @@ struct AnnotationCommentSheet: View {
                     }
                 if let errorText {
                     Text(errorText)
-                        .font(.footnote)
+                        .readingFont(.footnote)
                         .foregroundStyle(.red)
                 }
                 Button {

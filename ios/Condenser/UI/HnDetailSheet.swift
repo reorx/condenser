@@ -23,7 +23,7 @@ struct HnDetailSheet: View {
             VStack(alignment: .leading, spacing: 14) {
                 header
                 Text(story.title ?? "(untitled)")
-                    .font(.title3.weight(.semibold))
+                    .readingFont(.title3, weight: .semibold)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 metaLine
                 // 摘要块在正文 / 预览卡之前：RssDetailSheet 的顺序。不可标注——机器的话
@@ -72,10 +72,10 @@ struct HnDetailSheet: View {
             HnGlyph(size: 40)
             VStack(alignment: .leading, spacing: 2) {
                 Text("Hacker News")
-                    .font(.headline)
+                    .readingFont(.headline)
                 if let submitted = story.submittedAt {
                     Text("\(story.author.map { "\($0) · " } ?? "")提交于 \(submitted.formatted(date: .abbreviated, time: .shortened))")
-                        .font(.caption)
+                        .readingFont(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
@@ -98,7 +98,7 @@ struct HnDetailSheet: View {
             }
             Spacer(minLength: 0)
         }
-        .font(.caption)
+        .readingFont(.caption)
         .foregroundStyle(.secondary)
     }
 
@@ -111,17 +111,17 @@ struct HnDetailSheet: View {
             VStack(alignment: .leading, spacing: 2) {
                 if let site = preview.siteName {
                     Text(site)
-                        .font(.caption.weight(.semibold))
+                        .readingFont(.caption, weight: .semibold)
                         .foregroundStyle(.tint)
                 }
                 if let title = preview.title {
                     Text(title)
-                        .font(.caption.weight(.medium))
+                        .readingFont(.caption, weight: .medium)
                         .lineLimit(2)
                 }
                 if let description = preview.description {
                     Text(description)
-                        .font(.caption)
+                        .readingFont(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(3)
                 }
@@ -146,7 +146,7 @@ struct HnDetailSheet: View {
                     open(url)
                 } label: {
                     Label("打开原文", systemImage: "safari")
-                        .font(.footnote)
+                        .readingFont(.footnote)
                 }
                 .buttonStyle(.bordered)
             }
@@ -154,7 +154,7 @@ struct HnDetailSheet: View {
                 open(story.commentsURL)
             } label: {
                 Label("HN 评论", systemImage: "bubble.left.and.bubble.right")
-                    .font(.footnote)
+                    .readingFont(.footnote)
             }
             .buttonStyle(.bordered)
             ShareImageButton(card: ShareCard.build(item: item))

@@ -27,7 +27,7 @@ struct SavedScreen: View {
                 }
                 if let error = reader.records.error {
                     Text(error)
-                        .font(.caption)
+                        .readingFont(.caption)
                         .foregroundStyle(.red)
                         .padding(.vertical, 12)
                 }
@@ -38,6 +38,7 @@ struct SavedScreen: View {
         .autoHideBars()
         .refreshable { await reader.records.refresh() }
         .navigationTitle("收藏")
+        .macSidebarToggleToolbar()
         .navigationBarTitleDisplayMode(.inline)
         .externalLinks(safari: $safariItem)
         .sheet(item: $selectedItem) { item in
@@ -112,10 +113,10 @@ struct SavedScreen: View {
     private var emptyState: some View {
         VStack(spacing: 8) {
             Image(systemName: "star")
-                .font(.largeTitle)
+                .readingFont(.largeTitle)
                 .foregroundStyle(.tertiary)
             Text("还没有收藏")
-                .font(.subheadline)
+                .readingFont(.subheadline)
                 .foregroundStyle(.secondary)
         }
         .padding(.top, 120)

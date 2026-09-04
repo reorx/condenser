@@ -74,6 +74,12 @@ xcodegen 的 `KEY[sdk=…]` 条件键实测按 SDK 生效（`-showBuildSettings`
    DerivedData 里的同 bundle ID app 会被 `tell application id … to activate` 解析并启动，
    跑的是老代码（症状：明明改了却没变）；③ `screencapture -R` 截屏幕区域，要先 activate。
 
+4. **（下午补）字号滑块在 Mac 上无效、字偏小**：Catalyst 的 Mac idiom 没有 Dynamic Type，
+   `.dynamicTypeSize` 空操作，`.subheadline` 只有 11pt。阅读界面改用 `.readingFont`，Mac 上按
+   档位取 Kit `ReadingTextStyle` 的显式点值（基准 iOS 默认表）。
+5. **（下午补）侧栏收不起**：`UITabBarController.sidebar.isHidden` 接 AppStorage 开关，
+   工具栏按钮 + View 菜单 ⌥⌘S（⌃⌘S 被 UIKit 内置且不管用的 `toggleSidebar:` 占着）。
+
 **验收**（`tmp/2026-09-04-mac-catalyst/`，含 `shot.sh` / `winid.swift` 截图脚本）：
 timeline、HN / RSS 详情抽屉（page 尺寸 + 关闭钮）、设置（主机名）、收藏、订阅、HN feed
 push、登录全链路（ASWebAuthenticationSession → Chrome → 密码 → Authorize →

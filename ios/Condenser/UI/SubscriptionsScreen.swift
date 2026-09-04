@@ -68,6 +68,7 @@ struct SubscriptionsScreen: View {
             }
         }
         .navigationTitle("订阅")
+        .macSidebarToggleToolbar()
         .navigationDestination(for: SubDestination.self) { dest in
             switch dest {
             case .telegramChannel(let sub):

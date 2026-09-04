@@ -21,7 +21,7 @@ struct MessageCard: View {
             // 有来源主体的转发已在 header 展示；只剩隐藏来源时才补一行降级标记
             if message.isForwarded, message.forwardSource == nil {
                 Label("转发", systemImage: "arrowshape.turn.up.right")
-                    .font(.caption)
+                    .readingFont(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
@@ -48,14 +48,14 @@ struct MessageCard: View {
                 title: source?.name ?? reader.channelTitle(for: message))
             VStack(alignment: .leading, spacing: 1) {
                 Text(source?.name ?? reader.channelTitle(for: message))
-                    .font(.subheadline.weight(.semibold))
+                    .readingFont(.subheadline, weight: .semibold)
                     .lineLimit(1)
                 HStack(spacing: 4) {
                     ReadStateDot(item: item, showsUnread: showsUnread)
                     Text(source != nil
                         ? "Forwarded by \(reader.channelTitle(for: message)) · \(timestampText)"
                         : timestampText)
-                        .font(.caption)
+                        .readingFont(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
@@ -99,21 +99,21 @@ struct TruncatableText: View {
         let attributed = linkified(text, urlEntities: urlEntities)
         VStack(alignment: .leading, spacing: 2) {
             Text(attributed)
-                .font(.subheadline)
+                .readingFont(.subheadline)
                 .lineLimit(8)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { limitedHeight = $0 }
                 .background(alignment: .topLeading) {
                     // 测量用副本：不参与布局尺寸，只报告全文高度
                     Text(attributed)
-                        .font(.subheadline)
+                        .readingFont(.subheadline)
                         .fixedSize(horizontal: false, vertical: true)
                         .hidden()
                         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { fullHeight = $0 }
                 }
             if isTruncated {
                 Text("more")
-                    .font(.subheadline.weight(.medium))
+                    .readingFont(.subheadline, weight: .medium)
                     .foregroundStyle(.tint)
             }
         }
@@ -187,7 +187,7 @@ struct MessageMediaView: View {
         Label(
             item.mediaType == "document" ? "视频 / 文件" : (item.mediaType ?? "附件"),
             systemImage: "doc.fill")
-            .font(.caption)
+            .readingFont(.caption)
             .foregroundStyle(.secondary)
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
@@ -216,17 +216,17 @@ struct WebPagePreviewCard: View {
             VStack(alignment: .leading, spacing: 2) {
                 if let site = webpage.siteName {
                     Text(site)
-                        .font(.caption.weight(.semibold))
+                        .readingFont(.caption, weight: .semibold)
                         .foregroundStyle(.tint)
                 }
                 if let title = webpage.title {
                     Text(title)
-                        .font(.caption.weight(.medium))
+                        .readingFont(.caption, weight: .medium)
                         .lineLimit(2)
                 }
                 if let description = webpage.description {
                     Text(description)
-                        .font(.caption)
+                        .readingFont(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
                 }

@@ -84,7 +84,7 @@ struct XCard: View {
             header
             if let handle = tweet.rtOfHandle {
                 Label("Retweeted @\(handle)", systemImage: "arrow.2.squarepath")
-                    .font(.caption)
+                    .readingFont(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
@@ -110,12 +110,12 @@ struct XCard: View {
             XAvatarView(handle: tweet.authorHandle, name: tweet.authorName)
             VStack(alignment: .leading, spacing: 1) {
                 Text(tweet.displayName)
-                    .font(.subheadline.weight(.semibold))
+                    .readingFont(.subheadline, weight: .semibold)
                     .lineLimit(1)
                 HStack(spacing: 4) {
                     ReadStateDot(item: item, showsUnread: showsUnread)
                     Text(captionText)
-                        .font(.caption)
+                        .readingFont(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
@@ -148,7 +148,7 @@ struct XCard: View {
             Spacer(minLength: 0)
             XFeedbackButtons(feedback: item.feedback, onFeedback: onFeedback, onReason: onReason)
         }
-        .font(.caption)
+        .readingFont(.caption)
         .foregroundStyle(.secondary)
     }
 
@@ -175,12 +175,12 @@ struct XArticleCard: View {
         VStack(alignment: .leading, spacing: 4) {
             if let title = article.title {
                 Text(title)
-                    .font(.subheadline.weight(.medium))
+                    .readingFont(.subheadline, weight: .medium)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             if let preview = article.previewText {
                 Text(preview)
-                    .font(.caption)
+                    .readingFont(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(4)
             }
@@ -201,11 +201,11 @@ struct XQuoteCard: View {
             HStack(spacing: 6) {
                 XAvatarView(handle: quote.authorHandle, name: quote.authorName, size: 18)
                 Text(quote.displayName)
-                    .font(.caption.weight(.semibold))
+                    .readingFont(.caption, weight: .semibold)
                     .lineLimit(1)
                 if let handle = quote.authorHandle, quote.authorName != nil {
                     Text("@\(handle)")
-                        .font(.caption2)
+                        .readingFont(.caption2)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
@@ -213,7 +213,7 @@ struct XQuoteCard: View {
             }
             if let text = quote.text, !text.isEmpty {
                 Text(linkified(text, urlEntities: quote.urls))
-                    .font(.caption)
+                    .readingFont(.caption)
                     .lineLimit(6)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -290,7 +290,7 @@ struct XMediaThumb: View {
             .overlay(alignment: .center) {
                 if isVideo {
                     Image(systemName: "play.fill")
-                        .font(.title3)
+                        .readingFont(.title3)
                         .foregroundStyle(.white)
                         .padding(10)
                         .background(.black.opacity(0.45), in: Circle())
