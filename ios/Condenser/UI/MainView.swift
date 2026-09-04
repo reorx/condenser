@@ -36,51 +36,67 @@ struct MainView: View {
         }
     }
 
+    /// 每个 tab 的内容各自再挂一次 `.environment(reader)`（外层 `tabs(reader).environment(reader)`
+    /// 仍在）：Mac 上 `.sidebarAdaptable` 的 TabView 切到非首个 tab 时，新 tab 的视图树拿不到
+    /// 外层注入的 Observable（2026-09-04 Catalyst 实测，切「设置」即 Fatal error），
+    /// iPhone 上不受影响。挂在 tab 内部是两边都对的写法。
     private func tabs(_ reader: ReaderSession) -> some View {
         TabView(selection: $selectedTab) {
             Tab("Timeline", systemImage: "list.bullet.rectangle", value: MainTab.timeline) {
                 NavigationStack {
                     TimelineScreen()
                 }
+                .environment(reader)
             }
             Tab("订阅", systemImage: "square.stack", value: MainTab.subscriptions) {
                 NavigationStack(path: $subscriptionsPath) {
                     SubscriptionsScreen(scrollToSource: subsScrollTarget)
                 }
+                .environment(reader)
             }
             Tab("收藏", systemImage: "star", value: MainTab.saved) {
                 NavigationStack {
                     SavedScreen()
                 }
+                .environment(reader)
             }
             Tab("设置", systemImage: "gearshape", value: MainTab.settings) {
                 NavigationStack {
                     SettingsScreen()
                 }
+                .environment(reader)
             }
         }
+        // iPhone 上仍是底部 tab 栏；Mac（与 iPad）上变成侧栏——四个 tab 就是 Mac 阅读器
+        // 的标准形状（Mail / News 都这样），底部 tab 栏在桌面窗口里是个错位的手机件
+        .tabViewStyle(.sidebarAdaptable)
         #if DEBUG
         .onOpenURL { handleDebugURL($0, reader: reader) }
         .sheet(item: $debugDetail) { item in
-            if let message = item.telegram {
-                MessageDetailSheet(item: item, message: message, onToggleSaved: {})
-            } else if let story = item.hn {
-                HnDetailSheet(item: item, story: story, onToggleSaved: {})
-            } else if let tweet = item.x {
-                XDetailSheet(
-                    item: item, tweet: tweet, onToggleSaved: {},
-                    onFeedback: { _ in }, onReason: { _ in })
-            } else if let entry = item.rss {
-                RssDetailSheet(item: item, entry: entry, onToggleSaved: {})
+            Group {
+                if let message = item.telegram {
+                    MessageDetailSheet(item: item, message: message, onToggleSaved: {})
+                } else if let story = item.hn {
+                    HnDetailSheet(item: item, story: story, onToggleSaved: {})
+                } else if let tweet = item.x {
+                    XDetailSheet(
+                        item: item, tweet: tweet, onToggleSaved: {},
+                        onFeedback: { _ in }, onReason: { _ in })
+                } else if let entry = item.rss {
+                    RssDetailSheet(item: item, entry: entry, onToggleSaved: {})
+                }
             }
+            .environment(reader)
         }
         .fullScreenCover(item: $debugViewer) { item in
             ImageViewerScreen(item: item)
+                .environment(reader)
         }
         .sheet(item: $debugForward) { route in
             ForwardDialog(
                 itemKey: route.key, isTelegram: route.key.hasPrefix("tg:"),
                 debugAutoComment: route.autoComment)
+                .environment(reader)
         }
         .task { await applyDebugRouteIfNeeded(reader) }
         #endif

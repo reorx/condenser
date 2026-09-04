@@ -50,8 +50,7 @@ struct MessageDetailSheet: View {
             stats = try? await reader.api.messageStats(
                 channelID: message.channelID, messageID: message.id)
         }
-        .presentationDetents([.medium, .large])
-        .presentationDragIndicator(.visible)
+        .detailSheetPresentation()
         .externalLinks(safari: $safariItem)
         .sheet(item: $safariItem) { item in
             SafariView(url: item.url)

@@ -171,6 +171,9 @@ make run         # boot 模拟器 + 安装 + 启动已构建的 app（不触发�
 make dev         # build + run
 make device      # 真机构建 + 推送安装（scripts/device.sh，见下）
 make archive     # App Store 归档 + 导出 ipa（Release，见「App Store 发布」）
+make build-mac   # Mac Catalyst Debug 构建（团队签名，见「Mac Catalyst」）
+make run-mac     # 启动已构建的 Mac app（优雅退出上一个实例，不 pkill）
+make dev-mac     # build-mac + run-mac
 make gen         # 仅重新生成 xcodeproj
 make clean       # 清理构建产物与生成的 xcodeproj
 ```
@@ -383,6 +386,46 @@ percent-encode）。
 `xcrun simctl openurl booted "condenser://debug/<route>"`，但系统会弹
 "Open in Condenser?" 确认框（且该框跨 app 重启存活，误触发后要
 `simctl shutdown && boot` 才能清掉），无人值守走查一律用环境变量形式。
+
+## Mac Catalyst（2026-09-04）
+
+同一份代码编成 Mac app（plan `../kb/plans/2026-09-04-mac-catalyst.md`），零 Swift 改动就能
+编译通过，适配集中在 `UI/Platform.swift`：`Platform.isMac`（编译期判断，不用
+`userInterfaceIdiom`——Catalyst 的 iPad idiom 会答 pad）、`readingColumn()`（列表限宽
+720pt 居中）、`detailSheetPresentation()`（iPhone 两档 detent + grabber；Mac `.page` 尺寸
++ 右上关闭钮 + Esc）、`Platform.deviceName`（Catalyst 的 `UIDevice.name` 是字面的
+「iPad」，Mac 上取主机名）。`MainView` 的 TabView 加 `.sidebarAdaptable`（Mac 变侧栏，
+iPhone 不变），`AutoHideBars` Mac 上直通，外链 Mac 上直接开系统浏览器（没有 X app 可深链，
+Catalyst 的 SFSafariViewController 本来就是转手给 Safari）。
+
+- **project.yml**：`SUPPORTS_MACCATALYST` + `TARGETED_DEVICE_FAMILY[sdk=macosx*]: "2,6"`
+  （6 = Optimize for Mac，AppKit 尺寸的控件；iOS SDK 下仍是 `"1"` iPhone only，别把 2 加进
+  base——商店那边就要交 iPad 截图了）+ `SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: NO` +
+  `DERIVE_MACCATALYST_PRODUCT_BUNDLE_IDENTIFIER: NO`（同 bundle ID = 同一个 app record 的
+  macOS 平台，universal purchase）。`Condenser-macCatalyst.entitlements` 只挂在
+  macOS SDK 下：App Sandbox + 网络客户端 + 相册写入 + **keychain-access-groups**。
+- **每个 tab 内容各挂一次 `.environment(reader)`**（`MainView.tabs`），DEBUG 的三个 sheet
+  同样：`.sidebarAdaptable` 在 Mac 上切到非首个 tab 时，新 tab 的视图树拿不到外层注入的
+  Observable，直接 Fatal error。iPhone 不受影响。
+- ⚠️ **`make build-mac` 缺省团队签名**（Apple Development + 自动 profile，
+  `-destination 'platform=macOS,variant=Mac Catalyst'` 指向这台 Mac，首次会把它注册进团队），
+  不是 ad-hoc：Catalyst 走 data-protection keychain，ad-hoc 签名没有 keychain-access-groups
+  entitlement，`SecItemAdd` 静默返回 -34018，token 存不住——症状是每次重启回登录页而
+  服务器地址还在（UserDefaults）。`KeychainStore.write` 现在会把非零状态写进 OSLog
+  （subsystem `com.reorx.condenser`）。只想编译：`MAC_SIGN=adhoc`。
+- 换签名后首次启动 macOS 会问「differs from previously opened versions」（沙盒容器归属），
+  点 Open Anyway 一次即可。
+- **本地直连**：`CONDENSER_DEBUG_SERVER=… CONDENSER_DEBUG_TOKEN=… CONDENSER_DEBUG_ROUTE=…
+  .build/DerivedData/Build/Products/Debug-maccatalyst/Condenser.app/Contents/MacOS/Condenser`
+  （直接跑二进制，`open` 不传环境变量；路由表同模拟器）。
+- **走查三个坑**（`tmp/2026-09-04-mac-catalyst/` 里有截图脚本）：① 退出用
+  `osascript -e 'tell application id "com.reorx.condenser" to quit'`，**不要 pkill**——
+  SIGTERM 被记成异常退出，下次启动先弹模态的「quit unexpectedly」把窗口挡住；② 别留第二份
+  DerivedData 里的 Condenser.app，`tell application id … to activate` 会被 LaunchServices
+  解析到旧那份并把它启动起来（跑的是老代码）；③ 截图前先 `activate` 把窗口拉到前台，
+  `screencapture -R` 截的是屏幕区域，被终端盖住就是终端。
+- **商店侧还没做**（待 iOS 审核解掉后）：Mac App Distribution + Mac Installer Distribution
+  证书、`make archive` 的 Catalyst 变体、ASC 加 macOS 平台版本 + Mac 截图、单独过审。
 
 ## 排错顺序
 

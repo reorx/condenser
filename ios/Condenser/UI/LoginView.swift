@@ -13,7 +13,7 @@ struct LoginView: View {
     // 一定不是作者的服务器。预填生产域名时，审核员直接点登录会走到生产服务器的密码
     // 页，demo 密码在那里被拒，读起来像「demo 凭据不管用」而不是「服务器填错了」。
     @State private var serverAddress = ""
-    @State private var deviceName = UIDevice.current.name
+    @State private var deviceName = Platform.deviceName
     @State private var errorMessage: String?
     @State private var isAuthorizing = false
 
@@ -70,6 +70,8 @@ struct LoginView: View {
             Spacer()
         }
         .padding(.horizontal, 32)
+        // Mac 窗口里两个输入框不该横跨整个窗口
+        .frame(maxWidth: 480)
         .onAppear {
             if let saved = session.serverURL {
                 serverAddress = saved.absoluteString

@@ -34,6 +34,7 @@ struct MessageListView: View {
             ScrollView {
                 Color.clear.frame(height: 1).id("timeline-top")
                 listBody
+                    .readingColumn()
             }
             .readingFontScale()
             .autoHideBars()

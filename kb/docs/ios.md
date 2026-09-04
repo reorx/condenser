@@ -259,3 +259,19 @@ demo 登录全流程后由用户拍板提交。⚠️ **审核期内 demo server
 **付费应用协议**（银行 + 税务）生效，这个状态公开 API 查不到，只能人去网页确认；没生效
 则过审也上不了架。细节与两个 asc 定价坑见私密 KB。
 
+## Mac Catalyst（2026-09-04）
+
+iOS app 编成 Mac app 的三条路线里选了 Catalyst（plan `kb/plans/2026-09-04-mac-catalyst.md`
+§1 有比较：Designed for iPhone 零代码但固定手机窗口，原生 macOS target 要重写 5 个 UIKit
+文件）。实验先行：不改一行 Swift 就编过了，之后的适配全是「Mac 上该长什么样」而不是
+「Mac 上能不能跑」——侧栏代替底部 tab 栏、阅读列限宽、详情抽屉 `.page` 尺寸 + 关闭钮 +
+Esc、外链开系统浏览器、设备名取主机名。四个源的卡片 / 抽屉 / 登录（ASWebAuthenticationSession
+→ 默认浏览器 → `condenser://auth` 回调）/ 分享面板在 Mac 上全部实测通过，截图
+`tmp/2026-09-04-mac-catalyst/`。
+
+两个真正的发现：**① `.sidebarAdaptable` 的 TabView 在 Mac 上切 tab 丢 Observable 环境**
+（Fatal error，修法是每个 tab 内容各挂一次 `.environment(reader)`）；**② Catalyst 走
+data-protection keychain**，ad-hoc 签名的构建 `SecItemAdd` 静默 -34018，token 存不住——
+`make build-mac` 因此缺省团队签名 + entitlements 里显式写 `keychain-access-groups`
+（不写 Xcode 不嵌 profile），`KeychainStore.write` 也从此把失败写进 OSLog。工程细节、
+走查的三个坑与商店侧待办见 `ios/AGENTS.md`「Mac Catalyst」。

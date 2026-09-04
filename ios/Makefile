@@ -62,3 +62,40 @@ archive: gen
 
 clean:
 	rm -rf $(DERIVED_DATA) CondenserKit/.build Condenser.xcodeproj
+
+# ---- Mac Catalyst（plan 2026-09-04）：同一 scheme、同一 DerivedData，换 destination ----
+# 产物：$(MAC_APP)。App Sandbox entitlements 已挂（Condenser-macCatalyst.entitlements）。
+# ⚠️ 缺省用团队签名（Apple Development + 自动 profile，首次会把这台 Mac 注册进团队），
+# 不是 project.yml 的 ad-hoc "-"：Catalyst 走 data-protection keychain，ad-hoc 签名没有
+# keychain-access-groups entitlement，token 写 Keychain 静默失败（-34018），表现为
+# 每次重启都回到登录页。只想编译不想碰账号：make build-mac MAC_SIGN=adhoc
+MAC_APP := $(DERIVED_DATA)/Build/Products/Debug-maccatalyst/Condenser.app
+# destination 是这台 Mac 而不是 generic：-allowProvisioningDeviceRegistration 只对具体设备生效
+# （generic 下 Xcode 报「Your team has no devices」）
+XCODEBUILD_MAC := xcodebuild -project Condenser.xcodeproj -scheme Condenser \
+	-destination 'platform=macOS,variant=Mac Catalyst' -derivedDataPath $(DERIVED_DATA)
+MAC_SIGN ?= team
+
+.PHONY: build-mac run-mac dev-mac
+
+build-mac: gen
+ifeq ($(MAC_SIGN),adhoc)
+	set -o pipefail && $(XCODEBUILD_MAC) -configuration Debug build | xcbeautify
+else
+	set -o pipefail && source $(APPLE_SECRETS) && $(XCODEBUILD_MAC) -configuration Debug \
+		DEVELOPMENT_TEAM=$$APPLE_TEAM_ID CODE_SIGN_STYLE=Automatic \
+		CODE_SIGN_IDENTITY="Apple Development" \
+		-allowProvisioningUpdates -allowProvisioningDeviceRegistration \
+		build | xcbeautify
+endif
+
+# 直接执行二进制而不是 `open`：这样 CONDENSER_DEBUG_SERVER / _TOKEN / _ROUTE 这些
+# 走查环境变量能原样传进去（`open` 不继承 shell 环境）。
+# 上一个实例用 AppleScript 优雅退出，⚠️ 不要 pkill：SIGTERM 在 macOS 眼里是异常退出，
+# 下次启动会先弹一个模态的「Condenser quit unexpectedly」把主窗口挡住，走查全部失效。
+run-mac:
+	@osascript -e 'tell application id "$(BUNDLE_ID)" to quit' >/dev/null 2>&1 || true
+	@sleep 1
+	@"$(MAC_APP)/Contents/MacOS/Condenser" >/dev/null 2>&1 &
+
+dev-mac: build-mac run-mac

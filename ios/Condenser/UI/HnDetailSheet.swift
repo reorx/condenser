@@ -53,8 +53,7 @@ struct HnDetailSheet: View {
             annotations.configure(
                 item: item, api: reader.api, blocks: bodyText.map { [$0] })
         }
-        .presentationDetents([.medium, .large])
-        .presentationDragIndicator(.visible)
+        .detailSheetPresentation()
         .externalLinks(safari: $safariItem)
         .sheet(item: $safariItem) { item in
             SafariView(url: item.url)

@@ -1,4 +1,5 @@
 import Foundation
+import OSLog
 import Security
 
 /// token 的安全存储抽象：生产为 Keychain，测试注入内存 fake。
@@ -40,7 +41,14 @@ public final class KeychainStore: SecureStore {
         var q = query(key: key)
         q[kSecValueData as String] = Data(value.utf8)
         q[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
-        SecItemAdd(q as CFDictionary, nil)
+        let status = SecItemAdd(q as CFDictionary, nil)
+        // 只记日志不处理：写失败的后果（下次启动回登录页）在上层可见，但原因不可见——
+        // Mac Catalyst 走 data-protection keychain，ad-hoc 签名的本地构建没有
+        // keychain-access-groups entitlement，这里静默返回 -34018（2026-09-04 排查）
+        if status != errSecSuccess {
+            Logger(subsystem: "com.reorx.condenser", category: "keychain")
+                .error("SecItemAdd failed: \(status)")
+        }
     }
 
     public func remove(key: String) {

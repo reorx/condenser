@@ -75,6 +75,8 @@ struct ImageViewerScreen: View {
                     .padding(10)
                     .background(.black.opacity(0.4), in: Circle())
             }
+            // 有键盘的地方（Mac / iPad 外接键盘）Esc 关闭；下滑关闭在触控板上不顺手
+            .keyboardShortcut(.cancelAction)
             .padding(.trailing, 16)
         }
         // 未缩放时 UIScrollView 不消费竖向 pan，这里接管纵向为主的下拉手势

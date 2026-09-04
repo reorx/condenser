@@ -32,6 +32,7 @@ struct SavedScreen: View {
                         .padding(.vertical, 12)
                 }
             }
+            .readingColumn()
         }
         .readingFontScale()
         .autoHideBars()

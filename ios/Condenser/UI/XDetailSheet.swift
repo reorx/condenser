@@ -52,8 +52,7 @@ struct XDetailSheet: View {
                 item: item, api: reader.api,
                 blocks: tweet.bodyText.map { [xDisplayedText($0, urlEntities: tweet.urls)] })
         }
-        .presentationDetents([.medium, .large])
-        .presentationDragIndicator(.visible)
+        .detailSheetPresentation()
         .externalLinks(safari: $safariItem)
         .sheet(item: $safariItem) { item in
             SafariView(url: item.url)

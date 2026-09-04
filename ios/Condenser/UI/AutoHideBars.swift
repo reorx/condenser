@@ -10,6 +10,16 @@ struct AutoHideBars: ViewModifier {
     @State private var model = BarsVisibilityModel()
 
     func body(content: Content) -> some View {
+        // Mac 上不做：滚动隐藏工具栏是给手机屏幕省面积的手段，桌面窗口不缺这几十点，
+        // 而侧栏 + 标题栏跟着滚动闪现在 Mac 上只会显得界面在抽搐
+        if Platform.isMac {
+            content
+        } else {
+            hiding(content)
+        }
+    }
+
+    private func hiding(_ content: Content) -> some View {
         content
             .onScrollPhaseChange { _, newPhase in
                 let scrolling = newPhase == .tracking

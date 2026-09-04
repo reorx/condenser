@@ -1395,3 +1395,23 @@ access_hash, so the bare-id fallback resolves for the process lifetime. Remainin
 alternative: persist access_hash / `InputPeerChannel` ourselves (covers peers not in dialogs,
 e.g. a private channel you've left but still have cached messages for).
 
+## 2026-09-04 · iOS app 编成 Mac app（Mac Catalyst，本地跑通）
+
+Plan `kb/plans/2026-09-04-mac-catalyst.md`。路线选择：Designed for iPhone（零代码、固定
+手机窗口）/ **Catalyst**（同一代码，实测零改动可编译）/ 原生 macOS target（重写 5 个 UIKit
+文件）——选中间。落地：`project.yml` 加 Catalyst（iOS 侧仍 iPhone only，条件设置只改
+macOS SDK）+ 沙盒 entitlements、`UI/Platform.swift`（侧栏 / 限宽阅读列 / page 尺寸抽屉 /
+主机名）、`make build-mac|run-mac|dev-mac`。Mac 上全流程实测：四源卡片与抽屉、订阅、设置、
+登录回调、Keychain 持久化、分享面板、Esc、外链开浏览器；iOS 模拟器构建与 287 个 Kit
+测试不受影响。
+
+- **两个实打实的坑**：`.sidebarAdaptable` TabView 在 Mac 上切 tab 丢 Observable
+  （每个 tab 内再挂一次 `.environment`）；Catalyst 的 data-protection keychain 对 ad-hoc
+  签名 -34018（团队签名 + 显式 `keychain-access-groups`，`KeychainStore` 失败进 OSLog）。
+- **走查工具坑**：pkill 出来的下次启动被 macOS 模态「quit unexpectedly」挡住（用
+  AppleScript quit）；第二份 DerivedData 里的同 bundle ID app 会被 `activate` 启动成老代码；
+  `screencapture -R` 要先 activate。
+- **未做**：Mac App Store 上架（Mac 分发证书、Catalyst archive、ASC macOS 平台版本 +
+  截图、单独过审）——等 iOS 1.0.0 的 2.1 退回解掉之后再动，同一个 app record 两个平台的
+  审核不要叠在一起。
+- 验收图 `tmp/2026-09-04-mac-catalyst/`。

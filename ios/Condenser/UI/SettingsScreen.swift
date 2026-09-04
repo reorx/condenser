@@ -21,7 +21,7 @@ struct SettingsScreen: View {
         Form {
             Section("服务器") {
                 LabeledContent("地址", value: auth.serverURL?.absoluteString ?? "—")
-                LabeledContent("设备名", value: auth.deviceName ?? UIDevice.current.name)
+                LabeledContent("设备名", value: auth.deviceName ?? Platform.deviceName)
             }
             Section {
                 LabeledContent("主题", value: "跟随系统")

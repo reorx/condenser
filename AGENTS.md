@@ -292,6 +292,12 @@ settings tabs, share-as-image from every detail sheet, DEBUG deep-link walkthrou
 the RSS card and the HN summary block (2026-09-02) landed after that submission and ride the next build — a shipped client that meets an unknown source draws blank
 rows, which is why `CONDENSER_RSS_ENABLED` still ships false.
 
+Since 2026-09-04 the same target also builds as a **Mac Catalyst** app
+(`make build-mac`, plan `kb/plans/2026-09-04-mac-catalyst.md`): platform differences live
+in `UI/Platform.swift`, the Mac build is team-signed because Catalyst's data-protection
+keychain rejects ad-hoc builds, and the Mac App Store half (certs, archive, ASC macOS
+platform) is deliberately deferred until the iOS review clears.
+
 Details in `kb/docs/ios.md`: the phase-by-phase feature history with the design
 decisions behind each surface, and the signing / App Store 发布 record (素材、提审、
 demo server). Read it before iOS feature work; `ios/AGENTS.md` has the build commands

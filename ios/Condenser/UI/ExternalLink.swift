@@ -14,11 +14,17 @@ import CondenserKit
 /// 于是深链静默失效成「一切照旧」——这种回归没有测试抓得住。
 @MainActor
 func openExternalURL(_ url: URL, fallback: @escaping (URL) -> Void) {
+    let app = UIApplication.shared
+    // Mac：没有 X app 可深链，也没有 in-app Safari（Catalyst 上 SFSafariViewController
+    // 本来就是转手给 Safari）。桌面上「在浏览器里打开」就是读者期待的行为，直接开。
+    if Platform.isMac {
+        app.open(url)
+        return
+    }
     guard let deepLink = xAppURL(for: url) else {
         fallback(url)
         return
     }
-    let app = UIApplication.shared
     app.open(deepLink, options: [:]) { opened in
         if opened { return }
         // `twitter://` 是 X 改名前就注册的老 scheme，哪天它不认了还有一条路：

@@ -27,6 +27,20 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.reorx.condenser
         # iPhone only（iPad 能跑即可，不专门适配 —— 见 kb/plans v1 非目标）
         TARGETED_DEVICE_FAMILY: "1"
+        # Mac Catalyst（plan 2026-09-04）：同一份代码编成 Mac app。Catalyst 从 iPad idiom
+        # 派生，所以只在 macOS SDK 下把设备家族换成 iPad(2) + Mac(6)——6 = 「Optimize for
+        # Mac」：控件按 AppKit 尺寸 1:1 渲染而不是 iPad 界面缩到 77%。iOS 构建不受影响，
+        # 商店的 iOS 版依旧是 iPhone only（加了 2 就要交 iPad 截图）。
+        SUPPORTS_MACCATALYST: YES
+        "TARGETED_DEVICE_FAMILY[sdk=macosx*]": "2,6"
+        # 有了 Catalyst 就不再让「Designed for iPhone」那个 iOS 二进制在 Mac 上出现
+        SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: NO
+        # 保持 com.reorx.condenser，不派生 maccatalyst.* 前缀：同一 bundle ID 在 ASC 上
+        # 是同一个 app record 的 macOS 平台版本（universal purchase，买一次两端都有）
+        DERIVE_MACCATALYST_PRODUCT_BUNDLE_IDENTIFIER: NO
+        # Mac App Store 强制 App Sandbox；只在 macOS SDK 下挂 entitlements，
+        # iOS 的 profile 不认识 app-sandbox 这个 key
+        "CODE_SIGN_ENTITLEMENTS[sdk=macosx*]": Condenser/Condenser-macCatalyst.entitlements
         # 模拟器工作流无需签名；真机部署时再配 DEVELOPMENT_TEAM
         CODE_SIGN_STYLE: Manual
         CODE_SIGN_IDENTITY: "-"

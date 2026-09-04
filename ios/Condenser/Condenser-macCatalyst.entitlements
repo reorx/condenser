@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Mac App Store 的硬性要求：沙盒 + 出站网络（app 只连自己的 condenser 服务器） -->
+	<key>com.apple.security.app-sandbox</key>
+	<true/>
+	<key>com.apple.security.network.client</key>
+	<true/>
+	<!-- Catalyst 走 data-protection keychain（和 iOS 一样），它要求这条 + 一份 provisioning
+	     profile 里的 application-identifier；没有就 -34018，token 存不住。写明这条也是让
+	     Xcode 自动签名知道「需要 profile」——否则 Debug 构建根本不嵌 profile -->
+	<key>keychain-access-groups</key>
+	<array>
+		<string>$(AppIdentifierPrefix)com.reorx.condenser</string>
+	</array>
+	<!-- 分享面板「存储图像」写相册：沙盒下写 Photos 库需要这条 -->
+	<key>com.apple.security.personal-information.photos-library</key>
+	<true/>
+</dict>
+</plist>
