@@ -103,7 +103,7 @@ Algolia 搜索，直接锁定 discussion（vibe-reader 记录过 Algolia 滞后 
 > `defaultPrevented` 的点击（已被取消的点击不会开 tab）；`auxclick` 只认中键（右键也触发 auxclick）。
 > (2) `shouldAnnounce` 额外排除**同源链接**（media / avatar / preview 代理不是文章）。(3) 协议版本
 > 不匹配的 hello：记下 `version`、`available` 保持 false，Settings 行显示「协议版本不匹配 (vN)」，
-> 开关禁用。(4) `bye` 同时把 `linked` 置回 false——联动是这条连接的属性，下一次 hello 会重述开关。
+> 开关禁用。(4) `bye` 把整个 store 归位（`linked` 和 `version` 都清）——它们都是这条连接的属性，下一次 hello 会重述；首轮联调发现只清前两者时 Settings 会显示幻影「协议版本不匹配 (v1)」，已修。
 > (5) 提示每次页面加载只弹一次；扩展侧已开启联动时不弹。(6) `vibe-reader:status` 已进类型联合，
 > 不处理（Phase D）。
 

@@ -32,6 +32,10 @@ function fromBridge(msg: Record<string, unknown>, over: { source?: unknown; ns?:
 }
 
 let posted: unknown[];
+// Uninstallers collected here rather than called at the end of each test, so a
+// failing assertion cannot leak a listener into the next case.
+let uninstall: Array<() => void> = [];
+const listen = () => uninstall.push(listenToBridge());
 
 beforeEach(() => {
   resetForTests();
@@ -42,6 +46,8 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  for (const off of uninstall) off();
+  uninstall = [];
   vi.restoreAllMocks();
 });
 
@@ -53,32 +59,31 @@ describe('bridge presence', () => {
   });
 
   it('vibe-reader:hello marks the bridge available and mirrors linked', () => {
-    const off = listenToBridge();
+    listen();
     fromBridge({ type: 'vibe-reader:hello', linked: true });
     expect(getSnapshot()).toMatchObject({ available: true, linked: true, version: PROTOCOL_VERSION });
-    off();
   });
 
-  it('vibe-reader:bye marks the bridge gone (the port dropped: sidepanel closed / extension reloaded)', () => {
-    const off = listenToBridge();
+  it('vibe-reader:bye puts everything back — the version too, it described a bridge that is gone', () => {
+    listen();
     fromBridge({ type: 'vibe-reader:hello', linked: true });
     fromBridge({ type: 'vibe-reader:bye' });
-    expect(getSnapshot()).toMatchObject({ available: false, linked: false });
-    off();
+    // Found in the 2026-09-04 walkthrough: a leftover version read as "protocol
+    // mismatch (v1)" in Settings once the sidepanel closed.
+    expect(getSnapshot()).toEqual({ available: false, linked: false, version: null });
   });
 
   it('vibe-reader:link is the only thing that flips linked', () => {
-    const off = listenToBridge();
+    listen();
     fromBridge({ type: 'vibe-reader:hello', linked: false });
     fromBridge({ type: 'vibe-reader:link', linked: true });
     expect(getSnapshot().linked).toBe(true);
     fromBridge({ type: 'vibe-reader:link', linked: false });
     expect(getSnapshot().linked).toBe(false);
-    off();
   });
 
   it('a hello at another protocol version is recorded but not treated as available', () => {
-    const off = listenToBridge();
+    listen();
     window.dispatchEvent(
       new MessageEvent('message', {
         data: { ns: BRIDGE_NS, v: PROTOCOL_VERSION + 1, type: 'vibe-reader:hello', linked: true },
@@ -86,11 +91,10 @@ describe('bridge presence', () => {
       }),
     );
     expect(getSnapshot()).toEqual({ available: false, linked: false, version: PROTOCOL_VERSION + 1 });
-    off();
   });
 
   it('notifies subscribers on every change and stops after unsubscribe', () => {
-    const off = listenToBridge();
+    listen();
     const listener = vi.fn();
     const unsub = subscribe(listener);
     fromBridge({ type: 'vibe-reader:hello', linked: false });
@@ -98,7 +102,6 @@ describe('bridge presence', () => {
     unsub();
     fromBridge({ type: 'vibe-reader:link', linked: true });
     expect(listener).toHaveBeenCalledTimes(1);
-    off();
   });
 
   it('stops listening once uninstalled', () => {
@@ -111,27 +114,24 @@ describe('bridge presence', () => {
 
 describe('origin checks', () => {
   it('ignores a message whose source is not this window', () => {
-    const off = listenToBridge();
+    listen();
     fromBridge({ type: 'vibe-reader:hello', linked: true }, { source: null });
     expect(getSnapshot().available).toBe(false);
-    off();
   });
 
   it('ignores a message under another namespace — including our own outbound ones', () => {
-    const off = listenToBridge();
+    listen();
     fromBridge({ type: 'vibe-reader:hello', linked: true }, { ns: 'other' });
     fromBridge({ type: 'vibe-reader:hello', linked: true }, { ns: PAGE_NS });
     expect(getSnapshot().available).toBe(false);
-    off();
   });
 
   it('ignores junk data without throwing', () => {
-    const off = listenToBridge();
+    listen();
     window.dispatchEvent(new MessageEvent('message', { data: 'a string', source: window }));
     window.dispatchEvent(new MessageEvent('message', { data: null, source: window }));
     window.dispatchEvent(new MessageEvent('message', { data: { ns: BRIDGE_NS }, source: window }));
     expect(getSnapshot().available).toBe(false);
-    off();
   });
 });
 
@@ -143,24 +143,22 @@ describe('outbound messages', () => {
   });
 
   it('installVibeReader says hello on mount (the bridge may already be there)', () => {
-    const off = installVibeReader(document);
+    uninstall.push(installVibeReader(document));
     expect(posted).toContainEqual({ ns: PAGE_NS, v: PROTOCOL_VERSION, type: 'condenser:hello' });
-    off();
   });
 
   it('setLink requests the switch and does NOT flip linked optimistically — the extension is the truth', () => {
-    const off = listenToBridge();
+    listen();
     fromBridge({ type: 'vibe-reader:hello', linked: false });
     setLink(true);
     expect(lastPosted()).toEqual({ ns: PAGE_NS, v: PROTOCOL_VERSION, type: 'condenser:set-link', linked: true });
     expect(getSnapshot().linked).toBe(false);
     fromBridge({ type: 'vibe-reader:link', linked: true });
     expect(getSnapshot().linked).toBe(true);
-    off();
   });
 
   it('announceOpen posts condenser:open only while linked', () => {
-    const off = listenToBridge();
+    listen();
     expect(announceOpen({ url: 'https://example.com/a' })).toBe(false);
     expect(posted.find((m) => (m as { type: string }).type === 'condenser:open')).toBeUndefined();
 
@@ -173,7 +171,6 @@ describe('outbound messages', () => {
       url: 'https://example.com/a',
       title: 'A',
     });
-    off();
   });
 });
 

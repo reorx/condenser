@@ -164,6 +164,15 @@ describe('SettingsDialog Vibe Reader section', () => {
     expect(sw).toHaveAttribute('aria-checked', 'true');
   });
 
+  it('goes back to "no extension" when the sidepanel closes — not to a phantom version mismatch', async () => {
+    renderDialog();
+    fromBridge({ type: 'vibe-reader:hello', linked: true });
+    expect(await screen.findByText('已连接 · 联动开启')).toBeInTheDocument();
+    fromBridge({ type: 'vibe-reader:bye' });
+    expect(await screen.findByText('未检测到扩展')).toBeInTheDocument();
+    expect(screen.getByRole('switch', { name: 'Vibe Reader 联动' })).toBeDisabled();
+  });
+
   it('names a protocol mismatch instead of offering a switch that cannot work', async () => {
     renderDialog();
     fromBridge({ type: 'vibe-reader:hello', linked: true, v: PROTOCOL_VERSION + 1 });

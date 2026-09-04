@@ -153,9 +153,11 @@ function onBridgeMessage(msg: BridgeMessage) {
       if (state.available) setState({ linked: !!msg.linked });
       return;
     case 'vibe-reader:bye':
-      // The link is a property of the connection: with the bridge gone there is
-      // nobody to announce to, and the next hello restates the switch anyway.
-      setState({ available: false, linked: false });
+      // Everything here described the bridge that just left: the link is a
+      // property of the connection (nobody to announce to; the next hello restates
+      // the switch), and so is the version — a leftover one read as "protocol
+      // mismatch" in Settings once the sidepanel closed (2026-09-04 walkthrough).
+      setState(INITIAL);
       return;
     case 'vibe-reader:status':
       return;
