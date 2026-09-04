@@ -179,4 +179,17 @@ describe('HnCard', () => {
     expect(screen.queryByText('Example Site')).toBeNull();
     expect(screen.queryByText('Og description')).toBeNull();
   });
+
+  // Plan 2026-09-02 §2.3: the Vibe Reader delegate (AppShell) reads the story off
+  // the anchor, so the extension can open the thread without an Algolia search.
+  it('tags the title and comments links with the story for the Vibe Reader delegate', () => {
+    wrap(<HnCard item={makeItem()} />);
+    for (const link of [screen.getByRole('link', { name: 'A story' }), screen.getByRole('link', { name: '45 comments' })]) {
+      expect(link).toHaveAttribute('data-vr-hn-id', '101');
+      expect(link).toHaveAttribute('data-vr-title', 'A story');
+      expect(link).toHaveAttribute('data-vr-hn-score', '120');
+      expect(link).toHaveAttribute('data-vr-hn-comments', '45');
+      expect(link).toHaveAttribute('data-vr-hn-submitted', '2026-07-19T10:00:00+00:00');
+    }
+  });
 });

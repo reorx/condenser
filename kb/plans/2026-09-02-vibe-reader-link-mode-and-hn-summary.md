@@ -95,6 +95,18 @@ Algolia 搜索，直接锁定 discussion（vibe-reader 记录过 Algolia 滞后 
 
 ## 2. Phase A —— 联动客户端（前端）
 
+> **状态：✅ 前端 + 单测已完成 2026-09-04**（`frontend/src/lib/vibeReader.ts` + `hooks/useVibeReader.ts`
+> + `components/VibeReaderPrompt.tsx` / `VibeReaderDot.tsx`、`SettingsDialog` 行、`AppShell` 装配、
+> `index.html` meta、§2.3 的 data 属性；`vibeReader.test.ts` 29 条 + `VibeReaderPrompt.test.tsx` 6 条
+> + Settings / HnCard 各加用例）。**未联调**：扩展侧 Phase 1 未就绪，§6.2 的走查与截图归档待其完成。
+> 与本节的几处出入 / 补充：(1) 委托挂在 `document` 而不是 `AppShell` 的根元素，**bubble 阶段**并跳过
+> `defaultPrevented` 的点击（已被取消的点击不会开 tab）；`auxclick` 只认中键（右键也触发 auxclick）。
+> (2) `shouldAnnounce` 额外排除**同源链接**（media / avatar / preview 代理不是文章）。(3) 协议版本
+> 不匹配的 hello：记下 `version`、`available` 保持 false，Settings 行显示「协议版本不匹配 (vN)」，
+> 开关禁用。(4) `bye` 同时把 `linked` 置回 false——联动是这条连接的属性，下一次 hello 会重述开关。
+> (5) 提示每次页面加载只弹一次；扩展侧已开启联动时不弹。(6) `vibe-reader:status` 已进类型联合，
+> 不处理（Phase D）。
+
 ### 2.1 测试先行（BDD）
 
 `frontend/src/lib/vibeReader.test.ts`：

@@ -14,6 +14,7 @@ import { sanitizeHtml } from '@/lib/sanitize';
 import { hnCommentsUrl } from '@/lib/sources';
 import { useUnreadIndicator } from '@/lib/unreadIndicator';
 import { cn } from '@/lib/utils';
+import { hnLinkAttrs } from '@/lib/vibeReader';
 import type { ReadTarget, TimelineItem } from '@/lib/types';
 
 import { AnnotationBadge } from './AnnotationBadge';
@@ -76,6 +77,10 @@ function HnCardImpl({ item, observe, pendingKeys }: Props) {
   );
 
   const commentsUrl = hnCommentsUrl(hn.id);
+  // Both outbound links carry the story's identity for the Vibe Reader delegate
+  // (`AppShell`) — the extension then reads the thread directly instead of
+  // searching Algolia for it. Attributes only; the clicks are not handled here.
+  const vrAttrs = hnLinkAttrs(hn);
   const isJob = hn.type === 'job';
   const isActive = open?.key === item.key;
   // Under a summary the preview's description says the same thing a second time
@@ -153,6 +158,7 @@ function HnCardImpl({ item, observe, pendingKeys }: Props) {
         href={hn.url ?? commentsUrl}
         target="_blank"
         rel="noreferrer"
+        {...vrAttrs}
         className={cn(
           'mt-1 block text-sm leading-relaxed font-medium break-words hover:underline',
           isJob && 'text-muted-foreground',
@@ -186,7 +192,7 @@ function HnCardImpl({ item, observe, pendingKeys }: Props) {
           <>
             <span>{hn.score} points</span>
             <span aria-hidden>·</span>
-            <a href={commentsUrl} target="_blank" rel="noreferrer" className="hover:underline">
+            <a href={commentsUrl} target="_blank" rel="noreferrer" {...vrAttrs} className="hover:underline">
               {hn.comments_count} comments
             </a>
           </>

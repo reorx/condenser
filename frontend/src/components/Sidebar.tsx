@@ -7,6 +7,7 @@ import { navLinkClass } from '@/components/SidebarChannelLink';
 import { SidebarSourceGroup } from '@/components/SidebarSourceGroup';
 import { UnreadBadge } from '@/components/UnreadBadge';
 import { Button } from '@/components/ui/button';
+import { VibeReaderDot } from '@/components/VibeReaderDot';
 import { useCollapsedSources } from '@/hooks/useCollapsedSources';
 import { useSources } from '@/hooks/useSources';
 
@@ -89,6 +90,7 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
       >
         <Settings className="size-4" />
         Settings
+        <VibeReaderDot className="ml-auto" />
       </Button>
 
       <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />

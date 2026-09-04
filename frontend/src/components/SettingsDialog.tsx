@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
-import { Circle, Lock, LogIn, LogOut, Minus, Monitor, Moon, Phone, Sun } from 'lucide-react';
+import { Circle, Lock, LogIn, LogOut, Minus, Monitor, Moon, Phone, Puzzle, Sun } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { toast } from 'sonner';
 
@@ -11,8 +11,10 @@ import { SegmentedOption } from '@/components/SegmentedOption';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { Switch } from '@/components/ui/switch';
 import { useAppMeta, useSetForwardChannel, useSetLanguages } from '@/hooks/useAppMeta';
 import { useTgStatus } from '@/hooks/useTgStatus';
+import { useVibeReader } from '@/hooks/useVibeReader';
 import { api } from '@/lib/api';
 import { queryClient, TG_STATUS_KEY } from '@/lib/queryClient';
 import { type Theme, useTheme } from '@/lib/theme';
@@ -38,6 +40,14 @@ const LANGUAGE_OPTIONS: { value: string; label: string }[] = [
   { value: 'ko', label: '한국어' },
 ];
 
+/** The one line that tells "no extension" from "extension, link off" from
+ *  "extension at a protocol version we don't speak". */
+function vibeReaderStatusText(s: { available: boolean; linked: boolean; version: number | null }): string {
+  if (s.available) return s.linked ? '已连接 · 联动开启' : '已连接 · 联动关闭';
+  if (s.version != null) return `已连接 · 协议版本不匹配 (v${s.version})`;
+  return '未检测到扩展';
+}
+
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return <div className="text-xs font-medium tracking-wide text-muted-foreground/70 uppercase">{children}</div>;
 }
@@ -48,6 +58,8 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
   const { theme, setTheme } = useTheme();
   const { mode: unreadMode, setMode: setUnreadMode } = useUnreadIndicator();
   const [confirmTgLogout, setConfirmTgLogout] = useState(false);
+
+  const vibe = useVibeReader();
 
   const meta = useAppMeta();
   const setForward = useSetForwardChannel();
@@ -181,6 +193,26 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
             </Button>
           </form>
           <p className="text-xs text-muted-foreground">Target channel for "forward to my channel".</p>
+        </div>
+
+        <div className="space-y-2">
+          <SectionLabel>Vibe Reader</SectionLabel>
+          {/* The switch mirrors the extension's own; flipping it only *asks* (the
+              answer comes back as vibe-reader:link), so no optimistic state here.
+              Disabled without a bridge: there is nobody to ask. */}
+          <div className="flex items-center gap-2 text-sm">
+            <Puzzle className="size-4 text-muted-foreground" />
+            <span className="flex-1">{vibeReaderStatusText(vibe)}</span>
+            <Switch
+              aria-label="Vibe Reader 联动"
+              checked={vibe.linked}
+              disabled={!vibe.available}
+              onCheckedChange={(v) => vibe.setLink(v)}
+            />
+          </div>
+          <p className="text-xs text-muted-foreground">
+            开启后，从这里点开的链接会在 Vibe Reader 侧栏自动生成摘要。开关的状态由扩展保存。
+          </p>
         </div>
 
         <div className="space-y-2">

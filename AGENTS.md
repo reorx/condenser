@@ -214,6 +214,23 @@ React Router v7, **pnpm**. Backend `app.py` auto-serves `frontend/dist` at `/` i
 - **New-content poll**: `useNewContent` polls `/api/timeline/new?after=head_cursor` (from page-1
   `head_cursor`) every 30s, paused when hidden → floating banner → refetch + scroll-to-top.
 - **Avatars**: `ChannelAvatar` hits `/api/channels/{id}/avatar`, falls back to a colored initial.
+- **Vibe Reader link mode** (plan `kb/plans/2026-09-02-vibe-reader-link-mode-and-hn-summary.md`
+  Phase A, 2026-09-04; pairs with the `../vibe-reader-hn` extension): `lib/vibeReader.ts` is
+  the contract's copy on this side — `window.postMessage` on our own origin, accepted only
+  from `event.source === window` under the `vibe-reader` namespace, `v: 1`, pinned by its
+  test. `index.html`'s `<meta name="application-name" content="condenser">` is how the
+  extension's sidepanel recognizes a tab and injects its bridge; the bridge's presence *is*
+  "the sidepanel is open" (no heartbeat, `bye` on port drop). Two user decisions the store
+  enforces: the link switch's **truth lives in the extension** (`setLink` asks, `linked`
+  flips on `vibe-reader:link`, never optimistically; condenser keeps only the 不再提示
+  flag), and **only announced clicks get processed** — one click/auxclick delegate on the
+  document (`AppShell`) posts `condenser:open` for each new-tab http(s) link while linked,
+  skipping `NO_ARTICLE_HOSTS` (x.com / twitter.com / t.me / HN user pages; HN *item* pages
+  go through), never `preventDefault`ing. HN links carry `hnLinkAttrs` (`data-vr-hn-*`) so
+  the extension locks onto the thread without an Algolia search. No backend involvement.
+  Surfaces: `VibeReaderPrompt` toast, a `SettingsDialog` row with a mirrored `Switch`,
+  `VibeReaderDot` on the sidebar. Phase D (`vibe-reader:status` → card badge) is accepted
+  by the type union but not acted on.
 - **Link previews**: clicking a message's **time** opens `LinkPreviewPane` (shadcn `Sheet`, mounted
   once in `AppShell`, covers timeline + saved views) with previews for the message's URLs from
   `GET /api/messages/{cid}/{mid}/previews` + a pinned "Open original in Telegram" footer link

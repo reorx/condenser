@@ -9,6 +9,7 @@ import { XAvatar } from '@/components/XAvatar';
 import { channelName, compactNumber, fullDateLabel } from '@/lib/format';
 import { FEEDBACK_REASON_LABELS, hnCommentsUrl, rssFeedLabel, xProfileUrl, X_FORYOU_FEED } from '@/lib/sources';
 import type { Subscription, TimelineItem } from '@/lib/types';
+import { hnLinkAttrs } from '@/lib/vibeReader';
 
 import { XVerdictDetail } from './XVerdictDetail';
 
@@ -164,7 +165,7 @@ export function ItemDetailInfo({ item, sub }: Props) {
       {hn.qualified_at && <DetailRow label="入选时间">{fullDateLabel(hn.qualified_at)}</DetailRow>}
       <DetailRow label="热度">
         {hn.score} 分 ·{' '}
-        <a href={hnCommentsUrl(hn.id)} target="_blank" rel="noreferrer" className="hover:underline">
+        <a href={hnCommentsUrl(hn.id)} target="_blank" rel="noreferrer" {...hnLinkAttrs(hn)} className="hover:underline">
           {hn.comments_count} 条评论
         </a>
       </DetailRow>

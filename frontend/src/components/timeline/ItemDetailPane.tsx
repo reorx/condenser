@@ -15,6 +15,7 @@ import { errorMessage } from '@/lib/api';
 import { tgMessageUrl } from '@/lib/format';
 import { useItemDetailPane } from '@/lib/itemDetailPane';
 import { hnCommentsUrl, xPreviewUrls, xTweetUrl } from '@/lib/sources';
+import { hnLinkAttrs } from '@/lib/vibeReader';
 import type { TimelineItem } from '@/lib/types';
 import { cn } from '@/lib/utils';
 
@@ -271,6 +272,7 @@ export function ItemDetailPane() {
               }
               target="_blank"
               rel="noopener noreferrer"
+              {...(story ? hnLinkAttrs(story) : {})}
               className="inline-flex items-center gap-2 text-sm text-muted-foreground transition-colors hover:text-foreground"
             >
               <ExternalLink className="size-4" />

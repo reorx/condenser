@@ -5,7 +5,9 @@ import { Outlet, useLocation } from 'react-router-dom';
 import { Sidebar } from '@/components/Sidebar';
 import { ItemDetailPane } from '@/components/timeline/ItemDetailPane';
 import { Button } from '@/components/ui/button';
+import { VibeReaderPrompt } from '@/components/VibeReaderPrompt';
 import { ItemDetailPaneProvider } from '@/lib/itemDetailPane';
+import { installVibeReader } from '@/lib/vibeReader';
 
 export function AppShell() {
   const [open, setOpen] = useState(false);
@@ -13,6 +15,12 @@ export function AppShell() {
 
   // Close the mobile drawer on navigation.
   useEffect(() => setOpen(false), [location.pathname, location.search]);
+
+  // Vibe Reader link mode: listen for the extension's bridge, delegate every
+  // new-tab link click on the document to it, and say hello (the bridge may have
+  // been injected before React mounted — both sides greet, whoever is second finds
+  // the other). One listener here covers every card on every route.
+  useEffect(() => installVibeReader(document), []);
 
   return (
     <ItemDetailPaneProvider>
@@ -57,6 +65,7 @@ export function AppShell() {
         </main>
       </div>
       <ItemDetailPane />
+      <VibeReaderPrompt />
     </ItemDetailPaneProvider>
   );
 }

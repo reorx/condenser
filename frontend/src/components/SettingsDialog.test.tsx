@@ -1,6 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import type { ReactNode } from 'react';
@@ -24,6 +24,7 @@ vi.stubGlobal(
 import { api } from '@/lib/api';
 import { ThemeProvider } from '@/lib/theme';
 import { UnreadIndicatorProvider } from '@/lib/unreadIndicator';
+import { BRIDGE_NS, PAGE_NS, PROTOCOL_VERSION, listenToBridge, resetForTests } from '@/lib/vibeReader';
 
 import { SettingsDialog } from './SettingsDialog';
 
@@ -108,5 +109,65 @@ describe('SettingsDialog 语言 section', () => {
     // findBy + checked waits out the app-meta fetch (all pills start unchecked)
     expect(await screen.findByRole('checkbox', { name: '日本語', checked: true })).toBeInTheDocument();
     expect(screen.getByRole('checkbox', { name: '中文' })).toHaveAttribute('aria-checked', 'false');
+  });
+});
+
+describe('SettingsDialog Vibe Reader section', () => {
+  let offBridge: () => void;
+  let posted: unknown[];
+
+  function fromBridge(msg: Record<string, unknown>) {
+    act(() => {
+      window.dispatchEvent(
+        new MessageEvent('message', { data: { ns: BRIDGE_NS, v: PROTOCOL_VERSION, ...msg }, source: window }),
+      );
+    });
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(api.getAppMeta).mockResolvedValue(meta([]));
+    resetForTests();
+    posted = [];
+    vi.spyOn(window, 'postMessage').mockImplementation((m: unknown) => {
+      posted.push(m);
+    });
+    offBridge = listenToBridge();
+  });
+
+  afterEach(() => {
+    offBridge();
+    vi.restoreAllMocks();
+  });
+
+  it('says no extension was detected and keeps the switch disabled', async () => {
+    renderDialog();
+    expect(await screen.findByText('未检测到扩展')).toBeInTheDocument();
+    expect(screen.getByRole('switch', { name: 'Vibe Reader 联动' })).toBeDisabled();
+  });
+
+  // The switch only asks; the extension answers with vibe-reader:link. Until it
+  // does, the switch stays where the extension last said it was.
+  it('mirrors the bridge and asks the extension to flip the link', async () => {
+    renderDialog();
+    fromBridge({ type: 'vibe-reader:hello', linked: false });
+    expect(await screen.findByText('已连接 · 联动关闭')).toBeInTheDocument();
+    const sw = screen.getByRole('switch', { name: 'Vibe Reader 联动' });
+    expect(sw).toBeEnabled();
+
+    await userEvent.click(sw);
+    expect(posted).toContainEqual({ ns: PAGE_NS, v: PROTOCOL_VERSION, type: 'condenser:set-link', linked: true });
+    expect(sw).toHaveAttribute('aria-checked', 'false');
+
+    fromBridge({ type: 'vibe-reader:link', linked: true });
+    expect(await screen.findByText('已连接 · 联动开启')).toBeInTheDocument();
+    expect(sw).toHaveAttribute('aria-checked', 'true');
+  });
+
+  it('names a protocol mismatch instead of offering a switch that cannot work', async () => {
+    renderDialog();
+    fromBridge({ type: 'vibe-reader:hello', linked: true, v: PROTOCOL_VERSION + 1 });
+    expect(await screen.findByText(`已连接 · 协议版本不匹配 (v${PROTOCOL_VERSION + 1})`)).toBeInTheDocument();
+    expect(screen.getByRole('switch', { name: 'Vibe Reader 联动' })).toBeDisabled();
   });
 });
