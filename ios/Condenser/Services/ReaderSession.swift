@@ -29,6 +29,13 @@ final class ReaderSession {
     private let snapshots = SnapshotCache()
     private let onUnauthorized: @MainActor () -> Void
 
+    #if DEBUG
+    /// DEBUG 路由 `detail/…` 在 Mac 上的投递口：MainView 解析出条目后放这里，
+    /// 当前可见的 `MessageListView` 接走并放进右侧详情栏——走查看到的才是真实形态
+    /// （Mac 上详情不弹 sheet）。iPhone 仍由 MainView 直接弹 sheet。
+    var debugDetailRequest: TimelineItem?
+    #endif
+
     init(server: URL, token: String, onUnauthorized: @escaping @MainActor () -> Void) {
         let api = APIClient(baseURL: server, token: token)
         self.api = api

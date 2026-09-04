@@ -100,7 +100,8 @@ struct MessageListView: View {
         }
         // 卡片正文/预览卡里的链接点击 → X 链接进 X app，其余 in-app Safari
         .externalLinks(safari: $safariItem)
-        .sheet(item: $selectedItem) { item in
+        // iPhone 弹 sheet，Mac 在右侧展开一栏（Platform.swift 的 DetailPresentation）
+        .detailPresentation(item: $selectedItem) { item in
             detailSheet(currentVersion(of: item))
         }
         .sheet(item: $safariItem) { item in
@@ -110,6 +111,11 @@ struct MessageListView: View {
         .fullScreenCover(item: $viewerItem) { item in
             ImageViewerScreen(item: item)
         }
+        #if DEBUG
+        .onChange(of: reader.debugDetailRequest) { _, item in
+            if let item { selectedItem = item }
+        }
+        #endif
         .task(id: ObjectIdentifier(store)) {
             // 换 store（切信源 / 未读开关）也是整列表替换，同样要解除武装，
             // 否则上一个列表滚出来的 armed 会把新首屏瞬间判读
@@ -138,6 +144,7 @@ struct MessageListView: View {
                 VStack(spacing: 0) {
                     card(item)
                         .onTapGesture { selectedItem = item }
+                        .detailSelectionHighlight(selectedItem?.key == item.key)
                     Divider().padding(.leading, 16)
                 }
                 // 判读线是视口下边界：卡片下边界进到视口里就算看过。

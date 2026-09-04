@@ -22,6 +22,7 @@ struct SavedScreen: View {
                     VStack(spacing: 0) {
                         card(item)
                             .onTapGesture { selectedItem = item }
+                            .detailSelectionHighlight(selectedItem?.key == item.key)
                         Divider().padding(.leading, 16)
                     }
                 }
@@ -41,7 +42,7 @@ struct SavedScreen: View {
         .macSidebarToggleToolbar()
         .navigationBarTitleDisplayMode(.inline)
         .externalLinks(safari: $safariItem)
-        .sheet(item: $selectedItem) { item in
+        .detailPresentation(item: $selectedItem) { item in
             detailSheet(item)
         }
         .sheet(item: $safariItem) { item in

@@ -285,6 +285,14 @@ Mac idiom 根本没有 Dynamic Type（任何 category 都是 body 13 / subheadli
 接到 AppStorage 开关，工具栏按钮 + View 菜单 ⌥⌘S（⌃⌘S 被 UIKit 一个不管用的内置命令占着，
 重复注册直接崩）。截图 `tmp/2026-09-04-mac-sidebar-fontscale/`。
 
+**同日晚：详情改成右侧栏**（用户反馈：`.page` sheet 比窗口宽时 macOS 会把整个窗口挪开给它
+腾位置，窗口贴着屏幕左边一开详情就被顶着往右跑）。`DetailPresentation`（`UI/Platform.swift`）
+iPhone 仍弹 sheet、Mac 在列表右侧展开一栏，宽度规则在 Kit 的 `DetailColumnLayout`（45%，夹在
+360–520pt，放不下两栏就盖满），选中卡片铺 accent 底色，关闭钮 + Esc；三个源的详情 sheet 零改动，
+因为它们只认 `detailSheetPresentation()`，那一层按环境里有没有 `detailColumnDismiss` 切形态。
+走查踩了一个值得记的坑：容器宽度量在 HStack 自身上会和栏宽互相追、布局死循环吃满 CPU，
+细节与修法在 `ios/AGENTS.md`「Mac Catalyst」。截图 `tmp/2026-09-04-mac-detail-column/`。
+
 ## 阅读现场恢复 + 蓝色胶囊（2026-09-07）
 
 Plan `kb/plans/2026-09-07-ios-state-restore-new-content-pill.md`。把 2026-07-22 的「冷启动

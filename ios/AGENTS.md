@@ -388,7 +388,7 @@ route 取值：`tab/{timeline|subs|channels|saved}` 切 tab（channels 是订阅
 `rss[/<第几个订阅>]` push 某个 RSS feed——**用下标不是 key**，这个源的 feed key 是
 整个 URL，塞不进路径段；
 `settings` 切设置 tab；
-`detail/<cid>/<mid>` / `viewer/<cid>/<mid>` 弹详情
+`detail/<cid>/<mid>` / `viewer/<cid>/<mid>` 弹详情（Mac 上 `detail/…` 一律进右侧详情栏）
 sheet / 全屏图片浏览器（消息须在 timeline 首页内，路由会等首屏加载完才应用）；
 `detail/x/<feed>[/<tweet id>]` 弹推文详情——X 条目单独走一次网络查，因为 For You
 根本不在 `reader.timeline.items` 里；省略 id 时挑该 feed 第一条有判定的（判定证据
@@ -472,6 +472,21 @@ Catalyst 的 SFSafariViewController 本来就是转手给 Safari）。
   普通按钮都能点），`tell application "System Events" to click at {x, y}` 才行；⑥ 开着详情抽屉的
   实例 AppleScript quit 会报「User canceled」，而且**同 bundle 的第二个实例起不来**（看起来像
   新构建没生效）——先 `key code 53`（Esc）关抽屉再 quit。
+- **详情在 Mac 上是右侧栏，不是 sheet**（同日晚，用户反馈：Catalyst 的 `.page` sheet 比窗口宽时
+  macOS 会把整个窗口挪开给它腾位置，窗口贴着屏幕左边一开详情就被顶着往右跑）。
+  `Platform.swift` 的 `DetailPresentation`：iPhone 仍是 `.sheet(item:)`，Mac 上 `HStack` 在列表右侧
+  展开详情栏；`MessageListView` / `SavedScreen` 都改走 `.detailPresentation(item:)`，列表里被选中
+  的卡片 `.detailSelectionHighlight` 铺一层 accent 10% 底色。宽度规则在 Kit 的
+  `DetailColumnLayout`（有测试）：窗口宽的 45%，夹在 360–520pt，列表放不下 320pt 时栏盖满整个
+  内容区（仍在窗口内）。三条要记的：① 详情视图必须 `.id(item.id)`——sheet 每次都是新视图树，栏
+  里换条目只是换参数，不加 id 上一条的 `@State`（标注模型、已取的全文）会留给下一条；② 栏不是
+  presentation，`@Environment(\.dismiss)` 在里面是空操作，关闭走 `\.detailColumnDismiss` 环境值，
+  `DetailSheetPresentation` 见到它就换成「顶部一行关闭钮 + Esc」形态（DEBUG 直接弹的 sheet 仍走
+  `.page` 分支）；③ ⚠️ 容器宽度要量 **`.frame(maxWidth: .infinity)` 之后**的尺寸——直接量 HStack
+  会把子视图总宽量进去，栏宽取自上一轮测量值再加 1pt 分隔线就比容器宽，测量值每轮 +1，
+  布局死循环：实测三个实例各吃满一个核，AppleScript quit / ⌘Q 全无响应，只能 `kill -9`。
+  DEBUG 路由 `detail/…` 在 Mac 上也走这个栏（`ReaderSession.debugDetailRequest` →
+  `MessageListView` 认领），走查脚本 `tmp/2026-09-04-mac-detail-column/route.sh`。
 - **商店侧还没做**（待 iOS 审核解掉后）：Mac App Distribution + Mac Installer Distribution
   证书、`make archive` 的 Catalyst 变体、ASC 加 macOS 平台版本 + Mac 截图、单独过审。
 

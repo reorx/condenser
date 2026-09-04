@@ -129,6 +129,16 @@ struct MainView: View {
         handleDebugURL(url, reader: reader)
     }
 
+    /// Mac 上详情走列表右侧的栏（`MessageListView` 认领 `debugDetailRequest`），
+    /// iPhone 上仍在这里弹 sheet
+    private func presentDebugDetail(_ item: TimelineItem?, reader: ReaderSession) {
+        if Platform.isMac {
+            reader.debugDetailRequest = item
+        } else {
+            debugDetail = item
+        }
+    }
+
     /// 路由：tab/{timeline|subs|channels|saved} 切 tab；channel/{id} push 频道 timeline；
     /// hn 直接 push HN feed timeline；x[/feed] / rss[/下标] push 单 feed timeline；
     /// settings 切设置 tab；detail/{cid}/{mid}、
@@ -185,18 +195,18 @@ struct MainView: View {
             if parts.dropFirst().first == "x" {
                 let feed = parts.dropFirst(2).first ?? XFeed.foryou
                 let id = parts.dropFirst(3).first
-                Task { debugDetail = await debugXItem(feed: feed, id: id, reader: reader) }
+                Task { presentDebugDetail(await debugXItem(feed: feed, id: id, reader: reader), reader: reader) }
             } else if parts.dropFirst().first == "hn" {
                 // detail/hn[/<story id>]：HN 在聚合流里，但走查想看的那条未必在首屏
                 let id = parts.dropFirst(2).first
-                Task { debugDetail = await debugHnItem(id: id, reader: reader) }
+                Task { presentDebugDetail(await debugHnItem(id: id, reader: reader), reader: reader) }
             } else if parts.dropFirst().first == "rss" {
                 // detail/rss[/<条目 id>]：RSS 在聚合流里，但首屏未必有它
                 // （未读窗口把存量都标了已读），所以同样单独查一次
                 let id = parts.dropFirst(2).first
-                Task { debugDetail = await debugRssItem(id: id, reader: reader) }
+                Task { presentDebugDetail(await debugRssItem(id: id, reader: reader), reader: reader) }
             } else {
-                debugDetail = debugItem(parts, reader: reader)
+                presentDebugDetail(debugItem(parts, reader: reader), reader: reader)
             }
         case "forward":
             // forward/<item key>[/<comment>]：直接弹转发 dialog；带第 3 段则自动提交
