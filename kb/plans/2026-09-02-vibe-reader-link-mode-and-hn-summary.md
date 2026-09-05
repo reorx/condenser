@@ -98,7 +98,11 @@ Algolia 搜索，直接锁定 discussion（vibe-reader 记录过 Algolia 滞后 
 > **状态：✅ 前端 + 单测已完成 2026-09-04**（`frontend/src/lib/vibeReader.ts` + `hooks/useVibeReader.ts`
 > + `components/VibeReaderPrompt.tsx` / `VibeReaderDot.tsx`、`SettingsDialog` 行、`AppShell` 装配、
 > `index.html` meta、§2.3 的 data 属性；`vibeReader.test.ts` 29 条 + `VibeReaderPrompt.test.tsx` 6 条
-> + Settings / HnCard 各加用例）。**未联调**：扩展侧 Phase 1 未就绪，§6.2 的走查与截图归档待其完成。
+> + Settings / HnCard 各加用例）。**联调已于 2026-09-04 完成**（扩展侧 Phase 1 就绪当天）：§6.2 的四步
+> 全过——注入桥 → 提示 → 开启（两边一致）→ 点故事链接 → 新 tab 自动跑 Both（无 Algolia 请求）→ 点 comments
+> → hnThread → 再点同一条直接上屏 → 关 sidepanel 收到 bye；截图归档在**扩展仓库**
+> `vibe-reader-hn/tmp/2026-09-04-condenser-link-phase1/`（01–09），本侧不另存。联调抓到本侧一个显示 bug
+> （`bye` 后 `version` 未清，见下文 (4)），已修 `5553906`。
 > 与本节的几处出入 / 补充：(1) 委托挂在 `document` 而不是 `AppShell` 的根元素，**bubble 阶段**并跳过
 > `defaultPrevented` 的点击（已被取消的点击不会开 tab）；`auxclick` 只认中键（右键也触发 auxclick）。
 > (2) `shouldAnnounce` 额外排除**同源链接**（media / avatar / preview 代理不是文章）。(3) 协议版本
@@ -286,11 +290,14 @@ Prompt（`hn_summary.system_prompt`）：中文；先 2-3 句说文章讲了什�
 ## 6. 顺序与验收
 
 1. Phase B 可以独立先做（不依赖扩展），上线后立刻有用。
-2. Phase A 与 vibe-reader Phase 1 一起联调：本机 `pnpm dev` + 扩展 dev 模式，
-   走查：打开 condenser → 提示 → 开启 → 点一条 HN → 新 tab 里 sidepanel 自动开跑。
-   截图归档 `tmp/2026-09-xx-vibe-reader-link/`。
-3. Phase C 随 B 发布；iOS 部分随下一个 build。
-4. ~~Phase D 等对方 Phase 3。~~ 已做（2026-09-05）。
+2. ~~Phase A 与 vibe-reader Phase 1 一起联调~~ 已做（2026-09-04，截图在扩展仓库，见 §2 状态注）。
+   联调方法：condenser 前端 `CONDENSER_BACKEND=https://condenser.reorx.com pnpm exec vite` 代理生产，
+   扩展 dev 浏览器加 `--remote-debugging-port=9222`，完整步骤见对方
+   `kb/docs/condenser-integration-testing.md`。
+3. Phase C 随 B 发布（Web 已上线）；**iOS 部分随下一个 build**——1.0.0 仍在审核，下一个 build 未提交，
+   与 RSS 卡同一批等。
+4. ~~Phase D 等对方 Phase 3。~~ 已做（2026-09-05）。**Phase D 尚未与真实扩展联调**：用第 2 条的方法，
+   看点一条 HN 后卡片角标按 `extracting → generating → done` 变化、关 sidepanel 后消失。
 
 **发布注意**：push master 即部署。Phase B 上线前生产 `.env` 无需新 key（复用
 `CONDENSER_SUMMARY_API_KEY`），但要确认 `readability-lxml` 进了镜像。
