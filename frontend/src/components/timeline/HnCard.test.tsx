@@ -1,10 +1,11 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 
 import { UnreadIndicatorProvider } from '@/lib/unreadIndicator';
+import { BRIDGE_NS, PROTOCOL_VERSION, listenToBridge, resetForTests } from '@/lib/vibeReader';
 import type { HnStory, LinkPreview, TimelineItem } from '@/lib/types';
 
 import { HnCard } from './HnCard';
@@ -191,5 +192,40 @@ describe('HnCard', () => {
       expect(link).toHaveAttribute('data-vr-hn-comments', '45');
       expect(link).toHaveAttribute('data-vr-hn-submitted', '2026-07-19T10:00:00+00:00');
     }
+  });
+
+  // Plan 2026-09-02 §5 (Phase D): the extension reports per-URL progress back and
+  // the card's time line shows it — for the article and the thread alike.
+  describe('Vibe Reader status badge', () => {
+    afterEach(() => resetForTests());
+
+    function fromBridge(msg: Record<string, unknown>) {
+      act(() => {
+        window.dispatchEvent(
+          new MessageEvent('message', {
+            data: { ns: BRIDGE_NS, v: PROTOCOL_VERSION, ...msg },
+            origin: window.location.origin,
+            source: window,
+          }),
+        );
+      });
+    }
+
+    it('lights up on the time line for the story url and for the comments url', () => {
+      const off = listenToBridge();
+      try {
+        wrap(<HnCard item={makeItem()} />);
+        fromBridge({ type: 'vibe-reader:hello', linked: true });
+        expect(screen.queryByLabelText(/^Vibe Reader/)).toBeNull();
+
+        fromBridge({ type: 'vibe-reader:status', url: 'https://example.com/post', state: 'generating' });
+        expect(screen.getByLabelText('Vibe Reader 正在生成')).toBeInTheDocument();
+
+        fromBridge({ type: 'vibe-reader:status', url: 'https://news.ycombinator.com/item?id=101', state: 'done' });
+        expect(screen.getByLabelText('Vibe Reader 已就绪')).toBeInTheDocument();
+      } finally {
+        off();
+      }
+    });
   });
 });

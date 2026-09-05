@@ -1,5 +1,7 @@
 // Dev-only component preview / playbook. Renders real components with mock data so we can
 // screenshot and verify visual changes without a logged-in backend. Add cases as needed.
+import { useEffect } from 'react';
+
 import { ItemDetailPane } from '@/components/timeline/ItemDetailPane';
 import { LinkPreviewCard } from '@/components/timeline/LinkPreviewCard';
 import { TimelineDayGroup } from '@/components/timeline/TimelineDayGroup';
@@ -7,6 +9,7 @@ import { XVerdictDetail } from '@/components/timeline/XVerdictDetail';
 import { ItemDetailPaneProvider } from '@/lib/itemDetailPane';
 import { useTheme } from '@/lib/theme';
 import { useUnreadIndicator } from '@/lib/unreadIndicator';
+import { listenToBridge } from '@/lib/vibeReader';
 import type { XVerdictMeta } from '@/lib/types';
 
 import { CHANNEL_ID, channelLabels, dayItems, samplePreviews } from './mocks';
@@ -62,6 +65,10 @@ function Toolbar() {
 }
 
 export function PreviewApp() {
+  // The Vibe Reader bridge listener `AppShell` normally installs, so the gallery can
+  // show the status badges too: post `{ns:'vibe-reader', v:1, type:'vibe-reader:hello',
+  // linked:true}` and then `vibe-reader:status` messages from the console / eval.
+  useEffect(() => listenToBridge(), []);
   return (
     <ItemDetailPaneProvider>
       <div className="min-h-dvh bg-background text-foreground">

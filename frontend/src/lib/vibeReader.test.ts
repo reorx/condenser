@@ -19,6 +19,7 @@ import {
   sayHello,
   setLink,
   shouldAnnounce,
+  statusFor,
   subscribe,
 } from './vibeReader';
 
@@ -55,7 +56,7 @@ const lastPosted = () => posted[posted.length - 1] as Record<string, unknown>;
 
 describe('bridge presence', () => {
   it('starts unavailable and unlinked', () => {
-    expect(getSnapshot()).toEqual({ available: false, linked: false, version: null });
+    expect(getSnapshot()).toEqual({ available: false, linked: false, version: null, statuses: new Map() });
   });
 
   it('vibe-reader:hello marks the bridge available and mirrors linked', () => {
@@ -70,7 +71,7 @@ describe('bridge presence', () => {
     fromBridge({ type: 'vibe-reader:bye' });
     // Found in the 2026-09-04 walkthrough: a leftover version read as "protocol
     // mismatch (v1)" in Settings once the sidepanel closed.
-    expect(getSnapshot()).toEqual({ available: false, linked: false, version: null });
+    expect(getSnapshot()).toEqual({ available: false, linked: false, version: null, statuses: new Map() });
   });
 
   it('vibe-reader:link is the only thing that flips linked', () => {
@@ -90,7 +91,7 @@ describe('bridge presence', () => {
         source: window,
       }),
     );
-    expect(getSnapshot()).toEqual({ available: false, linked: false, version: PROTOCOL_VERSION + 1 });
+    expect(getSnapshot()).toEqual({ available: false, linked: false, version: PROTOCOL_VERSION + 1, statuses: new Map() });
   });
 
   it('notifies subscribers on every change and stops after unsubscribe', () => {
@@ -355,5 +356,104 @@ describe('link delegate', () => {
     offDelegate = () => {};
     hnLink().dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
     expect(opens()).toHaveLength(0);
+  });
+});
+
+describe('status (Phase D)', () => {
+  const URL_A = 'https://example.com/a';
+  const URL_B = 'https://news.ycombinator.com/item?id=1';
+  const hello = () => fromBridge({ type: 'vibe-reader:hello', linked: true });
+
+  it('is empty before any status and unknown urls read null', () => {
+    listen();
+    hello();
+    expect(getSnapshot().statuses.size).toBe(0);
+    expect(statusFor([URL_A])).toBeNull();
+    expect(statusFor([])).toBeNull();
+  });
+
+  it('records the state per url, later states replacing earlier ones', () => {
+    listen();
+    hello();
+    fromBridge({ type: 'vibe-reader:status', url: URL_A, state: 'extracting' });
+    expect(statusFor([URL_A])).toMatchObject({ state: 'extracting' });
+    fromBridge({ type: 'vibe-reader:status', url: URL_A, state: 'generating', modes: ['summary', 'discussion'] });
+    expect(statusFor([URL_A])).toMatchObject({ state: 'generating', modes: ['summary', 'discussion'] });
+    fromBridge({ type: 'vibe-reader:status', url: URL_A, state: 'done' });
+    expect(statusFor([URL_A])).toMatchObject({ state: 'done' });
+    expect(getSnapshot().statuses.size).toBe(1);
+  });
+
+  it('matches urls by their canonical form — a bare host and its trailing-slash twin are one page', () => {
+    // The extension echoes the `a.href` we announced, which the browser has already
+    // normalized; the card looks up with the raw payload url. `new URL().href` on both
+    // sides makes them meet.
+    listen();
+    hello();
+    fromBridge({ type: 'vibe-reader:status', url: 'https://example.com/', state: 'done' });
+    expect(statusFor(['https://example.com'])).toMatchObject({ state: 'done' });
+    expect(statusFor(['HTTPS://Example.com/'])).toMatchObject({ state: 'done' });
+    expect(statusFor(['https://example.com/other'])).toBeNull();
+  });
+
+  it('a card with several links shows the one the reader touched last', () => {
+    listen();
+    hello();
+    fromBridge({ type: 'vibe-reader:status', url: URL_A, state: 'done' });
+    fromBridge({ type: 'vibe-reader:status', url: URL_B, state: 'extracting' });
+    expect(statusFor([URL_A, URL_B])).toMatchObject({ state: 'extracting' });
+    // Touching the article again makes it the newest, whatever its state.
+    fromBridge({ type: 'vibe-reader:status', url: URL_A, state: 'extracting' });
+    expect(statusFor([URL_A, URL_B])).toMatchObject({ state: 'extracting', url: URL_A });
+  });
+
+  it('returns the same object while nothing changed, so useSyncExternalStore can bail out', () => {
+    listen();
+    hello();
+    fromBridge({ type: 'vibe-reader:status', url: URL_A, state: 'done' });
+    expect(statusFor([URL_A])).toBe(statusFor([URL_A]));
+  });
+
+  it('ignores a status from a bridge that is not available (no hello, or a foreign version)', () => {
+    listen();
+    fromBridge({ type: 'vibe-reader:status', url: URL_A, state: 'done' });
+    expect(statusFor([URL_A])).toBeNull();
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        data: { ns: BRIDGE_NS, v: PROTOCOL_VERSION + 1, type: 'vibe-reader:hello', linked: true },
+        source: window,
+      }),
+    );
+    fromBridge({ type: 'vibe-reader:status', url: URL_A, state: 'done' });
+    expect(statusFor([URL_A])).toBeNull();
+  });
+
+  it('ignores a malformed status without throwing', () => {
+    listen();
+    hello();
+    fromBridge({ type: 'vibe-reader:status', url: 'not a url', state: 'done' });
+    fromBridge({ type: 'vibe-reader:status', url: URL_A, state: 'dancing' });
+    fromBridge({ type: 'vibe-reader:status', state: 'done' });
+    expect(getSnapshot().statuses.size).toBe(0);
+  });
+
+  it('bye drops every status — they described sessions of a sidepanel that is gone', () => {
+    // A badge left spinning after the panel closed would never stop; a reopened
+    // panel re-reports (`extracting` → `done`) on the next click anyway.
+    listen();
+    hello();
+    fromBridge({ type: 'vibe-reader:status', url: URL_A, state: 'generating' });
+    fromBridge({ type: 'vibe-reader:bye' });
+    expect(statusFor([URL_A])).toBeNull();
+    expect(getSnapshot().statuses.size).toBe(0);
+  });
+
+  it('notifies subscribers on a status change', () => {
+    listen();
+    hello();
+    const listener = vi.fn();
+    uninstall.push(subscribe(listener));
+    fromBridge({ type: 'vibe-reader:status', url: URL_A, state: 'queued' });
+    expect(listener).toHaveBeenCalledTimes(1);
   });
 });

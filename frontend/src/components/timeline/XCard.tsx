@@ -2,7 +2,7 @@
 // authors per 50 tweets, so *who* is the primary orientation cue), the text, media,
 // an embedded quote, and the engagement line. The time opens the item-detail pane,
 // matching MessageCard / HnCard.
-import { memo, useCallback } from 'react';
+import { memo, useCallback, useMemo } from 'react';
 import { Bookmark, Heart, MessageCircle, Repeat2 } from 'lucide-react';
 
 import { XAvatar } from '@/components/XAvatar';
@@ -18,6 +18,7 @@ import type { ReadTarget, TimelineItem } from '@/lib/types';
 
 import { AnnotationBadge } from './AnnotationBadge';
 import { ForwardedBadge } from './ForwardedBadge';
+import { VibeReaderBadge } from './VibeReaderBadge';
 import { XFeedbackButtons } from './XFeedbackButtons';
 import { XMedia } from './XMedia';
 import { XQuoteCard } from './XQuoteCard';
@@ -44,6 +45,12 @@ function MetricChip({ icon, value }: { icon: React.ReactNode; value: number }) {
 function XCardImpl({ item, observe, pendingKeys }: Props) {
   const tweet = item.x!;
   const save = useSaveToggle();
+  // The expanded outbound links (what `linkify` points at), for the Vibe Reader
+  // badge; the tweet itself lives on x.com, which is never announced.
+  const vrUrls = useMemo(
+    () => (tweet.urls ?? []).map((u) => u.expanded_url ?? u.url).filter((u): u is string => !!u),
+    [tweet.urls],
+  );
   const { mode } = useUnreadIndicator();
   const { open, openPane } = useItemDetailPane();
 
@@ -121,6 +128,7 @@ function XCardImpl({ item, observe, pendingKeys }: Props) {
         </button>
         <ForwardedBadge item={item} />
         <AnnotationBadge item={item} />
+        <VibeReaderBadge urls={vrUrls} />
         <button
           type="button"
           onClick={() => save.mutate({ key: item.key, saved: !item.is_saved })}

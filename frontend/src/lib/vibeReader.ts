@@ -18,7 +18,7 @@
 // The message shapes below are the contract's copy on this side; the extension
 // keeps its own (`vibe-reader-hn/kb/plans/2026-09-02-condenser-link-mode-multi-session.md`).
 // Both are pinned by tests. Changing either means bumping PROTOCOL_VERSION.
-import { useSyncExternalStore } from 'react';
+import { useMemo, useSyncExternalStore } from 'react';
 
 import type { HnStory } from '@/lib/types';
 
@@ -45,6 +45,24 @@ export interface OpenIntent {
 }
 
 export type VibeReaderStatusState = 'queued' | 'extracting' | 'generating' | 'done' | 'error';
+const STATUS_STATES: ReadonlySet<string> = new Set<VibeReaderStatusState>([
+  'queued',
+  'extracting',
+  'generating',
+  'done',
+  'error',
+]);
+
+/** Where the extension stands on one page the reader opened from here (Phase D). */
+export interface VibeReaderStatus {
+  /** The url as announced (the extension echoes our `condenser:open`). */
+  url: string;
+  state: VibeReaderStatusState;
+  /** What is being / was generated (`summary`, `discussion`, …) when the extension said. */
+  modes?: string[];
+  /** Arrival order; a card with several links shows the one touched last. */
+  seq: number;
+}
 
 type PageMessage =
   | { ns: typeof PAGE_NS; v: number; type: 'condenser:hello' }
@@ -55,7 +73,7 @@ type BridgeMessage =
   | { ns: typeof BRIDGE_NS; v: number; type: 'vibe-reader:hello'; linked: boolean }
   | { ns: typeof BRIDGE_NS; v: number; type: 'vibe-reader:link'; linked: boolean }
   | { ns: typeof BRIDGE_NS; v: number; type: 'vibe-reader:bye' }
-  // Phase D (plan §5): per-URL progress for a card badge. Accepted, not acted on yet.
+  // Phase D (plan §5): per-URL progress, shown as a badge on the card's time line.
   | {
       ns: typeof BRIDGE_NS;
       v: number;
@@ -73,9 +91,15 @@ export interface VibeReaderState {
   /** The protocol version the last hello carried; null before any. Differs from
    *  ours ⟹ available stays false, so Settings can say "version mismatch". */
   version: number | null;
+  /** Per-page progress the extension reported, keyed by `canonicalUrl`. Never
+   *  persisted and never in React Query: a reload starts blank (plan §5), and
+   *  `bye` empties it — a spinner for a sidepanel that closed would spin forever. */
+  statuses: ReadonlyMap<string, VibeReaderStatus>;
 }
 
-const INITIAL: VibeReaderState = { available: false, linked: false, version: null };
+const NO_STATUSES: ReadonlyMap<string, VibeReaderStatus> = new Map();
+const INITIAL: VibeReaderState = { available: false, linked: false, version: null, statuses: NO_STATUSES };
+let statusSeq = 0;
 
 let state: VibeReaderState = INITIAL;
 const listeners = new Set<() => void>();
@@ -103,7 +127,55 @@ export function useVibeReaderState(): VibeReaderState {
 /** Test seam: back to the never-met-a-bridge state. */
 export function resetForTests() {
   state = INITIAL;
+  statusSeq = 0;
   listeners.clear();
+}
+
+// ---------------------------------------------------------------------------
+// Per-page status (Phase D)
+
+/** The form both sides' urls are compared in. The extension echoes the `a.href`
+ *  we announced, which the browser had already normalized (`https://x.com` →
+ *  `https://x.com/`); a card looks up with the raw payload url. `new URL().href`
+ *  is that same normalization. Null when the string is not a url at all. */
+export function canonicalUrl(url: string): string | null {
+  try {
+    return new URL(url).href;
+  } catch {
+    return null;
+  }
+}
+
+/** The status of the link the reader touched last among `urls`, or null. Returns
+ *  the stored object itself, so an unchanged answer is the same reference and
+ *  `useSyncExternalStore` bails out of the re-render. */
+export function statusFor(urls: readonly string[]): VibeReaderStatus | null {
+  let best: VibeReaderStatus | null = null;
+  for (const url of urls) {
+    const key = canonicalUrl(url);
+    const status = key ? state.statuses.get(key) : undefined;
+    if (status && (!best || status.seq > best.seq)) best = status;
+  }
+  return best;
+}
+
+/** What the extension last said about any of a card's links; null = nothing. */
+export function useVibeReaderStatus(urls: readonly string[]): VibeReaderStatus | null {
+  // A fresh array every render is the norm (cards build it from the payload); the
+  // store answers by reference, so the subscription stays cheap either way.
+  const getStatus = useMemo(() => () => statusFor(urls), [urls]);
+  return useSyncExternalStore(subscribe, getStatus, getStatus);
+}
+
+function recordStatus(msg: Extract<BridgeMessage, { type: 'vibe-reader:status' }>) {
+  if (typeof msg.url !== 'string' || !STATUS_STATES.has(msg.state)) return;
+  const key = canonicalUrl(msg.url);
+  if (!key) return;
+  const statuses = new Map(state.statuses);
+  const status: VibeReaderStatus = { url: msg.url, state: msg.state, seq: ++statusSeq };
+  if (Array.isArray(msg.modes)) status.modes = msg.modes.filter((m): m is string => typeof m === 'string');
+  statuses.set(key, status);
+  setState({ statuses });
 }
 
 // ---------------------------------------------------------------------------
@@ -160,6 +232,9 @@ function onBridgeMessage(msg: BridgeMessage) {
       setState(INITIAL);
       return;
     case 'vibe-reader:status':
+      // Only a bridge we accepted gets to paint badges; a foreign-version one
+      // never said a hello we honored.
+      if (state.available) recordStatus(msg);
       return;
   }
 }

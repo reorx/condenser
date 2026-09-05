@@ -229,8 +229,12 @@ React Router v7, **pnpm**. Backend `app.py` auto-serves `frontend/dist` at `/` i
   go through), never `preventDefault`ing. HN links carry `hnLinkAttrs` (`data-vr-hn-*`) so
   the extension locks onto the thread without an Algolia search. No backend involvement.
   Surfaces: `VibeReaderPrompt` toast, a `SettingsDialog` row with a mirrored `Switch`,
-  `VibeReaderDot` on the sidebar. Phase D (`vibe-reader:status` → card badge) is accepted
-  by the type union but not acted on.
+  `VibeReaderDot` on the sidebar. **Phase D** (2026-09-05): `vibe-reader:status` lands in
+  the store's per-URL `statuses` map (keys are `new URL().href`-canonical, since the
+  extension echoes the browser-normalized `a.href` we announced), and `VibeReaderBadge`
+  on the time line of all four cards shows the state of the card's **last-touched** link
+  (spinner / lightning / struck lightning). Never persisted, never in React Query; `bye`
+  clears it along with the rest.
 - **Link previews**: clicking a message's **time** opens `LinkPreviewPane` (shadcn `Sheet`, mounted
   once in `AppShell`, covers timeline + saved views) with previews for the message's URLs from
   `GET /api/messages/{cid}/{mid}/previews` + a pinned "Open original in Telegram" footer link

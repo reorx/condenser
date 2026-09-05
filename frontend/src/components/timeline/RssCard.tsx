@@ -8,7 +8,7 @@
 // item detail pane, which fetches and renders it — the iOS arrangement (detail =
 // the sheet, card = the scan surface), and the pane is also where highlighting
 // lives, so there is exactly one rendering of the article to annotate.
-import { memo, useCallback } from 'react';
+import { memo, useCallback, useMemo } from 'react';
 import { Bookmark } from 'lucide-react';
 
 import { RssGlyph } from '@/components/RssGlyph';
@@ -22,6 +22,7 @@ import type { ReadTarget, TimelineItem } from '@/lib/types';
 
 import { AnnotationBadge } from './AnnotationBadge';
 import { ForwardedBadge } from './ForwardedBadge';
+import { VibeReaderBadge } from './VibeReaderBadge';
 
 interface Props {
   /** Envelope with `rss` present. */
@@ -35,6 +36,7 @@ interface Props {
 function RssCardImpl({ item, observe, pendingKeys }: Props) {
   const rss = item.rss!;
   const save = useSaveToggle();
+  const vrUrls = useMemo(() => (rss.link ? [rss.link] : []), [rss.link]);
   const { mode } = useUnreadIndicator();
   const { open, openPane } = useItemDetailPane();
 
@@ -105,6 +107,7 @@ function RssCardImpl({ item, observe, pendingKeys }: Props) {
         </button>
         <ForwardedBadge item={item} />
         <AnnotationBadge item={item} />
+        <VibeReaderBadge urls={vrUrls} />
         <button
           type="button"
           onClick={() => save.mutate({ key: item.key, saved: !item.is_saved })}

@@ -3,7 +3,7 @@
 // as machine words, RssCard's chip), score/comments/domain/day-rank meta, sanitized
 // self-post text behind a clamp toggle, muted job posts, and the shared
 // details-pane entry on the submitted time.
-import { memo, useCallback, useState } from 'react';
+import { memo, useCallback, useMemo, useState } from 'react';
 import { Bookmark } from 'lucide-react';
 
 import { HnGlyph } from '@/components/HnGlyph';
@@ -19,6 +19,7 @@ import type { ReadTarget, TimelineItem } from '@/lib/types';
 
 import { AnnotationBadge } from './AnnotationBadge';
 import { ForwardedBadge } from './ForwardedBadge';
+import { VibeReaderBadge } from './VibeReaderBadge';
 import { LinkPreviewCard } from './LinkPreviewCard';
 
 interface Props {
@@ -77,6 +78,8 @@ function HnCardImpl({ item, observe, pendingKeys }: Props) {
   );
 
   const commentsUrl = hnCommentsUrl(hn.id);
+  // Both links the reader can open from this card, for the Vibe Reader badge.
+  const vrUrls = useMemo(() => (hn.url ? [hn.url, commentsUrl] : [commentsUrl]), [hn.url, commentsUrl]);
   // Both outbound links carry the story's identity for the Vibe Reader delegate
   // (`AppShell`) — the extension then reads the thread directly instead of
   // searching Algolia for it. Attributes only; the clicks are not handled here.
@@ -137,6 +140,7 @@ function HnCardImpl({ item, observe, pendingKeys }: Props) {
         </button>
         <ForwardedBadge item={item} />
         <AnnotationBadge item={item} />
+        <VibeReaderBadge urls={vrUrls} />
         {isJob && (
           <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium tracking-wide uppercase">Job</span>
         )}

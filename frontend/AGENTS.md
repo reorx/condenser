@@ -89,6 +89,7 @@ Two conventions this list exists to protect:
 | `ItemDetailBody` | The pane's body section — the item's own text rendered **annotatable** (wrapped in `AnnotatedText`), the web counterpart of iOS's four detail sheets growing highlights. Per source, mirroring iOS's choices: TG = the message text (linkified), HN = the sanitized self-post HTML (an external-link story has none), X = the derived display text (`xBodyText` — the same derivation `XCard` prints, so quotes relocate across surfaces and platforms), RSS = the full article, fetched lazily (`useRssArticle`; a saved snapshot's inline `content` skips the fetch) with the AI summary block above it (indigo, deliberately **not** annotatable — machine words; iOS's rule). While the article is not in hand the excerpt keeps the section honest and highlighting stays off (a quote made against the excerpt would relocate against different text); a failed fetch keeps the excerpt + 「正文加载失败」. Renders nothing only when there is no body *and* nothing was ever highlighted — with annotations but no body the layer still mounts so the orphan list can say so |
 | `ItemNoteDialog` | 条目评论 editor (iOS `ItemNoteSheet`'s counterpart): whole-text overwrite semantics — every save sends the full trimmed text, clearing and saving **is** the delete, no separate button (the placeholder says so on an existing note). `useNote` persists + patches every item cache. 保存并转发 saves **first** and only then chains into `ForwardDialog` with the note prefilled — text that went to Telegram but not into the notebook is the surprise this ordering exists to prevent; disabled on an empty note (nothing to prefill) |
 | `AnnotationBadge` | The 「我在这条上写过东西」 mark (note **or** highlight, `hasNotes`) on the time line of all four cards — `ForwardedBadge`'s indigo sibling (`MessageSquareText`, native `title`). A mark, not a button: reading/editing happens in the detail pane, matching iOS |
+| `VibeReaderBadge` | The third badge on that time line (plan 2026-09-02 §5, Phase D): where the Vibe Reader extension stands on the pages this card links to — `Loader2` spinning for queued / extracting / generating, a violet `Zap` for done (the `title` lists the modes when the extension named them), `ZapOff` for error. Takes the card's outbound `urls` (HN = article + comments, RSS = link, TG = every text link + the preview's, X = the expanded `urls`) and reads `useVibeReaderStatus`, which answers with the link the reader **touched last** — not a priority order, because the click just made is the one they are waiting on. Nothing to click: the result lives in the sidepanel. Gone on `bye`, blank after a reload — the state is the extension's, we only mirror it |
 | `DatedItemRow` | One item under a full date line, dispatched by source (`MessageCard` / `HnCard` / `XCard` / `RssCard`). The row shape for the two views that are *not* a timeline — Saved and Search — both of which jump across days and sources, so each item states its own date instead of sitting under a shared day divider |
 
 ### `components/annotations/`
@@ -210,7 +211,8 @@ Two conventions this list exists to protect:
   also exports `scopeParams` — the one place the picker's source+sub is translated into the
   API's `source` / `channel_id` / `feed`),
   `useVibeReader` (the extension bridge's mirrored `available` / `linked` / `version` +
-  `setLink`, over `lib/vibeReader`'s `useSyncExternalStore` store),
+  `setLink`, over `lib/vibeReader`'s `useSyncExternalStore` store; the per-URL status
+  hook `useVibeReaderStatus` lives in the lib itself),
   mutations, …). `useTimeline` / `useTimelineDays` / `useNewContent` / `useBulkRead` accept a
   `source` scope (the `/s/:source` views) plus a `feed` scope for multi-feed sources
   (the `/s/:source/:feed` route — X's For You / one followed account).
@@ -249,8 +251,14 @@ Two conventions this list exists to protect:
   `announceOpen`, silent unless linked; `shouldAnnounce` + `NO_ARTICLE_HOSTS` — x.com /
   twitter.com / t.me / HN user pages carry nothing to extract, HN *item* pages do; the
   document-level click + auxclick delegate that turns every new-tab link into a
-  `condenser:open` without ever `preventDefault`ing; and `hnLinkAttrs`, the `data-vr-*`
-  a story's links wear. Transport is `window.postMessage` on our own origin, accepted only
+  `condenser:open` without ever `preventDefault`ing; `hnLinkAttrs`, the `data-vr-*`
+  a story's links wear; and, since Phase D (2026-09-05), the `statuses` slice —
+  `vibe-reader:status` per page, keyed by `canonicalUrl` (`new URL().href`: the extension
+  echoes the browser-normalized `a.href` we announced, the card looks up with the raw
+  payload url, and this is where they meet), read through `statusFor(urls)` /
+  `useVibeReaderStatus(urls)` which return the *last-touched* link's status by arrival
+  `seq` and the stored object by reference so unchanged cards bail out of the re-render;
+  accepted only from an `available` bridge, wiped by `bye`. Transport is `window.postMessage` on our own origin, accepted only
   from `event.source === window` under the bridge's namespace — no `externally_connectable`,
   so condenser never learns the extension id. The `<meta name="application-name">` in
   `index.html` is how the extension recognizes a condenser tab),
@@ -282,7 +290,10 @@ instead of the real app (which is behind the auth + TG-login gate):
   (`QueryClientProvider`, `UnreadIndicatorProvider`, `ThemeProvider`); **no router, no auth gate**.
   Vite serves it in dev only at `/preview.html` (not a production build input).
 - `src/preview/PreviewApp.tsx` — the gallery + a toolbar (toggle theme / unread-mode). Add a
-  case here for the component/state you're verifying.
+  case here for the component/state you're verifying. It also installs the Vibe Reader
+  bridge listener, so `window.postMessage({ns:'vibe-reader', v:1, type:'vibe-reader:hello',
+  linked:true}, location.origin)` followed by `vibe-reader:status` messages (from the
+  console or `agent-browser eval`) lights the cards' `VibeReaderBadge` without the extension.
 - `src/preview/mocks.ts` — `makeMsg()` factory + sample `DisplayMessage`s. `ChannelAvatar`'s
   proxy 404s here and falls back to the colored initial (expected, not an error).
 

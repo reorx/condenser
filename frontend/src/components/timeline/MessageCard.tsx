@@ -1,9 +1,10 @@
-import { memo, useCallback } from 'react';
+import { memo, useCallback, useMemo } from 'react';
 import { Bookmark, Forward } from 'lucide-react';
 
 import { ChannelAvatar } from '@/components/ChannelAvatar';
 import { useSaveToggle } from '@/hooks/useSaveToggle';
 import { fullDateLabel, timeLabel } from '@/lib/format';
+import { extractUrls } from '@/lib/extractUrls';
 import { linkify } from '@/lib/linkify';
 import { useItemDetailPane } from '@/lib/itemDetailPane';
 import { useUnreadIndicator } from '@/lib/unreadIndicator';
@@ -12,6 +13,7 @@ import type { DisplayMessage, ReadTarget, TimelineItem } from '@/lib/types';
 
 import { AnnotationBadge } from './AnnotationBadge';
 import { ForwardedBadge } from './ForwardedBadge';
+import { VibeReaderBadge } from './VibeReaderBadge';
 import { MessageMedia } from './MessageMedia';
 import { WebPagePreview } from './WebPagePreview';
 
@@ -34,6 +36,13 @@ function forwardSourceName(msg: DisplayMessage): string | null {
 function MessageCardImpl({ item, channelLabel, observe, pendingKeys }: Props) {
   const msg = item.telegram!;
   const save = useSaveToggle();
+  // Every link the text carries (the same set `linkify` renders) + the preview's,
+  // for the Vibe Reader badge.
+  const vrUrls = useMemo(() => {
+    const urls = extractUrls(msg.text);
+    if (msg.webpage?.url && !urls.includes(msg.webpage.url)) urls.push(msg.webpage.url);
+    return urls;
+  }, [msg.text, msg.webpage?.url]);
   const { mode } = useUnreadIndicator();
   const { open, openPane } = useItemDetailPane();
   const fwdName = forwardSourceName(msg);
@@ -107,6 +116,7 @@ function MessageCardImpl({ item, channelLabel, observe, pendingKeys }: Props) {
         </button>
         <ForwardedBadge item={item} />
         <AnnotationBadge item={item} />
+        <VibeReaderBadge urls={vrUrls} />
         <button
           type="button"
           onClick={() => save.mutate({ key: item.key, saved: !item.is_saved })}

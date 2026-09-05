@@ -1415,3 +1415,20 @@ macOS SDK）+ 沙盒 entitlements、`UI/Platform.swift`（侧栏 / 限宽阅读�
   截图、单独过审）——等 iOS 1.0.0 的 2.1 退回解掉之后再动，同一个 app record 两个平台的
   审核不要叠在一起。
 - 验收图 `tmp/2026-09-04-mac-catalyst/`。
+
+## 2026-09-05 · Vibe Reader 联动 Phase D —— 状态回传角标
+
+Plan `kb/plans/2026-09-02-vibe-reader-link-mode-and-hn-summary.md` §5，对方仓库 Phase 3
+同日就绪后补上 condenser 侧最后一块。`lib/vibeReader.ts` 的 store 多一个 `statuses`
+切片（按 `new URL().href` 归一的 URL → `{url, state, modes?, seq}`），`VibeReaderBadge`
+挂在四张卡片时间行 `ForwardedBadge` / `AnnotationBadge` 之后：转圈 = 排队 / 提取 / 生成中，
+紫色闪电 = 就绪，划掉的闪电 = 失败。不落库、不进 React Query，`bye` 一并清掉。
+
+- **两个小决定**：一张卡片有几条可点开的链接就查几条（HN 文章 + 讨论、TG 正文里的每个
+  链接），显示**最后被点过**的那条（按到达序号），而不是给状态排优先级——读者刚点的
+  就是他在等的；URL 比对必须归一，因为扩展回传的是浏览器已归一的 `a.href`（裸域名会
+  带上尾斜杠），卡片手里的是原始 payload 字段。
+- 测试 +17（store 9、角标 7、HnCard 1），前端 288 条全绿。`preview.html` 装上了桥监听器，
+  控制台 postMessage 即可演示，验收图 `tmp/2026-09-05-vibe-reader-status-badge/`。
+- **未与真实扩展联调**——扩展侧 Phase 3 走查时已确认消息序列为
+  `extracting → generating{modes} → done`、再点同一条 `extracting → done`；本侧按该形状钉住。

@@ -262,6 +262,22 @@ Prompt（`hn_summary.system_prompt`）：中文；先 2-3 句说文章讲了什�
 
 ## 5. Phase D —— 状态回传（可选，等 vibe-reader Phase 3）
 
+> **状态：✅ 已完成 2026-09-05**（对方 Phase 3 于同日就绪）。`lib/vibeReader.ts` 的 store 加
+> `statuses: Map<canonicalUrl, {url, state, modes?, seq}>` + `statusFor(urls)` /
+> `useVibeReaderStatus(urls)`；新组件 `components/timeline/VibeReaderBadge.tsx` 挂在四张卡片
+> 时间行 `AnnotationBadge` 之后。与本节的几处补充：(1) **URL 用 `new URL().href` 归一后比对**——
+> 扩展回传的是我们 announce 的 `a.href`（浏览器已归一，裸域名带尾斜杠），卡片查的是原始 payload
+> 字段；(2) 一张卡片给出它全部可点开的链接（HN = 文章 + 讨论、RSS = link、TG = 正文全部链接 +
+> 预览 URL、X = 展开后的外链），显示**最后被点过**的那条的状态（按到达序号 `seq`），而不是取
+> 优先级——读者刚点的就是他想看的；(3) 只接受 `available` 为 true 时的 status（版本不匹配的桥
+> 没被承认）；(4) `bye` 连同 statuses 一起清——否则 sidepanel 关掉后转圈永不停，而重开后再点
+> 会重发 `extracting → done`；(5) 三种画法：转圈 = queued / extracting / generating（`title`
+> 分别写明）、紫色闪电 = done（有 `modes` 时附在 title 里）、划掉的闪电 = error。
+> 测试：`vibeReader.test.ts` +9、`VibeReaderBadge.test.tsx` 7、`HnCard.test.tsx` +1。
+> 画廊 `preview.html` 装上了 `listenToBridge()`，可以从控制台 postMessage 演示；验收图
+> `tmp/2026-09-05-vibe-reader-status-badge/`。**未与真实扩展联调**（走查方法见对方
+> `kb/docs/condenser-integration-testing.md`）。
+
 - `lib/vibeReader.ts` 处理 `vibe-reader:status`，按 URL 存 `Map<url, state>`。
 - 卡片时间行加一个小角标（`ForwardedBadge` 的位置和尺寸）：转圈 = 生成中，
   闪电 = 就绪。点击不做事，只是提示。
@@ -274,7 +290,7 @@ Prompt（`hn_summary.system_prompt`）：中文；先 2-3 句说文章讲了什�
    走查：打开 condenser → 提示 → 开启 → 点一条 HN → 新 tab 里 sidepanel 自动开跑。
    截图归档 `tmp/2026-09-xx-vibe-reader-link/`。
 3. Phase C 随 B 发布；iOS 部分随下一个 build。
-4. Phase D 等对方 Phase 3。
+4. ~~Phase D 等对方 Phase 3。~~ 已做（2026-09-05）。
 
 **发布注意**：push master 即部署。Phase B 上线前生产 `.env` 无需新 key（复用
 `CONDENSER_SUMMARY_API_KEY`），但要确认 `readability-lxml` 进了镜像。
