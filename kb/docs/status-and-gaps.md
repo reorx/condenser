@@ -1432,3 +1432,10 @@ Plan `kb/plans/2026-09-02-vibe-reader-link-mode-and-hn-summary.md` §5，对方�
   控制台 postMessage 即可演示，验收图 `tmp/2026-09-05-vibe-reader-status-badge/`。
 - **未与真实扩展联调**——扩展侧 Phase 3 走查时已确认消息序列为
   `extracting → generating{modes} → done`、再点同一条 `extracting → done`；本侧按该形状钉住。
+- **生产验证（2026-09-05 10:32 UTC 部署 `cc3583f`）**：hookploy `succeeded`，容器换到新镜像，
+  bundle `index-YqVoX7K2` → `index-BVpvk49j`，四个 Phase D 字符串都在；启动日志无 ERROR
+  （9 条 WARNING 全是 RSS 源站既有的 404/403）。服务器内带 cookie 冒烟：login / hn/status /
+  rss/status / timeline / sources / tg/status / cleanup/status / search 全 200，`/authorize`
+  SPA 回退 200、未知 `/api/*` 404。顺带确认 **Phase B 在生产确实在产出**：`hn/status.summary`
+  = `qwen3.7-flash@v1 · done 563 · pending 0 · failed 0`，近 24h 入选的 20 条全部有摘要
+  （RSS 侧 done 38）。
