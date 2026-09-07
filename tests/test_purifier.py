@@ -214,6 +214,23 @@ def test_rewrite_css_urls_and_imports():
     assert 'url(data:image/gif;base64,R0lGOD)' in out
 
 
+def test_rewrite_css_attribute_selectors_follow_the_html_rewrite():
+    """HN's mobile stylesheet shrinks its indent spacers with
+    ``img[src='s.gif'][width='40'] { width: 12px }``. Once the HTML's ``src`` is
+    ``/pa/...`` those selectors match nothing and a thread is 558px wide on a 390px
+    phone (measured 2026-09-07). Exact-match selectors are rewritten by the same
+    rule as the attribute; prefix/suffix forms are left alone."""
+    css = (
+        "img[src='s.gif'][width='40']{width:12px} a[href=\"item\"]{color:red} "
+        "video[poster=poster.jpg]{x:y} img[src$='.png']{a:b} img[src^='https://a']{c:d} [data-x='s.gif']{e:f}"
+    )
+    out = purifier.rewrite_css(css, BASE, OWN)
+    assert "img[src='/pa/blog.example/posts/hello/s.gif'][width='40']" in out
+    assert 'a[href="/p/blog.example/posts/hello/item"]' in out
+    assert 'video[poster=/pa/blog.example/posts/hello/poster.jpg]' in out
+    assert "img[src$='.png']" in out and "img[src^='https://a']" in out and "[data-x='s.gif']" in out
+
+
 def test_rewrite_srcset_keeps_descriptors():
     out = purifier.rewrite_srcset('a.png 1x, https://cdn.example/b.png 2x,c.png 640w', BASE, OWN)
     assert out == (

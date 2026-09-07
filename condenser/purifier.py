@@ -259,11 +259,22 @@ def resolve_mode(host: str, override: Optional[str]) -> Mode:
 
 _CSS_URL_RE = re.compile(r'url\(\s*(?P<q>["\']?)(?P<u>[^"\')]*)(?P=q)\s*\)', re.I)
 _CSS_IMPORT_RE = re.compile(r'@import\s+(?P<q>["\'])(?P<u>[^"\']*)(?P=q)', re.I)
+# Exact-match attribute selectors on the attributes we rewrite in the HTML.
+# Prefix / suffix / substring forms (^= $= *=) are deliberately not touched.
+_CSS_ATTR_RE = re.compile(r'\[(?P<a>src|href|poster)\s*=\s*(?P<q>["\']?)(?P<u>[^"\'\]]+)(?P=q)\s*\]', re.I)
+_CSS_ATTR_KIND = {'src': 'pa', 'poster': 'pa', 'href': 'p'}
 
 
 def rewrite_css(css: str, base_url: str, own_origin: str) -> str:
     """``url()`` and string-form ``@import`` → ``/pa``; ``data:`` passes through (rewrite_url
-    leaves non-http schemes alone). Quote style is preserved."""
+    leaves non-http schemes alone). Quote style is preserved.
+
+    Attribute selectors follow the same rule: HN's mobile stylesheet shrinks its
+    indent spacers with ``img[src='s.gif'][width='40'] { width: 12px }``, and once
+    the HTML's ``src`` reads ``/pa/…/s.gif`` those selectors match nothing — a
+    thread came out 558px wide on a 390px phone (2026-09-07). The selector value is
+    resolved against the same base as the attribute, so the two stay equal.
+    """
 
     def _url(m: re.Match) -> str:
         q = m.group('q')
@@ -273,7 +284,12 @@ def rewrite_css(css: str, base_url: str, own_origin: str) -> str:
         q = m.group('q')
         return f'@import {q}{rewrite_url(m.group("u"), base_url, own_origin, "pa")}{q}'
 
-    return _CSS_IMPORT_RE.sub(_import, _CSS_URL_RE.sub(_url, css))
+    def _attr(m: re.Match) -> str:
+        attr, q = m.group('a'), m.group('q')
+        kind = _CSS_ATTR_KIND[attr.lower()]
+        return f'[{attr}={q}{rewrite_url(m.group("u"), base_url, own_origin, kind)}{q}]'
+
+    return _CSS_ATTR_RE.sub(_attr, _CSS_IMPORT_RE.sub(_import, _CSS_URL_RE.sub(_url, css)))
 
 
 def rewrite_srcset(value: str, base_url: str, own_origin: str) -> str:
