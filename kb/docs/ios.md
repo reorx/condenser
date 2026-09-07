@@ -312,3 +312,27 @@ Plan `kb/plans/2026-09-07-ios-state-restore-new-content-pill.md`。把 2026-07-2
   窗口截图换算而不是按 simctl 截图等比缩放（差了约 60pt，会点到导航栏上）；另一个 Claude
   session 的 Chrome 会抢前台，点之前先 `activate` 并确认 frontmost 是 Simulator。
   Kit 298 / 后端 817 测试全绿；Mac Catalyst 构建通过（未走查）。
+
+## Purifier 阅读代理（2026-09-07）
+
+设置页「阅读」分组一个开关（`UserDefaults` key `condenser.purifier`）。开着时，app 内所有
+外链先改写成服务端阅读代理地址 `<server>/p/<host>/<path>?<query>` 再交给
+SFSafariViewController（Mac 上是系统浏览器）；plan `kb/plans/2026-09-07-purifier.md`。
+
+- **改写塞在 `openExternalURL` 内部**（`Purifier.shared.rewrittenURL(for:)`），5 处
+  `.externalLinks()` 子树 + 3 个详情页直调零改动；X 深链仍按**原始** URL 判断，改写只影响
+  最终落到浏览器里的那条。不改写的只有三类：X（x.com / twitter.com 及 www. / mobile. / m.
+  变体）、t.me、非 http(s)；指向 condenser 自身的也不包。
+- **Kit 纯逻辑**：`purifiedURL(_:base:ticket:)` 用 `percentEncodedPath` / `percentEncodedQuery`
+  原样透传（`.path` 已解码会把 `%2F` 变成分隔符，`URLQueryItem` 重建会二次编码），票据是
+  字符串拼接 `&_pt=`；`PurifierTickets` 是票据缓存状态机，`cached` 与 `shouldRefresh` 分开
+  ——进 60s margin 该换票，但手里这张到硬过期前仍可用。19 + 5 例测试。
+- **鉴权**：Bearer 换一张 5 分钟票（`GET /api/purifier/ticket`）拼进 URL，服务端验票后种
+  30 天 `condenser_reader` cookie 并 302 到干净 URL；SFSafariViewController 与 Safari 共享
+  cookie，所以票只需换一次。票据是"锦上添花"：点击永远同步、用当下缓存的票（可能 nil）。
+  预热三处：登录成功（`ReaderSession.init` → `configure`）、开关打开、回到前台；登出
+  `reset()` 清票不清开关。
+- **走查记录**（`tmp/2026-09-07-purifier/ios-*.png`、`mac-*.png`）：开关开 → HN 详情
+  「打开原文」→ 地址栏 condenser 域名、后端 `ticket → /p?_pt 302 → /p 200`；开关关 →
+  原站；X 推文 → x.com。Mac Catalyst 是沙盒 app，`defaults write` 要写进
+  `~/Library/Containers/com.reorx.condenser/Data/Library/Preferences/`，写到外面开关不生效。
