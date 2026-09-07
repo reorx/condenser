@@ -214,6 +214,36 @@ def query_new(
     return {'count': len(units), 'items': records.stamp_notes(forwards.stamp([u.envelope for u in units[:limit]]))}
 
 
+def query_new_count(
+    channel_id: Optional[int],
+    after_cursor: str,
+    unread_only: bool = False,
+    source: Optional[str] = None,
+    feed: Optional[str] = None,
+) -> dict:
+    """``query_new``'s ``count`` alone: ``{count}``, one ``COUNT`` per anchored source.
+
+    The iOS pill (plan 2026-09-07) asks "how many" far more often than it asks
+    "which", and ``query_new`` answers the first question by building up to
+    ``limit + NEW_COUNT_BUFFER`` envelopes per source. Same anchor rules — a source
+    without an anchor in the composite is skipped until page 1 is refetched.
+    """
+    anchors = decode_cursor_map(after_cursor)
+    total = 0
+    for s in _active_sources(channel_id, source):
+        if s not in anchors:
+            continue
+        if s == 'telegram':
+            total += tg_source.count_new(anchors[s], channel_id=channel_id, unread_only=unread_only)
+        elif s == 'x':
+            total += x_source.count_new(anchors[s], feed=feed, include_foryou=source == 'x', unread_only=unread_only)
+        elif s == 'rss':
+            total += rss_source.count_new(anchors[s], feed=feed if source == 'rss' else None, unread_only=unread_only)
+        else:
+            total += hn_source.count_new(anchors[s], unread_only=unread_only)
+    return {'count': total}
+
+
 def query_days(
     channel_id: Optional[int] = None,
     source: Optional[str] = None,

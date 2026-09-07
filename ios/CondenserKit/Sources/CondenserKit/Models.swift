@@ -959,6 +959,16 @@ public struct TimelineNew: Codable, Equatable, Sendable {
     }
 }
 
+/// GET /api/timeline/new/count —— 只有条数。「N 条新内容」胶囊只读这个数字，
+/// 拉 100 条 envelope 回来只为数一下是浪费（plan 2026-09-07）。
+public struct TimelineNewCount: Codable, Equatable, Sendable {
+    public let count: Int
+
+    public init(count: Int) {
+        self.count = count
+    }
+}
+
 // MARK: - Sources（GET /api/sources）
 
 /// 订阅在其信源内的 id：TG 为 int 频道 id，HN 为 feed key 字符串（v1 仅 'front'），
@@ -1008,6 +1018,14 @@ public struct SourceSub: Codable, Equatable, Hashable, Sendable, Identifiable {
     enum CodingKeys: String, CodingKey {
         case channelID = "channel_id"
         case name, username, enabled, unread
+    }
+
+    public init(channelID: SubChannelID, name: String?, username: String?, enabled: Bool, unread: Int) {
+        self.channelID = channelID
+        self.name = name
+        self.username = username
+        self.enabled = enabled
+        self.unread = unread
     }
 
     public var id: String { channelID.description }

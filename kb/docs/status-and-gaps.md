@@ -1439,3 +1439,21 @@ Plan `kb/plans/2026-09-02-vibe-reader-link-mode-and-hn-summary.md` §5，对方�
   SPA 回退 200、未知 `/api/*` 404。顺带确认 **Phase B 在生产确实在产出**：`hn/status.summary`
   = `qwen3.7-flash@v1 · done 563 · pending 0 · failed 0`，近 24h 入选的 20 条全部有摘要
   （RSS 侧 done 38）。
+
+## 2026-09-07 · iOS 启动恢复阅读现场 + 蓝色胶囊 + `/timeline/new/count`
+
+Plan `kb/plans/2026-09-07-ios-state-restore-new-content-pill.md`。用户三条要求：打开 app 回到
+上次的 tab / 时间线 / 滚动位置 / 抽屉；保留新内容检查但只在列表上方浮一枚**蓝色**（可点 =
+有动作）**带 ✕**（点了只收掉）的胶囊；检查用只回条数的接口。
+
+- **后端**：`GET /api/timeline/new/count` → `{count}`，四个源各加 `count_new`（`fetch_new`
+  的 WHERE 抽成 `_new_where` 共用，`COUNT` 投影；TG 数显示单元）。新测试 `tests/test_timeline_new_count.py`
+  7 条 + X/RSS 既有 poll 测试各补一行断言。817 passed。
+- **iOS**：Kit 新增 `ReadingState.swift`（状态 + UserDefaults 存取），`TimelineStore` 长出
+  `scopeKey` / `loadInitial(preferSnapshot:)` / `persistSnapshot()`（页边界截断），
+  `NewContentChecker` 改打 count 接口，`ForegroundRefreshPolicy` 60s。App 侧 `MessageListView`
+  换 `scrollPosition(id:)`、蓝色胶囊、现场落盘与恢复；`ReaderSession` / `MainView` 恢复
+  信源 / 未读 / tab / 推入的 feed。Kit 298 tests 全绿，iOS + Mac Catalyst 构建通过。
+- **未做 / 边界**：推入的单 feed 视图不落快照（只恢复「进到哪」+ 首页内锚点）；胶囊不自动消失；
+  `loadInitial` 的返回值语义从「相对快照的新条目数」改成「是否停在快照上」。
+- 走查图 `tmp/2026-09-07-ios-state-restore/`（8 张 + 两个辅助脚本），细节见 `kb/docs/ios.md` 末节。

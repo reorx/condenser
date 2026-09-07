@@ -329,11 +329,29 @@ def fetch_new(after: str, limit: int, unread_only: bool = False) -> list[SourceU
     """
     if not active():
         return []
+    where, params = _new_where(after, unread_only)
+    return [_to_unit(r) for r in _fetch(where, params, descending=True, limit=limit + NEW_COUNT_BUFFER)]
+
+
+def count_new(after: str, unread_only: bool = False) -> int:
+    """``fetch_new``'s number without its rows (the iOS pill, plan 2026-09-07)."""
+    if not active():
+        return 0
+    where, params = _new_where(after, unread_only)
+    sql = (
+        'SELECT COUNT(*) FROM hn_stories h '
+        "LEFT JOIN read_items ri ON ri.source = 'hn' AND ri.ref1 = h.id "
+        f'{_HIDDEN_JOIN} WHERE ' + ' AND '.join(where)
+    )
+    return tdb.db.execute_sql(sql, tuple(params)).fetchone()[0]
+
+
+def _new_where(after: str, unread_only: bool) -> tuple[list[str], list]:
     cts, cid = unpack_pos(after)
     where, params = _base_where(None, unread_only)
     where.append('((h.qualified_at > ?) OR (h.qualified_at = ? AND h.id > ?))')
     params.extend([cts, cts, cid])
-    return [_to_unit(r) for r in _fetch(where, params, descending=True, limit=limit + NEW_COUNT_BUFFER)]
+    return where, params
 
 
 def days() -> dict[str, int]:

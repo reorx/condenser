@@ -66,6 +66,23 @@ public final class APIClient: @unchecked Sendable {
         ])
     }
 
+    public func timelineNewCount(
+        after: String,
+        channelID: Int? = nil,
+        unreadOnly: Bool = false,
+        source: String? = nil,
+        feed: String? = nil
+    ) async throws -> Int {
+        let body: TimelineNewCount = try await get("/api/timeline/new/count", query: [
+            "after": after,
+            "channel_id": channelID.map(String.init),
+            "unread_only": unreadOnly ? "true" : nil,
+            "source": source,
+            "feed": feed,
+        ])
+        return body.count
+    }
+
     /// 一条 feed 条目的**全文** envelope。列表载荷 2026-08-23 起只带约 500 字的
     /// `content_excerpt`（正文平均 13.9KB、最长 7.1MB，一页 30 条全带就是一次
     /// 几 MB 的下载），全文改成谁真的打开谁去取。

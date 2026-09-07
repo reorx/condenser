@@ -8,6 +8,25 @@ enum SubDestination: Hashable {
     case hnFeed(SourceSub)
     case xFeed(SourceSub)
     case rssFeed(SourceSub)
+
+    /// ↔ `ReadingState.pushed`：启动时恢复上次推进去的那个 feed（plan 2026-09-07）
+    init(_ pushed: PushedDestination) {
+        switch pushed.kind {
+        case .telegramChannel: self = .telegramChannel(pushed.sub)
+        case .hnFeed: self = .hnFeed(pushed.sub)
+        case .xFeed: self = .xFeed(pushed.sub)
+        case .rssFeed: self = .rssFeed(pushed.sub)
+        }
+    }
+
+    var pushed: PushedDestination {
+        switch self {
+        case .telegramChannel(let sub): PushedDestination(kind: .telegramChannel, sub: sub)
+        case .hnFeed(let sub): PushedDestination(kind: .hnFeed, sub: sub)
+        case .xFeed(let sub): PushedDestination(kind: .xFeed, sub: sub)
+        case .rssFeed(let sub): PushedDestination(kind: .rssFeed, sub: sub)
+        }
+    }
 }
 
 /// 订阅 tab（原「频道」）：按 信源 → 订阅 两级展示（数据源 GET /api/sources）。

@@ -89,7 +89,8 @@ presentational `MessageStatsRow`), `ForwardDialog` sheet (preflights
 error mapping per routers/messages.py), Settings 转发 section
 (read/save `forward_channel`), debug route `forward/<cid>/<mid>[/<comment>]`
 (auto-submit, real network — walkthrough `tmp/2026-07-22-ios-stats-forward/`).
-**Silent refresh + gray toast, no polling (2026-07-22)**: the timeline refreshes by
+**Silent refresh + gray toast, no polling (2026-07-22; superseded 2026-09-07 — see
+「阅读现场恢复 + 蓝色胶囊」at the end)**: the timeline refreshes by
 exactly two paths — the user's pull-to-refresh, and a silent auto-update on cold start /
 return-to-foreground after ≥5 min background, which reports itself afterwards via a
 **non-interactive gray "N 条新消息" toast** (auto-dismiss 4s, tap = dismiss). The 30s
@@ -275,3 +276,39 @@ data-protection keychain**，ad-hoc 签名的构建 `SecItemAdd` 静默 -34018�
 `make build-mac` 因此缺省团队签名 + entitlements 里显式写 `keychain-access-groups`
 （不写 Xcode 不嵌 profile），`KeychainStore.write` 也从此把失败写进 OSLog。工程细节、
 走查的三个坑与商店侧待办见 `ios/AGENTS.md`「Mac Catalyst」。
+
+## 阅读现场恢复 + 蓝色胶囊（2026-09-07）
+
+Plan `kb/plans/2026-09-07-ios-state-restore-new-content-pill.md`。把 2026-07-22 的「冷启动
+快照→网络整页替换 + 回前台自动回顶刷新 + 灰 toast」整个换掉：**打开 app 看到的就是上次
+离开时的样子**——同一个 tab、同一个信源过滤 / 未读开关、订阅 tab 里推进去的那个 feed、
+列表滚到同一张卡片、上次开着的详情抽屉也还开着；有没有新内容另问一句，用列表上方一枚
+**蓝色可关闭的胶囊「↑ N 条新内容 | ✕」**告知：点主体才回顶 + 刷新，点 ✕ 只收掉，列表
+分毫不动。蓝色是刻意与旧灰 toast 区分——灰 = 只是告知，蓝 = 点了有动作。
+
+- **服务端**：`GET /api/timeline/new/count`（`timeline.query_new_count` → 各源
+  `count_new`，与 `fetch_new` 同一份 WHERE 换 `COUNT` 投影；Telegram 数显示单元，相册算一条）。
+  以前胶囊的数字来自 `/timeline/new?limit=100`——拉 100 条 envelope 只为读一个 `count`。
+  `/timeline/new` 原样保留（web 仍用它取 items）。
+- **Kit**：`ReadingState` + `ReadingStateStore`（UserDefaults；tab / source / unreadOnly /
+  `pushed: PushedDestination` / `lists[scopeKey] = {topItemKey, openItemKey}`，容量 32）；
+  `TimelineStore.scopeKey`、`loadInitial(preferSnapshot:) -> Bool`（启动路径：快照非空就停在
+  快照上不打网络，快照即现场）、`persistSnapshot()`（退后台 + 每次 `loadMore` 后写回当前已加载
+  的全部页，含本地已读标记；超 300 条截到页边界并带上那一页的 `next_cursor`，恢复后翻页不漏段）；
+  `NewContentChecker` 改打 count 接口；`ForegroundRefreshPolicy` 阈值 300s → 60s（原来
+  5 分钟是怕刷新打断阅读位置，现在只是个胶囊，唯一成本是一次 COUNT）。
+- **App**：`MessageListView` 改用 `scrollPosition(id:)` + `scrollTargetLayout()`（顶部哨兵进
+  LazyVStack；读绑定 = 记现场，写绑定 = 回顶 / 恢复），`scrolledID` / `selectedItem` 变化即写
+  `ReadingState`；首个 store 走 `preferSnapshot`，停在快照上就 `check()` 弹胶囊，回前台按
+  policy 再 check；切信源 / 未读重建的 store 仍走旧路径（快照→网络替换，无提示）。
+  `ReaderSession` 从 `ReadingState` 恢复 source / unreadOnly；`MainView` 恢复 tab 与
+  `subscriptionsPath`（NavigationPath → `[SubDestination]`，栈顶写进 `pushed`）。
+- **边界**：推入的单 feed 视图不落快照（沿用「临时态」决定），恢复它 = 进到那个 feed + 首页里
+  找得到锚点就滚过去；胶囊不自动消失；✕ 掉的那个数在同一进程内不再弹，刷新后清零。
+- **走查**（模拟器 iPhone 17 Pro，`tmp/2026-09-07-ios-state-restore/`）：滚到深处 → 开抽屉 →
+  切到设置 app 退后台 → 往 dev DB 插 3 条消息 → 杀掉重开：列表停在同一张卡片、抽屉重开、
+  胶囊「3 条新内容」；点 ✕ 只收胶囊、无网络请求；再开一次点主体 → 回顶 + 刷新，新消息在顶部。
+  两个走查的坑：Simulator 窗口有标题栏 + 机身边框，cliclick 坐标要按 `screencapture -R` 的
+  窗口截图换算而不是按 simctl 截图等比缩放（差了约 60pt，会点到导航栏上）；另一个 Claude
+  session 的 Chrome 会抢前台，点之前先 `activate` 并确认 frontmost 是 Simulator。
+  Kit 298 / 后端 817 测试全绿；Mac Catalyst 构建通过（未走查）。

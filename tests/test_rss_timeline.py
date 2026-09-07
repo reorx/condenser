@@ -225,9 +225,11 @@ def test_timeline_new_reports_rss_arrivals(rss_env):
         head = timeline(client, source='rss')['head_cursor']
         seed_entry(FEED_A, 'second', minutes=20)
         r = client.get('/api/timeline/new', params={'after': head, 'source': 'rss'})
+        n = client.get('/api/timeline/new/count', params={'after': head, 'source': 'rss'})
     assert r.status_code == 200
     assert r.json()['count'] == 1
     assert r.json()['items'][0]['rss']['guid'] == 'second'
+    assert n.json() == {'count': 1}  # the count-only sibling agrees
 
 
 def test_timeline_days_counts_rss_by_its_sort_day(rss_env):

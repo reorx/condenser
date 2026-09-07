@@ -73,6 +73,22 @@ def get_timeline_new(
         raise HTTPException(status_code=422, detail='invalid cursor')
 
 
+@router.get('/timeline/new/count')
+def get_timeline_new_count(
+    after: str,
+    channel_id: Optional[int] = None,
+    unread_only: bool = False,
+    source: Optional[str] = Query(None, pattern=_SOURCE_PATTERN),
+    feed: Optional[str] = _FEED_QUERY,
+):
+    """``/timeline/new`` minus the items: ``{count}`` for a client that only shows
+    a number (the iOS pill). Same parameters bar ``limit``, same 422 on a bad cursor."""
+    try:
+        return timeline.query_new_count(channel_id, after, unread_only, source, feed)
+    except timeline.InvalidCursor:
+        raise HTTPException(status_code=422, detail='invalid cursor')
+
+
 @router.post('/read')
 def post_read(body: ReadBody):
     db.mark_read([parse_key_or_422(k) for k in body.keys])

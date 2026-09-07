@@ -2,15 +2,17 @@ import SwiftUI
 import CondenserKit
 
 /// 登录后的主界面：四 tab（Timeline / 订阅 / 收藏 / 设置），各自持有独立 NavigationStack。
+/// 选中的 tab 与订阅 tab 推入的 feed 写进 `ReadingState`，启动时恢复（plan 2026-09-07）。
 struct MainView: View {
-    enum MainTab: Hashable {
+    enum MainTab: String, Hashable {
         case timeline, subscriptions, saved, settings
     }
 
     @Environment(AuthSession.self) private var auth
     @State private var reader: ReaderSession?
     @State private var selectedTab: MainTab = .timeline
-    @State private var subscriptionsPath = NavigationPath()
+    /// 类型化的 path（而不是 NavigationPath）：要把栈顶写进 ReadingState 得读得出来
+    @State private var subscriptionsPath: [SubDestination] = []
     /// tab/subs/<source> 走查用：订阅列表进来就滚到该信源分组（只有 DEBUG 路由会设它）
     @State private var subsScrollTarget: String?
     #if DEBUG
@@ -30,9 +32,20 @@ struct MainView: View {
         }
         .onAppear {
             guard reader == nil, let server = auth.serverURL, let token = auth.token else { return }
-            reader = ReaderSession(server: server, token: token) { [weak auth] in
+            let session = ReaderSession(server: server, token: token) { [weak auth] in
                 auth?.handleUnauthorized()
             }
+            // 恢复上次的 tab 与订阅 tab 里推进去的 feed；主 timeline 的信源/未读由 session 自己恢复
+            let restored = session.readingState.state
+            selectedTab = MainTab(rawValue: restored.tab) ?? .timeline
+            subscriptionsPath = restored.pushed.map { [SubDestination($0)] } ?? []
+            reader = session
+        }
+        .onChange(of: selectedTab) { _, tab in
+            reader?.readingState.update { $0.tab = tab.rawValue }
+        }
+        .onChange(of: subscriptionsPath) { _, path in
+            reader?.readingState.update { $0.pushed = path.last?.pushed }
         }
     }
 

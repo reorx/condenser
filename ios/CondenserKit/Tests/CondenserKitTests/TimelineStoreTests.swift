@@ -52,6 +52,8 @@ final class StubAPI: CondenserAPI, @unchecked Sendable {
     var timelineCalls: [(cursor: String?, channelID: Int?, unreadOnly: Bool, source: String?, feed: String?)] = []
     var newResults: [Result<TimelineNew, Error>] = []
     var newCalls: [(after: String, channelID: Int?, unreadOnly: Bool, source: String?, feed: String?)] = []
+    var countResults: [Result<Int, Error>] = []
+    var countCalls: [(after: String, channelID: Int?, unreadOnly: Bool, source: String?, feed: String?)] = []
     var feedbackCalls: [(key: String, verdict: ItemFeedback, reason: ItemFeedbackReason?)] = []
     var clearFeedbackCalls: [String] = []
     var feedbackError: Error?
@@ -84,6 +86,14 @@ final class StubAPI: CondenserAPI, @unchecked Sendable {
         newCalls.append((after, channelID, unreadOnly, source, feed))
         guard !newResults.isEmpty else { throw APIError.invalidResponse }
         return try newResults.removeFirst().get()
+    }
+
+    func timelineNewCount(
+        after: String, channelID: Int?, unreadOnly: Bool, source: String?, feed: String?
+    ) async throws -> Int {
+        countCalls.append((after, channelID, unreadOnly, source, feed))
+        guard !countResults.isEmpty else { throw APIError.invalidResponse }
+        return try countResults.removeFirst().get()
     }
 
     func sources() async throws -> [SourceGroup] {
@@ -133,6 +143,18 @@ final class StubAPI: CondenserAPI, @unchecked Sendable {
 @MainActor
 @Suite("TimelineStore")
 struct TimelineStoreTests {
+    @Test("scopeKey：单频道按 id，其余按 source/feed/unread 组合")
+    func scopeKey() {
+        let api = StubAPI()
+        #expect(TimelineStore(api: api, channelID: 42).scopeKey == "channel-42")
+        #expect(TimelineStore(api: api, unreadOnly: true).scopeKey == "all|unread")
+        #expect(TimelineStore(api: api, source: SourceID.hn).scopeKey == "hn|all")
+        #expect(TimelineStore(api: api, source: SourceID.x, feed: "foryou").scopeKey == "x|foryou|all")
+        #expect(
+            TimelineStore(api: api, source: SourceID.rss, feed: "https://a.b/feed.xml").scopeKey
+                == "rss|https://a.b/feed.xml|all")
+    }
+
     @Test("loadInitial → 首页内容 + head_cursor 记录")
     func initialLoad() async {
         let api = StubAPI()

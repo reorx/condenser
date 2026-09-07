@@ -3,7 +3,7 @@ import CondenserKit
 
 /// Timeline 主屏（tab 1）：MessageListView + 未读过滤（默认只看未读）
 /// + 信源切换（顶部左侧 Menu，选项 = All + 已添加的信源，来自 GET /api/sources）；
-/// 自动更新与灰 toast 都在 MessageListView 内；这里只负责
+/// 新内容检查、蓝色胶囊与阅读现场的落盘/恢复都在 MessageListView 内；这里只负责
 /// scenePhase 离开前台时的已读冲刷。设置入口在底部 tab 栏。
 struct TimelineScreen: View {
     @Environment(ReaderSession.self) private var reader

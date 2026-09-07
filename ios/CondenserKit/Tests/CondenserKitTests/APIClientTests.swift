@@ -49,6 +49,21 @@ struct APIClientTests {
         #expect(comps.queryItems!.contains(URLQueryItem(name: "channel_id", value: "42")))
     }
 
+    @Test("timelineNewCount：GET /api/timeline/new/count，只解 count，不带 limit")
+    func timelineNewCountRequest() async throws {
+        let captured = MockURLProtocol.respond(status: 200, json: #"{"count": 7}"#)
+        let count = try await makeClient().timelineNewCount(
+            after: "cur1", unreadOnly: true, source: "x", feed: "foryou")
+        #expect(count == 7)
+        let comps = URLComponents(url: captured.url!, resolvingAgainstBaseURL: false)!
+        #expect(comps.path == "/api/timeline/new/count")
+        #expect(comps.queryItems!.contains(URLQueryItem(name: "after", value: "cur1")))
+        #expect(comps.queryItems!.contains(URLQueryItem(name: "unread_only", value: "true")))
+        #expect(comps.queryItems!.contains(URLQueryItem(name: "source", value: "x")))
+        #expect(comps.queryItems!.contains(URLQueryItem(name: "feed", value: "foryou")))
+        #expect(!comps.queryItems!.contains { $0.name == "limit" })
+    }
+
     @Test("markRead：POST /api/read，body {keys: [...]}")
     func markReadBody() async throws {
         let captured = MockURLProtocol.respond(status: 200, json: #"{"ok": true}"#)

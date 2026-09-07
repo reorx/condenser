@@ -2,10 +2,15 @@ import SwiftUI
 import CondenserKit
 
 /// TimelineStore 驱动的多信源列表核心：无限滚动 + 下拉刷新 + 滚动即已读 + 详情 sheet。
-/// 按 item.source 分发卡片（MessageCard / HnCard / XCard / RssCard）。刷新只有两条路径：用户下拉，
-/// 以及冷启动 / 长时间后台回前台的静默自动更新（传了 checker 的主 timeline 才有），
-/// 后者用灰色不可点 toast 事后告知条数。前台阅读期间不做任何轮询、不弹可点提示。
-/// 频道/feed timeline 不传 checker，纯列表复用。
+/// 按 item.source 分发卡片（MessageCard / HnCard / XCard / RssCard）。
+///
+/// **阅读现场（plan 2026-09-07）**：滚动锚点（`scrollPosition(id:)` 报的顶部卡片 key）与
+/// 打开的详情 sheet 按 `store.scopeKey` 写进 `ReadingState`，store 首次加载完就照它恢复；
+/// 主 timeline 的启动加载走 `loadInitial(preferSnapshot:)`——快照即现场，不打网络替换。
+/// 内容刷新只有两条路径：用户下拉，以及点上方的蓝色胶囊「↑ N 条新内容」。胶囊由
+/// `NewContentChecker`（`/timeline/new/count`）在启动恢复现场后与回前台时各问一次决定
+/// 弹不弹；它只告知，不回顶、不刷新、不动列表，右侧的 ✕ 只把它收掉。
+/// 频道/feed timeline 不传 checker，纯列表复用（现场恢复照样有）。
 struct MessageListView: View {
     let store: TimelineStore
     var checker: NewContentChecker?
@@ -20,62 +25,78 @@ struct MessageListView: View {
     @State private var isUserDragging = false
     /// 滚过即已读的武装闸：用户在本视图滚动过才开始判读，刷新时解除
     @State private var scrollReadModel = ScrollReadModel()
-    /// 灰 toast 的计数；nil = 不显示
-    @State private var toastCount: Int?
-    /// 冷启动 toast 只在 app 本次运行的首次加载弹（信源/未读切换重建 store 时不弹）
+    /// `scrollPosition(id:)` 的绑定：视口顶部那张卡片的 key（或顶部哨兵）。
+    /// 读它 = 记现场；写它 = 回顶 / 恢复现场
+    @State private var scrolledID: String?
+    /// 蓝色胶囊的计数；nil = 不显示
+    @State private var pillCount: Int?
+    /// 用户按 ✕ 时的计数：再次检查若还是这个数就不再弹，免得成了赖着不走的提醒
+    @State private var dismissedCount = 0
+    /// 启动路径只走一次：首个 store 用快照当现场；之后切信源重建的 store 走快照→网络替换
     @State private var didHandleLaunch = false
     @State private var foregroundPolicy = ForegroundRefreshPolicy()
+
+    private let topSentinel = "timeline-top"
 
     /// 底部上拉触发 fetch-older 只对单频道视图开放（后端接口按频道拉取，TG 专属）
     private var supportsFetchOlder: Bool { store.channelID != nil }
 
     var body: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                Color.clear.frame(height: 1).id("timeline-top")
-                listBody
-                    .readingColumn()
+        ScrollView {
+            listBody
+                .scrollTargetLayout()
+                .readingColumn()
+        }
+        .scrollPosition(id: $scrolledID, anchor: .top)
+        .readingFontScale()
+        .autoHideBars()
+        .onScrollPhaseChange { _, newPhase in
+            isUserDragging = newPhase == .tracking || newPhase == .interacting
+            // 武装只认真实位移（interacting / 惯性减速）：手指刚按下（tracking）
+            // 与程序化回顶（animating）都不算滚动，否则一次点击就把整个首屏判读了
+            if newPhase == .interacting || newPhase == .decelerating {
+                scrollReadModel.noteUserScroll()
             }
-            .readingFontScale()
-            .autoHideBars()
-            .onScrollPhaseChange { _, newPhase in
-                isUserDragging = newPhase == .tracking || newPhase == .interacting
-                // 武装只认真实位移（interacting / 惯性减速）：手指刚按下（tracking）
-                // 与程序化回顶（animating）都不算滚动，否则一次点击就把整个首屏判读了
-                if newPhase == .interacting || newPhase == .decelerating {
-                    scrollReadModel.noteUserScroll()
-                }
+        }
+        .onScrollGeometryChange(for: CGFloat.self) { geo in
+            PullToLoadOlderModel.bottomOverscroll(
+                contentOffsetY: geo.contentOffset.y,
+                contentHeight: geo.contentSize.height,
+                containerHeight: geo.containerSize.height,
+                topInset: geo.contentInsets.top,
+                bottomInset: geo.contentInsets.bottom)
+        } action: { _, overscroll in
+            // 只做模型判定 + 发起网络加载，不改任何布局状态，
+            // 不会踩 AutoHideBars 的 insets 自激振荡陷阱
+            guard supportsFetchOlder, !store.hasMore, !store.olderExhausted,
+                  !store.items.isEmpty else { return }
+            if pullOlderModel.handleOverscroll(overscroll, isDragging: isUserDragging) {
+                Task { await store.fetchOlderFromServer() }
             }
-            .onScrollGeometryChange(for: CGFloat.self) { geo in
-                PullToLoadOlderModel.bottomOverscroll(
-                    contentOffsetY: geo.contentOffset.y,
-                    contentHeight: geo.contentSize.height,
-                    containerHeight: geo.containerSize.height,
-                    topInset: geo.contentInsets.top,
-                    bottomInset: geo.contentInsets.bottom)
-            } action: { _, overscroll in
-                // 只做模型判定 + 发起网络加载，不改任何布局状态，
-                // 不会踩 AutoHideBars 的 insets 自激振荡陷阱
-                guard supportsFetchOlder, !store.hasMore, !store.olderExhausted,
-                      !store.items.isEmpty else { return }
-                if pullOlderModel.handleOverscroll(overscroll, isDragging: isUserDragging) {
-                    Task { await store.fetchOlderFromServer() }
-                }
+        }
+        .refreshable { await refresh() }
+        .overlay(alignment: .top) {
+            if let count = pillCount {
+                newContentPill(count: count)
             }
-            .refreshable { await refresh() }
-            .overlay(alignment: .top) {
-                if let count = toastCount {
-                    newContentToast(count: count)
-                }
+        }
+        .animation(.snappy, value: pillCount == nil)
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active {
+                Task { await resumeFromBackground() }
+            } else {
+                foregroundPolicy.noteBackground()
+                // 退后台即落盘现场：本地乐观已读先写进条目，快照里才不会满是过期的蓝点
+                store.markLocallyRead(reader.readReporter.readKeys)
+                store.persistSnapshot()
             }
-            .onChange(of: scenePhase) { _, phase in
-                guard checker != nil else { return }
-                if phase == .active {
-                    Task { await resumeFromBackground(proxy) }
-                } else {
-                    foregroundPolicy.noteBackground()
-                }
-            }
+        }
+        .onChange(of: scrolledID) { _, id in
+            guard let id, !store.items.isEmpty else { return }
+            reader.readingState.rememberList(store.scopeKey, top: .some(id == topSentinel ? nil : id))
+        }
+        .onChange(of: selectedItem?.key) { _, key in
+            reader.readingState.rememberList(store.scopeKey, open: .some(key))
         }
         // 卡片正文/预览卡里的链接点击 → X 链接进 X app，其余 in-app Safari
         .externalLinks(safari: $safariItem)
@@ -93,17 +114,21 @@ struct MessageListView: View {
             // 换 store（切信源 / 未读开关）也是整列表替换，同样要解除武装，
             // 否则上一个列表滚出来的 armed 会把新首屏瞬间判读
             scrollReadModel.reset()
-            let newCount = await store.loadInitial()
-            // 冷启动：快照先渲染、网络静默换新，有新内容只弹灰 toast 事后告知
-            if checker != nil, !didHandleLaunch, newCount > 0 {
-                toastCount = newCount
-            }
+            let isLaunch = checker != nil && !didHandleLaunch
             didHandleLaunch = true
+            let onSnapshot = await store.loadInitial(preferSnapshot: isLaunch)
+            restoreListState()
+            // 停在快照上 = 内容是上次离开时的；问一句有多少新的，弹胶囊告知，不动列表
+            if onSnapshot {
+                await checkForNewContent()
+            }
         }
     }
 
     private var listBody: some View {
         LazyVStack(spacing: 0, pinnedViews: []) {
+            // 顶部哨兵：scrollPosition 在顶部时报它；回顶 = 把绑定设成它
+            Color.clear.frame(height: 1).id(topSentinel)
             if store.isLoading && store.items.isEmpty {
                 skeleton
             } else if store.items.isEmpty {
@@ -243,43 +268,90 @@ struct MessageListView: View {
         .padding(.top, 120)
     }
 
-    /// 灰色不可点提示：内容已自动更新，仅告知；一会自动消失，点一下也消失
-    private func newContentToast(count: Int) -> some View {
-        Text("\(count) 条新消息")
-            .font(.footnote.weight(.medium))
-            .padding(.horizontal, 14)
-            .padding(.vertical, 8)
-            .background(Color(.systemGray5), in: Capsule())
-            .foregroundStyle(.secondary)
-            .shadow(radius: 4, y: 2)
-            .padding(.top, 8)
-            .onTapGesture { toastCount = nil }
-            .task {
-                try? await Task.sleep(for: .seconds(4))
-                toastCount = nil
+    /// 蓝色可点胶囊：主体「↑ N 条新内容」点了才回顶 + 刷新（蓝 = 有动作，和灰色的
+    /// 「只是告知」区分开）；右侧 ✕ 只把胶囊收掉，列表分毫不动。不自动消失——
+    /// 它是等着被操作的提示，不是一闪而过的通知。
+    private func newContentPill(count: Int) -> some View {
+        HStack(spacing: 0) {
+            Button {
+                Task { await jumpToNewest() }
+            } label: {
+                Label("\(count) 条新内容", systemImage: "arrow.up")
+                    .font(.footnote.weight(.semibold))
+                    .padding(.leading, 14)
+                    .padding(.trailing, 10)
+                    .padding(.vertical, 9)
             }
+            .accessibilityHint("回到顶部并刷新")
+            Rectangle()
+                .fill(.white.opacity(0.45))
+                .frame(width: 1, height: 16)
+            Button {
+                dismissedCount = count
+                pillCount = nil
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.footnote.weight(.bold))
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 9)
+                    .contentShape(Rectangle())
+            }
+            .accessibilityLabel("忽略")
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(.white)
+        .background(Color.blue, in: Capsule())
+        .shadow(color: .black.opacity(0.18), radius: 6, y: 3)
+        .padding(.top, 8)
+        .transition(.move(edge: .top).combined(with: .opacity))
     }
 
-    /// 回前台：后台够久且确有新内容才回顶 + 静默刷新 + 灰 toast；
-    /// 否则保持阅读位置分毫不动
-    private func resumeFromBackground(_ proxy: ScrollViewProxy) async {
-        guard let checker, foregroundPolicy.shouldRefreshOnForeground() else { return }
+    /// store 首次加载完：滚回上次的顶部卡片、重开上次开着的抽屉——两样都只在
+    /// 那条还在列表里时做，找不到就从顶部开始（快照截断 / 单 feed 视图没有快照）
+    private func restoreListState() {
+        guard let saved = reader.readingState.list(store.scopeKey) else { return }
+        if let top = saved.topItemKey, store.items.contains(where: { $0.key == top }) {
+            scrolledID = top
+        }
+        if let open = saved.openItemKey, let item = store.items.first(where: { $0.key == open }) {
+            selectedItem = item
+        }
+    }
+
+    /// 问一次有多少新内容，决定胶囊弹不弹：0 收起；用户 ✕ 掉过的那个数不再弹
+    private func checkForNewContent() async {
+        guard let checker else { return }
         let count = await checker.check()
-        guard count > 0 else { return }
-        // 必须先瞬时回顶再刷新：refresh 替换 items 时若滚动位置还很深，
-        // 新首屏的卡片会落在视口上方（maxY < 0）被 scroll-to-read 误判为已读
-        proxy.scrollTo("timeline-top", anchor: .top)
+        if count > 0, count != dismissedCount {
+            pillCount = count
+        } else if count == 0 {
+            pillCount = nil
+        }
+    }
+
+    /// 回前台：后台够久才去问；结果只影响胶囊，阅读位置分毫不动
+    private func resumeFromBackground() async {
+        guard checker != nil, foregroundPolicy.shouldRefreshOnForeground() else { return }
+        await checkForNewContent()
+    }
+
+    /// 点胶囊主体：先瞬时回顶再刷新——refresh 替换 items 时若滚动位置还很深，
+    /// 新首屏的卡片会落在视口上方（maxY < 0）被 scroll-to-read 误判为已读
+    private func jumpToNewest() async {
+        pillCount = nil
+        scrolledID = topSentinel
         await refresh()
-        toastCount = count
     }
 
     private func refresh() async {
         // 先冲刷已读队列（debounce 可能还没发出去），未读视图重载才会真正剔除已读项
         await reader.readReporter.flushNow()
         // 列表要被整体替换：解除武装，新首屏得等用户再滚一次才判读
-        // （回前台的静默刷新也走这里）
         scrollReadModel.reset()
         await store.refresh()
+        // 刷新后内容就是最新的：胶囊没有存在的理由，✕ 的记忆也清零
+        pillCount = nil
+        dismissedCount = 0
     }
 
     private func openViewer(for message: DisplayMessage, at index: Int) {

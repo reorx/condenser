@@ -148,13 +148,29 @@ def fetch_new(
     unread_only: bool = False,
 ) -> list[SourceUnit]:
     """Units strictly newer than the ``after`` position (newest first)."""
+    where, params = _new_where(after, channel_id, unread_only)
+    rows = _fetch(where, params, descending=True, limit=limit + _ALBUM_BUFFER)
+    return [_to_unit(u) for u in _group_into_units(rows)]
+
+
+def count_new(after: str, channel_id: Optional[int] = None, unread_only: bool = False) -> int:
+    """How many units ``fetch_new`` would return — without building one envelope.
+
+    The iOS "N 条新内容" pill only reads the number (plan 2026-09-07), so this is
+    the same WHERE under a ``COUNT``. Album rows collapse the way ``days`` collapses
+    them: a five-photo album is one card on the timeline and one here.
+    """
+    where, params = _new_where(after, channel_id, unread_only)
+    sql = f'SELECT COUNT(DISTINCT COALESCE(m.grouped_id, m.id)) {_FROM} WHERE ' + ' AND '.join(where)
+    return tdb.db.execute_sql(sql, tuple(params)).fetchone()[0]
+
+
+def _new_where(after: str, channel_id: Optional[int], unread_only: bool) -> tuple[list[str], list]:
     cdate, cid = unpack_pos(after)
     where, params = _base_where(channel_id, None, unread_only)
     where.append('((m.date > ?) OR (m.date = ? AND m.id > ?))')
     params.extend([cdate, cdate, cid])
-
-    rows = _fetch(where, params, descending=True, limit=limit + _ALBUM_BUFFER)
-    return [_to_unit(u) for u in _group_into_units(rows)]
+    return where, params
 
 
 def days(channel_id: Optional[int] = None) -> dict[str, int]:

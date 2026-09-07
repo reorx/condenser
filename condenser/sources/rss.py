@@ -147,11 +147,25 @@ def fetch_new(after: str, limit: int, feed: Optional[str] = None, unread_only: b
     """Entries strictly newer than the ``after`` position (newest first)."""
     if not active():
         return []
+    where, params = _new_where(after, feed, unread_only)
+    return [_to_unit(r) for r in _fetch(where, params, limit + NEW_COUNT_BUFFER)]
+
+
+def count_new(after: str, feed: Optional[str] = None, unread_only: bool = False) -> int:
+    """``fetch_new``'s number without its rows (the iOS pill, plan 2026-09-07)."""
+    if not active():
+        return 0
+    where, params = _new_where(after, feed, unread_only)
+    sql = f'SELECT COUNT(*) {_FROM} WHERE ' + ' AND '.join(where)
+    return tdb.db.execute_sql(sql, tuple(params)).fetchone()[0]
+
+
+def _new_where(after: str, feed: Optional[str], unread_only: bool) -> tuple[list[str], list]:
     cts, cid = unpack_pos(after)
     where, params = _base_where(feed, None, unread_only)
     where.append(f'(({SORT_AT_SQL} > ?) OR ({SORT_AT_SQL} = ? AND e.id > ?))')
     params.extend([cts, cts, cid])
-    return [_to_unit(r) for r in _fetch(where, params, limit + NEW_COUNT_BUFFER)]
+    return where, params
 
 
 def days(feed: Optional[str] = None) -> dict[str, int]:

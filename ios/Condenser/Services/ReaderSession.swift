@@ -3,22 +3,26 @@ import Observation
 import CondenserKit
 
 /// 登录后的组合根：持有 APIClient + TimelineStore / RecordsStore / ReadReporter /
-/// NewContentChecker + SnapshotCache，统一把 401 接到 AuthSession.handleUnauthorized。
+/// NewContentChecker + SnapshotCache + ReadingStateStore，统一把 401 接到
+/// AuthSession.handleUnauthorized。
 /// unreadOnly / selectedSource 切换时重建 timeline + checker（两者的过滤参数必须一致，
-/// 见 timeline.py:query_new 注释）。主 timeline 默认只看未读；每个 (source, unread)
-/// 组合各落一份冷启动快照；频道/单 feed 视图是临时态，不落快照。
+/// 见 timeline.py:query_new 注释），并写进 `ReadingState`，下次启动从那里恢复
+/// （plan 2026-09-07；首次安装默认 All + 只看未读）。每个 (source, unread) 组合各落一份
+/// 快照——启动时它就是上次离开的现场；频道/单 feed 视图是临时态，不落快照。
 /// 订阅数据源是 GET /api/sources（信源菜单、订阅 tab、频道名 join 的唯一来源）。
 @MainActor
 @Observable
 final class ReaderSession {
     let api: APIClient
+    /// 上次读到哪：tab / 信源 / 未读开关 / 推入的 feed / 各列表的滚动锚点与抽屉
+    let readingState = ReadingStateStore()
     private(set) var timeline: TimelineStore
     private(set) var records: RecordsStore
     private(set) var readReporter: ReadReporter
     private(set) var newContentChecker: NewContentChecker!
     /// 已添加的信源分组（GET /api/sources）
     private(set) var sources: [SourceGroup] = []
-    private(set) var unreadOnly = true
+    private(set) var unreadOnly: Bool
     /// nil = 全部信源；"telegram" / "hn" = 单信源视图
     private(set) var selectedSource: String?
 
@@ -29,9 +33,12 @@ final class ReaderSession {
         let api = APIClient(baseURL: server, token: token)
         self.api = api
         self.onUnauthorized = onUnauthorized
+        let restored = readingState.state
+        unreadOnly = restored.unreadOnly
+        selectedSource = restored.source
         timeline = TimelineStore(
-            api: api, unreadOnly: true, cache: snapshots,
-            cacheKey: Self.timelineKey(source: nil, unreadOnly: true))
+            api: api, unreadOnly: restored.unreadOnly, source: restored.source, cache: snapshots,
+            cacheKey: Self.timelineKey(source: restored.source, unreadOnly: restored.unreadOnly))
         records = RecordsStore(api: api)
         readReporter = ReadReporter(api: api)
         timeline.onUnauthorized = onUnauthorized
@@ -44,6 +51,7 @@ final class ReaderSession {
     func setUnreadOnly(_ value: Bool) {
         guard value != unreadOnly else { return }
         unreadOnly = value
+        readingState.update { $0.unreadOnly = value }
         rebuildTimeline()
     }
 
@@ -51,6 +59,7 @@ final class ReaderSession {
     func setSource(_ source: String?) {
         guard source != selectedSource else { return }
         selectedSource = source
+        readingState.update { $0.source = source }
         rebuildTimeline()
     }
 

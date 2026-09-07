@@ -1,9 +1,10 @@
 import Foundation
 
-/// 新内容一次性探测：GET /api/timeline/new?after=<head_cursor> 返回新内容条数。
-/// 只在「回前台自动更新」路径上用一次——先问有没有新内容，再决定要不要回顶 + 刷新，
-/// 没有就完全不打扰当前阅读位置。**没有后台轮询**：前台阅读期间不主动打断用户
-/// （旧的 30s 轮询 + 蓝色可点胶囊已移除），刷新只靠下拉与回前台。
+/// 新内容一次性探测：GET /api/timeline/new/count?after=<head_cursor> 只拿条数
+/// （2026-09-07 起不再走 /timeline/new——那条会把最多 100 条 envelope 一起拉回来）。
+/// 冷启动渲染快照后与回前台时各问一次，结果只用来在列表上方浮一个可关闭的蓝色胶囊
+/// 「N 条新内容」，**不回顶、不刷新、不动内容**——回顶 + 刷新是用户点胶囊才发生的事。
+/// **没有后台轮询**：前台阅读期间不主动打断用户。
 /// 失败一律按 0 处理（静默），401 走 onUnauthorized。
 @MainActor
 public final class NewContentChecker {
@@ -36,10 +37,9 @@ public final class NewContentChecker {
     public func check() async -> Int {
         guard let after = headCursor() else { return 0 }
         do {
-            let new = try await api.timelineNew(
-                after: after, channelID: channelID, limit: 100, unreadOnly: unreadOnly,
+            return try await api.timelineNewCount(
+                after: after, channelID: channelID, unreadOnly: unreadOnly,
                 source: source, feed: feed)
-            return new.count
         } catch APIError.unauthorized {
             onUnauthorized?()
             return 0

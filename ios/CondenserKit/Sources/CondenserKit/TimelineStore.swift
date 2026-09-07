@@ -32,15 +32,19 @@ public final class TimelineStore {
     private let pageSize: Int
     private let cache: SnapshotCache?
     private let cacheKey: String?
+    private let snapshotItemCap: Int
     private var nextCursor: String?
     /// 已加载内容最后一个单元的锚点：本地到底后仍存在，fetch-older 之后用它续接
     private var endCursor: String?
     private var loadedOnce = false
+    /// 每页结束时的 (已加载条数, 下一页游标)：persistSnapshot 截断到某一页的边界时，
+    /// 要拿得到那一页的 next_cursor，否则快照接着翻页会跳过一段
+    private var pageEnds: [(count: Int, cursor: String?)] = []
 
     public init(
         api: CondenserAPI, channelID: Int? = nil, unreadOnly: Bool = false,
         source: String? = nil, feed: String? = nil, pageSize: Int = 30,
-        cache: SnapshotCache? = nil, cacheKey: String? = nil
+        cache: SnapshotCache? = nil, cacheKey: String? = nil, snapshotItemCap: Int = 300
     ) {
         self.api = api
         self.channelID = channelID
@@ -50,23 +54,57 @@ public final class TimelineStore {
         self.pageSize = pageSize
         self.cache = cache
         self.cacheKey = cacheKey
+        self.snapshotItemCap = snapshotItemCap
+    }
+
+    /// 这个列表的身份，`ReadingState.lists` 按它落滚动锚点与打开的抽屉：
+    /// 单频道 = `channel-<id>`，其余 = `<source|all>[|<feed>]|<unread|all>`
+    public var scopeKey: String {
+        if let channelID { return "channel-\(channelID)" }
+        var parts = [source ?? "all"]
+        if let feed { parts.append(feed) }
+        parts.append(unreadOnly ? "unread" : "all")
+        return parts.joined(separator: "|")
     }
 
     /// 首次加载；已加载过则无操作（refresh 负责重载）。
-    /// 配了 cache 时冷启动先渲染快照，网络成功后整页替换。
-    /// 返回相对快照的新条目数（无快照/网络失败为 0），供冷启动灰 toast 提示。
+    /// 配了 cache 时先渲染快照；`preferSnapshot = true`（启动恢复现场，plan 2026-09-07）
+    /// 且快照非空时**到此为止、不打网络**——快照就是上次离开时的列表，滚动锚点要在
+    /// 它里面才找得到；有没有更新由 `NewContentChecker` 单独问一次、用胶囊告知。
+    /// 否则（无快照 / 切信源重建的 store）快照只是首屏占位，网络成功后整页替换。
+    /// 返回是否停在了快照上。
     @discardableResult
-    public func loadInitial() async -> Int {
-        guard !loadedOnce, !isLoading else { return 0 }
-        var baseline: Set<String>?
+    public func loadInitial(preferSnapshot: Bool = false) async -> Bool {
+        guard !loadedOnce, !isLoading else { return false }
         if items.isEmpty, let cache, let cacheKey,
            let snapshot = cache.load(TimelinePage.self, key: cacheKey) {
             apply(page: snapshot)
-            baseline = Set(snapshot.items.map(\.key))
+            if preferSnapshot, !snapshot.items.isEmpty {
+                loadedOnce = true
+                return true
+            }
         }
         await loadFirstPage()
-        guard let baseline, error == nil else { return 0 }
-        return items.filter { !baseline.contains($0.key) }.count
+        return false
+    }
+
+    /// 把当前已加载的列表（本地已读标记在内）连同游标写回快照——退后台时调一次，
+    /// 下次启动 `loadInitial(preferSnapshot:)` 读回来的就是这一刻的现场。
+    /// 超过 `snapshotItemCap` 时截到最后一个装得下的**页边界**，next_cursor 用那一页的，
+    /// 恢复后继续翻页不会漏掉一段。
+    public func persistSnapshot() {
+        guard let cache, let cacheKey, loadedOnce, !items.isEmpty else { return }
+        var kept = items.count
+        var next = nextCursor
+        if items.count > snapshotItemCap,
+           let boundary = pageEnds.last(where: { $0.count <= snapshotItemCap }) {
+            kept = boundary.count
+            next = boundary.cursor
+        }
+        let page = TimelinePage(
+            items: Array(items.prefix(kept)), nextCursor: next, endCursor: next ?? endCursor,
+            headCursor: headCursor)
+        cache.save(page, key: cacheKey)
     }
 
     /// 重载第一页并替换内容、重置分页（下拉刷新 / 新消息胶囊点击）
@@ -100,6 +138,7 @@ public final class TimelineStore {
         headCursor = page.headCursor
         hasMore = page.nextCursor != nil
         olderExhausted = false
+        pageEnds = [(items.count, page.nextCursor)]
     }
 
     public func loadMore() async {
@@ -110,6 +149,8 @@ public final class TimelineStore {
                 cursor: cursor, limit: pageSize, channelID: channelID, date: nil,
                 unreadOnly: unreadOnly, source: source, feed: feed)
             append(page: page)
+            // 快照跟着长：恢复现场时滚动锚点可能在第 5 页
+            persistSnapshot()
         } catch {
             handle(error)
         }
@@ -124,6 +165,7 @@ public final class TimelineStore {
         if let cursor = page.endCursor {
             endCursor = cursor
         }
+        pageEnds.append((items.count, page.nextCursor))
     }
 
     /// 本地历史走完后（hasMore=false），触发后端从 Telegram 拉更早消息，

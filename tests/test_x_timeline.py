@@ -478,6 +478,8 @@ def test_new_content_poll_reports_x_arrivals(env, monkeypatch):
         _ingest(client, monkeypatch, USER_HANDLE, user_fixture()[:1], datetime(2026, 7, 24, 10, 0))
         new = client.get('/api/timeline/new', params={'after': head}).json()
         assert new['count'] == 1 and new['items'][0]['key'] == x_key(USER_NEWEST)
+        # the count-only sibling (iOS pill) runs the same scope + dedup under COUNT
+        assert client.get('/api/timeline/new/count', params={'after': head}).json() == {'count': 1}
 
 
 # --- /api/sources listing ------------------------------------------------------
@@ -649,6 +651,7 @@ def test_day_counts_and_the_new_poll_follow_the_same_rule(env, monkeypatch):
         assert sum(d['count'] for d in days) == len(page['items'])
         # and the banner does not promise a tweet the aggregate would not show
         assert client.get('/api/timeline/new', params={'after': page['head_cursor']}).json()['count'] == 0
+        assert client.get('/api/timeline/new/count', params={'after': page['head_cursor']}).json()['count'] == 0
 
 
 def test_a_tweet_in_both_feeds_keeps_one_position(env, monkeypatch):

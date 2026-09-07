@@ -116,6 +116,101 @@ struct TimelineSnapshotTests {
                 "新首页回写快照")
     }
 
+    @Test("preferSnapshot：有快照就停在快照上，不打网络，返回 true；游标随快照恢复")
+    func preferSnapshotSkipsNetwork() async {
+        let (cache, dir) = makeCache()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        cache.save(makePage([makeItem(id: 5), makeItem(id: 4)], next: "c-snap", head: "h-snap"), key: "k")
+
+        let api = StubAPI()
+        api.timelinePages = [.success(makePage([makeItem(id: 9)], head: "h-net"))]
+        let store = TimelineStore(api: api, cache: cache, cacheKey: "k")
+        let restored = await store.loadInitial(preferSnapshot: true)
+        #expect(restored)
+        #expect(api.timelineCalls.isEmpty, "现场来自快照，网络一次都不打")
+        #expect(store.items.tgIDs == [5, 4])
+        #expect(store.headCursor == "h-snap", "胶囊检查用快照的 head")
+        #expect(store.hasMore, "翻页游标也来自快照")
+
+        // 接着翻页用的是快照的 next_cursor
+        api.timelinePages = [.success(makePage([makeItem(id: 3)], next: nil))]
+        await store.loadMore()
+        #expect(api.timelineCalls.map(\.cursor) == ["c-snap"])
+        #expect(store.items.tgIDs == [5, 4, 3])
+    }
+
+    @Test("preferSnapshot：无快照 / 空快照 → 照常走网络，返回 false")
+    func preferSnapshotFallsBackToNetwork() async {
+        let (cache, dir) = makeCache()
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let api = StubAPI()
+        api.timelinePages = [.success(makePage([makeItem(id: 9)], head: "h-net"))]
+        let store = TimelineStore(api: api, cache: cache, cacheKey: "k")
+        #expect(await store.loadInitial(preferSnapshot: true) == false)
+        #expect(store.items.tgIDs == [9])
+
+        cache.save(makePage([], head: "h-empty"), key: "k2")
+        let api2 = StubAPI()
+        api2.timelinePages = [.success(makePage([makeItem(id: 8)], head: "h-net2"))]
+        let store2 = TimelineStore(api: api2, cache: cache, cacheKey: "k2")
+        #expect(await store2.loadInitial(preferSnapshot: true) == false, "空快照不算现场")
+        #expect(store2.items.tgIDs == [8])
+    }
+
+    @Test("persistSnapshot：写回当前已加载的全部页 + 本地已读标记；loadMore 后快照自动跟着长")
+    func persistSnapshotWritesCurrentList() async {
+        let (cache, dir) = makeCache()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let api = StubAPI()
+        api.timelinePages = [
+            .success(makePage([makeItem(id: 5), makeItem(id: 4)], next: "c2", head: "h1")),
+            .success(makePage([makeItem(id: 3), makeItem(id: 2)], next: "c3")),
+        ]
+        let store = TimelineStore(api: api, cache: cache, cacheKey: "k")
+        await store.loadInitial()
+        await store.loadMore()
+        let afterMore = cache.load(TimelinePage.self, key: "k")
+        #expect(afterMore?.items.tgIDs == [5, 4, 3, 2], "翻页后快照含两页")
+        #expect(afterMore?.nextCursor == "c3")
+        #expect(afterMore?.headCursor == "h1")
+
+        store.markLocallyRead(["tg:1:5", "tg:1:4"])
+        store.persistSnapshot()
+        let persisted = cache.load(TimelinePage.self, key: "k")
+        #expect(persisted?.items.map(\.isRead) == [true, true, false, false])
+    }
+
+    @Test("persistSnapshot 超过上限：截到最后一个装得下的页边界，next_cursor 用那一页的")
+    func persistSnapshotCapsAtPageBoundary() async {
+        let (cache, dir) = makeCache()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let api = StubAPI()
+        api.timelinePages = [
+            .success(makePage([makeItem(id: 9), makeItem(id: 8)], next: "c2", head: "h1")),
+            .success(makePage([makeItem(id: 7), makeItem(id: 6)], next: "c3")),
+            .success(makePage([makeItem(id: 5), makeItem(id: 4)], next: "c4")),
+        ]
+        let store = TimelineStore(api: api, cache: cache, cacheKey: "k", snapshotItemCap: 5)
+        await store.loadInitial()
+        await store.loadMore()
+        await store.loadMore()
+        #expect(store.items.count == 6)
+        let persisted = cache.load(TimelinePage.self, key: "k")
+        #expect(persisted?.items.tgIDs == [9, 8, 7, 6], "6 > 5，退到第二页边界")
+        #expect(persisted?.nextCursor == "c3", "接着翻页从第三页开始，不漏不重")
+        #expect(persisted?.headCursor == "h1")
+    }
+
+    @Test("未加载过 / 空列表 / 无 cache 的 store：persistSnapshot 什么也不写")
+    func persistSnapshotNoops() async {
+        let (cache, dir) = makeCache()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let store = TimelineStore(api: StubAPI(), cache: cache, cacheKey: "k")
+        store.persistSnapshot()
+        #expect(cache.load(TimelinePage.self, key: "k") == nil)
+    }
+
     @Test("无快照 → 行为与原来一致；成功后写入快照")
     func noSnapshotStillSaves() async {
         let (cache, dir) = makeCache()
@@ -137,10 +232,11 @@ struct TimelineSnapshotTests {
         #expect(store.items.tgIDs == [3])
     }
 
-    // 冷启动「N 条新消息」灰 toast 依赖：loadInitial 返回相对快照的新条目数
+    // 2026-09-07 起 loadInitial 不再返回「相对快照的新条目数」——那个数字改由
+    // NewContentChecker 问 /timeline/new/count；返回值现在是「是否停在了快照上」。
 
-    @Test("loadInitial 返回相对快照的新条目数")
-    func loadInitialReportsNewCount() async {
+    @Test("非 preferSnapshot 的冷启动：快照只是占位，网络替换后返回 false")
+    func loadInitialNetworkPathReturnsFalse() async {
         let (cache, dir) = makeCache()
         defer { try? FileManager.default.removeItem(at: dir) }
         cache.save(makePage([makeItem(id: 3), makeItem(id: 2)], head: "h1"), key: "k")
@@ -149,39 +245,12 @@ struct TimelineSnapshotTests {
         api.timelinePages = [.success(makePage(
             [makeItem(id: 5), makeItem(id: 4), makeItem(id: 3)], next: "c2", head: "h2"))]
         let store = TimelineStore(api: api, cache: cache, cacheKey: "k")
-        let count = await store.loadInitial()
-        #expect(count == 2, "id 5/4 是快照里没有的")
+        #expect(await store.loadInitial() == false)
         #expect(store.items.tgIDs == [5, 4, 3])
+        #expect(store.headCursor == "h2")
     }
 
-    @Test("无快照的冷启动 → 新条目数为 0（没有基准不提示）")
-    func loadInitialNoSnapshotNoCount() async {
-        let (cache, dir) = makeCache()
-        defer { try? FileManager.default.removeItem(at: dir) }
-        let api = StubAPI()
-        api.timelinePages = [.success(makePage([makeItem(id: 3)]))]
-        let store = TimelineStore(api: api, cache: cache, cacheKey: "k")
-        #expect(await store.loadInitial() == 0)
-
-        let bare = StubAPI()
-        bare.timelinePages = [.success(makePage([makeItem(id: 3)]))]
-        let bareStore = TimelineStore(api: bare)
-        #expect(await bareStore.loadInitial() == 0, "不配 cache 同样为 0")
-    }
-
-    @Test("网络失败 → 新条目数为 0（内容没变，不提示）")
-    func loadInitialFailureNoCount() async {
-        let (cache, dir) = makeCache()
-        defer { try? FileManager.default.removeItem(at: dir) }
-        cache.save(makePage([makeItem(id: 3)], head: "h1"), key: "k")
-
-        let api = StubAPI()
-        api.timelinePages = [.failure(APIError.http(status: 500, detail: "boom"))]
-        let store = TimelineStore(api: api, cache: cache, cacheKey: "k")
-        #expect(await store.loadInitial() == 0)
-    }
-
-    @Test("重复 loadInitial 是 no-op，返回 0")
+    @Test("重复 loadInitial 是 no-op（快照路径也一样），不再打网络")
     func loadInitialTwice() async {
         let (cache, dir) = makeCache()
         defer { try? FileManager.default.removeItem(at: dir) }
@@ -190,8 +259,12 @@ struct TimelineSnapshotTests {
         let api = StubAPI()
         api.timelinePages = [.success(makePage([makeItem(id: 3), makeItem(id: 2)]))]
         let store = TimelineStore(api: api, cache: cache, cacheKey: "k")
-        #expect(await store.loadInitial() == 1)
-        #expect(await store.loadInitial() == 0)
+        #expect(await store.loadInitial() == false)
+        #expect(await store.loadInitial() == false)
         #expect(api.timelineCalls.count == 1)
+
+        let restored = TimelineStore(api: StubAPI(), cache: cache, cacheKey: "k")
+        #expect(await restored.loadInitial(preferSnapshot: true) == true)
+        #expect(await restored.loadInitial(preferSnapshot: true) == false, "第二次不算恢复")
     }
 }

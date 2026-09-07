@@ -488,11 +488,11 @@ func makeXItem(
 @MainActor
 @Suite("X feed 作用域与反馈")
 struct XStoreTests {
-    @Test("feed 作用域透传到 timeline 与 /timeline/new（For You 只有专属入口）")
+    @Test("feed 作用域透传到 timeline 与 /timeline/new/count（For You 只有专属入口）")
     func feedScope() async {
         let api = StubAPI()
         api.timelinePages = [.success(makePage([makeXItem()], head: "h1"))]
-        api.newResults = [.success(TimelineNew(count: 2, items: []))]
+        api.countResults = [.success(2)]
         let store = TimelineStore(api: api, source: SourceID.x, feed: XFeed.foryou)
         await store.loadInitial()
         #expect(api.timelineCalls.first?.source == SourceID.x)
@@ -501,7 +501,7 @@ struct XStoreTests {
         let checker = NewContentChecker(
             api: api, source: SourceID.x, feed: XFeed.foryou) { store.headCursor }
         #expect(await checker.check() == 2)
-        #expect(api.newCalls.first?.feed == XFeed.foryou)
+        #expect(api.countCalls.first?.feed == XFeed.foryou)
     }
 
     @Test("打标：乐观置位 + 调用 POST /api/feedback")

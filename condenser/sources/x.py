@@ -324,11 +324,8 @@ def fetch_new(
     channels = scope(feed, include_foryou)
     if not channels:
         return []
-    cts, cid = unpack_pos(after)
     scope_where, scope_params = _scope_where(channels, is_aggregate(feed, include_foryou))
-    where, params = _base_where(None, unread_only)
-    where.append('((v.sort_at > ?) OR (v.sort_at = ? AND v.tweet_id > ?))')
-    params.extend([cts, cts, cid])
+    where, params = _new_where(after, unread_only)
     rows = _fetch(
         scope_where,
         scope_params,
@@ -340,6 +337,35 @@ def fetch_new(
         _sort_at(channels),
     )
     return [_to_unit(r) for r in rows]
+
+
+def count_new(
+    after: str,
+    feed: Optional[str] = None,
+    include_foryou: bool = False,
+    unread_only: bool = False,
+) -> int:
+    """``fetch_new``'s number without its rows (the iOS pill, plan 2026-09-07).
+
+    Same scope, same dedup subquery — the count has to see exactly the rows the
+    page would show, or a tweet whose For You copy is filtered out could be counted
+    once and shown never (the ``_scope_where`` note).
+    """
+    channels = scope(feed, include_foryou)
+    if not channels:
+        return 0
+    scope_where, scope_params = _scope_where(channels, is_aggregate(feed, include_foryou))
+    where, params = _new_where(after, unread_only)
+    sql = _select('COUNT(*)', scope_where, where, '', _dedup_needed(channels), _sort_at(channels))
+    return tdb.db.execute_sql(sql, (*scope_params, *params)).fetchone()[0]
+
+
+def _new_where(after: str, unread_only: bool) -> tuple[list[str], list]:
+    cts, cid = unpack_pos(after)
+    where, params = _base_where(None, unread_only)
+    where.append('((v.sort_at > ?) OR (v.sort_at = ? AND v.tweet_id > ?))')
+    params.extend([cts, cts, cid])
+    return where, params
 
 
 def days(feed: Optional[str] = None, include_foryou: bool = False) -> dict[str, int]:

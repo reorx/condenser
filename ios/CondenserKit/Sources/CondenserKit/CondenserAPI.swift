@@ -13,6 +13,10 @@ public protocol CondenserAPI: Sendable {
         after: String, channelID: Int?, limit: Int, unreadOnly: Bool, source: String?,
         feed: String?
     ) async throws -> TimelineNew
+    /// 只要条数（GET /api/timeline/new/count）——胶囊用；参数同 timelineNew 去掉 limit
+    func timelineNewCount(
+        after: String, channelID: Int?, unreadOnly: Bool, source: String?, feed: String?
+    ) async throws -> Int
     /// 已添加（有 ≥1 订阅）的信源及其订阅列表——信源菜单与订阅页的唯一数据源
     func sources() async throws -> [SourceGroup]
     func markRead(keys: [String]) async throws

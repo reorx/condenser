@@ -138,6 +138,22 @@ X 的定位底本是 t.co 替换后的 `xDisplayedText`（与 `linkifiedNS` 共�
 那份，Safari 会从这张 sheet 背后弹出来。深链有没有真的落进 X app 只能在装了 X 的真机上
 验（`make device`），模拟器没有 X app，走的永远是回落分支。
 
+**阅读现场恢复 + 蓝色胶囊（2026-09-07）**：打开 app 回到上次离开的样子——tab、主 timeline
+的信源过滤 / 未读开关、订阅 tab 推进去的 feed、列表滚到同一张卡片、开着的详情抽屉——
+状态在 Kit 的 `ReadingState` / `ReadingStateStore`（UserDefaults，`lists` 按
+`TimelineStore.scopeKey` 存 `topItemKey` / `openItemKey`），内容在 `SnapshotCache`：
+启动的首个 store 走 `loadInitial(preferSnapshot: true)`，快照非空就**停在快照上不打网络**，
+退后台与每次 `loadMore` 后 `persistSnapshot()` 把已加载的全部页（含本地已读）写回。
+有没有新内容另问 `GET /api/timeline/new/count`（`NewContentChecker`，只回条数），结果只是
+列表上方一枚**蓝色胶囊「↑ N 条新内容 | ✕」**：主体点了才回顶 + 刷新，✕ 只收掉，列表不动；
+回前台后台 ≥60s 再问一次。切信源 / 未读重建的 store 仍是旧路径（快照→网络替换，无提示）。
+`MessageListView` 因此改用 `scrollPosition(id:)` + `scrollTargetLayout()`（顶部哨兵进
+LazyVStack），`MainView` 的订阅 path 从 `NavigationPath` 改成 `[SubDestination]`（要读栈顶）。
+推入的单 feed 视图不落快照，恢复它只到「进到那个 feed + 首页里找得到锚点就滚过去」。
+⚠️ 模拟器走查用 cliclick 点胶囊时，坐标要按 `screencapture -R` 的**窗口**截图换算（窗口有
+标题栏 + 机身边框），按 simctl 截图等比缩放会偏约 60pt 点到导航栏。计划与走查记录：
+`../kb/plans/2026-09-07-ios-state-restore-new-content-pill.md`、`../kb/docs/ios.md` 末节。
+
 ## 技术栈
 
 - iOS 18+，SwiftUI App lifecycle，Swift 5 语言模式（非 Swift 6 strict concurrency）
