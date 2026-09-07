@@ -21,6 +21,9 @@ struct TimelineScreen: View {
             .onChange(of: scenePhase) { _, phase in
                 if phase != .active {
                     Task { await reader.readReporter.flushNow() }
+                } else {
+                    // 回到前台：Purifier 票据可能已过期（5 分钟），提前换一张
+                    Purifier.shared.prefetchIfNeeded()
                 }
             }
     }

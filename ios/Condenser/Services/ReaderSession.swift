@@ -36,6 +36,8 @@ final class ReaderSession {
         let restored = readingState.state
         unreadOnly = restored.unreadOnly
         selectedSource = restored.source
+        // 登录成功 = 组合根建立：把 API 交给 Purifier，开关开着就顺手预热一张票
+        Purifier.shared.configure(api: api, baseURL: server)
         timeline = TimelineStore(
             api: api, unreadOnly: restored.unreadOnly, source: restored.source, cache: snapshots,
             cacheKey: Self.timelineKey(source: restored.source, unreadOnly: restored.unreadOnly))

@@ -1088,6 +1088,13 @@ public struct ForwardResult: Codable, Equatable, Sendable {
     public let link: String
 }
 
+/// GET /api/purifier/ticket —— 阅读代理的一次性票据（plan 2026-09-07 §2）
+public struct PurifierTicket: Codable, Equatable, Sendable {
+    public let ticket: String
+    /// 有效秒数（服务端 300）
+    public let ttl: Int
+}
+
 /// GET/PATCH /api/app/meta —— 运行时应用设置
 public struct AppMeta: Codable, Equatable, Sendable {
     public let schemaVersion: Int

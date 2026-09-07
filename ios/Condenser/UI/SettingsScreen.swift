@@ -10,6 +10,7 @@ struct SettingsScreen: View {
 
     @State private var confirmSignOut = false
     @AppStorage(FontScale.storageKey) private var fontScaleRaw = FontScale.default.rawValue
+    @AppStorage(Purifier.storageKey) private var purifierEnabled = false
     @State private var forwardChannel = ""
     @State private var forwardSaving = false
     @State private var forwardSaved = false
@@ -27,6 +28,16 @@ struct SettingsScreen: View {
                 LabeledContent("主题", value: "跟随系统")
             } header: {
                 Text("外观")
+            }
+            Section {
+                Toggle("Purifier 阅读模式", isOn: $purifierEnabled)
+                    .onChange(of: purifierEnabled) { _, on in
+                        if on { Purifier.shared.prefetchIfNeeded() }
+                    }
+            } header: {
+                Text("阅读")
+            } footer: {
+                Text("开启后，链接先经服务器的阅读代理再打开，为弱网环境优化。X 与 Telegram 链接不受影响。")
             }
             Section {
                 fontScaleSlider
