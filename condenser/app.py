@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
@@ -22,6 +23,7 @@ from .routers import (
     media,
     messages,
     preview,
+    purifier,
     reading,
     rss,
     search,
@@ -87,6 +89,10 @@ def create_app() -> FastAPI:
         db.close_db()
 
     app = FastAPI(title='Condenser', version='0.1.0', lifespan=lifespan)
+    # Production Caddy has no `encode` block (compression was Cloudflare's job alone);
+    # the purifier's proxy pages are up to 1MB of HTML on a bad connection, so the
+    # app compresses itself. Global: API JSON benefits too.
+    app.add_middleware(GZipMiddleware, minimum_size=1024)
 
     @app.get('/api/health')
     def health():
@@ -108,6 +114,9 @@ def create_app() -> FastAPI:
     app.include_router(cleanup.router)
     app.include_router(search.router)
     app.include_router(forwards.router)
+    # /p + /pa + /api/purifier/ticket — before the SPA mount, which would swallow /p
+    app.include_router(purifier.api_router)
+    app.include_router(purifier.router)
 
     # 4. serve the React build (if present) as static assets at '/'
     static_dir = os.getenv('CONDENSER_STATIC_DIR', str(Path(__file__).resolve().parent.parent / 'frontend' / 'dist'))

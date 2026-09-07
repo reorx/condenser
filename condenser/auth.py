@@ -5,11 +5,31 @@ from fastapi import HTTPException, Request
 
 from . import db
 from .config import Settings, get_settings
-from .crypto import hash_device_token, verify_cookie
+from .crypto import READER_COOKIE_MAX_AGE, hash_device_token, verify_cookie, verify_reader_cookie
 from .tg import TgManager
 
 COOKIE_NAME = 'condenser_session'
 COOKIE_MAX_AGE = 30 * 24 * 3600
+# The purifier's own cookie (plan 2026-09-07 §2): minted from a device-token
+# ticket, opens only /p and /pa. Deliberately not read by require_cookie_auth.
+READER_COOKIE_NAME = 'condenser_reader'
+
+__all__ = ['COOKIE_NAME', 'COOKIE_MAX_AGE', 'READER_COOKIE_NAME', 'READER_COOKIE_MAX_AGE']
+
+
+def reader_authenticated(request: Request, settings: Settings) -> bool:
+    """Predicate, not a dependency: may /p and /pa serve this request?
+
+    Accepts the reader cookie or the app session cookie — never a Bearer header
+    (a browser navigation and an ``<img>`` cannot carry one anyway). A predicate
+    rather than a ``Depends`` that raises, because the failure has to render a
+    small HTML page, not JSON, inside SFSafariViewController.
+    """
+    reader = request.cookies.get(READER_COOKIE_NAME)
+    if reader and verify_reader_cookie(settings.condenser_secret_key, reader):
+        return True
+    session = request.cookies.get(COOKIE_NAME)
+    return bool(session and verify_cookie(settings.condenser_secret_key, session, max_age=COOKIE_MAX_AGE))
 
 
 def require_cookie_auth(request: Request) -> None:
