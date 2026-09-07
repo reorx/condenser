@@ -154,6 +154,13 @@ LazyVStack），`MainView` 的订阅 path 从 `NavigationPath` 改成 `[SubDesti
 标题栏 + 机身边框），按 simctl 截图等比缩放会偏约 60pt 点到导航栏。计划与走查记录：
 `../kb/plans/2026-09-07-ios-state-restore-new-content-pill.md`、`../kb/docs/ios.md` 末节。
 
+**Purifier 阅读代理（2026-09-07）**：设置页「阅读」开关（`Purifier.storageKey` =
+`condenser.purifier`）开着时，`openExternalURL` 顶部把 URL 交给 `Purifier.shared.rewrittenURL(for:)`
+改成 `<server>/p/<host>/…`（Kit 的 `purifiedURL`，X / t.me / 非 http(s) / 自身域名返回 nil），
+再走原有分支——X 深链仍判原始 URL。票据（`/api/purifier/ticket`，5 分钟）由 `Purifier`
+单例缓存并在登录 / 开关打开 / 回前台时预热，点击永远同步。⚠️ 走查时 Mac 沙盒 app 的
+`defaults write` 要指向容器内的 plist。详见 `../kb/docs/ios.md`「Purifier 阅读代理」。
+
 ## 技术栈
 
 - iOS 18+，SwiftUI App lifecycle，Swift 5 语言模式（非 Swift 6 strict concurrency）

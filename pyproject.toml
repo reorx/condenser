@@ -30,6 +30,9 @@ dependencies = [
     "sqlite-vec>=0.1.9",
     "feedparser>=6.0.14",
     "readability-lxml>=0.9",
+    # purifier: pure.md fallback renders Markdown (already present transitively; declared
+    # because purifier.py imports it directly)
+    "markdown-it-py>=3.0",
 ]
 
 [project.optional-dependencies]

@@ -203,6 +203,11 @@ public final class APIClient: @unchecked Sendable {
         try await get("/api/app/meta")
     }
 
+    /// 阅读代理票据（Bearer 换一张 5 分钟票，拼进 /p URL 换 30 天 cookie）
+    public func purifierTicket() async throws -> PurifierTicket {
+        try await get("/api/purifier/ticket")
+    }
+
     /// 传 "" 清除（后端读回 null）
     public func setForwardChannel(_ value: String) async throws -> AppMeta {
         struct Body: Encodable {

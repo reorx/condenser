@@ -352,6 +352,26 @@ class Settings(BaseSettings):
     # measured from first_seen_at (how long it sat in the backlog).
     condenser_cleanup_rss_retention_days: int = 30
 
+    # --- purifier: the iOS reading proxy (condenser/purifier.py, plan 2026-09-07) ---
+    # Document byte cap. Proxy mode keeps the whole page, and a big HN thread is
+    # close to 1MB of HTML on its own.
+    condenser_purifier_max_bytes: int = 5_000_000
+    # In-process document cache (per upstream URL + mode); no table.
+    condenser_purifier_cache_ttl: int = 3600
+    # Below this many characters of extracted prose, readable mode is judged to have
+    # missed the article and falls back to pure.md (when a key is set).
+    condenser_purifier_min_readable_chars: int = 500
+    # The only way a <script> survives. /p pages run on condenser's own origin, so
+    # third-party JS would hold the 30-day reader cookie; even when true, a CSP
+    # fences connect-src / frame-src / form-action. Not an iOS toggle on purpose.
+    condenser_purifier_allow_js: bool = False
+    # Cache-Control max-age on /pa responses — assets are cached by Safari, never here.
+    condenser_purifier_asset_cache_seconds: int = 86400
+    # pure.md fallback for readable mode. Empty = fallback off — the attr/summary
+    # "the key is the switch" convention; it has a quota, so nothing spends it by
+    # default.
+    condenser_puremd_api_key: str = ''
+
     # --- link preview fetching (condenser/preview.py) ---
     # Total per-request timeout (seconds) for fetching a URL/its image.
     condenser_preview_fetch_timeout: float = 8.0

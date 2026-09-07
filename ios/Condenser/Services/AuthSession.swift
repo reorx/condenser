@@ -49,6 +49,7 @@ final class AuthSession {
     func signOut() {
         store.clearToken()
         token = nil
+        Purifier.shared.reset()
     }
 
     /// 任意 API 请求 401 时调用：清 token 回登录页并提示（phase 3 由 APIClient 接线）

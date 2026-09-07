@@ -1457,3 +1457,31 @@ Plan `kb/plans/2026-09-07-ios-state-restore-new-content-pill.md`。用户三条�
 - **未做 / 边界**：推入的单 feed 视图不落快照（只恢复「进到哪」+ 首页内锚点）；胶囊不自动消失；
   `loadInitial` 的返回值语义从「相对快照的新条目数」改成「是否停在快照上」。
 - 走查图 `tmp/2026-09-07-ios-state-restore/`（8 张 + 两个辅助脚本），细节见 `kb/docs/ios.md` 末节。
+
+## 2026-09-07 · Purifier —— iOS 阅读代理模式（后端 + iOS，本地跑通）
+
+Plan `kb/plans/2026-09-07-purifier.md`。弱网下点开外链先经 `https://<server>/p/<host>/<path>`，
+服务端抓页、剥 JS、资源与链接全改写进代理。后端 `purifier.py` / `purifier_html.py` /
+`routers/purifier.py`（59 例测试，零网络）；iOS `Purifier` 单例塞进 `openExternalURL` 内部
+（8 个调用现场零改动），Kit 24 例。后端 861 → 862、Kit 287 → 311 全绿。
+
+- **三模式实测**（本地 8793，`tmp/2026-09-07-purifier/`）：HN 讨论页 proxy 模式 962KB 原始
+  HTML → gzip 后 125KB，翻页 / 评论 / 用户页链接全留在代理里；endler.dev 博客 readable 模式
+  4 图经 `/pa` 保留，`_mode=proxy` 连站点 web 字体都经 `/pa` 走通；reddit 给爬虫 JS 壳 →
+  readable 抽出太短 → pure.md 兜底（pure.md 也只拿到壳，但链路对）；medium / SO / economist
+  的 403 连 pure.md 也抓不到——**pure.md 用 404 表示上游抓不到**，错误页把两段原因串起来。
+- **一个只有真页面才暴露的坑**：HN 移动端 CSS 用属性选择器 `img[src='s.gif'][width='40']
+  {width:12px}` 缩小缩进图，`src` 改写成 `/pa/…` 后选择器全失配，390px 屏上帖子撑到 558px。
+  修法是 `rewrite_css` 把样式表里精确匹配的 `[src=…]` / `[href=…]` / `[poster=…]` 选择器
+  按同一规则改写（`^=` `$=` 不动）。定位靠逐项剥离（doctype / 工具栏 / lxml 重序列化 /
+  链接改写 / 资源改写）二分，只有资源改写那一刀让宽度跳变。
+- **第二个坑**：libxml2 不认 `<embed>` 是 void 元素，`<embed src=…>` 后面整个 body 被嵌进
+  它里面，`remove()` 会把页面删空——object / embed / applet / noscript 一律 `drop_tag()`。
+- **iOS 走查**：设置开关 → HN 详情「打开原文」→ SFSafariViewController 地址栏是 condenser
+  域名，后端日志 `ticket → /p?_pt 302 → /p 200`；关掉开关回原站；X 推文开着开关仍开
+  x.com。Mac Catalyst 同样（系统浏览器打开 `/p/asahilinux.org/…`）——注意沙盒 app 的
+  UserDefaults 在容器里，`defaults write com.reorx.condenser` 写到外面等于没写。
+- **HN 限流**：同一 IP 几分钟内几次抓取就 429（"Sorry."），本地对比原页时踩了两次；
+  单用户阅读节奏不会碰到，但 proxy 模式的 502 页要能让人一眼看出是上游拒绝。
+- **未做 / 待定**：生产 `.env` 加 `CONDENSER_PUREMD_API_KEY`（不加只是兜底关闭）；真机
+  验证；iOS 随下一个 build 上架。web 端不做（plan §0.6）。
