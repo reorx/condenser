@@ -123,7 +123,10 @@ SQLite and the entity cache are persisted to the `condenser-data` volume (`/data
 
 Pushes to `master` also build and publish `ghcr.io/reorx/condenser:latest` via GitHub
 Actions (`.github/workflows/deploy.yml`) and trigger a webhook-based deploy, so a server
-can run the prebuilt image instead of building locally:
+can run the prebuilt image instead of building locally. The workflow only runs when a
+push touches files the image consumes (the `paths` filter in the workflow mirrors the
+Dockerfile's `COPY` lines); a docs-, `kb/`- or `ios/`-only push is skipped, and the
+**Run workflow** button (`workflow_dispatch`) rebuilds from current `master` on demand:
 
 ```yaml
 services:

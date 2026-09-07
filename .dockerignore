@@ -13,6 +13,32 @@ __pycache__/
 frontend/node_modules/
 frontend/dist/
 
+# Frontend files pnpm build never reads (mirrors the `!frontend/...` exclusions in
+# .github/workflows/deploy.yml — keep the two lists in sync): vitest tests + setup,
+# the dev-only preview playground, docs.
+frontend/**/*.test.ts
+frontend/**/*.test.tsx
+frontend/src/test/
+frontend/src/preview/
+frontend/preview.html
+frontend/vitest.config.ts
+frontend/AGENTS.md
+frontend/CLAUDE.md
+
+# Never COPYed by the Dockerfile: docs / knowledge base, the iOS app, the local X
+# probe (its own uv package), backend tests, dev scripts, dev-only configs.
+kb/
+ios/
+probe/
+tests/
+scripts/
+.github/
+*.md
+.tmuxp.yaml
+docker-compose.yml
+start-all.sh
+condenser.kdl
+
 # Local-only artifacts
 tmp/
 *.db

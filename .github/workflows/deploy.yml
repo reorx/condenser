@@ -6,6 +6,38 @@ name: Build and Deploy
 on:
   push:
     branches: [master]
+    # Build only when something the image actually consumes changed. The list
+    # mirrors the Dockerfile's COPY lines (condenser/, frontend/, pyproject +
+    # uv.lock) plus the build inputs themselves. Everything else in the repo —
+    # kb/, ios/, probe/, tests/, scripts/, root *.md, docker-compose.yml — never
+    # reaches the image, so a push touching only those must not rebuild + redeploy
+    # (before 2026-09-07 roughly half of all pushes were docs/iOS-only and still
+    # produced a full build + production restart). Keep in sync with .dockerignore.
+    #
+    # A path added to the Dockerfile must be added here too, or a change to it
+    # will silently not deploy. When in doubt, use "Run workflow" (workflow_dispatch).
+    paths:
+      - 'condenser/**'
+      - 'frontend/**'
+      # Frontend files that pnpm build never reads: vitest tests + setup
+      # (tsconfig.app.json excludes them from tsc -b), the dev-only component
+      # preview playground, and docs.
+      - '!frontend/**/*.test.ts'
+      - '!frontend/**/*.test.tsx'
+      - '!frontend/src/test/**'
+      - '!frontend/src/preview/**'
+      - '!frontend/preview.html'
+      - '!frontend/vitest.config.ts'
+      - '!frontend/AGENTS.md'
+      - '!frontend/CLAUDE.md'
+      - 'pyproject.toml'
+      - 'uv.lock'
+      - 'Dockerfile'
+      - '.dockerignore'
+      - '.github/workflows/deploy.yml'
+  # Manual escape hatch: rebuild + redeploy from current master without a code
+  # change (a base-image security fix, or a deploy that needs re-running).
+  workflow_dispatch:
 
 env:
   REGISTRY: ghcr.io

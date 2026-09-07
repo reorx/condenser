@@ -7,7 +7,11 @@ and RSS — into one timeline, with a web frontend and an iOS app. **v1 is shipp
 multi-stage Docker build (frontend + backend in one image), GitHub Actions →
 ghcr.io/reorx/condenser → webhook deploy to https://condenser.reorx.com (Ansible role
 `condenser` in the deploy workspace, host port 3459, SQLite bind-mounted at
-`/opt/apps/condenser/data/`) — **a push to master is a production deploy**.
+`/opt/apps/condenser/data/`) — **a push to master is a production deploy** when it
+touches something the image consumes (`condenser/`, `frontend/` minus tests/preview,
+`pyproject.toml` / `uv.lock`, `Dockerfile`); the workflow's `paths` filter skips docs-,
+`kb/`-, `ios/`-, `probe/`-, `tests/`-only pushes (2026-09-07), and `workflow_dispatch`
+is the manual rebuild.
 
 ## Architecture
 
