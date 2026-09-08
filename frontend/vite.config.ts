@@ -4,6 +4,8 @@ import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
 
+import { NAVIGATE_FALLBACK_DENYLIST } from './src/lib/swDenylist';
+
 // Dev server proxies /api to the FastAPI backend so the signed session cookie
 // (HttpOnly, SameSite=Lax) is treated as same-origin. In production the backend
 // serves this build from `frontend/dist` at `/`, so no proxy is needed there.
@@ -22,8 +24,9 @@ export default defineConfig({
       workbox: {
         globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
         navigateFallback: 'index.html',
-        // Never serve the SPA shell for API calls; the SW passes them through.
-        navigateFallbackDenylist: [/^\/api\//],
+        // Never serve the SPA shell for API calls or the Purifier's /p + /pa
+        // (the list and its reasons live in src/lib/swDenylist.ts).
+        navigateFallbackDenylist: NAVIGATE_FALLBACK_DENYLIST,
       },
     }),
   ],

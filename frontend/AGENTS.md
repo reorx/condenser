@@ -268,7 +268,12 @@ Two conventions this list exists to protect:
   background raises a persistent「发现新版本」toast, and confirming activates + reloads;
   update checks run hourly and on visibilitychange. Wired in `main.tsx` via
   `virtual:pwa-register`; the SW only exists in production builds, dev is a no-op. The
-  workbox config in `vite.config.ts` denylists `/api` from the SPA navigation fallback).
+  workbox config in `vite.config.ts` takes its navigation-fallback denylist from
+  `swDenylist.ts` — `/api`, and since 2026-09-08 the Purifier's `/p` + `/pa` too: the Mac
+  Catalyst app opens `/p/…?_pt=` in the system browser, exactly where the installed PWA's
+  worker lives, and workbox was answering with the SPA shell so the ticket exchange never
+  reached the backend. Pinned by `swDenylist.test.ts`; an already-installed worker keeps
+  the old list until the reader accepts the update prompt).
 
 ## Debugging
 
