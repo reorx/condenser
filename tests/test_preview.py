@@ -269,6 +269,18 @@ def test_image_proxy_streams_bytes(env, monkeypatch):
         assert r.content == b'\x89PNG-bytes'
 
 
+def test_image_proxy_sandboxes_svg(env, monkeypatch):
+    """Same shape as the purifier's /pa (review 2026-09-07 #2): an ``image/svg+xml``
+    body opened top-level would run its script on our origin without a CSP."""
+    monkeypatch.setattr(preview, '_fetch_capped', _capped(b'<svg><script>1</script></svg>', 'image/svg+xml'))
+    with _client() as client:
+        _login(client)
+        r = client.get('/api/preview/image', params={'url': 'https://cdn.example.com/x.svg'})
+        assert r.status_code == 200
+        assert 'sandbox' in r.headers['content-security-policy']
+        assert r.headers['x-content-type-options'] == 'nosniff'
+
+
 def test_image_proxy_rejects_non_image(env, monkeypatch):
     monkeypatch.setattr(preview, '_fetch_capped', _capped(b'<html>', 'text/html'))
     with _client() as client:

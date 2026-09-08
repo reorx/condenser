@@ -10,6 +10,7 @@ from fastapi.responses import RedirectResponse
 from .. import preview
 from ..auth import require_auth
 from ..config import get_settings
+from .purifier import ASSET_HEADERS
 
 router = APIRouter(prefix='/api', tags=['preview'], dependencies=[Depends(require_auth)])
 
@@ -49,4 +50,4 @@ async def preview_image(url: str):
         data, mime = await preview.fetch_image(url)
     except (preview.PreviewError, httpx.HTTPError):
         raise HTTPException(status_code=502, detail='could not fetch image')
-    return Response(content=data, media_type=mime, headers={'Cache-Control': 'private, max-age=86400'})
+    return Response(content=data, media_type=mime, headers={'Cache-Control': 'private, max-age=86400', **ASSET_HEADERS})

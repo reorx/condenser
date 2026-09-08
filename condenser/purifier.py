@@ -167,17 +167,29 @@ def _is_ip(name: str) -> bool:
     return True
 
 
+_NUMERIC_LABEL_RE = re.compile(r'^(?:0x[0-9a-f]*|[0-9]+)$')
+
+
+def _is_numeric_name(name: str) -> bool:
+    """``127.1`` / ``0x7f.1`` / ``0177.0.0.1``: not IP literals to ``ipaddress``, but the
+    socket layer resolves them to 127.0.0.1 (review 2026-09-07 #3). A name whose every
+    label is decimal or hex is an address in disguise, never a DNS name."""
+    return all(_NUMERIC_LABEL_RE.match(label) for label in name.split('.'))
+
+
 def host_allowed(host: str, own_hosts: set[str] = frozenset()) -> bool:
-    """The five-line guard from plan §1: no bare names, IPs, localhost or ourselves.
-    Fuller SSRF protection stays out, as in ``preview.py`` (single user, authenticated)."""
-    name = _hostname(host)
+    """The guard from plan §1: no bare names, IPs (in any spelling), localhost or
+    ourselves. A DNS name that *resolves* to a private address still passes — fuller
+    SSRF protection stays out, as in ``preview.py`` (single user, authenticated)."""
+    raw_name = _hostname(host)
+    name = raw_name.rstrip('.')
     if not name or '.' not in name or name == 'localhost' or name.endswith('.localhost'):
         return False
-    if _is_ip(name):
+    if _is_ip(name) or _is_numeric_name(name):
         return False
     if host in own_hosts or name in own_hosts:
         return False
-    port = host[len(name) :].lstrip(':') if not host.startswith('[') else host[host.find(']') + 1 :].lstrip(':')
+    port = host[len(raw_name) :].lstrip(':') if not host.startswith('[') else host[host.find(']') + 1 :].lstrip(':')
     return not port or port.isdigit()
 
 
@@ -372,20 +384,52 @@ def _link_rels(el) -> set[str]:
     return {r for r in (el.get('rel') or '').lower().split()}
 
 
+# Attributes a browser treats as a URL. Every one of them is checked for a script
+# scheme *before* any rewriting: ``rewrite_url`` returns non-http(s) values as they
+# are (``mailto:``, ``data:`` images), which is exactly how ``javascript:`` in
+# ``action`` / ``formaction`` / SVG's ``xlink:href`` walked through the sanitizer
+# untouched (review 2026-09-07 #1). lxml keeps ``xlink:href`` as a literal attribute
+# name, so the check goes by the local name after the colon.
+_URL_ATTRS = frozenset({'href', 'src', 'action', 'formaction', 'poster', 'background', 'cite', 'longdesc', 'data'})
+_SCRIPT_SCHEMES = ('javascript:', 'vbscript:')
+# Navigation targets (as opposed to image sources) must not be data: URLs either —
+# a data:text/html document is a script container.
+_NAVIGATION_ATTRS = frozenset({'href', 'action', 'formaction'})
+_ATTR_NOISE_RE = re.compile(r'[\x00-\x20\x7f]')
+
+
+def _local_attr(name: str) -> str:
+    """``xlink:href`` → ``href``; the namespace prefix is not what a browser acts on."""
+    return name.lower().rpartition(':')[2]
+
+
+def _is_script_url(value: str, *, navigation: bool) -> bool:
+    """Browsers strip ASCII whitespace / control characters inside the scheme, so
+    ``java\\tscript:`` is ``javascript:``; compare after doing the same."""
+    scheme = _ATTR_NOISE_RE.sub('', value).lower()
+    if scheme.startswith(_SCRIPT_SCHEMES):
+        return True
+    return navigation and scheme.startswith('data:')
+
+
 def _clean_attributes(el, tag: str, base_url: str, own_origin: str) -> None:
-    for name in list(el.attrib):
+    for name, value in list(el.attrib.items()):
         lname = name.lower()
+        local = _local_attr(name)
         if lname.startswith('on') or lname in ('integrity', 'ping', 'nonce'):
+            del el.attrib[name]
+        elif local in _URL_ATTRS and _is_script_url(value, navigation=local in _NAVIGATION_ATTRS):
             del el.attrib[name]
     if tag == 'img':
         _promote_lazy(el)
     for name, value in list(el.attrib.items()):
         lname = name.lower()
+        local = _local_attr(name)
         if lname == 'style':
             el.set(name, rewrite_css(value, base_url, own_origin))
         elif lname == 'srcset':
             el.set(name, rewrite_srcset(value, base_url, own_origin))
-        elif lname == 'href':
+        elif local == 'href':
             _rewrite_href(el, tag, name, value, base_url, own_origin)
         elif lname == 'src':
             if tag in _MEDIA_SRC_TAGS or tag == 'script':
@@ -396,15 +440,15 @@ def _clean_attributes(el, tag: str, base_url: str, own_origin: str) -> None:
                 el.set(name, rewrite_url(value, base_url, own_origin, 'pa'))
         elif lname == 'poster':
             el.set(name, rewrite_url(value, base_url, own_origin, 'pa'))
-        elif lname == 'action':
+        elif lname in ('action', 'formaction'):
             el.set(name, rewrite_url(value, base_url, own_origin, 'p'))
     if tag == 'style' and el.text:
         el.text = rewrite_css(el.text, base_url, own_origin)
 
 
 def _rewrite_href(el, tag: str, name: str, value: str, base_url: str, own_origin: str) -> None:
-    if value.strip().lower().startswith('javascript:'):
-        del el.attrib[name]
+    if tag == 'image':  # SVG <image xlink:href>: an asset, not a document
+        el.set(name, rewrite_url(value, base_url, own_origin, 'pa'))
         return
     if tag == 'link':
         rels = _link_rels(el)

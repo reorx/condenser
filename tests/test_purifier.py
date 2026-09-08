@@ -141,6 +141,19 @@ def test_parse_target_rejects_bad_hosts():
         purifier.parse_target('condenser.example', '/p/x', '', own_hosts={'condenser.example'})
 
 
+def test_host_allowed_rejects_non_canonical_loopback_spellings():
+    """Review 2026-09-07 #3: ``127.1`` / ``0x7f.1`` / ``0177.0.0.1`` are not IP literals to
+    ``ipaddress`` but resolve to 127.0.0.1 for the socket layer; a trailing dot slipped
+    past the ``localhost`` compare. The server would have fetched itself."""
+    for bad in ('127.1', '0x7f.1', '0177.0.0.1', '0x7f.0x0.0x0.0x1', 'localhost.', '127.0.0.1.', 'LOCALHOST.'):
+        assert not purifier.host_allowed(bad), bad
+        with pytest.raises(purifier.BadTargetError):
+            purifier.parse_target(bad, '/', '')
+    # a numeric label is fine as long as the name is not numeric all the way through
+    for ok in ('a.example', '1password.com', '123.example', '0x.example', 'a.example:8080'):
+        assert purifier.host_allowed(ok), ok
+
+
 def test_parse_target_invalid_mode_override_is_ignored():
     assert purifier.parse_target('a.example', '', '_mode=puremd').mode_override is None
     assert purifier.parse_target('a.example', '', '_mode=readable').mode_override == 'readable'
@@ -329,6 +342,35 @@ def test_proxy_allow_js_keeps_scripts():
     assert 'alert(1)' in out
     assert 'src="https://cdn.example/root/hn.js"' in out  # absolutized, never proxied
     assert 'onclick' not in out  # handlers still go
+
+
+def test_proxy_strips_script_schemes_from_every_url_attribute():
+    """Review 2026-09-07 #1: only ``href`` dropped ``javascript:``; ``action``,
+    ``formaction`` and SVG's ``xlink:href`` went through untouched — a click ran
+    script on condenser's origin, next to the reader cookie."""
+    html = (
+        '<html><body>'
+        '<form action="javascript:alert(1)"><button formaction="javascript:alert(2)">go</button></form>'
+        '<svg><a xlink:href="javascript:alert(3)"><text>y</text></a><image xlink:href="i.png"/></svg>'
+        '<a href="JAVASCRIPT:alert(4)">u</a><a href="java\tscript:alert(5)">w</a>'
+        '<a href="vbscript:msgbox(6)">v</a><a href="data:text/html,<script>alert(7)</script>">d</a>'
+        '<input type="image" formaction="submit" src="data:image/png;base64,AAAA">'
+        '<form action="post?x=1"></form>'
+        '</body></html>'
+    )
+    out = purifier.sanitize_and_rewrite_proxy(html, 'https://a.example/dir/', OWN)
+    assert 'javascript' not in out.lower() and 'vbscript' not in out.lower()
+    assert 'alert(' not in out
+    assert 'data:text/html' not in out
+    # the text survives; the attributes are gone rather than the elements
+    for kept in ('>go<', '<text>y</text>', '>u<', '>w<', '>v<', '>d<'):
+        assert kept in out, kept
+    # http(s) values on the same attributes are rewritten like href / action
+    assert 'formaction="/p/a.example/dir/submit"' in out
+    assert 'action="/p/a.example/dir/post?x=1"' in out
+    assert 'xlink:href="/pa/a.example/dir/i.png"' in out
+    # data: images stay images
+    assert 'src="data:image/png;base64,AAAA"' in out
 
 
 def test_proxy_promotes_lazy_images():
@@ -819,6 +861,25 @@ def test_asset_route_gates_types_and_sets_cache_headers(env, monkeypatch):
         _install(monkeypatch, fetch_for('text/css', b'a{background:url(x.png)}'))
         r = client.get('/pa/cdn.example/root/news.css')
         assert r.text == 'a{background:url(/pa/cdn.example/root/x.png)}'
+
+
+def test_asset_responses_are_sandboxed(env, monkeypatch):
+    """Review 2026-09-07 #2: ``/pa`` passed ``image/svg+xml`` through verbatim with no
+    CSP, so a shared ``/pa/evil.example/x.svg`` opened top-level ran its ``<script>``
+    on condenser's origin with the cookies. Every asset now ships sandboxed."""
+    svg = b'<svg xmlns="http://www.w3.org/2000/svg"><script>fetch("/api/subscriptions")</script></svg>'
+
+    async def fetch(url, settings, *, cap, accept):
+        return url, 'image/svg+xml', svg
+
+    _install(monkeypatch, fetch)
+    with _client() as client:
+        _login(client)
+        r = client.get('/pa/evil.example/x.svg')
+        assert r.status_code == 200
+        csp = r.headers['content-security-policy']
+        assert 'sandbox' in csp and "script-src 'none'" in csp
+        assert r.headers['x-content-type-options'] == 'nosniff'
 
 
 def test_allow_js_sends_csp(env, monkeypatch):

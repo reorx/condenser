@@ -34,6 +34,14 @@ _ALLOW_JS_CSP = (
     "default-src * data: blob: 'unsafe-inline' 'unsafe-eval'; "
     "connect-src 'none'; frame-src 'none'; form-action 'self'; base-uri 'self'"
 )
+# Every /pa response, whatever the type. ``image/*`` admits ``image/svg+xml``, and an
+# SVG opened top-level (a shared ``/pa/…/x.svg`` link) is a document that runs its
+# ``<script>`` on our origin — ``sandbox`` gives it an opaque origin and no script
+# (review 2026-09-07 #2). Shared with the preview image proxy.
+ASSET_HEADERS = {
+    'Content-Security-Policy': "sandbox; script-src 'none'",
+    'X-Content-Type-Options': 'nosniff',
+}
 
 
 @api_router.get('/ticket')
@@ -132,5 +140,5 @@ async def purified_asset(request: Request, host: str, settings: Settings = Depen
     return Response(
         content=asset.body,
         media_type=asset.content_type,
-        headers={'Cache-Control': f'private, max-age={settings.condenser_purifier_asset_cache_seconds}'},
+        headers={'Cache-Control': f'private, max-age={settings.condenser_purifier_asset_cache_seconds}', **ASSET_HEADERS},
     )
