@@ -33,7 +33,7 @@ import re
 import time
 from dataclasses import dataclass
 from typing import Awaitable, Callable, Literal, Optional
-from urllib.parse import urljoin, urlsplit
+from urllib.parse import unquote, urljoin, urlsplit
 
 import httpx
 import lxml.html
@@ -193,9 +193,22 @@ def host_allowed(host: str, own_hosts: set[str] = frozenset()) -> bool:
     return not port or port.isdigit()
 
 
+# What a decoded host segment must not contain: a separator that would move part of
+# the host into the path / query, a leftover ``%``, or whitespace / control bytes.
+_HOST_FORBIDDEN = frozenset('/\\?#%@')
+
+
 def parse_target(host: str, raw_path: str, raw_query: str, *, own_hosts: set[str] = frozenset()) -> Target:
-    """Route material → ``Target``. Validates the host, strips our control params."""
-    host = host.rsplit('@', 1)[-1].lower()
+    """Route material → ``Target``. Validates the host, strips our control params.
+
+    The host segment is the one part that *is* percent-decoded: an IDN host arrives
+    as ``%E4%BE%8B%E3%81%88.jp`` and httpx IDNA-encodes a Unicode host but leaves a
+    percent-encoded one alone, so ``rewrite_url``'s ``/p/例え.jp/…`` was a guaranteed
+    DNS failure (review 2026-09-07 #7). Path and query stay raw bytes as before.
+    """
+    host = unquote(host).rsplit('@', 1)[-1].lower()
+    if any(c in _HOST_FORBIDDEN or ord(c) < 33 or ord(c) == 0x7F for c in host):
+        raise BadTargetError(f'refusing host {host!r}')
     if not host_allowed(host, own_hosts):
         raise BadTargetError(f'refusing host {host!r}')
     if raw_path and not raw_path.startswith('/'):

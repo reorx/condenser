@@ -190,6 +190,22 @@ def test_rewrite_url_branches():
     assert rw('https://User@A.Example/X') == '/p/a.example/X'
 
 
+def test_idn_hosts_round_trip_through_the_proxy_path():
+    """Review 2026-09-07 #7: ``rewrite_url`` emitted ``/p/例え.jp/x``; Safari sends the
+    host percent-encoded, ``split_raw_path`` deliberately does not decode, and httpx
+    neither decodes nor IDNA-encodes a percent-encoded host → DNS failure. The host
+    segment is now unquoted (httpx then IDNA-encodes it); path and query stay raw."""
+    assert purifier.rewrite_url('https://例え.jp/x', BASE, OWN, 'p') == '/p/例え.jp/x'
+    t = purifier.parse_target('%E4%BE%8B%E3%81%88.jp', '/x%2Fy', 'q=%E3%81%82')
+    assert t.host == '例え.jp'
+    assert t.url == 'https://例え.jp/x%2Fy?q=%E3%81%82'
+    assert httpx.URL(t.url).raw_host == b'xn--r8jz45g.jp'
+    # decoding must not open a way past the host guard
+    for smuggled in ('a%2Fb.example', 'a.example%2F..', 'a.example%3Fx', 'a.example%23f', 'a%09.example', 'a.example%25'):
+        with pytest.raises(purifier.BadTargetError):
+            purifier.parse_target(smuggled, '/', '')
+
+
 def test_resolve_base_honors_base_href():
     html = '<html><head><base href="https://cdn.example/root/"></head><body></body></html>'
     assert purifier.resolve_base(html, 'https://a.example/page') == 'https://cdn.example/root/'
@@ -840,6 +856,20 @@ def test_document_route_matches_bare_host_and_encoded_path(env, monkeypatch):
         assert client.get('/p/blog.example').status_code == 200
         assert client.get('/p/blog.example/a%2Fb/c%20d').status_code == 200
         assert seen == ['https://blog.example', 'https://blog.example/a%2Fb/c%20d']
+
+
+def test_idn_host_is_fetched_as_unicode_url(env, monkeypatch):
+    seen = []
+
+    async def fetch(url, settings, *, cap, accept):
+        seen.append(url)
+        return url, 'text/html', ARTICLE.encode()
+
+    _install(monkeypatch, fetch)
+    with _client() as client:
+        _login(client)
+        assert client.get('/p/%E4%BE%8B%E3%81%88.jp/x').status_code == 200
+        assert seen == ['https://例え.jp/x']
 
 
 def test_bad_target_is_400_and_upstream_failure_is_502_html(env, monkeypatch):
