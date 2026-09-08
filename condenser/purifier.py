@@ -482,11 +482,19 @@ def _promote_lazy(el) -> None:
         el.set('srcset', el.get('data-srcset'))
 
 
+_XML_PROLOGUE_RE = re.compile(r'^\s*<\?xml\b[^>]*\?>', re.I)
+
+
 def sanitize_and_rewrite_proxy(
     html: str, base_url: str, own_origin: str, *, allow_js: bool = False, toolbar: Optional[Toolbar] = None
 ) -> str:
-    """Whole-page mode: strip, rewrite, add viewport + toolbar, serialize."""
-    root = lxml.html.document_fromstring(html)
+    """Whole-page mode: strip, rewrite, add viewport + toolbar, serialize.
+
+    An XHTML page's ``<?xml … encoding=…?>`` prologue is dropped first: lxml refuses
+    a *str* that carries an encoding declaration (``ValueError``), and the bytes were
+    already decoded by ``detect_charset``. Anchored at the start, so linear.
+    """
+    root = lxml.html.document_fromstring(_XML_PROLOGUE_RE.sub('', html, count=1))
     _clean_tree(root, base_url, own_origin, allow_js=allow_js)
     head = root.find('head')
     if head is None:
@@ -791,14 +799,20 @@ async def render_document(
 async def _render_proxy(target: Target, settings: Settings, own_origin: str, fetch: FetchPage) -> DocumentResult:
     fetched = await _fetch_document(target, settings, fetch)
     toolbar = Toolbar(original_url=fetched.final_url, mode='proxy', full_page_url=None)
-    html = await asyncio.to_thread(
-        sanitize_and_rewrite_proxy,
-        fetched.html,
-        fetched.base_url,
-        own_origin,
-        allow_js=settings.condenser_purifier_allow_js,
-        toolbar=toolbar,
-    )
+    try:
+        html = await asyncio.to_thread(
+            sanitize_and_rewrite_proxy,
+            fetched.html,
+            fetched.base_url,
+            own_origin,
+            allow_js=settings.condenser_purifier_allow_js,
+            toolbar=toolbar,
+        )
+    except (ValueError, etree.LxmlError) as exc:
+        # An empty document (ParserError) or one lxml will not take: readable mode's
+        # broad catch turns these into a fallback; proxy mode has to name them, or the
+        # router's error page never renders (review 2026-09-07 #4).
+        raise UpstreamFetchError(f'could not parse page: {exc}') from exc
     return DocumentResult(html=html, mode='proxy')
 
 

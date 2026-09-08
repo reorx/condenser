@@ -628,6 +628,23 @@ async def test_render_proxy_mode_propagates_fetch_errors(env):
         await purifier.render_document(target, _settings(), own_origin=OWN, fetch_page=boom)
 
 
+async def test_render_proxy_mode_maps_parser_failures_to_purifier_errors(env):
+    """Review 2026-09-07 #4: an XHTML page with an ``<?xml … encoding=…?>`` prologue
+    made lxml raise ``ValueError``, an empty body ``ParserError`` — neither a
+    ``PurifierError``, so the 502 error page never rendered and SFSafariViewController
+    got a bare Internal Server Error, with no way back to the original link."""
+    xhtml = (
+        '<?xml version="1.0" encoding="utf-8"?>\n<!DOCTYPE html><html xmlns="http://www.w3.org/1999/xhtml">'
+        '<head><title>X</title></head><body><p>xhtml body</p></body></html>'
+    )
+    target = purifier.parse_target('news.ycombinator.com', '/item', 'id=1')
+    result = await purifier.render_document(target, _settings(), own_origin=OWN, fetch_page=_page(xhtml.encode()))
+    assert result.mode == 'proxy' and 'xhtml body' in result.html  # the prologue is stripped, not fatal
+    purifier.clear_cache()
+    with pytest.raises(purifier.PurifierError):
+        await purifier.render_document(target, _settings(), own_origin=OWN, fetch_page=_page(b'   '))
+
+
 async def test_render_decodes_meta_charset(env):
     html = (
         '<html><head><meta charset="gbk"><title>标题</title></head><body><article>'
@@ -833,6 +850,16 @@ def test_bad_target_is_400_and_upstream_failure_is_502_html(env, monkeypatch):
     with _client() as client:
         _login(client)
         assert client.get('/p/localhost/x').status_code == 400
+        r = client.get('/p/news.ycombinator.com/item?id=1')
+        assert r.status_code == 502
+        assert r.headers['content-type'].startswith('text/html')
+        assert 'https://news.ycombinator.com/item?id=1' in r.text
+
+
+def test_proxy_mode_parser_failure_is_502_html_with_original_link(env, monkeypatch):
+    _install(monkeypatch, _page(b''))
+    with _client() as client:
+        _login(client)
         r = client.get('/p/news.ycombinator.com/item?id=1')
         assert r.status_code == 502
         assert r.headers['content-type'].startswith('text/html')
