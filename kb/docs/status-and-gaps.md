@@ -1485,3 +1485,36 @@ Plan `kb/plans/2026-09-07-purifier.md`。弱网下点开外链先经 `https://<s
   单用户阅读节奏不会碰到，但 proxy 模式的 502 页要能让人一眼看出是上游拒绝。
 - **未做 / 待定**：生产 `.env` 加 `CONDENSER_PUREMD_API_KEY`（不加只是兜底关闭）；真机
   验证；iOS 随下一个 build 上架。web 端不做（plan §0.6）。
+
+## 2026-09-08 · Purifier code review fixes（review 1–8 全修，master 未 push）
+
+`kb/reviews/2026-09-07-purifier-code-review.md`（/code-review medium，7 CONFIRMED + 1
+PLAUSIBLE）逐条 TDD 修在 master 上；每条末尾有处理记录。后端 862 → 880、前端 288 → 291、
+Kit 322 全绿，`make build` 通过。
+
+- **安全三条**：① `javascript:` 只在 `href` 上剥——`action` / `formaction` / SVG `xlink:href`
+  原样穿过，代理页在 condenser 域上跑脚本；现在 `_URL_ATTRS` 按冒号后的本地名统一做 scheme
+  检查（`javascript:` / `vbscript:`，导航类再加 `data:`，比较前剥控制字符）。② `/pa` 原样
+  透传 `image/svg+xml` 且无 CSP，顶层打开一个分享出去的 `/pa/…/x.svg` 就带 cookie 执行；
+  每个 `/pa` 与 `/api/preview/image` 响应加 `CSP: sandbox; script-src 'none'` + `nosniff`。
+  ③ `host_allowed('127.1')` / `'0x7f.1'` / `'localhost.'` 放行，服务器会抓自己；尾点先剥，
+  全数字 / 十六进制 label 的名字一律拒。
+- **鉴权契约变了（#6）**：票据与 reader cookie 之前签常量——吊销设备后手机仍握着 30 天的
+  认证抓取代理，唯一杀招是换 `CONDENSER_SECRET_KEY`（连 Telegram 会话一起毁）。现在两者都
+  签 device id，ticket 端点只认 Bearer（`require_device`），换票与每次 `/p` `/pa` 都查
+  `db.get_device` 仍在，logout 删 reader cookie。iOS 侧票据仍是不透明串，零代码改动。
+  文档里的「一次性票据」是错的，改成「短时票据」。
+- **健壮性**：#4 proxy 模式的 lxml `ValueError`（XHTML `<?xml?>` 序言）/ `ParserError`（空页）
+  没进错误页边界——SFSafariViewController 里一个裸 500；序言先剥、异常映射成
+  `UpstreamFetchError`。#7 IDN host 经 Safari 百分号编码后 httpx 不解码也不 IDNA，必 502；
+  `parse_target` 对 host 段 `unquote`，并拒绝解码后含 `/ ? # % @` 或控制字符的 host（否则
+  `a%2Fb.example` 能把裸名 `a` 塞过 `host_allowed`）。#8 全局 gzip 把图片 / 媒体流也压一遍
+  （~14ms/MB 的循环 CPU，零收益）：`SelectiveGZipMiddleware` 按 content-type 走 identity，
+  HTML 降到 level 6。
+- **前端（#5）**：PWA service worker 的 `navigateFallbackDenylist` 只有 `/api`，Mac Catalyst
+  交给系统浏览器的 `/p/…?_pt=` 被 workbox 用 SPA shell 顶掉，票据到不了后端。denylist 抽到
+  `src/lib/swDenylist.ts`（`/api` + `/p` + `/pa`），vite 配置与测试同源，`dist/sw.js` 已核。
+  已装的 SW 要等用户接受更新提示才换。
+- **未动**：截掉的三条 PLAUSIBLE（CSS 属性选择器按样式表 URL 解析、`fixupx.com` 链接被代理、
+  iOS 票据过期按收到时间算）与清理类（未用的 `PuremdUnavailable`、重复的 `mode_override`、
+  `_render_puremd` 不在 worker 线程）。
