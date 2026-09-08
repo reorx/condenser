@@ -5,9 +5,11 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
-from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
+from starlette.datastructures import Headers
 from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.middleware.gzip import GZipMiddleware, GZipResponder, IdentityResponder
+from starlette.types import Message, Receive, Scope, Send
 
 from . import db
 from .cleanup import CleanupManager
@@ -58,6 +60,59 @@ class SPAStaticFiles(StaticFiles):
             raise
 
 
+# Bodies that are already compressed (or that Safari streams and seeks in): gzipping
+# them costs event-loop CPU (measured ~14ms/MB on a 3MB JPEG, review 2026-09-07 #8)
+# and saves nothing. Starlette's middleware only excludes text/event-stream.
+_UNCOMPRESSED_PREFIXES = ('image/', 'video/', 'audio/', 'font/')
+_UNCOMPRESSED_TYPES = frozenset(
+    {
+        'application/font-woff',
+        'application/font-woff2',
+        'application/x-font-woff',
+        'application/x-font-ttf',
+        'application/x-font-otf',
+        'application/font-sfnt',
+        'application/vnd.ms-fontobject',
+        'application/zip',
+        'application/gzip',
+        'application/pdf',
+        'application/octet-stream',
+    }
+)
+
+
+def already_compressed(content_type: str) -> bool:
+    mime = content_type.split(';')[0].strip().lower()
+    return mime.startswith(_UNCOMPRESSED_PREFIXES) or mime in _UNCOMPRESSED_TYPES
+
+
+class _SelectiveGZipResponder(GZipResponder):
+    async def send_with_compression(self, message: Message) -> None:
+        # The parent only records the start message (nothing is sent until the first
+        # body chunk), so the exclusion flag can be widened right after it.
+        await super().send_with_compression(message)
+        if message['type'] == 'http.response.start':
+            if already_compressed(Headers(raw=message['headers']).get('content-type', '')):
+                self.content_type_is_excluded = True
+
+
+class SelectiveGZipMiddleware(GZipMiddleware):
+    """``GZipMiddleware`` that passes image / media / font bodies through as identity.
+    Every proxied byte the iOS app scrolls past (Telegram media, avatars, /pa images)
+    shares the loop with Telethon ingest; HTML and JSON still compress."""
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope['type'] != 'http':  # pragma: no cover
+            await self.app(scope, receive, send)
+            return
+        responder: IdentityResponder
+        if 'gzip' in Headers(scope=scope).get('Accept-Encoding', ''):
+            responder = _SelectiveGZipResponder(self.app, self.minimum_size, compresslevel=self.compresslevel)
+        else:
+            responder = IdentityResponder(self.app, self.minimum_size)
+        await responder(scope, receive, send)
+
+
 def create_app() -> FastAPI:
     settings = get_settings()
 
@@ -91,8 +146,9 @@ def create_app() -> FastAPI:
     app = FastAPI(title='Condenser', version='0.1.0', lifespan=lifespan)
     # Production Caddy has no `encode` block (compression was Cloudflare's job alone);
     # the purifier's proxy pages are up to 1MB of HTML on a bad connection, so the
-    # app compresses itself. Global: API JSON benefits too.
-    app.add_middleware(GZipMiddleware, minimum_size=1024)
+    # app compresses itself. Global: API JSON benefits too; binary proxies are skipped.
+    # Level 6, not the default 9: the last three levels cost CPU for ~1% of size.
+    app.add_middleware(SelectiveGZipMiddleware, minimum_size=1024, compresslevel=6)
 
     @app.get('/api/health')
     def health():

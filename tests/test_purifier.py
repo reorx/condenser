@@ -985,3 +985,28 @@ def test_responses_are_gzipped_when_asked(env, monkeypatch):
         r = client.get('/p/blog.example/posts/hello/', headers={'Accept-Encoding': 'gzip'})
         assert r.headers.get('content-encoding') == 'gzip'
         assert 'Hello World' in r.text  # transparently decoded
+
+
+def test_binary_responses_are_not_gzipped(env, monkeypatch):
+    """Review 2026-09-07 #8: the global GZipMiddleware compressed every proxied image /
+    media body on the event loop (measured ~14ms/MB) for zero size gain. Already-
+    compressed types pass through identity; CSS (text) is still compressed."""
+    body = bytes(range(256)) * 40  # 10KB, well over minimum_size
+
+    def fetch_for(ctype):
+        async def fetch(url, settings, *, cap, accept):
+            return url, ctype, body if ctype != 'text/css' else b'a{color:red}' * 200
+
+        return fetch
+
+    with _client() as client:
+        _login(client)
+        for ctype in ('image/png', 'image/svg+xml', 'font/woff2', 'application/font-woff2'):
+            _install(monkeypatch, fetch_for(ctype))
+            r = client.get(f'/pa/cdn.example/a.{ctype.split("/")[1]}', headers={'Accept-Encoding': 'gzip'})
+            assert r.status_code == 200 and r.headers['content-type'] == ctype
+            assert 'content-encoding' not in r.headers, ctype
+            assert r.content == body
+        _install(monkeypatch, fetch_for('text/css'))
+        r = client.get('/pa/cdn.example/a.css', headers={'Accept-Encoding': 'gzip'})
+        assert r.headers.get('content-encoding') == 'gzip'
