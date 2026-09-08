@@ -3,10 +3,11 @@ and the ticket exchange under ``/api/purifier``.
 
 Auth is the odd one out here. ``/p`` and ``/pa`` are opened by a browser navigation
 and by ``<img>`` / ``<link>`` requests, which carry no Bearer header — so they accept
-only the reader cookie (minted from a one-shot ticket the iOS app fetched with its
-device token) or the app session cookie, and a failure is a small HTML page, not
-JSON. Each handler is one broad-catch boundary: the module raises typed errors,
-this file maps them to 400 / 401 / 415 / 502 pages that always carry the original link.
+only the reader cookie (minted from a short-lived ticket the iOS app fetched with its
+device token; both name the device, and the device must still exist) or the app
+session cookie, and a failure is a small HTML page, not JSON. Each handler is one
+broad-catch boundary: the module raises typed errors, this file maps them to
+400 / 401 / 415 / 502 pages that always carry the original link.
 """
 
 import logging
@@ -15,15 +16,15 @@ import httpx
 from fastapi import APIRouter, Depends, Request, Response
 from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
 
-from .. import purifier, purifier_html
-from ..auth import READER_COOKIE_MAX_AGE, READER_COOKIE_NAME, reader_authenticated, require_auth
+from .. import db, purifier, purifier_html
+from ..auth import READER_COOKIE_MAX_AGE, READER_COOKIE_NAME, reader_authenticated, require_device
 from ..config import Settings, get_settings
 from ..crypto import PURIFIER_TICKET_MAX_AGE, sign_purifier_ticket, sign_reader_cookie, verify_purifier_ticket
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=['purifier'])
-api_router = APIRouter(prefix='/api/purifier', tags=['purifier'], dependencies=[Depends(require_auth)])
+api_router = APIRouter(prefix='/api/purifier', tags=['purifier'])
 
 # Injection seams (tests replace these; production never does).
 _fetch_page = purifier.fetch_page
@@ -45,9 +46,10 @@ ASSET_HEADERS = {
 
 
 @api_router.get('/ticket')
-def purifier_ticket(settings: Settings = Depends(get_settings)) -> dict:
-    """A 5-minute ticket the client appends as ``_pt=`` to its first /p URL."""
-    return {'ticket': sign_purifier_ticket(settings.condenser_secret_key), 'ttl': PURIFIER_TICKET_MAX_AGE}
+def purifier_ticket(device: db.Device = Depends(require_device), settings: Settings = Depends(get_settings)) -> dict:
+    """A 5-minute ticket the client appends as ``_pt=`` to its first /p URL. Bound to
+    the device that asked; device Bearer only (a web session has no device)."""
+    return {'ticket': sign_purifier_ticket(settings.condenser_secret_key, device.id), 'ttl': PURIFIER_TICKET_MAX_AGE}
 
 
 def _raw_path(request: Request) -> str:
@@ -85,8 +87,10 @@ async def purified_document(request: Request, host: str, settings: Settings = De
     except purifier.BadTargetError as exc:
         return _bad_target(request, exc)
 
-    if target.ticket and verify_purifier_ticket(settings.condenser_secret_key, target.ticket):
-        return _exchange_ticket(request, settings)
+    if target.ticket:
+        device_id = verify_purifier_ticket(settings.condenser_secret_key, target.ticket)
+        if device_id is not None and db.get_device(device_id) is not None:
+            return _exchange_ticket(request, settings, device_id)
     if not reader_authenticated(request, settings):
         return HTMLResponse(purifier_html.unauthorized_page(target.url), status_code=401)
 
@@ -106,14 +110,14 @@ async def purified_document(request: Request, host: str, settings: Settings = De
     return HTMLResponse(result.html, headers=headers)
 
 
-def _exchange_ticket(request: Request, settings: Settings) -> RedirectResponse:
-    """A valid ticket → the reader cookie + a 302 to the same URL minus ``_pt`` only."""
+def _exchange_ticket(request: Request, settings: Settings, device_id: int) -> RedirectResponse:
+    """A valid ticket → the reader cookie for its device + a 302 to the same URL minus ``_pt`` only."""
     query, _ = purifier.strip_params(request.url.query, ('_pt',))
     location = _raw_path(request) + (f'?{query}' if query else '')
     response = RedirectResponse(location, status_code=302)
     response.set_cookie(
         READER_COOKIE_NAME,
-        sign_reader_cookie(settings.condenser_secret_key),
+        sign_reader_cookie(settings.condenser_secret_key, device_id),
         max_age=READER_COOKIE_MAX_AGE,
         httponly=True,
         samesite='lax',

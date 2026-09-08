@@ -27,11 +27,16 @@ def _login(client):
     assert client.post('/api/auth/login', json={'password': 'pw'}).status_code == 200
 
 
-def _device_token(client):
+def _device(client) -> tuple[int, str]:
+    """Register a device through the web session, then drop the session cookie."""
     _login(client)
-    token = client.post('/api/auth/device', json={'name': 'phone'}).json()['token']
+    data = client.post('/api/auth/device', json={'name': 'phone'}).json()
     client.cookies.clear()
-    return token
+    return data['id'], data['token']
+
+
+def _device_token(client):
+    return _device(client)[1]
 
 
 def _page(body: bytes, ctype: str = 'text/html; charset=utf-8', final_url: str | None = None):
@@ -72,28 +77,32 @@ def _fresh_cache():
 
 def test_purifier_signatures_are_not_interchangeable():
     key = 'secret'
-    ticket = crypto.sign_purifier_ticket(key)
-    reader = crypto.sign_reader_cookie(key)
+    ticket = crypto.sign_purifier_ticket(key, 7)
+    reader = crypto.sign_reader_cookie(key, 7)
     session = crypto.sign_cookie(key)
-    assert crypto.verify_purifier_ticket(key, ticket)
-    assert crypto.verify_reader_cookie(key, reader)
+    # each carries the device it was minted for (review 2026-09-07 #6: a constant
+    # payload meant nothing could ever be revoked)
+    assert crypto.verify_purifier_ticket(key, ticket) == 7
+    assert crypto.verify_reader_cookie(key, reader) == 7
     assert crypto.verify_cookie(key, session)
     # cross-salt: every other combination fails
-    assert not crypto.verify_purifier_ticket(key, reader)
-    assert not crypto.verify_purifier_ticket(key, session)
-    assert not crypto.verify_reader_cookie(key, ticket)
-    assert not crypto.verify_reader_cookie(key, session)
+    assert crypto.verify_purifier_ticket(key, reader) is None
+    assert crypto.verify_purifier_ticket(key, session) is None
+    assert crypto.verify_reader_cookie(key, ticket) is None
+    assert crypto.verify_reader_cookie(key, session) is None
     assert not crypto.verify_cookie(key, ticket)
     assert not crypto.verify_cookie(key, reader)
     # and a different secret fails too
-    assert not crypto.verify_purifier_ticket('other', ticket)
+    assert crypto.verify_purifier_ticket('other', ticket) is None
+    # a payload that is not a device id is not a ticket either
+    assert crypto.verify_purifier_ticket(key, crypto.TimestampSigner(key, salt='condenser-purifier-ticket').sign(b'ticket').decode()) is None
 
 
 def test_purifier_ticket_expires():
     key = 'secret'
-    ticket = crypto.sign_purifier_ticket(key)
-    assert crypto.verify_purifier_ticket(key, ticket, max_age=300)
-    assert not crypto.verify_purifier_ticket(key, ticket, max_age=-1)
+    ticket = crypto.sign_purifier_ticket(key, 1)
+    assert crypto.verify_purifier_ticket(key, ticket, max_age=300) == 1
+    assert crypto.verify_purifier_ticket(key, ticket, max_age=-1) is None
 
 
 # --- URL helpers ------------------------------------------------------------
@@ -737,15 +746,18 @@ def _install(monkeypatch, fetch_page=None, fetch_puremd=None):
         monkeypatch.setattr(router, '_fetch_puremd', fetch_puremd)
 
 
-def test_ticket_endpoint_requires_auth_and_returns_verifiable_ticket(env):
+def test_ticket_endpoint_requires_a_device_and_binds_the_ticket_to_it(env):
     with _client() as client:
         assert client.get('/api/purifier/ticket').status_code == 401
-        token = _device_token(client)
+        device_id, token = _device(client)
         r = client.get('/api/purifier/ticket', headers={'Authorization': f'Bearer {token}'})
         assert r.status_code == 200
         data = r.json()
         assert data['ttl'] == 300
-        assert crypto.verify_purifier_ticket('secret', data['ticket'])
+        assert crypto.verify_purifier_ticket('secret', data['ticket']) == device_id
+        # a web session already opens /p with its own cookie; it gets no ticket to hand around
+        _login(client)
+        assert client.get('/api/purifier/ticket').status_code == 401
 
 
 def test_document_without_cookie_or_ticket_is_401_html(env, monkeypatch):
@@ -759,13 +771,14 @@ def test_document_without_cookie_or_ticket_is_401_html(env, monkeypatch):
 
 def test_valid_ticket_sets_reader_cookie_and_redirects_without_it(env, monkeypatch):
     _install(monkeypatch, _page(ARTICLE.encode()))
-    ticket = crypto.sign_purifier_ticket('secret')
     with _client() as client:
+        device_id, _token = _device(client)
+        ticket = crypto.sign_purifier_ticket('secret', device_id)
         r = client.get(f'/p/blog.example/posts/hello/?orig=1&_pt={ticket}&_mode=proxy', follow_redirects=False)
         assert r.status_code == 302
         assert r.headers['location'] == '/p/blog.example/posts/hello/?orig=1&_mode=proxy'
         assert READER_COOKIE_NAME in r.cookies
-        assert crypto.verify_reader_cookie('secret', r.cookies[READER_COOKIE_NAME])
+        assert crypto.verify_reader_cookie('secret', r.cookies[READER_COOKIE_NAME]) == device_id
         assert 'httponly' in r.headers['set-cookie'].lower()
         # the cookie alone now opens documents
         r2 = client.get('/p/blog.example/posts/hello/?orig=1')
@@ -775,21 +788,59 @@ def test_valid_ticket_sets_reader_cookie_and_redirects_without_it(env, monkeypat
 
 def test_ticket_only_strips_itself(env, monkeypatch):
     _install(monkeypatch, _page(ARTICLE.encode()))
-    ticket = crypto.sign_purifier_ticket('secret')
     with _client() as client:
+        device_id, _token = _device(client)
+        ticket = crypto.sign_purifier_ticket('secret', device_id)
         r = client.get(f'/p/blog.example/posts/hello/?_pt={ticket}', follow_redirects=False)
         assert r.headers['location'] == '/p/blog.example/posts/hello/'
 
 
-def test_forged_or_expired_ticket_is_401(env, monkeypatch):
+def test_forged_expired_or_orphaned_ticket_is_401(env, monkeypatch):
     _install(monkeypatch, _page(ARTICLE.encode()))
     with _client() as client:
+        device_id, _token = _device(client)
         assert client.get('/p/blog.example/x?_pt=forged', follow_redirects=False).status_code == 401
-        expired = crypto.sign_purifier_ticket('secret')
+        # a well-signed ticket for a device that no longer exists buys nothing
+        orphan = crypto.sign_purifier_ticket('secret', device_id + 100)
+        r = client.get(f'/p/blog.example/x?_pt={orphan}', follow_redirects=False)
+        assert r.status_code == 401 and READER_COOKIE_NAME not in r.cookies
+        expired = crypto.sign_purifier_ticket('secret', device_id)
         monkeypatch.setattr(crypto, 'PURIFIER_TICKET_MAX_AGE', -1)
         r = client.get(f'/p/blog.example/x?_pt={expired}', follow_redirects=False)
         assert r.status_code == 401
         assert READER_COOKIE_NAME not in r.cookies
+
+
+def test_revoking_the_device_kills_its_reader_cookie(env, monkeypatch):
+    """Review 2026-09-07 #6: the reader cookie signed a constant, so revoking a phone
+    on the web devices page left it a 30-day authenticated fetch proxy. The cookie now
+    names its device and is checked against the ``devices`` table on every request."""
+    _install(monkeypatch, _page(ARTICLE.encode()))
+    with _client() as client:
+        device_id, _token = _device(client)
+        client.cookies.set(READER_COOKIE_NAME, crypto.sign_reader_cookie('secret', device_id))
+        assert client.get('/p/blog.example/posts/hello/').status_code == 200
+        assert client.get('/pa/blog.example/x.png', headers={'Accept-Encoding': 'identity'}).status_code != 401
+        # revoke through the web session (the only revocation path), on a second client
+        with _client() as web:
+            _login(web)
+            assert web.delete(f'/api/auth/devices/{device_id}').status_code == 200
+        assert client.get('/p/blog.example/posts/hello/').status_code == 401
+        assert client.get('/pa/blog.example/x.png').status_code == 401
+        # a cookie for a device that never existed is refused the same way
+        client.cookies.set(READER_COOKIE_NAME, crypto.sign_reader_cookie('secret', 999))
+        assert client.get('/p/blog.example/posts/hello/').status_code == 401
+
+
+def test_logout_clears_the_reader_cookie_too(env):
+    with _client() as client:
+        device_id, _token = _device(client)
+        _login(client)
+        client.cookies.set(READER_COOKIE_NAME, crypto.sign_reader_cookie('secret', device_id))
+        r = client.post('/api/auth/logout')
+        assert r.status_code == 200
+        cleared = [h for h in r.headers.get_list('set-cookie') if h.startswith(f'{READER_COOKIE_NAME}=')]
+        assert cleared and ('max-age=0' in cleared[0].lower() or 'expires=' in cleared[0].lower())
 
 
 def test_app_session_cookie_also_opens_documents(env, monkeypatch):
@@ -803,7 +854,8 @@ def test_app_session_cookie_also_opens_documents(env, monkeypatch):
 
 def test_reader_cookie_cannot_reach_api_or_device_management(env, monkeypatch):
     with _client() as client:
-        client.cookies.set(READER_COOKIE_NAME, crypto.sign_reader_cookie('secret'))
+        device_id, _token = _device(client)
+        client.cookies.set(READER_COOKIE_NAME, crypto.sign_reader_cookie('secret', device_id))
         assert client.get('/api/subscriptions').status_code == 401
         assert client.post('/api/auth/device', json={'name': 'x'}).status_code == 401
 

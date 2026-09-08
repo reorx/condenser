@@ -6,7 +6,7 @@ import secrets
 from fastapi import APIRouter, Depends, HTTPException, Response
 
 from .. import db
-from ..auth import COOKIE_MAX_AGE, COOKIE_NAME, get_settings_dep, require_cookie_auth
+from ..auth import COOKIE_MAX_AGE, COOKIE_NAME, READER_COOKIE_NAME, get_settings_dep, require_cookie_auth
 from ..config import Settings
 from ..crypto import hash_device_token, sign_cookie
 from ..types import DeviceCreateBody, LoginBody
@@ -27,6 +27,9 @@ def login(body: LoginBody, response: Response, settings: Settings = Depends(get_
 @router.post('/logout')
 def logout(response: Response):
     response.delete_cookie(COOKIE_NAME)
+    # The purifier's reader cookie lives in the same jar (Mac Catalyst opens /p in the
+    # system browser); a sign-out that left it behind would not be one.
+    response.delete_cookie(READER_COOKIE_NAME)
     return {'ok': True}
 
 

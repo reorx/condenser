@@ -331,7 +331,10 @@ SFSafariViewController（Mac 上是系统浏览器）；plan `kb/plans/2026-09-0
   30 天 `condenser_reader` cookie 并 302 到干净 URL；SFSafariViewController 与 Safari 共享
   cookie，所以票只需换一次。票据是"锦上添花"：点击永远同步、用当下缓存的票（可能 nil）。
   预热三处：登录成功（`ReaderSession.init` → `configure`）、开关打开、回到前台；登出
-  `reset()` 清票不清开关。
+  `reset()` 清票不清开关。**2026-09-08 review fix #6**：票据与 cookie 都签进 device id，
+  ticket 端点只认 Bearer（web 会话本来就用自己的 cookie 开 `/p`），服务端每次请求查设备
+  仍存在——web 设备页吊销一台手机，它手里的 reader cookie 立刻失效；`/api/auth/logout`
+  也删 reader cookie。客户端契约不变（票据仍是不透明串 + `ttl`），Kit 无需改。
 - **走查记录**（`tmp/2026-09-07-purifier/ios-*.png`、`mac-*.png`）：开关开 → HN 详情
   「打开原文」→ 地址栏 condenser 域名、后端 `ticket → /p?_pt 302 → /p 200`；开关关 →
   原站；X 推文 → x.com。Mac Catalyst 是沙盒 app，`defaults write` 要写进

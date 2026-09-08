@@ -1533,6 +1533,11 @@ def get_device_by_token_hash(token_hash: str) -> Optional[Device]:
     return Device.get_or_none(Device.token_hash == token_hash)
 
 
+def get_device(device_id: int) -> Optional[Device]:
+    """By id — the purifier's reader cookie names its device and asks whether it still exists."""
+    return Device.get_or_none(Device.id == device_id)
+
+
 def list_devices() -> list[Device]:
     return list(Device.select().order_by(Device.created_at.desc()))
 

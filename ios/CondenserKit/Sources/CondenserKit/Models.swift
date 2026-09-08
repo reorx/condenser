@@ -1088,7 +1088,8 @@ public struct ForwardResult: Codable, Equatable, Sendable {
     public let link: String
 }
 
-/// GET /api/purifier/ticket —— 阅读代理的一次性票据（plan 2026-09-07 §2）
+/// GET /api/purifier/ticket —— 阅读代理的短时票据（5 分钟、绑定本设备、只认 Bearer；plan 2026-09-07 §2）。
+/// 票据对客户端是不透明字符串；吊销设备即作废票据与由它换来的 cookie（review 2026-09-07 #6）
 public struct PurifierTicket: Codable, Equatable, Sendable {
     public let ticket: String
     /// 有效秒数（服务端 300）
