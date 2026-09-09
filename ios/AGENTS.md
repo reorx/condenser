@@ -326,6 +326,12 @@ asc publish testflight --app <app id> --build <build id> --group <group id> \
 `Auto Notify: true` 时由 Apple 自动发信，不走这个字段）。内部 tester 必须是 ASC 用户
 （`asc users list`），拿外部邮箱加进 internal 组是不行的。TestFlight build **90 天后过期**。
 
+⚠️ **What to Test 的字符集是白名单**：笔记里带 `✕`（U+2715）直接被 ASC 打回
+`Text for whatsNew contains invalid characters`（2026-09-09 实测，`↑` 一并去掉了）。
+UI 元素在笔记里用中文描述（「右侧关闭钮」），别把界面上的符号原样抄进去。
+笔记正文写成 `tmp/<date>-…/test_notes.txt` 再 `--test-notes "$(cat …)"` 传，
+换行才留得住，也方便被打回后改一处重跑。
+
 ### 商店截图的造法（下个版本照搬）
 
 不碰生产数据、不需要任何账号，因为**只开 HN 源**就能填满界面（公开数据，一分钟内
