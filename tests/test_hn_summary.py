@@ -169,10 +169,13 @@ def wired(sid, fetch=None, children=()):
 # --- schema -------------------------------------------------------------------
 
 
-def test_schema_version_is_19(env):
+def test_schema_version_is_at_least_19(env):
+    """v19 added the summary columns; later versions (v20: RSS backoff) move the pin
+    but not the columns — ``test_a_pre_v19_hn_stories_table_gains_the_summary_columns``
+    is the check that matters here."""
     db.init_db(os.environ['CONDENSER_DB_PATH'])
-    assert db.SCHEMA_VERSION == 19
-    assert db.get_meta('schema_version') == '19'
+    assert db.SCHEMA_VERSION >= 19
+    assert db.get_meta('schema_version') == str(db.SCHEMA_VERSION)
 
 
 def test_a_pre_v19_hn_stories_table_gains_the_summary_columns(env):

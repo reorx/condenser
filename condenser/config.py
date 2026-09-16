@@ -80,6 +80,18 @@ class Settings(BaseSettings):
     # OPML file otherwise dumps every feed's whole retained window onto the reader
     # as unread — the archive is still complete, only the backlog is not offered.
     condenser_rss_unread_window_days: int = 7
+    # Failure backoff (2026-09-16, reversing plan 2026-08-22 §3): after the n-th
+    # consecutive failure a feed waits poll_minutes * 2^(n-1) before its next
+    # attempt, capped here. 11 of 77 production feeds (expired cert, lapsed domain,
+    # 403, 404) were failing every one of 48 rounds a day for three weeks with
+    # nobody pausing them; at the cap that is one request a week each.
+    condenser_rss_backoff_max_days: int = 7
+    # Consecutive failures after which a feed is *abnormal* — the subscriptions
+    # page's marker (yellow row + badge) and the ``feeds_abnormal`` status count.
+    # 5 = about 15 hours of failing under the schedule above, so an overnight
+    # outage never earns the mark and a dead feed has it within a day. A success
+    # clears it; nothing is ever paused or unsubscribed on the reader's behalf.
+    condenser_rss_abnormal_failures: int = 5
 
     # --- rss article summaries (condenser/summary.py) ---
     # The project's second per-item billed component, fenced exactly like the first

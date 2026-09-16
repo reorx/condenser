@@ -405,10 +405,28 @@ export interface RssSubscription {
   site_url: string | null;
   /** Last round that reached the feed (200 or 304); null = never fetched yet. */
   fetched_at: string | null;
+  /** Last attempt, any outcome — Miniflux's "Last check". null = never tried. */
+  checked_at: string | null;
+  /** When the failure backoff lets the poller try again; null = on the next round
+   *  (every healthy feed). Set only by a failure; cleared by success, resume,
+   *  re-subscribe or a manual refresh. */
+  next_attempt_at: string | null;
   /** The last failure, or a recovered-from complaint about malformed XML. */
   last_error: string | null;
   /** Consecutive failures; 0 with a `last_error` set means "warning, not broken". */
   error_count: number;
+  /** Server-decided: the streak is past `CONDENSER_RSS_ABNORMAL_FAILURES`. The
+   *  yellow row + badge; the threshold lives on the server so this and the status
+   *  line's `feeds_abnormal` cannot disagree. */
+  abnormal: boolean;
+}
+
+/** POST /api/sources/rss/subscriptions/refresh — one feed fetched right now. */
+export interface RssRefreshResult {
+  ok: boolean;
+  /** Entries archived by this fetch (0 on a 304 or a failure). */
+  new: number;
+  subscription: RssSubscription;
 }
 
 /** GET /api/rss/status — the polling loop's health, source-wide. */
@@ -420,6 +438,8 @@ export interface RssStatus {
   feeds_enabled: number;
   /** Subscribed feeds whose last round failed — the "something is broken" number. */
   feeds_error: number;
+  /** Of those, the ones past the abnormal streak (backed off, marked on the page). */
+  feeds_abnormal: number;
   entries_total: number;
   /** The LLM summary pipeline (Phase 3). `enabled` is really "an API key is
    *  configured" — the key is the on switch, so this is what tells a reader whose
@@ -436,7 +456,14 @@ export interface RssStatus {
   };
   last_poll_at: string | null;
   last_error: string | null;
-  last_round: { feeds: number; errors: number; new_entries: number; summarized: number } | null;
+  last_round: {
+    /** Feeds actually fetched this round; `deferred` = enabled but still backed off. */
+    feeds: number;
+    deferred: number;
+    errors: number;
+    new_entries: number;
+    summarized: number;
+  } | null;
 }
 
 /** POST /api/sources/rss/opml — an import states its whole result in three counts. */

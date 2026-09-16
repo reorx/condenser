@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { rssRefetchInterval, sortRssSubscriptions } from '@/components/subscriptions/RssSection';
+import { rssFeedStatusParts } from '@/components/subscriptions/RssSubscriptionRow';
 import type { RssSubscription } from '@/lib/types';
 
 function sub(url: string, over: Partial<RssSubscription> = {}): RssSubscription {
@@ -10,14 +11,18 @@ function sub(url: string, over: Partial<RssSubscription> = {}): RssSubscription 
     enabled: true,
     site_url: null,
     fetched_at: null,
+    checked_at: null,
+    next_attempt_at: null,
     last_error: null,
     error_count: 0,
+    abnormal: false,
     ...over,
   };
 }
 
 const OK = { fetched_at: '2026-08-22 06:19:34' };
-const BROKEN = { last_error: 'HTTP 404', error_count: 2 };
+const BROKEN = { last_error: 'HTTP 404', error_count: 2, checked_at: '2026-09-16 06:00:00' };
+const ABNORMAL = { last_error: 'HTTP 404', error_count: 7, abnormal: true, checked_at: '2026-09-16 06:00:00' };
 
 describe('rss subscription poll interval', () => {
   it('polls fast while a freshly imported feed has no verdict yet', () => {
@@ -77,6 +82,64 @@ describe('rss subscription order', () => {
       'https://bad2.example/feed',
       'https://ok1.example/feed',
       'https://ok2.example/feed',
+    ]);
+  });
+});
+
+describe('rss subscription order with abnormal feeds', () => {
+  const urls = (subs: RssSubscription[]) => subs.map((s) => s.url);
+
+  it('puts abnormal feeds above merely failing ones, and both above the healthy', () => {
+    // Three tiers, not two: a feed that failed twice is retrying on its own in an
+    // hour; one the server marked abnormal has been dead for days and is backed off
+    // to weekly — that is the one waiting on the reader.
+    const list = [
+      sub('https://ok.example/feed', OK),
+      sub('https://bad.example/feed', BROKEN),
+      sub('https://dead.example/feed', ABNORMAL),
+    ];
+    expect(urls(sortRssSubscriptions(list))).toEqual([
+      'https://dead.example/feed',
+      'https://bad.example/feed',
+      'https://ok.example/feed',
+    ]);
+  });
+});
+
+describe('rss feed status line', () => {
+  const now = new Date('2026-09-16T08:00:00Z');
+
+  it('reads "waiting for the first fetch" before any attempt', () => {
+    expect(rssFeedStatusParts(sub('https://a.example/feed'), now)).toEqual(['waiting for the first fetch']);
+  });
+
+  it('shows the last check and, on a healthy feed, nothing about a next one', () => {
+    // A healthy feed is polled on the round timer; only a backed-off feed has a
+    // time of its own worth showing.
+    expect(rssFeedStatusParts(sub('https://a.example/feed', { ...OK, checked_at: '2026-09-16 07:00:00' }), now)).toEqual(
+      ['last check 1 hour ago'],
+    );
+  });
+
+  it('shows when a failing feed was last tried and when it will be tried next', () => {
+    // Miniflux's "Last check … | Next check …" — the two facts that let the reader
+    // tell "backed off to next week" from "the poller is stuck".
+    const failing = sub('https://a.example/feed', { ...BROKEN, next_attempt_at: '2026-09-16 10:00:00' });
+    expect(rssFeedStatusParts(failing, now)).toEqual(['last check 2 hours ago', 'next check in 2 hours']);
+  });
+
+  it('distinguishes never-fetched from fetched-then-broken', () => {
+    // fetched_at is successes only; a feed that once worked says so, because a feed
+    // that never worked is most likely a wrong URL rather than a dead site.
+    const once = sub('https://a.example/feed', {
+      ...BROKEN,
+      fetched_at: '2026-09-01 06:00:00',
+      next_attempt_at: '2026-09-16 10:00:00',
+    });
+    expect(rssFeedStatusParts(once, now)).toEqual([
+      'last check 2 hours ago',
+      'last seen 15 days ago',
+      'next check in 2 hours',
     ]);
   });
 });

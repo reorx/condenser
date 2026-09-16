@@ -43,9 +43,10 @@ def _normalize_or_422(url: str) -> str:
 
 
 @router.get('/sources/rss/subscriptions')
-def list_rss_subscriptions():
+def list_rss_subscriptions(rss: RssManager = Depends(get_rss)):
     feeds = {f.url: f for f in db.list_rss_feeds()}
-    return [describe_subscription(s, feeds.get(s.channel_id)) for s in db.list_rss_subscriptions()]
+    threshold = rss.settings.condenser_rss_abnormal_failures
+    return [describe_subscription(s, feeds.get(s.channel_id), threshold) for s in db.list_rss_subscriptions()]
 
 
 @router.post('/sources/rss/subscriptions')
@@ -53,7 +54,9 @@ def add_rss_subscription(body: RssSubscribeBody, rss: RssManager = Depends(get_r
     _require_source_enabled(rss)
     url = _normalize_or_422(body.url)
     sub, _ = db.add_rss_subscription(url, name=body.name)
-    # fetch without waiting a full interval — also on re-subscribe (resume)
+    # fetch without waiting a full interval — also on re-subscribe (resume), which
+    # is why the backoff is waived: the reader is asking for a try, now
+    db.clear_rss_feed_backoff(url)
     rss.kick()
     return describe_subscription(sub)
 
@@ -71,7 +74,30 @@ def patch_rss_subscription(
     if body.enabled:
         _require_source_enabled(rss)
     db.update_rss_subscription(url, enabled=body.enabled, config=body.config)
+    if body.enabled:
+        # resume = "try again": the wait is waived, the streak stays (it is evidence)
+        db.clear_rss_feed_backoff(url)
+        rss.kick()
     return describe_subscription(db.get_rss_subscription(url))
+
+
+@router.post('/sources/rss/subscriptions/refresh')
+async def refresh_rss_subscription(url: str = _URL_QUERY, rss: RssManager = Depends(get_rss)):
+    """Fetch one feed right now and report how it went (Miniflux's per-feed Refresh).
+
+    Deliberately ``async``: the fetch runs on the app loop like a round does, so
+    the response can carry the feed's *new* state instead of a "queued" that
+    leaves the row to be re-polled. Works on a paused feed too — checking whether
+    a feed has come back is how the reader decides to resume it, and ignores the
+    master switch for the same reason it ignores the pause: nothing is being
+    subscribed, one request is being spent on the reader's explicit click.
+    """
+    url = _normalize_or_422(url)
+    sub = db.get_rss_subscription(url)
+    if sub is None:
+        raise HTTPException(status_code=404, detail='rss subscription not found')
+    outcome = await rss.refresh_feed(sub)
+    return {**outcome, 'subscription': describe_subscription(db.get_rss_subscription(url))}
 
 
 @router.delete('/sources/rss/subscriptions')

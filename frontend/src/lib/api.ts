@@ -17,6 +17,7 @@ import type {
   LinkPreview,
   MessageStats,
   RssOpmlResult,
+  RssRefreshResult,
   RssStatus,
   RssSubscription,
   SearchPage,
@@ -190,6 +191,9 @@ export const api = {
       body: JSON.stringify({ enabled }),
     }),
   rssUnsubscribe: (url: string) => del<{ ok: true }>(`/api/sources/rss/subscriptions?url=${encodeURIComponent(url)}`),
+  /** Fetch one feed now, backoff and pause switch notwithstanding; answers the new state. */
+  rssRefresh: (url: string) =>
+    post<RssRefreshResult>(`/api/sources/rss/subscriptions/refresh?url=${encodeURIComponent(url)}`),
   /** Bulk subscribe from an OPML export (the file is read client-side and posted as text). */
   rssImportOpml: (opml: string) => post<RssOpmlResult>('/api/sources/rss/opml', { opml }),
 

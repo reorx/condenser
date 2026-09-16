@@ -1,4 +1,4 @@
-import { format, isToday, isYesterday, parseISO } from 'date-fns';
+import { format, formatDistanceStrict, isToday, isYesterday, parseISO } from 'date-fns';
 
 import type { ChannelRef, Subscription } from './types';
 
@@ -28,6 +28,13 @@ export function dayLabel(s: string): string {
 export function fullDateLabel(s: string): string {
   const d = parseDate(s);
   return d ? format(d, 'MMM d, yyyy · HH:mm') : '';
+}
+
+/** "2 hours ago" / "in 3 days" — a backend datetime relative to `now` (injectable
+ *  for tests). Strict: no "about", no "almost" — a poll schedule reads better exact. */
+export function relativeLabel(s: string, now: Date = new Date()): string {
+  const d = parseDate(s);
+  return d ? formatDistanceStrict(d, now, { addSuffix: true }) : '';
 }
 
 /** ISO day key (YYYY-MM-DD) in UTC, matching the backend's substr(date,1,10). */

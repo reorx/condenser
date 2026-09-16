@@ -42,7 +42,7 @@ MESSAGES_OPTIONAL_FIELDS = {
 # Bumped when condenser's own table shapes change; recorded in app_meta on init so a
 # future startup can detect an upgrade and run a migration. Telememo manages its own
 # table migrations separately (init_db optional_fields / ALTER TABLE).
-SCHEMA_VERSION = 19
+SCHEMA_VERSION = 20
 
 # One-shot marker for the v14 admission backfill (see _migrate_hn_qualified_v14).
 # State, not shape: the columns can exist while the stamping has not happened.
@@ -491,10 +491,17 @@ class RssFeed(CondenserBaseModel):
     etag = TextField(null=True)
     last_modified = TextField(null=True)
     fetched_at = DateTimeField(null=True)  # last *attempt* that succeeded, 200 or 304
-    # Recorded, never acted on: a feed that 404s for a week stays subscribed, because
-    # unsubscribing on the reader's behalf loses a decision they never made.
+    checked_at = DateTimeField(null=True)  # last attempt, any outcome (v20) — Miniflux's "Last check"
+    # Recorded and, since v20, backed off — never unsubscribed: a feed that 404s for a
+    # week stays subscribed, because unsubscribing on the reader's behalf loses a
+    # decision they never made. ``error_count`` sizes the wait (``rss.backoff_delay``)
+    # and, past ``condenser_rss_abnormal_failures``, marks the row abnormal.
     last_error = TextField(null=True)
     error_count = IntegerField(default=0)  # consecutive failures; a success clears it
+    # Not before this (v20). NULL = due whenever the next round runs, which is every
+    # healthy feed and every pre-v20 row; set only by a failure, cleared by a success,
+    # by resume / re-subscribe and by a manual refresh.
+    next_attempt_at = DateTimeField(null=True)
 
     class Meta:
         table_name = 'rss_feeds'
@@ -588,6 +595,7 @@ def init_db(db_path: str, vector_dims: int = 256) -> None:
     _migrate_rss_excerpt_v16()
     _migrate_saved_items_v18()
     _migrate_hn_summary_v19()
+    _migrate_rss_backoff_v20()
     tdb.db.create_tables(CONDENSER_TABLES)
     _migrate_read_saved_v4()
     _migrate_hn_previews_v5()
@@ -771,6 +779,22 @@ def _migrate_hn_summary_v19() -> None:
         tdb.db.execute_sql('ALTER TABLE hn_stories ADD COLUMN summary TEXT')
         tdb.db.execute_sql('ALTER TABLE hn_stories ADD COLUMN summary_model TEXT')
         tdb.db.execute_sql('ALTER TABLE hn_stories ADD COLUMN summary_attempts INTEGER NOT NULL DEFAULT 0')
+
+
+def _migrate_rss_backoff_v20() -> None:
+    """Add the failure-backoff columns to a pre-v20 ``rss_feeds`` table.
+
+    Shape-based ADD COLUMNs before ``create_tables``, the v14–v19 position.
+    Historical rows stay NULL, which every reader takes as the pre-feature
+    behavior: no ``next_attempt_at`` means "due now", so a feed that was failing
+    before the upgrade earns its first wait on its first post-upgrade failure.
+    """
+    cols = [r[1] for r in tdb.db.execute_sql('PRAGMA table_info(rss_feeds)').fetchall()]
+    if not cols or 'next_attempt_at' in cols:
+        return
+    with tdb.db.atomic():
+        tdb.db.execute_sql('ALTER TABLE rss_feeds ADD COLUMN checked_at DATETIME')
+        tdb.db.execute_sql('ALTER TABLE rss_feeds ADD COLUMN next_attempt_at DATETIME')
 
 
 def _backfill_rss_excerpts() -> None:
@@ -2366,7 +2390,12 @@ def record_rss_feed_success(
     304, where there is no document to complain about. Writing None through erased
     the previous round's warning on every 304 and made the badge blink (2026-08-22).
     """
-    fields: dict = {RssFeed.fetched_at: at, RssFeed.error_count: 0}
+    fields: dict = {
+        RssFeed.fetched_at: at,
+        RssFeed.checked_at: at,
+        RssFeed.error_count: 0,
+        RssFeed.next_attempt_at: None,
+    }
     for column, value in (
         (RssFeed.title, title),
         (RssFeed.site_url, site_url),
@@ -2420,10 +2449,27 @@ def migrate_rss_feed_url(old: str, new: str) -> bool:
     return True
 
 
-def record_rss_feed_error(url: str, error: str, at: datetime) -> None:
+def record_rss_feed_error(url: str, error: str, at: datetime, next_attempt_at: Optional[datetime] = None) -> None:
     """Count one failed round. ``fetched_at`` is deliberately not touched — it means
-    "last time we actually saw this feed", which is what makes a stale feed visible."""
-    RssFeed.update(last_error=error, error_count=RssFeed.error_count + 1).where(RssFeed.url == url).execute()
+    "last time we actually saw this feed", which is what makes a stale feed visible;
+    ``checked_at`` moves, so the row can still say when it was last tried.
+
+    ``next_attempt_at`` is the caller's decision (``rss.backoff_delay`` sizes it from
+    the streak); None keeps the feed due on the next round, the pre-v20 behavior.
+    """
+    RssFeed.update(
+        last_error=error,
+        error_count=RssFeed.error_count + 1,
+        checked_at=at,
+        next_attempt_at=next_attempt_at,
+    ).where(RssFeed.url == url).execute()
+
+
+def clear_rss_feed_backoff(url: str) -> None:
+    """Make the feed due now, keeping the streak: the reader asked for another try
+    (resume, re-subscribe, manual refresh), which waives the wait but is not
+    evidence the feed works — ``error_count`` still says how it has been going."""
+    RssFeed.update(next_attempt_at=None).where(RssFeed.url == url).execute()
 
 
 def existing_rss_guids(feed_url: str, guids: list[str]) -> set[str]:
@@ -2523,6 +2569,17 @@ def rss_feed_error_count() -> int:
     cur = tdb.db.execute_sql(
         "SELECT COUNT(*) FROM rss_feeds f JOIN subscriptions s ON s.source = 'rss' AND s.channel_id = f.url "
         'WHERE f.error_count > 0'
+    )
+    return cur.fetchone()[0]
+
+
+def rss_feed_abnormal_count(failures: int) -> int:
+    """Subscribed feeds at or past the abnormal streak (``rss_feed_error_count``'s
+    scope: a feed the reader dropped is not a problem they have)."""
+    cur = tdb.db.execute_sql(
+        "SELECT COUNT(*) FROM rss_feeds f JOIN subscriptions s ON s.source = 'rss' AND s.channel_id = f.url "
+        'WHERE f.error_count >= ?',
+        (failures,),
     )
     return cur.fetchone()[0]
 

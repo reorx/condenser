@@ -31,22 +31,23 @@ export function rssRefetchInterval(subs: RssSubscription[] | undefined): number 
   return undecided ? 5_000 : 60_000;
 }
 
-/** The row order: failing feeds first, everything else left as the server sent it
- *  (`added_at desc`).
+/** The row order: abnormal feeds first, then merely failing ones, everything else
+ *  left as the server sent it (`added_at desc`).
  *
- *  A dead feed is never unsubscribed or backed off automatically — deciding that a
- *  feed is dead is the reader's call (plan 2026-08-22 §3) — so the server's whole job
- *  is putting the evidence where it gets seen. In a 77-row list the 10 broken ones are
- *  scattered and the reader has to read every row to find them; lifted to the top they
- *  are a to-do list, and one that stays after they pause a feed (`error_count` does not
- *  reset) — "handled, still broken". Deliberately no filter and no group heading: the
- *  action is look-then-pause, and another control is another piece of state to keep.
+ *  A dead feed is never unsubscribed or paused automatically — that is still the
+ *  reader's call — but since 2026-09-16 the server backs it off (toward weekly) and
+ *  marks it abnormal past a streak, so the top tier is the to-do list proper and the
+ *  second is "retrying on its own, watch". In a 77-row list the broken ones are
+ *  otherwise scattered and the reader has to read every row to find them. A paused
+ *  feed keeps its tier (`error_count` does not reset) — "handled, still broken".
+ *  Deliberately no filter and no group heading: another control is another piece of
+ *  state to keep.
  *
  *  Stable by contract, not by accident: the list refetches while the page is open, and
  *  an order that reshuffles on every round moves the switch the reader is reaching for. */
 export function sortRssSubscriptions(subs: RssSubscription[]): RssSubscription[] {
-  const failing = (s: RssSubscription) => (s.error_count > 0 ? 0 : 1);
-  return [...subs].sort((a, b) => failing(a) - failing(b));
+  const tier = (s: RssSubscription) => (s.abnormal ? 0 : s.error_count > 0 ? 1 : 2);
+  return [...subs].sort((a, b) => tier(a) - tier(b));
 }
 
 /** The RSS tab on the Subscriptions page: add a feed by URL, bulk-import an OPML
@@ -99,6 +100,18 @@ export function RssSection() {
     onError: (e) => toast.error(errorMessage(e, '更新失败')),
     onSettled: invalidate,
   });
+  const refresh = useMutation({
+    mutationFn: api.rssRefresh,
+    onSuccess: (r) => {
+      // The outcome in words, because the click was a question ("is it back?"):
+      // the error verbatim on failure, the count on success.
+      const label = r.subscription.name ?? r.subscription.url;
+      if (r.ok) toast.success(`${label} 抓取成功${r.new > 0 ? `，新增 ${r.new} 条` : '，无新内容'}`);
+      else toast.error(`${label} 仍然失败：${r.subscription.last_error ?? '未知错误'}`);
+    },
+    onError: (e) => toast.error(errorMessage(e, '抓取失败')),
+    onSettled: invalidate,
+  });
   const unsubscribe = useMutation({
     mutationFn: api.rssUnsubscribe,
     onSuccess: () => toast.success('已退订 —— 已存档的条目保留'),
@@ -122,6 +135,7 @@ export function RssSection() {
         <p className="text-xs text-muted-foreground">
           标准 RSS / Atom 订阅，服务端按 <span className="font-medium">条件请求</span> 定时轮询（多数轮次是
           304，所以上百个 feed 也很便宜）。 首次订阅时超过一周的旧文章直接归档为已读，只有一周内的进未读。
+          连续失败的 feed 会指数退避（最长一周一次）并标为「异常」，不会自动退订或暂停。
         </p>
         {disabled && (
           <p className="text-xs text-destructive">
@@ -181,7 +195,9 @@ export function RssSection() {
               key={sub.url}
               sub={sub}
               busy={setEnabled.isPending}
+              refreshing={refresh.isPending && refresh.variables === sub.url}
               onToggle={(enabled) => setEnabled.mutate({ url: sub.url, enabled })}
+              onRefresh={() => refresh.mutate(sub.url)}
               onDelete={() => setPendingDelete(sub)}
             />
           ))}
@@ -214,12 +230,20 @@ function RssStatusLine({ status }: { status: RssStatus }) {
   const parts: string[] = [`${status.feeds_enabled}/${status.feeds_total} feeds`, `${status.entries_total} archived`];
   if (status.last_poll_at) parts.push(`polled ${fullDateLabel(status.last_poll_at)}`);
   else parts.push('not polled yet');
-  if (status.last_round) parts.push(`+${status.last_round.new_entries} last round`);
+  if (status.last_round) {
+    parts.push(`+${status.last_round.new_entries} last round`);
+    // How many requests the backoff saved this round — the number that says the
+    // dead feeds have stopped costing anything.
+    if (status.last_round.deferred > 0) parts.push(`${status.last_round.deferred} deferred`);
+  }
   return (
     <div className="space-y-1 border-t px-4 py-3 text-xs text-muted-foreground sm:px-5">
       <div>
         {parts.join(' · ')}
         {status.feeds_error > 0 && <span className="text-destructive"> · {status.feeds_error} feeds failing</span>}
+        {status.feeds_abnormal > 0 && (
+          <span className="text-amber-600 dark:text-amber-500"> · {status.feeds_abnormal} 个异常 feed 已退避</span>
+        )}
         {status.last_error && <span className="text-destructive"> · {status.last_error}</span>}
       </div>
       <RssSummaryLine summary={status.summary} />

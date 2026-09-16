@@ -121,6 +121,25 @@ def _permanent_redirect_target(resp: httpx.Response) -> Optional[str]:
     return str(resp.url)
 
 
+# --- failure backoff ----------------------------------------------------------
+
+
+def backoff_delay(failures: int, base_minutes: int, max_days: int) -> timedelta:
+    """How long a feed waits after its ``failures``-th consecutive failure.
+
+    ``base * 2^(failures-1)``, capped at ``max_days``: 30m, 1h, 2h, 4h, 8h, 16h, …,
+    a week. The first wait equals the poll interval, so one transient failure
+    costs a feed nothing it would not have paid anyway (it is retried next round);
+    only a streak spaces the attempts out. The exponent is clamped before the
+    shift so a feed that has been failing since spring cannot overflow the cap.
+    """
+    if failures <= 0:
+        return timedelta(0)
+    cap = timedelta(days=max_days)
+    delay = timedelta(minutes=base_minutes) * (2 ** min(failures - 1, 30))
+    return min(delay, cap)
+
+
 # --- parsing ------------------------------------------------------------------
 
 
@@ -350,12 +369,13 @@ class RssManager:
             return
         try:
             subs = db.enabled_rss_subscriptions()
+            due = self._due(subs, self._now())
             sem = asyncio.Semaphore(max(1, self.settings.condenser_rss_fetch_concurrency))
             # return_exceptions so one feed's *unhandled* failure (a DB error in the
             # handler that records the failure, say) cannot abort the gather and take
             # the other 99 feeds' results with it. _poll_feed already catches the
             # expected ones; this covers the rest.
-            outcomes = await asyncio.gather(*(self._poll_feed(sub, sem) for sub in subs), return_exceptions=True)
+            outcomes = await asyncio.gather(*(self._poll_feed(sub, sem) for sub in due), return_exceptions=True)
         except Exception as e:  # noqa: BLE001 — round-level guard (the HN precedent: log + skip)
             log.exception('rss poll round failed')
             db.set_meta(LAST_ERROR_META_KEY, str(e))
@@ -366,6 +386,7 @@ class RssManager:
         results = [o for o in outcomes if isinstance(o, dict)]
         round_stats = {
             'feeds': len(outcomes),
+            'deferred': len(subs) - len(due),  # backed off, not tried this round
             'errors': sum(1 for o in results if not o['ok']) + (len(outcomes) - len(results)),
             'new_entries': sum(o['new'] for o in results),
             **await self._summarize_round(),
@@ -374,6 +395,36 @@ class RssManager:
         db.set_meta(LAST_ERROR_META_KEY, '')
         db.set_meta(LAST_ROUND_META_KEY, json.dumps(round_stats))
         log.info('rss round done: %s', round_stats)
+
+    @staticmethod
+    def _due(subs: list, now: datetime) -> list:
+        """The enabled feeds whose backoff has expired (or that have none).
+
+        A feed row is missing only when it was deleted underneath us; it is due, and
+        ``_poll_feed`` recreates it. Decided here, per round, rather than in SQL, so
+        the deferred count is known without a second query and the rule reads in
+        one place next to the loop it governs.
+        """
+        feeds = {f.url: f for f in db.list_rss_feeds()}
+
+        def is_due(sub) -> bool:
+            feed = feeds.get(sub.channel_id)
+            return feed is None or feed.next_attempt_at is None or feed.next_attempt_at <= now
+
+        return [sub for sub in subs if is_due(sub)]
+
+    async def refresh_feed(self, sub: db.Subscription) -> dict:
+        """One feed, now, regardless of its backoff or its pause switch.
+
+        The subscriptions page's Refresh: the reader is asking "has it come back?",
+        which is not the same question as "should it be polled" — so a paused feed
+        is fetched too (the answer decides whether they switch it back on), and the
+        wait is waived first so a failure re-arms it from one rather than stacking.
+        Runs on the loop like a round does; the ingest lock serializes it against
+        one.
+        """
+        db.clear_rss_feed_backoff(sub.channel_id)
+        return await self._poll_feed(sub, asyncio.Semaphore(1))
 
     async def _poll_feed(self, sub: db.Subscription, sem: asyncio.Semaphore) -> dict:
         url = sub.channel_id
@@ -419,7 +470,16 @@ class RssManager:
             return {'ok': True, 'new': new}
         except Exception as e:  # noqa: BLE001 — per-feed isolation is the whole point
             log.warning('rss feed failed: %s (%s)', url, e)
-            db.record_rss_feed_error(url, str(e) or e.__class__.__name__, self._now())
+            failed_at = self._now()
+            # The streak this failure makes, from the row read at the top: the
+            # poller is the only writer of error_count, so the +1 here and the
+            # SQL-side +1 in record_rss_feed_error agree.
+            wait = backoff_delay(
+                feed.error_count + 1,
+                base_minutes=self.settings.condenser_rss_poll_minutes,
+                max_days=self.settings.condenser_rss_backoff_max_days,
+            )
+            db.record_rss_feed_error(url, str(e) or e.__class__.__name__, failed_at, next_attempt_at=failed_at + wait)
             return {'ok': False, 'new': 0}
 
     def _ingest(self, feed_url: str, parsed: ParsedFeed, now: datetime) -> int:
@@ -506,6 +566,7 @@ class RssManager:
             'feeds_total': len(subs),
             'feeds_enabled': sum(1 for s in subs if s.enabled),
             'feeds_error': db.rss_feed_error_count(),
+            'feeds_abnormal': db.rss_feed_abnormal_count(self.settings.condenser_rss_abnormal_failures),
             'entries_total': db.rss_entry_count(),
             # The billed half of this source reports itself here (plan §3 fence 4):
             # an inert pipeline and an empty backlog look the same from the timeline.
@@ -516,10 +577,21 @@ class RssManager:
         }
 
 
-def describe_subscription(sub: db.Subscription, feed: Optional[db.RssFeed] = None) -> dict[str, Any]:
+def describe_subscription(
+    sub: db.Subscription, feed: Optional[db.RssFeed] = None, abnormal_failures: Optional[int] = None
+) -> dict[str, Any]:
     """One subscription row as the API returns it: the reader's decision plus the
-    feed's fetch state, which is where a silent feed explains itself."""
+    feed's fetch state, which is where a silent feed explains itself.
+
+    ``abnormal`` is decided here, not by the client, so the badge on the page and
+    the ``feeds_abnormal`` count on status cannot disagree about the threshold.
+    """
+    from .config import get_settings
+
     feed = feed if feed is not None else db.get_rss_feed(sub.channel_id)
+    if abnormal_failures is None:
+        abnormal_failures = get_settings().condenser_rss_abnormal_failures
+    error_count = feed.error_count if feed else 0
     return {
         'url': sub.channel_id,
         # NULL until the first successful fetch teaches us the feed's title; the
@@ -528,6 +600,12 @@ def describe_subscription(sub: db.Subscription, feed: Optional[db.RssFeed] = Non
         'enabled': bool(sub.enabled),
         'site_url': feed.site_url if feed else None,
         'fetched_at': str(feed.fetched_at) if feed and feed.fetched_at else None,
+        # v20: when it was last *tried* (fetched_at is successes only), when it will
+        # be tried next (None = the next round), and whether the streak is past the
+        # abnormal line.
+        'checked_at': str(feed.checked_at) if feed and feed.checked_at else None,
+        'next_attempt_at': str(feed.next_attempt_at) if feed and feed.next_attempt_at else None,
         'last_error': feed.last_error if feed else None,
-        'error_count': feed.error_count if feed else 0,
+        'error_count': error_count,
+        'abnormal': error_count >= abnormal_failures,
     }

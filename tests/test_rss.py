@@ -11,6 +11,7 @@ Plan: kb/plans/2026-08-20-rss-source-opml-llm-summary.md §10 Phase 1.
 """
 
 import asyncio
+import json
 import os
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -514,7 +515,8 @@ def test_one_failing_feed_does_not_sink_the_round(rss_env):
 
 def test_error_count_accumulates_and_clears_on_success(rss_env):
     """The count is the signal a feed is dead rather than flaky; a success resets it.
-    Nothing unsubscribes automatically — that decision stays the reader's (plan §1.1)."""
+    Nothing unsubscribes automatically — that decision stays the reader's (plan §1.1);
+    since 2026-09-16 the count also sets the wait before the next attempt."""
     url = 'https://flaky.example/f.xml'
     fetch = FakeFetch()
     fetch.set(url, RuntimeError('boom'))
@@ -522,11 +524,13 @@ def test_error_count_accumulates_and_clears_on_success(rss_env):
     db.add_rss_subscription(url)
 
     asyncio.run(mgr.poll_once())
+    mgr._now = lambda: NOW + timedelta(minutes=30)  # past the first backoff (see the 2026-09-16 section)
     asyncio.run(mgr.poll_once())
     assert db.get_rss_feed(url).error_count == 2
     assert db.get_rss_subscription(url) is not None  # still subscribed
 
     fetch.set(url, fixture('rss2_no_guid.xml'))
+    mgr._now = lambda: NOW + timedelta(hours=2)
     asyncio.run(mgr.poll_once())
     feed = db.get_rss_feed(url)
     assert feed.error_count == 0 and feed.last_error is None
@@ -889,3 +893,195 @@ def test_status_reports_the_source_state(rss_env):
         assert st['feeds_total'] == 2 and st['feeds_enabled'] == 1 and st['feeds_error'] == 1
         assert st['entries_total'] == 1
         assert st['last_poll_at'] == '2026-08-20 11:50:00'
+
+
+# --- failure backoff + abnormal feeds (2026-09-16) ----------------------------
+#
+# Reverses plan 2026-08-22 §3 ("no backoff, the reader pauses a dead feed by hand"):
+# three weeks on, 11 of 77 production feeds failed every round and nobody had
+# paused one — the look-then-pause loop was too long. A failing feed now waits
+# exponentially longer between attempts (capped at a week) and, past a streak, is
+# marked *abnormal* for the subscriptions page. Nothing is still ever unsubscribed
+# or paused on the reader's behalf.
+
+
+def test_backoff_doubles_from_the_poll_interval_and_caps_at_a_week():
+    from condenser.rss import backoff_delay
+
+    assert backoff_delay(1, base_minutes=30, max_days=7) == timedelta(minutes=30)
+    assert backoff_delay(2, base_minutes=30, max_days=7) == timedelta(hours=1)
+    assert backoff_delay(5, base_minutes=30, max_days=7) == timedelta(hours=8)
+    assert backoff_delay(10, base_minutes=30, max_days=7) == timedelta(days=7)
+    assert backoff_delay(60, base_minutes=30, max_days=7) == timedelta(days=7)  # no overflow
+    assert backoff_delay(0, base_minutes=30, max_days=7) == timedelta(0)
+
+
+def test_a_failing_feed_is_not_refetched_before_its_backoff_expires(rss_env):
+    url = 'https://dead.example/f.xml'
+    fetch = FakeFetch()
+    fetch.set(url, RuntimeError('HTTP 404'))
+    mgr = make_manager(fetch)
+    db.add_rss_subscription(url)
+
+    asyncio.run(mgr.poll_once())
+    feed = db.get_rss_feed(url)
+    assert feed.error_count == 1 and feed.checked_at == NOW
+    assert feed.next_attempt_at == NOW + timedelta(minutes=30)
+    assert feed.fetched_at is None  # still "never actually seen"
+
+    # Ten minutes later: the round runs, this feed is deferred, no request is spent.
+    mgr._now = lambda: NOW + timedelta(minutes=10)
+    asyncio.run(mgr.poll_once())
+    assert len(fetch.calls) == 1
+    assert json.loads(db.get_meta('rss_last_round'))['deferred'] == 1
+
+    # At the due time it is tried again, and the wait doubles.
+    mgr._now = lambda: NOW + timedelta(minutes=30)
+    asyncio.run(mgr.poll_once())
+    feed = db.get_rss_feed(url)
+    assert len(fetch.calls) == 2 and feed.error_count == 2
+    assert feed.next_attempt_at == NOW + timedelta(minutes=30) + timedelta(hours=1)
+
+
+def test_a_success_clears_the_backoff(rss_env):
+    url = 'https://flaky.example/f.xml'
+    fetch = FakeFetch()
+    fetch.set(url, RuntimeError('boom'))
+    mgr = make_manager(fetch)
+    db.add_rss_subscription(url)
+    asyncio.run(mgr.poll_once())
+    assert db.get_rss_feed(url).next_attempt_at is not None
+
+    fetch.set(url, fixture('rss2_no_guid.xml'))
+    later = NOW + timedelta(hours=1)
+    mgr._now = lambda: later
+    asyncio.run(mgr.poll_once())
+    feed = db.get_rss_feed(url)
+    assert feed.error_count == 0 and feed.next_attempt_at is None
+    assert feed.fetched_at == later and feed.checked_at == later
+
+
+def test_a_deferred_feed_does_not_hold_up_the_others(rss_env):
+    dead = 'https://dead.example/f.xml'
+    fetch = FakeFetch()
+    fetch.set(dead, RuntimeError('HTTP 404'))
+    fetch.set(HN_URL, fixture('rss2_no_guid.xml'))
+    mgr = make_manager(fetch)
+    db.add_rss_subscription(dead)
+    db.add_rss_subscription(HN_URL)
+    asyncio.run(mgr.poll_once())
+
+    mgr._now = lambda: NOW + timedelta(minutes=5)
+    asyncio.run(mgr.poll_once())
+    stats = json.loads(db.get_meta('rss_last_round'))
+    assert stats['feeds'] == 1 and stats['deferred'] == 1 and stats['errors'] == 0
+    assert [c[0] for c in fetch.calls] == [dead, HN_URL, HN_URL]
+
+
+def test_a_feed_is_abnormal_past_the_failure_streak(rss_env):
+    from condenser.rss import describe_subscription
+
+    url = 'https://dead.example/f.xml'
+    fetch = FakeFetch()
+    fetch.set(url, RuntimeError('HTTP 404'))
+    mgr = make_manager(fetch)
+    sub, _ = db.add_rss_subscription(url)
+
+    clock = NOW
+    for n in range(1, 6):
+        mgr._now = (lambda t: (lambda: t))(clock)
+        asyncio.run(mgr.poll_once())
+        feed = db.get_rss_feed(url)
+        assert feed.error_count == n
+        assert describe_subscription(sub, feed)['abnormal'] is (n >= 5)
+        clock = feed.next_attempt_at
+    assert mgr.status()['feeds_abnormal'] == 1
+
+    out = describe_subscription(sub, feed)
+    assert out['checked_at'] == str(feed.checked_at) and out['next_attempt_at'] == str(feed.next_attempt_at)
+    assert out['fetched_at'] is None and out['last_error'] == 'HTTP 404'
+
+
+def test_resubscribing_or_resuming_resets_the_backoff(rss_env):
+    with _client() as client:
+        _login(client)
+        _quiet_rss(client)
+        client.post('/api/sources/rss/subscriptions', json={'url': HN_URL})
+        db.record_rss_feed_error(HN_URL, 'timeout', NOW, next_attempt_at=NOW + timedelta(days=7))
+
+        # resume after a pause: the reader is asking for another try
+        client.patch('/api/sources/rss/subscriptions', params={'url': HN_URL}, json={'enabled': False})
+        assert db.get_rss_feed(HN_URL).next_attempt_at is not None  # pausing changes nothing
+        client.patch('/api/sources/rss/subscriptions', params={'url': HN_URL}, json={'enabled': True})
+        assert db.get_rss_feed(HN_URL).next_attempt_at is None
+        assert db.get_rss_feed(HN_URL).error_count == 1  # the streak is evidence; only the wait is waived
+
+        db.record_rss_feed_error(HN_URL, 'timeout', NOW, next_attempt_at=NOW + timedelta(days=7))
+        client.post('/api/sources/rss/subscriptions', json={'url': HN_URL})
+        assert db.get_rss_feed(HN_URL).next_attempt_at is None
+
+
+def test_manual_refresh_fetches_one_feed_now_and_reports_the_outcome(rss_env):
+    with _client() as client:
+        _login(client)
+        rss = _quiet_rss(client)
+        rss._now = lambda: NOW
+        client.post('/api/sources/rss/subscriptions', json={'url': HN_URL})
+        client.post('/api/sources/rss/subscriptions', json={'url': ATOM_URL})
+        db.record_rss_feed_error(HN_URL, 'HTTP 404', NOW, next_attempt_at=NOW + timedelta(days=7))
+
+        # backed off a week, but the reader clicked: fetched right now, this feed only
+        rss._fetch_feed.set(HN_URL, fixture('rss2_no_guid.xml'))
+        r = client.post('/api/sources/rss/subscriptions/refresh', params={'url': HN_URL})
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body['ok'] is True and body['new'] == 3
+        assert body['subscription']['error_count'] == 0 and body['subscription']['fetched_at'] == str(NOW)
+        assert [c[0] for c in rss._fetch_feed.calls] == [HN_URL]
+
+        # a refresh that fails reports the failure and re-arms the backoff from one
+        rss._fetch_feed.set(HN_URL, RuntimeError('HTTP 404'))
+        body = client.post('/api/sources/rss/subscriptions/refresh', params={'url': HN_URL}).json()
+        assert body['ok'] is False
+        assert body['subscription']['error_count'] == 1 and body['subscription']['last_error'] == 'HTTP 404'
+        assert body['subscription']['next_attempt_at'] == str(NOW + timedelta(minutes=30))
+
+        assert client.post('/api/sources/rss/subscriptions/refresh', params={'url': BLOG_URL}).status_code == 404
+
+
+def test_manual_refresh_works_on_a_paused_feed(rss_env):
+    """Refresh is "try it now", not "resume": the reader wants to see whether a feed
+    they paused has come back before deciding to switch it on again."""
+    with _client() as client:
+        _login(client)
+        rss = _quiet_rss(client)
+        rss._now = lambda: NOW
+        client.post('/api/sources/rss/subscriptions', json={'url': HN_URL})
+        client.patch('/api/sources/rss/subscriptions', params={'url': HN_URL}, json={'enabled': False})
+        rss._fetch_feed.set(HN_URL, fixture('rss2_no_guid.xml'))
+
+        body = client.post('/api/sources/rss/subscriptions/refresh', params={'url': HN_URL}).json()
+        assert body['ok'] is True and body['subscription']['enabled'] is False
+
+
+def test_a_pre_v20_rss_feeds_table_gains_the_backoff_columns(rss_env):
+    import sqlite3
+
+    path = os.environ['CONDENSER_DB_PATH']
+    conn = sqlite3.connect(path)
+    conn.execute(
+        'CREATE TABLE rss_feeds (url TEXT NOT NULL PRIMARY KEY, title TEXT, site_url TEXT, etag TEXT, '
+        'last_modified TEXT, fetched_at DATETIME, last_error TEXT, error_count INTEGER NOT NULL)'
+    )
+    conn.execute("INSERT INTO rss_feeds (url, title, error_count) VALUES ('https://old.example/f', 'old', 3)")
+    conn.commit()
+    conn.close()
+
+    db.init_db(path)
+    db.init_db(path)  # idempotent
+
+    feed = db.get_rss_feed('https://old.example/f')
+    assert feed.title == 'old' and feed.error_count == 3
+    assert feed.checked_at is None and feed.next_attempt_at is None  # NULL = due now, the pre-feature behavior
+    db.record_rss_feed_error(feed.url, 'x', NOW, next_attempt_at=NOW)  # still writable
+    assert db.get_rss_feed(feed.url).next_attempt_at == NOW

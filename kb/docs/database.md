@@ -77,6 +77,20 @@ Virtual tables (`x_vec_labeled`, `search_index`) are created with raw SQL in `in
 
 ## Schema changelog (newest first)
 
+### v20 — 2026-09-16 · RSS failure backoff
+
+Adds `rss_feeds.checked_at` (last attempt, any outcome — `fetched_at` stays
+successes-only, which is what makes a stale feed visible) and
+`rss_feeds.next_attempt_at` (not before this; NULL = due on the next round). Set only
+by a failure — `rss.backoff_delay`: poll interval × 2^(n-1), capped at
+`CONDENSER_RSS_BACKOFF_MAX_DAYS` — cleared by a success, by resume / re-subscribe and
+by the manual refresh endpoint. `error_count` (v15) doubles as the *abnormal* line
+(≥ `CONDENSER_RSS_ABNORMAL_FAILURES`), decided server-side in `describe_subscription`.
+Shape-based ADD COLUMNs before `create_tables` (`_migrate_rss_backoff_v20`, the v14–v19
+position). Historical rows stay NULL, no backfill: a feed that was failing before the
+upgrade earns its first wait on its first post-upgrade failure. Reverses plan
+2026-08-22 §3; plan `kb/plans/2026-09-16-rss-failure-backoff.md`.
+
 ### v19 — 2026-09-02 · HN story summaries
 
 Adds `hn_stories.summary` / `summary_model` / `summary_attempts` — the `rss_entries`

@@ -1542,3 +1542,23 @@ Kit 322 全绿，`make build` 通过。
 - **未动**：截掉的三条 PLAUSIBLE（CSS 属性选择器按样式表 URL 解析、`fixupx.com` 链接被代理、
   iOS 票据过期按收到时间算）与清理类（未用的 `PuremdUnavailable`、重复的 `mode_override`、
   `_render_puremd` 不在 worker 线程）。
+
+## 2026-09-16 · RSS 坏源指数退避 + 「异常 feed」+ 手动 Refresh（schema v20）
+
+Plan `kb/plans/2026-09-16-rss-failure-backoff.md`，推翻 2026-08-22 §3。起因是生产发布验证：
+77 个 feed 里 11 个（halfrost 证书过期、extrawurst 域名失效、xdash 403、几个 404）每轮都失败，
+三周没人手动关——§3 押的回路太长，528 次/天白烧。
+
+- **后端**：`rss_feeds` 加 `checked_at` / `next_attempt_at`；`backoff_delay` = 轮询间隔 ×
+  2^(n-1)、封顶 7 天（第一次等待 = 轮询间隔，偶发失败零成本）；`poll_once` 跳过未到期的源，
+  轮次统计多 `deferred`；连败 ≥5（`CONDENSER_RSS_ABNORMAL_FAILURES`）服务端标 `abnormal`，
+  status 多 `feeds_abnormal`。`POST /api/sources/rss/subscriptions/refresh?url=` 清退避后立即抓
+  这一条（无视暂停），响应带结果与新状态；恢复 / 重订也清退避但不清 `error_count`。仍不自动
+  退订 / 暂停。
+- **前端**：订阅行照 Miniflux——异常行黄底 + 「异常」徽标、`last check / last seen / next check`
+  一行、`N errors – 错误原文` 一行、每行 Refresh；三档排序；状态行 `N 个异常 feed 已退避`。
+- **测试**：后端 +9（887 → 889 全绿，v19 的两个版本号钉子改成 ≥19 / 20），前端 +5（296 全绿），
+  tsc 通过。本地真网络走查 `tmp/2026-09-16-rss-backoff/`：halfrost Refresh 真触发证书过期
+  7 → 8 errors、next check 3 天；reorx.com Refresh 学到标题、新增 51 条。
+- **未做**：iOS 不渲染 feed 抓取状态，API 只增字段，零改动；生产上线后老坏源在第一次失败后才
+  开始退避（v20 前的行 `next_attempt_at` 为 NULL），一天内到位。
