@@ -355,3 +355,25 @@ SFSafariViewController（Mac 上是系统浏览器）；plan `kb/plans/2026-09-0
   「打开原文」→ 地址栏 condenser 域名、后端 `ticket → /p?_pt 302 → /p 200`；开关关 →
   原站；X 推文 → x.com。Mac Catalyst 是沙盒 app，`defaults write` 要写进
   `~/Library/Containers/com.reorx.condenser/Data/Library/Preferences/`，写到外面开关不生效。
+
+## X 长文全文（2026-09-16）
+
+Plan `kb/plans/2026-09-16-x-article-full-content.md` §5.2。长文推的列表载荷多了
+`article.has_content`，正文（服务端渲染好的 HTML）只在 `GET /api/x/tweets/{id}` 与收藏快照里
+（`XArticle.contentHTML`）。三处：
+
+- **`RssBlocks` → `ArticleBlocks`**（`ArticleBlock` / `ArticleImage` /
+  `articleBlocks(fromHTML:baseURL:)`）：这条管线本来就与源无关，`XDetailSheet` 里出现
+  `RssBlock` 太难读。函数与两张 sheet 的 `@State var articleBlocks` 同名，所以调用处写
+  `CondenserKit.articleBlocks(...)`。块渲染与 `ArticleImageView`（代理 + 全屏）挪进
+  `Condenser/UI/ArticleBlocksView.swift`，两张 sheet 共用。
+- **`XDetailSheet`** 照抄 `RssDetailSheet` 的三态机：快照的 `contentHTML` 优先，否则
+  `reader.api.xTweet(id:)`，解析一次存 state。与 RSS 的差别是正文比推文晚到（probe 轮次末尾
+  才抓）：`hasContent == false` 也会问一次，但只有 `hasContent == true` 才挂「正在加载全文…」/
+  「正文加载失败」。长文模式下高亮锚在文章块上；推文自身文本（实际总为空）只做可选文本。
+  分享图用取回的块画正文，没走完取正文时按钮禁用。
+- **`XCard`** 的文章卡在 `hasContent == true` 时带一行「查看全文」提示（整卡本来就点开详情）。
+
+已知：块管线沿用 `rssPlainText`，所以 `<h2>` 在 iOS 上是普通文本行（web 有小标题样式）——
+RSS 同样如此，不是这次引入的。模拟器走查截图 `tmp/2026-09-16-x-article-full-content/ios-*`
+（`detail/x/foryou/<id>` 路由在聚合流为空的库上要等满 10s 才生效，截图别早于 ~15s）。

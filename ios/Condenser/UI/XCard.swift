@@ -92,7 +92,7 @@ struct XCard: View {
                 TruncatableText(text: body, urlEntities: tweet.urls)
             }
             if let article = tweet.article, article.title != nil {
-                XArticleCard(article: article)
+                XArticleCard(article: article, showsFullTextHint: true)
             }
             XMediaView(media: tweet.displayedMedia, onOpenPhoto: onOpenPhoto)
             if let quote = tweet.quote {
@@ -167,9 +167,14 @@ struct XCard: View {
     }
 }
 
-/// 长文卡：bird 只给得到标题 + ~200 字符预览，正文拿不到（点进原推看）
+/// 长文卡：标题 + ~200 字符预览（timeline 查询只给得到这两样）。正文由 probe 另抓，
+/// 在详情里渲染（`XDetailSheet`），卡片上最多提示一句有正文
 struct XArticleCard: View {
     let article: XArticle
+    /// 卡片上用（2026-09-16）：服务端已有正文时在预览下挂一行「查看全文」。只是提示——
+    /// 卡片本身不展开（正文只在详情里出现一次，高亮只能有一份底本），点整张卡进详情。
+    /// 详情 sheet 的回落态也画这张卡，那里不挂
+    var showsFullTextHint = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -183,6 +188,11 @@ struct XArticleCard: View {
                     .readingFont(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(4)
+            }
+            if showsFullTextHint, article.hasContent == true {
+                Text("查看全文")
+                    .readingFont(.caption, weight: .medium)
+                    .foregroundStyle(.tint)
             }
         }
         .padding(10)

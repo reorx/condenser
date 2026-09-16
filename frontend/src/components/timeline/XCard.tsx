@@ -165,6 +165,18 @@ function XCardImpl({ item, observe, pendingKeys }: Props) {
               {tweet.article.previewText}
             </p>
           )}
+          {/* The body never expands in place: it renders once, in the pane, which
+              is where highlights live (RssCard's arrangement). Offered only once
+              the probe has fetched it — before that the preview is all there is. */}
+          {tweet.article.has_content && (
+            <button
+              type="button"
+              onClick={() => openPane(item)}
+              className="mt-1 text-xs font-medium text-sky-600 hover:underline dark:text-sky-400"
+            >
+              查看全文
+            </button>
+          )}
         </div>
       )}
 

@@ -51,12 +51,13 @@ VERSION_META_KEY = 'search_index_version'
 # startup. One integer rather than embedding.py's ``model_tag`` string, because
 # there is only ever one tokenizer in the process.
 #
-# It is also bumped when a **source joins the index** (4: RSS, 2026-08-20). The
+# It is also bumped when a **source joins the index** (4: RSS, 2026-08-20) or a
+# source's document grows a part (5: X Article full text, 2026-09-16). The
 # marker's real meaning is "a rebuild finished under this pipeline", and an
 # archive that predates the new source is missing from the index in exactly the
 # way a tokenizer change makes it wrong: silently, and only for the rows nobody
 # thinks to check.
-TOKENIZER_VERSION = 4
+TOKENIZER_VERSION = 5
 
 # CJK ideographs (including extension A), kana and hangul — the same ranges
 # ngram.py uses, so the project has one definition of "CJK" even though the two
@@ -433,9 +434,21 @@ def x_document(row: dict) -> str:
     title), a quoted tweet is rendered inside the card, and a t.co is rendered as
     its original link (v13 ``urls``) — so all of them are part of the tweet as the
     reader saw it, and all are searchable.
+
+    Since v21 that includes an article's **full text** once the probe fetched it —
+    xbird's own ``plainText``, so nothing is stripped from Markdown here. It is
+    the one part not on the card, and the reason is the plan's §1.4: a long-form
+    post is exactly what one searches for afterwards, and this index is local.
     """
     article = _json_dict(row.get('article'))
-    parts = [row.get('text'), article.get('title'), article.get('previewText'), row.get('quote_text')]
+    detail = _json_dict(row.get('article_detail'))
+    parts = [
+        row.get('text'),
+        article.get('title'),
+        article.get('previewText'),
+        detail.get('plainText'),
+        row.get('quote_text'),
+    ]
     parts += _url_parts(row.get('urls')) + _url_parts(row.get('quote_urls'))
     return ' '.join(p for p in parts if p)
 
@@ -476,7 +489,8 @@ def _x_documents(tweet_ids: list[int]) -> list[dict]:
 def _x_rows(tweet_ids: list[int]) -> list[dict]:
     placeholders = ','.join('?' for _ in tweet_ids)
     cur = tdb.db.execute_sql(
-        'SELECT t.id AS id, t.text AS text, t.article AS article, t.urls AS urls, '
+        'SELECT t.id AS id, t.text AS text, t.article AS article, t.article_detail AS article_detail, '
+        't.urls AS urls, '
         'q.text AS quote_text, q.urls AS quote_urls '
         'FROM x_tweets t LEFT JOIN x_tweets q ON q.id = t.quote_of '
         f'WHERE t.id IN ({placeholders})',

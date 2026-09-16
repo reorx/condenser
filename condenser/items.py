@@ -13,6 +13,7 @@ from typing import Optional, Union
 
 from pydantic import BaseModel
 
+from . import xarticle
 from .text import ELLIPSIS, excerpt
 
 SOURCES = ('telegram', 'hn', 'x', 'rss')
@@ -267,8 +268,40 @@ def _x_quote(row: dict) -> Optional[dict]:
     }
 
 
-def x_payload(row: dict) -> dict:
-    """The `x` payload from a provider row (or, idempotently, from a stored payload)."""
+def _x_article(row: dict, with_content: bool) -> Optional[dict]:
+    """The ``article`` block: the upstream pair plus two fields of ours (v21).
+
+    ``has_content`` is on every surface — the card offers 「查看全文」 on it.
+    ``content_html`` (the body, rendered by ``xarticle``) only rides under
+    ``with_content``: the detail endpoint and the saved snapshot. The camelCase
+    pair is upstream's, passed through like ``media[]``; the snake_case two are
+    computed here.
+
+    Idempotent over a stored payload, which is the trap: a replayed snapshot has
+    no ``has_article_content`` / ``article_detail`` columns, only the fields this
+    function wrote the first time — so those are read back instead of being reset.
+    """
+    article = _json_field(row.get('article'))
+    if not isinstance(article, dict):
+        return None
+    stored_html = article.get('content_html')
+    article = {k: v for k, v in article.items() if k != 'content_html'}
+    if 'has_article_content' in row:
+        article['has_content'] = bool(row['has_article_content'])
+    else:
+        article['has_content'] = bool(article.get('has_content'))
+    if with_content:
+        detail = _json_field(row.get('article_detail'))
+        article['content_html'] = xarticle.render_html(detail) if detail else stored_html
+    return article
+
+
+def x_payload(row: dict, with_content: bool = False) -> dict:
+    """The `x` payload from a provider row (or, idempotently, from a stored payload).
+
+    ``with_content`` adds the article body as HTML (see ``_x_article``) — the
+    ``rss_payload`` arrangement, for the same reason: a list does not carry bodies.
+    """
     feed = row.get('feed')
     return {
         'id': _sid(row['id']),
@@ -285,7 +318,7 @@ def x_payload(row: dict) -> dict:
         # that survives, and only for retweets (see plan, bird finding #5)
         'rt_of_handle': row.get('rt_of_handle'),
         'reply_to_id': _sid(row.get('reply_to_id')),
-        'article': _json_field(row.get('article')),
+        'article': _x_article(row, with_content),
         # v13: [{url, expanded_url, display_url, indices}] — the renderers replace a
         # matching t.co by exact string, never by indices (they misalign once the
         # RT prefix or an article title is stripped from the text)
@@ -303,6 +336,7 @@ def x_envelope(
     is_saved: bool,
     feedback: Optional[str] = None,
     feedback_reason: Optional[str] = None,
+    with_content: bool = False,
 ) -> dict:
     """Wrap a tweet row/payload into the item envelope.
 
@@ -320,7 +354,7 @@ def x_envelope(
     as a bare string, and turning it into an object would fail the whole page's
     decode on a binary the user installs separately from the server.
     """
-    payload = x_payload(row)
+    payload = x_payload(row, with_content=with_content)
     if payload['feed_kind'] == 'home':
         dt = payload['first_seen_at']
     else:

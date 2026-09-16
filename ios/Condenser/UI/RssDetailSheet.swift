@@ -17,7 +17,7 @@ struct RssDetailSheet: View {
     @State private var viewerItem: ImageViewerItem?
     /// 全文解析出的块序列。列表载荷只带约 500 字的摘录（2026-08-23），所以这张
     /// sheet 打开时单独取一次全文；nil = 还没到手，此时先显示摘录。
-    @State private var articleBlocks: [RssBlock]?
+    @State private var articleBlocks: [ArticleBlock]?
     /// 取全文这件事有没有走完。与 `articleBlocks != nil` 不是一回事：只发标题+链接
     /// 的 feed 取回来也是空正文，那是成功，不是还在转圈。
     @State private var articleLoaded = false
@@ -72,19 +72,7 @@ struct RssDetailSheet: View {
     @ViewBuilder
     private var articleSection: some View {
         if let blocks = articleBlocks, !blocks.isEmpty {
-            // 标注的 block 下标数的是**文本块序列**（图块不占号）：图块的增删
-            // 比文本块的重排常见得多，锚点提示能多活几次管线升级
-            let textIndices = Self.textBlockIndices(blocks)
-            ForEach(Array(blocks.enumerated()), id: \.offset) { index, block in
-                switch block {
-                case let .text(text):
-                    AnnotatedTextView(text: text, block: textIndices[index] ?? 0, model: annotations)
-                case let .image(image):
-                    RssArticleImageView(image: image) {
-                        openViewer(blocks, at: index)
-                    }
-                }
-            }
+            ArticleBlocksView(blocks: blocks, annotations: annotations, viewerItem: $viewerItem)
         } else if let text = entry.contentText {
             // 摘录回落态：全文没到手，定位没有底本，高亮入口禁用（model.blocks
             // 仍是 nil），已有标注也不上色——摘录里的范围是错的
@@ -111,54 +99,20 @@ struct RssDetailSheet: View {
         // blocks 先给 nil：全文到手前高亮入口保持禁用（摘录不是定位底本）
         annotations.configure(item: item, api: reader.api, blocks: nil, usesBlocks: true)
         if let content = entry.content {
-            articleBlocks = rssBlocks(fromHTML: content, baseURL: entry.articleURL)
+            articleBlocks = CondenserKit.articleBlocks(fromHTML: content, baseURL: entry.articleURL)
             articleLoaded = true
-            annotations.setBlocks(Self.textBlocks(articleBlocks))
+            annotations.setBlocks(ArticleBlocksView.textBlocks(articleBlocks))
             return
         }
         do {
             if let content = try await reader.api.rssEntry(id: entry.id).rss?.content {
-                articleBlocks = rssBlocks(fromHTML: content, baseURL: entry.articleURL)
-                annotations.setBlocks(Self.textBlocks(articleBlocks))
+                articleBlocks = CondenserKit.articleBlocks(fromHTML: content, baseURL: entry.articleURL)
+                annotations.setBlocks(ArticleBlocksView.textBlocks(articleBlocks))
             }
         } catch {
             articleFailed = true
         }
         articleLoaded = true
-    }
-
-    /// 文本块字符串序列（标注的定位底本；图块不在其中）
-    private static func textBlocks(_ blocks: [RssBlock]?) -> [String]? {
-        guard let blocks else { return nil }
-        let texts = blocks.compactMap { block -> String? in
-            if case let .text(text) = block { text } else { nil }
-        }
-        return texts.isEmpty ? nil : texts
-    }
-
-    /// 全块下标 → 文本块下标（图块不占号）
-    private static func textBlockIndices(_ blocks: [RssBlock]) -> [Int: Int] {
-        var mapping: [Int: Int] = [:]
-        var next = 0
-        for (index, block) in blocks.enumerated() {
-            if case .text = block {
-                mapping[index] = next
-                next += 1
-            }
-        }
-        return mapping
-    }
-
-    /// 查看器收全文所有图片并从点中的那张起，所以在里面能左右翻
-    private func openViewer(_ blocks: [RssBlock], at blockIndex: Int) {
-        let urls = blocks.compactMap { block -> String? in
-            guard case let .image(image) = block else { return nil }
-            return image.src
-        }
-        let start = blocks[..<blockIndex].reduce(0) { count, block in
-            if case .image = block { count + 1 } else { count }
-        }
-        viewerItem = ImageViewerItem(urls: urls, startIndex: start)
     }
 
     private var header: some View {
@@ -222,62 +176,5 @@ struct RssDetailSheet: View {
     private var shareCard: ShareCard? {
         guard articleLoaded else { return nil }
         return ShareCard.build(item: item, articleBlocks: articleBlocks)
-    }
-}
-
-/// 正文里的一张图：宽度撑满内容列，先按 `<img>` 属性的纵横比（缺省 4:3）画骨架
-/// 占位，加载完换成图片自己的天然比例淡入——属性在时两者一致不跳动，属性缺时
-/// 只在此刻调整一次。图片走 /api/preview/image 代理，读一篇文章不会让源站看到
-/// 读者的 IP（与推文媒体同一条规则）。
-private struct RssArticleImageView: View {
-    let image: RssImage
-    var onTap: () -> Void
-
-    @Environment(ReaderSession.self) private var reader
-
-    @State private var loaded: UIImage?
-    @State private var failed = false
-
-    var body: some View {
-        Group {
-            if let loaded {
-                Image(uiImage: loaded)
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-                    .transition(.opacity)
-            } else {
-                Color(.secondarySystemBackground)
-                    .aspectRatio(placeholderRatio, contentMode: .fit)
-                    .overlay {
-                        if failed {
-                            Image(systemName: "photo")
-                                .foregroundStyle(.tertiary)
-                        }
-                    }
-            }
-        }
-        .frame(maxWidth: .infinity)
-        .clipShape(RoundedRectangle(cornerRadius: 8))
-        .contentShape(RoundedRectangle(cornerRadius: 8))
-        .onTapGesture {
-            // 代理都取不回来的图，查看器里也只会失败一次，不如不开
-            if !failed { onTap() }
-        }
-        .task(id: image.src) {
-            failed = false
-            do {
-                let request = reader.api.authedRequest(reader.api.proxiedImageURL(image.src))
-                let result = try await ImageLoader.shared.load(request)
-                withAnimation(.easeIn(duration: 0.15)) { loaded = result }
-            } catch {
-                failed = true
-            }
-        }
-    }
-
-    private var placeholderRatio: CGFloat {
-        guard let width = image.width, let height = image.height, width > 0, height > 0
-        else { return 4 / 3 }
-        return CGFloat(width) / CGFloat(height)
     }
 }

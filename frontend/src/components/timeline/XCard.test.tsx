@@ -1,8 +1,16 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 
+vi.mock('@/lib/api', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/api')>();
+  return { ...actual, api: { ...actual.api, xTweet: vi.fn() } };
+});
+
+import { api } from '@/lib/api';
+import { ItemDetailPaneProvider, useItemDetailPane } from '@/lib/itemDetailPane';
 import { UnreadIndicatorProvider } from '@/lib/unreadIndicator';
 import type { TimelineItem, XTweet } from '@/lib/types';
 
@@ -41,6 +49,12 @@ function makeItem(over: Partial<XTweet> = {}, read = true): TimelineItem {
     is_saved: false,
     x,
   };
+}
+
+/** Reads the pane context so a test can see what a card opened. */
+function OpenProbe() {
+  const { open } = useItemDetailPane();
+  return <div data-testid="open-key">{open?.key ?? ''}</div>;
 }
 
 function wrap(ui: ReactNode) {
@@ -147,5 +161,27 @@ describe('XCard', () => {
     // the title appears once — inside the article card, not also as the body text
     expect(screen.getByText('Superrepos')).toBeInTheDocument();
     expect(screen.getByText('Different workloads…')).toBeInTheDocument();
+    // no body fetched yet, so nothing more to offer
+    expect(screen.queryByRole('button', { name: '查看全文' })).toBeNull();
+  });
+
+  it('offers 查看全文 once the body exists, and opens the pane instead of expanding', async () => {
+    // The body renders in the detail pane only — one rendering to highlight on,
+    // RssCard's arrangement. The card itself never fetches it.
+    wrap(
+      <ItemDetailPaneProvider>
+        <XCard
+          item={makeItem({
+            text: 'Superrepos',
+            article: { title: 'Superrepos', previewText: 'Different workloads…', has_content: true },
+          })}
+        />
+        <OpenProbe />
+      </ItemDetailPaneProvider>,
+    );
+    await userEvent.setup().click(screen.getByRole('button', { name: '查看全文' }));
+
+    expect(screen.getByTestId('open-key')).toHaveTextContent('x:2080526422410752155');
+    expect(api.xTweet).not.toHaveBeenCalled();
   });
 });

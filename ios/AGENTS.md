@@ -80,7 +80,7 @@ chip 行（手机上一行摆不下这些中文标签），只在「这一下确
   按空白处理（只有块级标签断行，否则句子会在中间硬折），`<pre>` 是唯一例外——整块
   摘出去、处理完再放回来，代码的缩进才留得住。
 - **正文里的图渲染成块**（2026-08-23，起因是 rss:677 在 iOS 上看不到图）：Kit 的
-  `RssBlocks.swift` 把全文 HTML 切成文本块 + 图片块（`rssBlocks(fromHTML:baseURL:)`）。
+  `ArticleBlocks.swift` 把全文 HTML 切成文本块 + 图片块（`articleBlocks(fromHTML:baseURL:)`；2026-09-16 从 `RssBlocks` 改名，X 长文共用，渲染在 `UI/ArticleBlocksView.swift`）。
   **不是另一套 HTML 处理**：先把 `<img>` 换成私用区占位符（U+E001，`<pre>` 用的
   U+E000 的下一个码位）、跑完 `rssPlainText` 既有管线、再按占位符切块，两条路径共享
   同一份规则——副产物是 `<script>` 里的 `<img>` 连占位符一起消失。src 相对路径按文章

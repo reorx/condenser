@@ -88,3 +88,34 @@ round per task at wake. On start `watch` runs one full round; `run` = one full r
 cron-style setups. Tests stub xbird + the server, so `uv run pytest` needs no X account
 (`test_xsource.py` = the adapter, `test_probe.py` = orchestration over a stubbed fetch).
 
+
+## The article step (2026-09-16)
+
+A round ends with **X Article bodies**. Timeline endpoints return a long-form post as
+its title + a ~200-char preview; the body exists only on TweetDetail
+(`client.get_tweet`, which xbird >= 1.3.0 maps with `article_details=True`). So after
+every feed is ingested, `runner._run_articles` asks the server for a **work order**
+(`GET /api/sources/x/articles/pending` — the server picks the tweets and caps the batch
+at `CONDENSER_X_ARTICLE_BATCH`, 5), reads each through `xsource.fetch_tweet_article`
+(1s apart, `ARTICLE_FETCH_DELAY` = the follow crawl's pacing) and pushes back
+`[{tweet_id, article}]` in one `POST /api/sources/x/articles`. Four rules:
+
+* **only the `article` block goes up, never the detail tweet.** A detail tweet's `text`
+  is title + the whole body; pushed through ingest it would overwrite the timeline's
+  title and every card would turn into three thousand characters.
+* **after the feeds, never before** — a new article is on this round's order only
+  because it is already stored when the probe asks.
+* **never fatal and outside the exit status**: a failed work-order request, a failed
+  fetch (per tweet, the `_run_feed` isolation) or a refused push is logged and dropped;
+  the server hands the tweet out again next round.
+* **no SeenCache.** The order is the server's own dedup: a tweet that got its body is
+  not on the next one, and attempts are charged at hand-out (3, so a tweet that breaks
+  the probe cannot come back forever). Both scheduler lanes run the step; the second
+  asking is harmless.
+
+Verified end to end on 2026-09-16 against a scratch server with the real X session: one
+article (3265 chars of Markdown, 3 images + cover) fetched, pushed, rendered and made
+searchable in 1.2s (`tmp/2026-09-16-x-article/e2e_probe.py`). Plan
+`kb/plans/2026-09-16-x-article-full-content.md`. ⚠️ Deploying it is a `launchctl
+kickstart` after `uv sync` in `probe/` (the lock moved xbird 1.2.0 → 1.3.0); until then
+the running probe never asks, and the work order just stays unclaimed.

@@ -5,6 +5,10 @@ import CondenserKit
 /// 判定证据 + 反馈 + 打开原推/主页。
 /// 判定这一段是「先打标不隐藏」的配套：说得出「因为它像你标过的这几条」，
 /// 误判才纠错得了——纠错的那一下点击又回流成训练样本。
+///
+/// 长文推（2026-09-16）的正文区换成文章：标题 + 服务端渲染好的全文块（文本可高亮、
+/// 图片撑满列、点开全屏），与 `RssDetailSheet` 同一套三态——列表载荷只带
+/// `has_content`，打开时 `GET /api/x/tweets/{id}` 取一次，到手前停在标题 + 预览上。
 struct XDetailSheet: View {
     let item: TimelineItem
     let tweet: XTweet
@@ -14,18 +18,31 @@ struct XDetailSheet: View {
 
     @Environment(ReaderSession.self) private var reader
     @State private var safariItem: SafariItem?
+    @State private var viewerItem: ImageViewerItem?
     @State private var annotations = ItemAnnotationsModel()
+    /// 长文正文解析出的块序列：`loadArticle` 里算一次存进 state，不放进 body
+    /// （一整篇的正则，2026-08-23 RSS 卡顿的教训）。nil = 还没到手，或这条就没有正文
+    @State private var articleBlocks: [ArticleBlock]?
+    /// 取正文这件事走完了没有。与 `articleBlocks != nil` 不是一回事：服务端还没抓到
+    /// 正文时取回来是 null，那是成功，不是还在转圈
+    @State private var articleLoaded = false
+    @State private var articleFailed = false
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
                 header
-                if let body = tweet.bodyText {
+                if isArticle {
+                    // 长文推的 text 就是标题，bodyText 实际总为 nil；万一上游改了、带出一句
+                    // 推文自身的话，照样显示但不接标注——标注的定位底本是文章块
+                    if let body = tweet.bodyText {
+                        SelectableTextView(text: body, urlEntities: tweet.urls)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    articleSection
+                } else if let body = tweet.bodyText {
                     // 引用推卡（XQuoteCard）刻意不接标注——那是别人的条目
                     AnnotatedTextView(text: body, urlEntities: tweet.urls, model: annotations)
-                }
-                if let article = tweet.article, article.title != nil {
-                    XArticleCard(article: article)
                 }
                 XMediaView(media: tweet.displayedMedia)
                 if let quote = tweet.quote {
@@ -45,12 +62,16 @@ struct XDetailSheet: View {
             .padding(16)
         }
         .readingFontScale()
-        .task {
-            // 标注锚在 t.co 替换后的屏幕字符串上（xDisplayedText 与 linkifiedNS
-            // 共享同一条替换规则）
-            annotations.configure(
-                item: item, api: reader.api,
-                blocks: tweet.bodyText.map { [xDisplayedText($0, urlEntities: tweet.urls)] })
+        .task(id: tweet.id) {
+            if isArticle {
+                await loadArticle()
+            } else {
+                // 标注锚在 t.co 替换后的屏幕字符串上（xDisplayedText 与 linkifiedNS
+                // 共享同一条替换规则）
+                annotations.configure(
+                    item: item, api: reader.api,
+                    blocks: tweet.bodyText.map { [xDisplayedText($0, urlEntities: tweet.urls)] })
+            }
         }
         .detailSheetPresentation()
         .externalLinks(safari: $safariItem)
@@ -58,6 +79,69 @@ struct XDetailSheet: View {
             SafariView(url: item.url)
                 .ignoresSafeArea()
         }
+        .fullScreenCover(item: $viewerItem) { item in
+            ImageViewerScreen(item: item)
+        }
+    }
+
+    private var isArticle: Bool { tweet.article?.title != nil }
+
+    /// 长文正文区。正文到手：标题 + 全文块；没到手：标题 + 预览卡（卡片同款），
+    /// 服务端说有正文（`hasContent`）时才挂「正在加载全文…」/「正文加载失败」——
+    /// 没正文的长文也会去问一次（列表加载之后 probe 可能刚抓到），但不对着一篇
+    /// 大概率没有正文的文章转圈。
+    @ViewBuilder
+    private var articleSection: some View {
+        if let blocks = articleBlocks, !blocks.isEmpty {
+            if let title = tweet.article?.title {
+                Text(title)
+                    .readingFont(.title3, weight: .semibold)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            ArticleBlocksView(blocks: blocks, annotations: annotations, viewerItem: $viewerItem)
+        } else if let article = tweet.article {
+            XArticleCard(article: article)
+            if article.hasContent == true {
+                if !articleLoaded {
+                    HStack(spacing: 6) {
+                        ProgressView().controlSize(.small)
+                        Text("正在加载全文…")
+                    }
+                    .readingFont(.caption)
+                    .foregroundStyle(.secondary)
+                } else if articleFailed {
+                    // 不弹错：退回的标题 + 预览本来就在屏幕上，是这条推文的真实样子
+                    Text("正文加载失败")
+                        .readingFont(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+
+    /// 收藏快照里已经带正文的直接解析，不必再问一次网络。X 的图片 URL 全是绝对的
+    /// pbs.twimg.com，所以 baseURL 给 nil（显示时统一过 /api/preview/image 代理）。
+    private func loadArticle() async {
+        // blocks 先给 nil：正文到手前高亮入口保持禁用（预览不是定位底本）
+        annotations.configure(item: item, api: reader.api, blocks: nil, usesBlocks: true)
+        if let html = tweet.article?.contentHTML {
+            applyArticle(html)
+            articleLoaded = true
+            return
+        }
+        do {
+            if let html = try await reader.api.xTweet(id: tweet.id).x?.article?.contentHTML {
+                applyArticle(html)
+            }
+        } catch {
+            articleFailed = true
+        }
+        articleLoaded = true
+    }
+
+    private func applyArticle(_ html: String) {
+        articleBlocks = CondenserKit.articleBlocks(fromHTML: html, baseURL: nil)
+        annotations.setBlocks(ArticleBlocksView.textBlocks(articleBlocks))
     }
 
     /// sheet 自己的按钮不走 openURL 环境（那是给子树用的，读到的是外层列表的
@@ -211,8 +295,16 @@ struct XDetailSheet: View {
                 }
                 .buttonStyle(.bordered)
             }
-            ShareImageButton(card: ShareCard.build(item: item))
+            ShareImageButton(card: shareCard)
         }
+    }
+
+    /// 长文推的分享图用这张 sheet 取回来的正文（RSS 同理）：没走完取正文时给 nil，
+    /// 按钮画出来但按不动——按下去拿到一张只有预览的图比多等一秒糟；没有正文或取失败
+    /// 则退回标题 + 预览的链接卡。普通推文不等任何东西。
+    private var shareCard: ShareCard? {
+        if isArticle, !articleLoaded { return nil }
+        return ShareCard.build(item: item, articleBlocks: articleBlocks)
     }
 
     private func verdictLabel(_ verdict: XVerdict) -> String {

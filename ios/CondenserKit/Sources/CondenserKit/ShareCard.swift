@@ -207,13 +207,14 @@ public extension ShareCard {
     ///
     /// - Parameters:
     ///   - channelTitle: TG 的频道名（订阅表 join 出来的，Kit 自己不知道）
-    ///   - articleBlocks: RSS 详情取回的全文块。**RSS 必须用它**：列表载荷只有约
+    ///   - articleBlocks: 详情取回的全文块。**RSS 必须用它**：列表载荷只有约
     ///     500 字的摘录，拿摘录出图等于把一篇文章截在半句话上。没有时才退回摘录
-    ///     ——取全文失败的条目仍然分享得出去，只是短。
+    ///     ——取全文失败的条目仍然分享得出去，只是短。X 长文同理（2026-09-16）：
+    ///     有正文块就画正文，没有才退回标题 + 预览的链接卡。
     static func build(
         item: TimelineItem,
         channelTitle: String? = nil,
-        articleBlocks: [RssBlock]? = nil
+        articleBlocks: [ArticleBlock]? = nil
     ) -> ShareCard? {
         if let message = item.telegram {
             return telegram(item: item, message: message, channelTitle: channelTitle)
@@ -222,7 +223,7 @@ public extension ShareCard {
             return hn(item: item, story: story)
         }
         if let tweet = item.x {
-            return x(item: item, tweet: tweet)
+            return x(item: item, tweet: tweet, articleBlocks: articleBlocks)
         }
         if let entry = item.rss {
             return rss(item: item, entry: entry, articleBlocks: articleBlocks)
@@ -314,15 +315,21 @@ public extension ShareCard {
 
     /// 抽屉里有而这里没有的：判定区、反馈区、info 区。三样都是**读者与机器之间**的
     /// 私事——判定是机器猜你的口味，反馈是你的态度，都不该跟着推文发给别人。
-    private static func x(item: TimelineItem, tweet: XTweet) -> ShareCard {
+    private static func x(item: TimelineItem, tweet: XTweet, articleBlocks: [ArticleBlock]?) -> ShareCard {
         var blocks: [ShareBlock] = []
+        // 长文正文到手了：标题升成大标题（与抽屉同样子），正文块照 RSS 画；
+        // 没到手（或这条根本没有正文）才画链接卡，不假装有正文
+        let article = tweet.article?.title != nil ? tweet.article : nil
+        let content = article != nil ? articleBlocks.flatMap { $0.isEmpty ? nil : $0 } : nil
         if let handle = tweet.rtOfHandle {
             blocks.append(.note("转推自 @\(handle)"))
         }
         if let body = tweet.bodyText {
             blocks.append(.text(body))
         }
-        if let article = tweet.article, article.title != nil {
+        if let content {
+            blocks.append(contentsOf: shareBlocks(content))
+        } else if let article {
             blocks.append(.linkCard(ShareLinkCard(
                 site: nil, title: article.title, description: article.previewText, image: nil)))
         }
@@ -357,6 +364,7 @@ public extension ShareCard {
             } ?? .glyph(.x),
             title: tweet.displayName,
             subtitle: tweet.authorHandle.map { "@\($0) · \(stamp)" } ?? stamp,
+            headline: content != nil ? article?.title : nil,
             blocks: blocks,
             footnote: stamp)
     }
@@ -371,22 +379,14 @@ public extension ShareCard {
     // MARK: RSS
 
     private static func rss(
-        item: TimelineItem, entry: RssEntry, articleBlocks: [RssBlock]?
+        item: TimelineItem, entry: RssEntry, articleBlocks: [ArticleBlock]?
     ) -> ShareCard {
         var blocks: [ShareBlock] = []
         if let summary = entry.displaySummary {
             blocks.append(.summary(summary))
         }
         if let article = articleBlocks, !article.isEmpty {
-            for block in article {
-                switch block {
-                case let .text(text):
-                    blocks.append(.text(text))
-                case let .image(image):
-                    blocks.append(.image(ShareImageRef(
-                        .proxied(image.src), width: image.width, height: image.height)))
-                }
-            }
+            blocks.append(contentsOf: shareBlocks(article))
         } else if let text = entry.contentText {
             blocks.append(.text(text))
         }
@@ -402,6 +402,18 @@ public extension ShareCard {
     }
 
     // MARK: 小工具
+
+    /// 文章全文块 → 分享块（RSS 与 X 长文共用）：文本照抄，图片走代理带上尺寸
+    private static func shareBlocks(_ article: [ArticleBlock]) -> [ShareBlock] {
+        article.map { block in
+            switch block {
+            case let .text(text):
+                .text(text)
+            case let .image(image):
+                .image(ShareImageRef(.proxied(image.src), width: image.width, height: image.height))
+            }
+        }
+    }
 
     private static func channelAvatar(id: Int?, name: String) -> ShareAvatar {
         guard let id else { return .letter(initial: initial(name), seed: seed(name)) }

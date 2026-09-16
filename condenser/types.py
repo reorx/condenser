@@ -85,6 +85,19 @@ class XIngestBody(BaseModel):
     tweets: list[Any]
 
 
+class XArticlesBody(BaseModel):
+    """The probe's article push: ``[{tweet_id, article}]``, the ``article`` block of
+    each detail tweet and nothing else of it (plan 2026-09-16 §2).
+
+    Untyped past the list for ``XIngestBody``'s reason — xbird's output is not a
+    contract to validate at the door — and each entry is judged on its own
+    (``x.store_article_details``), so one malformed entry skips instead of
+    rejecting the batch.
+    """
+
+    articles: list[Any]
+
+
 class XFollowingBody(BaseModel):
     """One follow-list sync: bird's ``following --all`` user objects, untouched.
 

@@ -1562,3 +1562,37 @@ Plan `kb/plans/2026-09-16-rss-failure-backoff.md`，推翻 2026-08-22 §3。起�
   7 → 8 errors、next check 3 天；reorx.com Refresh 学到标题、新增 51 条。
 - **未做**：iOS 不渲染 feed 抓取状态，API 只增字段，零改动；生产上线后老坏源在第一次失败后才
   开始退避（v20 前的行 `next_attempt_at` 为 NULL），一天内到位。
+
+## 2026-09-16 · X 长文全文（schema v21）
+
+Plan `kb/plans/2026-09-16-x-article-full-content.md`。长文推此前只有标题 + ~200 字预览：timeline
+查询不带 `fieldToggles`，正文只有 TweetDetail 有。上游 xbird 1.3.0（`8113c60`）先补了
+`TweetArticle` 的六个详情字段。
+
+- **后端**：`x_tweets.article_detail` / `article_attempts`（v21）。probe 轮次末尾的**工作单**
+  `GET /api/sources/x/articles/pending`（首见 7 天内、发放即扣次数、上限 3 次、每轮 5 条）→
+  `POST /api/sources/x/articles` 只收 `article` 块（detail 路径的 `text` 是标题 + 全文，写进去
+  卡片当场变三千字）。新模块 `xarticle.py`：markdown-it-py（已是依赖，计划里的 mistune 没引入）
+  渲染、裸 HTML 转义、孤立图片 → `<figure>` + 按 URL 注入宽高、封面在前。列表载荷只带
+  `article.has_content`，`GET /api/x/tweets/{id}` 带 `content_html`，收藏快照也带（retention
+  会删推文）。全文 `plainText` 进 FTS（`TOKENIZER_VERSION` 5），`judge_text` 一字未改。
+- **probe**：`_run_articles`，单条失败 / 工作单失败 / 推送失败都不沉轮次，不进 SeenCache，
+  1s 节流。
+- **web**：卡片「查看全文」→ 详情面板；`useXArticle`（无正文的回答不永久缓存）；
+  `proxyImages` 让配图也走 `/api/preview/image`；`ARTICLE_PROSE` 补了标题 / 列表 / 引用 /
+  figure 样式（RSS 同样受益）。
+- **iOS**：`RssBlocks` → `ArticleBlocks` 改名、`XDetailSheet` 三态加载、分享图画正文、卡片提示。
+- **测试**：后端 +42（931 全绿：渲染器 15 + 行为 27，另把 v20 版本号钉子改成 21），probe +12
+  （57），web +9（305），iOS Kit +5（336），`tsc -b` 与 iOS / Catalyst 构建通过。迁移在 v10、
+  v19 两份真实库副本上验证（integrity ok、迁移后可写，工作单查询 0.4ms）。
+- **真实端到端**（临时库 + 真 X 会话，`tmp/2026-09-16-x-article/`）：样本长文工作单 → TweetDetail
+  → 推回 1.2s；列表 `has_content` 翻 true 且 `text` 仍是标题；详情 7 个 h2 / 4 个 figure /
+  2 个代码块；正文独有短语「明码标价」可搜到；工作单随即清空。web 面板与 iOS sheet / 分享图
+  截图在 `tmp/2026-09-16-x-article-full-content/`。
+- **未部署**。上线顺序：push master（服务端先有端点，老 probe 不问就不发生任何事）→ 探针机
+  `cd probe && uv sync` + `launchctl kickstart -k gui/$(id -u)/com.condenser.probe` → iOS 随下个
+  build。老 iOS 客户端解 `XArticle` 忽略新字段，零影响。
+- **遗留**（计划 §9）：表格被 xbird 拆成空行隔开的 `| a | b |`；推文自身那句话取不到；行内样式
+  丢失；引用长文的 quote 卡看不出是长文；7 天前的存量永远只有预览。另记两条：iOS 块管线不画
+  小标题样式（RSS 既有）；`make build-mac MAC_SIGN=adhoc` 在编译前就过不了 provisioning 检查
+  （既有问题，本次用 `CODE_SIGNING_ALLOWED=NO` 绕过验证编译）。

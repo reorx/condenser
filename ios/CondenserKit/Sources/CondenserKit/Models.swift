@@ -345,14 +345,33 @@ public struct XMetrics: Codable, Equatable, Sendable {
     }
 }
 
-/// X 长文：bird 只给得到标题 + ~200 字符预览，正文拿不到
+/// X 长文。timeline 查询只给标题 + ~200 字符预览；正文由 probe 在轮次末尾经
+/// TweetDetail 补抓（2026-09-16，schema v21），列表只说「有没有」（`hasContent`），
+/// 正文是服务端从 Markdown 渲染好的 HTML（`contentHTML`），只有
+/// `GET /api/x/tweets/{id}` 与收藏快照才带——RSS 列表摘录 / 详情全文的同一种拆分。
+/// camelCase 的 `previewText` 是上游原样，snake_case 的两个是服务端算的。
 public struct XArticle: Codable, Equatable, Sendable {
     public let title: String?
     public let previewText: String?
+    /// 服务端已存有正文。旧服务端 / 改版前的收藏快照没有这个字段 → nil，按没有处理
+    public let hasContent: Bool?
+    /// 渲染好的正文 HTML：封面 `<figure>` 打头，独占一段的图是 `<figure>` +
+    /// `<figcaption>`，图片带 width/height、URL 是绝对的 pbs.twimg.com。
+    /// 列表载荷里永远没有；详情接口里没有正文时是 null
+    public let contentHTML: String?
 
-    public init(title: String?, previewText: String?) {
+    enum CodingKeys: String, CodingKey {
+        case title
+        case previewText
+        case hasContent = "has_content"
+        case contentHTML = "content_html"
+    }
+
+    public init(title: String?, previewText: String?, hasContent: Bool? = nil, contentHTML: String? = nil) {
         self.title = title
         self.previewText = previewText
+        self.hasContent = hasContent
+        self.contentHTML = contentHTML
     }
 }
 

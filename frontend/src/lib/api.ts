@@ -175,6 +175,9 @@ export const api = {
       body: JSON.stringify({ config }),
     }),
   xUnsubscribe: (channelId: string) => del<{ ok: true }>(`/api/sources/x/subscriptions/${channelId}`),
+  /** One tweet with its **article body** (`x.article.content_html`) — `rssEntry`'s
+   *  counterpart, in the ordinary item envelope. */
+  xTweet: (id: string) => request<TimelineItem>(`/api/x/tweets/${id}`),
 
   // ---- rss source ----
   // This source keys on the feed URL, which carries its own slashes and query

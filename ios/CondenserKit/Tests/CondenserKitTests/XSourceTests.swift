@@ -64,6 +64,46 @@ struct XModelsDecodingTests {
         #expect(article.title?.isEmpty == false)
     }
 
+    @Test("长文列表载荷：旧快照没有 has_content → nil；新服务端给出 true/false，永远没有 content_html")
+    func articleListFlag() throws {
+        let old = try #require(try decodeShapes()["article"]?.x?.article)
+        #expect(old.hasContent == nil && old.contentHTML == nil)
+
+        let shapes = try decoder.decode([String: TimelineItem].self, from: loadXFixture("x_article"))
+        let before = try #require(shapes["list_before_body"]?.x?.article)
+        #expect(before.hasContent == false && before.contentHTML == nil)
+        let listed = try #require(shapes["list"]?.x?.article)
+        #expect(listed.hasContent == true && listed.contentHTML == nil)
+    }
+
+    @Test("x_article.json 详情（真实后端输出）：content_html 切得出封面图 + 带尺寸的配图 + 文本块")
+    func articleDetail() throws {
+        let shapes = try decoder.decode([String: TimelineItem].self, from: loadXFixture("x_article"))
+        let item = try #require(shapes["detail"])
+        let article = try #require(item.x?.article)
+        #expect(item.key == "x:\(item.x!.id)")
+        #expect(article.hasContent == true)
+        // detail 路径的 text 是「标题 + 全文」——服务端只推回 article 块，text 仍是标题
+        #expect(item.x?.text == article.title)
+        let html = try #require(article.contentHTML)
+        let blocks = articleBlocks(fromHTML: html, baseURL: nil)
+        let images = blocks.compactMap { block -> ArticleImage? in
+            if case let .image(image) = block { return image }
+            return nil
+        }
+        #expect(images.count == 4, "封面 + 正文三张")
+        #expect(images.first == ArticleImage(
+            src: "https://pbs.twimg.com/media/HRXe6lhW4AADNow.jpg", width: 1600, height: 900))
+        #expect(images.allSatisfy { $0.src.hasPrefix("https://pbs.twimg.com/") && $0.width != nil })
+        if case .image = blocks.first {} else { Issue.record("封面图打头") }
+        let text = blocks.compactMap { block -> String? in
+            if case let .text(text) = block { return text }
+            return nil
+        }.joined(separator: "\n")
+        #expect(text.contains("浅色排版很好看"), "图注落进文本块")
+        #expect(!text.contains("<"), "没有残留标签")
+    }
+
     @Test("媒体：type + 宽高 + 预览图（前端据此预留占位）")
     func media() throws {
         let item = try #require(try decodeShapes()["media"])

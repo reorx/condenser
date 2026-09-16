@@ -134,6 +134,7 @@ _COLS = """
     t.author_name AS author_name, t.text AS text, t.created_at AS created_at,
     t.media AS media, t.metrics AS metrics,
     t.rt_of_handle AS rt_of_handle, t.reply_to_id AS reply_to_id, t.article AS article, t.urls AS urls,
+    (t.article_detail IS NOT NULL) AS has_article_content,
     q.id AS q_id, q.author_handle AS q_author_handle, q.author_name AS q_author_name,
     q.text AS q_text, q.created_at AS q_created_at, q.media AS q_media, q.metrics AS q_metrics,
     q.urls AS q_urls,
@@ -141,6 +142,13 @@ _COLS = """
     CASE WHEN si.is_saved = 1 THEN 1 ELSE 0 END AS is_saved,
     fb.verdict AS feedback, fb.reason AS feedback_reason
 """
+
+# The article body (v21) is not a list column: a long-form post runs to thousands
+# of characters, and a timeline page has no use for it. The list reads only whether
+# one exists (``has_article_content`` above); the body is read by the callers that
+# are about one tweet — the detail endpoint and the saved snapshot — through
+# ``rows_by_id(..., with_content=True)``. ``sources/rss.py``'s two-select split.
+_COLS_FULL = _COLS + ', t.article_detail AS article_detail'
 
 _JOINS = """
     JOIN x_tweets t ON t.id = v.tweet_id
@@ -270,9 +278,10 @@ def _fetch(
     limit: int,
     dedup: bool = True,
     sort_at: str = SORT_AT_SQL,
+    cols: str = _COLS,
 ) -> list[dict]:
     order = 'DESC' if descending else 'ASC'
-    sql = _select(_COLS, scope_where, where, f' ORDER BY v.sort_at {order}, v.tweet_id {order} LIMIT ?', dedup, sort_at)
+    sql = _select(cols, scope_where, where, f' ORDER BY v.sort_at {order}, v.tweet_id {order} LIMIT ?', dedup, sort_at)
     cur = tdb.db.execute_sql(sql, (*scope_params, *params, limit))
     columns = [c[0] for c in cur.description]
     return [dict(zip(columns, row)) for row in cur.fetchall()]
@@ -433,22 +442,31 @@ def bulk_read_scope(feed: Optional[str], include_foryou: bool) -> tuple[list[str
     return channels, params, where
 
 
-def rows_by_id(tweet_ids: list[int]) -> list[dict]:
+def rows_by_id(tweet_ids: list[int], with_content: bool = False) -> list[dict]:
     """Timeline rows for specific tweets, one per tweet under the dedup priority.
 
     Not feed-scoped, unlike every query above it: the callers are the saved-record
-    snapshot and the search assembler, and both must still work for a feed that
-    was since paused or unsubscribed.
+    snapshot, the detail endpoint and the search assembler, and all must still work
+    for a feed that was since paused or unsubscribed. ``with_content`` adds the
+    article body (``_COLS_FULL``) — search renders a list and leaves it off.
     """
     if not tweet_ids:
         return []
     placeholders = ','.join('?' for _ in tweet_ids)
-    return _fetch([f'f.tweet_id IN ({placeholders})'], list(tweet_ids), ['v.dedup_rank = 1'], [], True, len(tweet_ids))
+    return _fetch(
+        [f'f.tweet_id IN ({placeholders})'],
+        list(tweet_ids),
+        ['v.dedup_rank = 1'],
+        [],
+        True,
+        len(tweet_ids),
+        cols=_COLS_FULL if with_content else _COLS,
+    )
 
 
-def get_row(tweet_id: int) -> Optional[dict]:
-    """One tweet as a timeline row (for the saved-record snapshot), or None."""
-    rows = rows_by_id([tweet_id])
+def get_row(tweet_id: int, with_content: bool = False) -> Optional[dict]:
+    """One tweet as a timeline row (snapshot, detail endpoint, forward), or None."""
+    rows = rows_by_id([tweet_id], with_content=with_content)
     return rows[0] if rows else None
 
 

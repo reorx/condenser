@@ -90,6 +90,13 @@ public final class APIClient: @unchecked Sendable {
         try await get("/api/rss/entries/\(id)")
     }
 
+    /// 一条推文的**详情** envelope：`x.article` 多一个渲染好的 `content_html`
+    /// （2026-09-16）。列表只带 `has_content`，长文正文动辄几千字，谁打开谁去取。
+    /// 与 `rssEntry` 一样不进 `CondenserAPI` 协议——只有详情 sheet 用。
+    public func xTweet(id: String) async throws -> TimelineItem {
+        try await get("/api/x/tweets/\(id)")
+    }
+
     public func sources() async throws -> [SourceGroup] {
         try await get("/api/sources")
     }

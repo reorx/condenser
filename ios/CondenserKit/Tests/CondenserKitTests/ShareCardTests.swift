@@ -245,7 +245,7 @@ struct XShareCardTests {
         #expect(card.allText.contains("RT @\(handle):") == false, "前缀不重复出现在正文里")
     }
 
-    @Test("长文推：bird 只给标题 + 预览，按链接卡画，不假装有正文")
+    @Test("长文推：正文没到手时只有标题 + 预览，按链接卡画，不假装有正文")
     func article() throws {
         let item = try #require(try shapes("x_shapes")["article"])
         let article = try #require(item.x?.article)
@@ -256,6 +256,28 @@ struct XShareCardTests {
         }.first)
         #expect(block.title == article.title)
         #expect(block.description == article.previewText)
+        #expect(card.headline == nil)
+    }
+
+    @Test("长文推：详情取回的正文进图——标题作大标题，文本块与图片块照 RSS 的样子，不再画链接卡")
+    func articleWithContent() throws {
+        let item = try #require(try shapes("x_article")["detail"])
+        let article = try #require(item.x?.article)
+        let blocks = articleBlocks(fromHTML: try #require(article.contentHTML), baseURL: nil)
+        let card = try #require(ShareCard.build(item: item, articleBlocks: blocks))
+
+        #expect(card.headline == article.title)
+        #expect(!card.blocks.contains { if case .linkCard = $0 { true } else { false } })
+        let images = card.blocks.compactMap { block -> ShareImageRef? in
+            if case let .image(ref) = block { return ref }
+            return nil
+        }
+        #expect(images.first == ShareImageRef(
+            .proxied("https://pbs.twimg.com/media/HRXe6lhW4AADNow.jpg"), width: 1600, height: 900))
+        #expect(images.count == 4)
+        #expect(card.allText.contains("浅色排版很好看"))
+        // 作者身份仍在头部：长文也是某个人发的推
+        #expect(card.title == item.x?.displayName)
     }
 }
 
@@ -282,7 +304,7 @@ struct RssShareCardTests {
     @Test("正文用详情取回的全文，不是列表里那 500 字摘录")
     func usesTheArticleNotTheExcerpt() throws {
         let entry = entry(excerpt: "开头 500 字…")
-        let blocks: [RssBlock] = [.text("第一段"), .image(RssImage(src: "https://example.com/a.png")),
+        let blocks: [ArticleBlock] = [.text("第一段"), .image(ArticleImage(src: "https://example.com/a.png")),
                                   .text("第二段")]
         let card = try #require(ShareCard.build(item: item(entry), articleBlocks: blocks))
         #expect(card.blockKinds == ["text", "image", "text"])
@@ -319,7 +341,7 @@ struct RssShareCardTests {
         let full = try JSONDecoder.condenserAPI
             .decode(TimelineItem.self, from: loadShareFixture("rss_article"))
         let entry = try #require(full.rss)
-        let blocks = rssBlocks(fromHTML: try #require(entry.content), baseURL: entry.articleURL)
+        let blocks = articleBlocks(fromHTML: try #require(entry.content), baseURL: entry.articleURL)
         let card = try #require(ShareCard.build(item: full, articleBlocks: blocks))
         #expect(card.blockKinds.contains("text"))
         #expect(card.allText.count > (entry.contentExcerpt?.count ?? 0))
@@ -355,7 +377,7 @@ struct ShareCardImageTests {
 
     @Test("同一张图出现两次只预载一次")
     func deduplicates() throws {
-        let image = RssImage(src: "https://example.com/same.png")
+        let image = ArticleImage(src: "https://example.com/same.png")
         let entry = RssEntry(
             id: 1, guid: nil, feedURL: "https://e.com/f", feedTitle: nil, title: "t",
             link: nil, author: nil, contentExcerpt: nil, content: nil, summary: nil,
@@ -379,7 +401,7 @@ struct ShareCardImageTests {
             source: SourceID.rss, key: "rss:1", datetime: Date(timeIntervalSince1970: 0),
             isRead: false, isSaved: false, rss: entry)
         let many = (0..<(ShareCard.maxImages + 10)).map {
-            RssBlock.image(RssImage(src: "https://example.com/\($0).png"))
+            ArticleBlock.image(ArticleImage(src: "https://example.com/\($0).png"))
         }
         let card = try #require(ShareCard.build(item: item, articleBlocks: many))
         #expect(card.blocks.count == many.count, "全文一张不少地画")

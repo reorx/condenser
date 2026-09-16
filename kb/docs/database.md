@@ -12,7 +12,7 @@ tags:
 One SQLite file, shared between [telememo](https://pypi.org/project/telememo/) (a PyPI
 dependency) and condenser. condenser's peewee models bind to telememo's `db` instance, so
 everything runs on one connection. `SCHEMA_VERSION` lives in `condenser/db.py` (currently
-**19**).
+**21**).
 
 ## Table ownership
 
@@ -76,6 +76,29 @@ Virtual tables (`x_vec_labeled`, `search_index`) are created with raw SQL in `in
   SQL names what is *intentionally preserved*, not only what is removed.
 
 ## Schema changelog (newest first)
+
+### v21 — 2026-09-16 · X Article full text
+
+Adds `x_tweets.article_detail` (TEXT, JSON of xbird >= 1.3.0's six detail keys —
+`content` Markdown / `plainText` / `coverMedia` / `media[]` / `publishedAt` /
+`modifiedAt`; **not** `title` / `previewText`) and `x_tweets.article_attempts`
+(INTEGER NOT NULL DEFAULT 0, work-order hand-outs). `article` keeps its timeline pair
+untouched — the verdict's `judge_text`, `search.x_document` and both cards read it as
+"title + preview", so the body is opted into per reader, never slipped in under them.
+Neither column is in `ParsedTweet.row()`, so `upsert_x_tweet`'s whole-row update on a
+re-push leaves both alone (the `is_filtered` extension-column contract).
+
+Written by the probe's end-of-round step: `db.claim_x_article_backlog` (read-then-write
+→ `IMMEDIATE`) hands out article tweets with no body whose **first** sighting across
+feeds is inside `CONDENSER_X_ARTICLE_BACKFILL_DAYS`, requires a feed row (an article
+seen only inside a quote has no card), and charges `article_attempts` at hand-out;
+`db.set_x_article_details` writes `article_detail` and nothing else. Shape-based ADD
+COLUMNs before `create_tables` (`_migrate_x_article_v21`, the v14–v20 position),
+verified on copies of a v10 and a v19 archive (integrity ok, table writable after).
+No backfill — historical rows are NULL = no body, and the work order only reaches back
+the window. `search.TOKENIZER_VERSION` 4 → 5 for the new document part (a rebuild at
+the first boot, finding nothing new — every later body is indexed on push). Plan
+`kb/plans/2026-09-16-x-article-full-content.md`.
 
 ### v20 — 2026-09-16 · RSS failure backoff
 

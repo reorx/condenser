@@ -8,9 +8,12 @@ rather than a hand-written imitation of it.
 
 import pytest
 from xbird.types import (
+    ArticleMedia,
     CurrentUser,
+    GetTweetSuccess,
     CurrentUserSuccess,
     OperationFailure,
+    TweetArticle,
     TweetAuthor,
     TweetData,
     TweetsPageFailure,
@@ -75,6 +78,9 @@ class FakeClient:
     def get_following(self, user_id, count, cursor):
         return self._answer('get_following', user_id, count, cursor)
 
+    def get_tweet(self, tweet_id):
+        return self._answer('get_tweet', tweet_id)
+
 
 @pytest.fixture
 def fake(monkeypatch):
@@ -133,6 +139,53 @@ def test_unusable_feeds_are_rejected(fake):
         xsource.fetch_feed({'channel_id': 'x', 'kind': 'lists'})
     with pytest.raises(xsource.XSourceError, match='without a handle'):
         xsource.fetch_feed({'kind': 'user', 'n': 10})
+
+
+# --- article bodies ---------------------------------------------------------------
+
+
+def test_an_article_is_read_from_the_tweet_detail_in_the_wire_shape(fake):
+    """Only TweetDetail carries the body. What goes up is the ``article`` block
+    alone, camelCase like every other key the server parses."""
+    detail = TweetData(
+        id='5',
+        text='Title\n\nthe whole body',
+        author=TweetAuthor(username='a', name='A'),
+        article=TweetArticle(
+            title='Title',
+            preview_text='the whole…',
+            content='## Head\n\nthe whole body',
+            plain_text='Head\nthe whole body',
+            cover_media=ArticleMedia(media_id='1', url='https://pbs.twimg.com/media/c.jpg', width=1600, height=900),
+            media=[ArticleMedia(media_id='2', url='https://pbs.twimg.com/media/m.jpg', width=10, height=20, caption='cap')],
+            published_at='2026-09-15T03:50:01Z',
+        ),
+    )
+    client = fake(get_tweet=GetTweetSuccess(tweet=detail))
+
+    article = xsource.fetch_tweet_article('5')
+    assert client.calls == [('get_tweet', ('5',), {})]
+    assert article == {
+        'title': 'Title',
+        'previewText': 'the whole…',
+        'content': '## Head\n\nthe whole body',
+        'plainText': 'Head\nthe whole body',
+        'coverMedia': {'mediaId': '1', 'url': 'https://pbs.twimg.com/media/c.jpg', 'width': 1600, 'height': 900},
+        'media': [{'mediaId': '2', 'url': 'https://pbs.twimg.com/media/m.jpg', 'width': 10, 'height': 20, 'caption': 'cap'}],
+        'publishedAt': '2026-09-15T03:50:01Z',
+    }
+    assert client.closed
+
+
+def test_a_tweet_that_is_no_longer_an_article_yields_none(fake):
+    fake(get_tweet=GetTweetSuccess(tweet=tweet(5)))
+    assert xsource.fetch_tweet_article('5') is None
+
+
+def test_a_failed_detail_raises(fake):
+    fake(get_tweet=OperationFailure(error='Tweet not found in response'))
+    with pytest.raises(xsource.XSourceError, match='5: Tweet not found'):
+        xsource.fetch_tweet_article('5')
 
 
 # --- errors are values in xbird, and must become failures here ------------------

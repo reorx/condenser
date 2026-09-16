@@ -7,12 +7,13 @@ beforeEach(() => {
 });
 
 vi.mock('@/lib/api', () => ({
-  api: { rssEntry: vi.fn() },
+  api: { rssEntry: vi.fn(), xTweet: vi.fn() },
   errorMessage: (_e: unknown, fallback: string) => fallback,
+  previewImageUrl: (url: string) => `/api/preview/image?url=${encodeURIComponent(url)}`,
 }));
 
 import { api } from '@/lib/api';
-import type { ItemAnnotation, RssEntry, TimelineItem } from '@/lib/types';
+import type { ItemAnnotation, RssEntry, TimelineItem, XArticle, XTweet } from '@/lib/types';
 
 import { ItemDetailBody } from './ItemDetailBody';
 
@@ -85,6 +86,97 @@ describe('ItemDetailBody (RSS)', () => {
     wrap(rssItem({ summary: '三句话摘要。', content: '<p>body</p>' }));
     expect(screen.getByText('三句话摘要。')).toBeInTheDocument();
     expect(screen.getByText('AI 摘要')).toBeInTheDocument();
+  });
+});
+
+function xArticleItem(article: XArticle): TimelineItem {
+  const x = {
+    id: '2099707280845332534',
+    author_handle: 'xiaoerzhan',
+    author_name: 'Xiaoer',
+    // bird sets a long-form post's `text` to its article title
+    text: article.title,
+    created_at: '2026-09-15T03:50:01Z',
+    first_seen_at: '2026-09-15T04:00:00Z',
+    media: null,
+    metrics: null,
+    quote: null,
+    rt_of_handle: null,
+    reply_to_id: null,
+    urls: null,
+    article,
+    feed: 'following',
+    feed_kind: 'following',
+    verdict: null,
+    verdict_meta: null,
+  } as XTweet;
+  return { source: 'x', key: `x:${x.id}`, datetime: x.created_at!, is_read: true, is_saved: false, x };
+}
+
+const ARTICLE = { title: '如何接上全球收款', previewText: '我做了个 Mac 工具。' };
+const BODY_HTML =
+  '<figure><img src="https://pbs.twimg.com/media/C.jpg" width="1600" height="900" alt="" /></figure>' +
+  '<h2>第一件事</h2><p>全文第一段。</p><script>window.x = 1</script>';
+
+describe('ItemDetailBody (X article)', () => {
+  it('fetches the body on open and renders it sanitized, with images through the proxy', async () => {
+    const list = xArticleItem({ ...ARTICLE, has_content: true });
+    vi.mocked(api.xTweet).mockResolvedValue({
+      ...list,
+      x: { ...list.x!, article: { ...ARTICLE, has_content: true, content_html: BODY_HTML } },
+    });
+    const { container } = wrap(list);
+
+    expect(await screen.findByText('全文第一段。')).toBeInTheDocument();
+    expect(api.xTweet).toHaveBeenCalledWith('2099707280845332534');
+    expect(screen.getByRole('heading', { name: '第一件事' })).toBeInTheDocument();
+    expect(screen.getByText('如何接上全球收款')).toBeInTheDocument();
+    expect(container.querySelector('script')).toBeNull();
+    const img = container.querySelector('img')!;
+    expect(img.getAttribute('src')).toBe(
+      `/api/preview/image?url=${encodeURIComponent('https://pbs.twimg.com/media/C.jpg')}`,
+    );
+    // the preview was a stand-in for the body, not part of it
+    expect(screen.queryByText('我做了个 Mac 工具。')).toBeNull();
+  });
+
+  it('keeps the preview while loading and after a failed fetch, without a toast', async () => {
+    vi.mocked(api.xTweet).mockRejectedValue(new Error('offline'));
+    wrap(xArticleItem({ ...ARTICLE, has_content: true }));
+    expect(screen.getByText('我做了个 Mac 工具。')).toBeInTheDocument();
+    expect(screen.getByText('正在加载全文…')).toBeInTheDocument();
+    expect(await screen.findByText('正文加载失败')).toBeInTheDocument();
+    expect(screen.getByText('我做了个 Mac 工具。')).toBeInTheDocument();
+  });
+
+  it('uses the body a saved snapshot carries without fetching', () => {
+    wrap(xArticleItem({ ...ARTICLE, has_content: true, content_html: '<p>snapshot body</p>' }));
+    expect(screen.getByText('snapshot body')).toBeInTheDocument();
+    expect(api.xTweet).not.toHaveBeenCalled();
+  });
+
+  it('with no body on the server yet, shows the preview and promises nothing', async () => {
+    const list = xArticleItem({ ...ARTICLE, has_content: false });
+    vi.mocked(api.xTweet).mockResolvedValue({
+      ...list,
+      x: { ...list.x!, article: { ...ARTICLE, has_content: false, content_html: null } },
+    });
+    wrap(list);
+    expect(screen.getByText('我做了个 Mac 工具。')).toBeInTheDocument();
+    expect(screen.queryByText('正在加载全文…')).toBeNull();
+    // it still asks — the body may have arrived since the list was loaded
+    await vi.waitFor(() => expect(api.xTweet).toHaveBeenCalled());
+    expect(screen.queryByText('正文加载失败')).toBeNull();
+  });
+
+  it('picks up a body that arrived after the list was loaded', async () => {
+    const list = xArticleItem({ ...ARTICLE, has_content: false });
+    vi.mocked(api.xTweet).mockResolvedValue({
+      ...list,
+      x: { ...list.x!, article: { ...ARTICLE, has_content: true, content_html: '<p>late body</p>' } },
+    });
+    wrap(list);
+    expect(await screen.findByText('late body')).toBeInTheDocument();
   });
 });
 

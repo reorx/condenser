@@ -587,6 +587,72 @@ def ingest_tweets(channel_id: str, entries: list, settings: Optional[Settings] =
     return result
 
 
+# --- article bodies (plan 2026-09-16) -----------------------------------------
+#
+# A timeline query returns an X Article as its title + a ~200-char preview; the body
+# only comes back from TweetDetail, one request per tweet. The server cannot make
+# that request, so it hands the probe a work order at the end of each round and
+# takes back the ``article`` block of each detail tweet. One mechanism covers this
+# round's new articles (already ingested when the probe asks), the backlog inside
+# the window, and retries.
+
+# xbird's additive detail keys (>= 1.3.0) — what ``article_detail`` stores. The
+# upstream pair (title / previewText) is deliberately not among them: it stays in
+# ``article``, which every other reader treats as the card's two fields.
+ARTICLE_DETAIL_KEYS = ('content', 'plainText', 'coverMedia', 'media', 'publishedAt', 'modifiedAt')
+
+
+def article_pending(limit: Optional[int], settings: Settings) -> list[int]:
+    """This round's work order: tweet ids whose article body is still missing.
+
+    Handing an id out spends one of its attempts (``db.claim_x_article_backlog``).
+    ``limit`` is the probe's ask; the batch setting caps it either way.
+    """
+    if not settings.condenser_x_article_enabled:
+        return []
+    batch = settings.condenser_x_article_batch
+    limit = min(limit, batch) if limit else batch
+    since = _now() - timedelta(days=settings.condenser_x_article_backfill_days)
+    return db.claim_x_article_backlog(since, settings.condenser_x_article_max_attempts, limit)
+
+
+def article_detail(article: Any) -> Optional[dict]:
+    """The storable half of a pushed ``article`` block, or None when it has no body.
+
+    A block without ``content`` or ``plainText`` is what X returns when the detail
+    request silently degraded; storing it would take the tweet off the work order
+    with nothing to show for it. The attempt it was handed out on stays spent.
+    """
+    if not isinstance(article, dict):
+        return None
+    detail = {k: article[k] for k in ARTICLE_DETAIL_KEYS if article.get(k) is not None}
+    if not any(isinstance(detail.get(k), str) and detail[k].strip() for k in ('content', 'plainText')):
+        return None
+    return detail
+
+
+def store_article_details(entries: list) -> dict:
+    """Store one probe push of article bodies; re-index the tweets that took one.
+
+    Judged per entry: a malformed one, a bodiless one or one for a tweet we do not
+    have is skipped, never a reason to reject the rest.
+    """
+    details: dict[int, dict] = {}
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        tweet_id = _as_int(entry.get('tweet_id'))
+        detail = article_detail(entry.get('article'))
+        if tweet_id is not None and detail is not None:
+            details[tweet_id] = detail
+    stored = db.set_x_article_details(details)
+    # Search indexes the full text (plan §1.4) — the tweets that just got one.
+    search.index_x_tweets(stored)
+    if len(stored) < len(entries):
+        log.info('x articles: stored %d of %d pushed bodies', len(stored), len(entries))
+    return {'received': len(entries), 'stored': len(stored), 'skipped': len(entries) - len(stored)}
+
+
 def _learn_user_identity(channel_id: str, parsed: list[ParsedTweet]) -> None:
     """Fill a followed account's numeric id + display name from its own tweets.
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { sanitizeHtml } from './sanitize';
+import { proxyImages, sanitizeHtml } from './sanitize';
 
 describe('sanitizeHtml', () => {
   it('keeps HN-style markup', () => {
@@ -25,5 +25,35 @@ describe('sanitizeHtml', () => {
 
   it('drops javascript: URLs', () => {
     expect(sanitizeHtml('<a href="javascript:alert(1)">x</a>')).not.toContain('javascript:');
+  });
+
+  it('keeps the figure markup and image sizes an X article arrives in', () => {
+    const out = sanitizeHtml(
+      '<figure><img src="https://pbs.twimg.com/media/A.jpg" width="2986" height="1648" alt="cap" /><figcaption>cap</figcaption></figure>',
+    );
+    expect(out).toContain('<figcaption>cap</figcaption>');
+    expect(out).toContain('width="2986"');
+    expect(out).toContain('height="1648"');
+  });
+});
+
+describe('proxyImages', () => {
+  it('routes every http(s) image through the preview proxy, sizes intact', () => {
+    // "Reading a tweet never pings X from the reader's IP" covers an article's
+    // images too.
+    const out = proxyImages('<p>a</p><figure><img src="https://pbs.twimg.com/media/A.jpg?x=1&y=2" width="10" height="20" alt="c"></figure>');
+    const img = new DOMParser().parseFromString(out, 'text/html').querySelector('img')!;
+    expect(img.getAttribute('src')).toBe(
+      `/api/preview/image?url=${encodeURIComponent('https://pbs.twimg.com/media/A.jpg?x=1&y=2')}`,
+    );
+    expect(img.getAttribute('width')).toBe('10');
+    expect(img.getAttribute('height')).toBe('20');
+    expect(out).toContain('<p>a</p>');
+  });
+
+  it('leaves anything that is not an absolute http(s) URL alone', () => {
+    const out = proxyImages('<img src="/api/media/1"><img src="data:image/png;base64,AA">');
+    expect(out).toContain('src="/api/media/1"');
+    expect(out).toContain('src="data:image/png;base64,AA"');
   });
 });

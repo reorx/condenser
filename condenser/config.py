@@ -63,6 +63,20 @@ class Settings(BaseSettings):
     # How often the probe re-crawls the followed-accounts list (~15 bird requests
     # for 732 accounts, so daily is plenty — people do not follow in bursts).
     condenser_x_following_sync_hours: int = 24
+    # X Article bodies (plan 2026-09-16). Timeline queries carry only an article's
+    # title + preview; the body needs one TweetDetail request per article, which the
+    # probe makes at the end of each round from a work order the server hands out
+    # (GET /api/sources/x/articles/pending). Off = an empty work order.
+    condenser_x_article_enabled: bool = True
+    # How far back the work order reaches, by first sighting. Older articles keep
+    # their preview for good — the server cannot reach X on its own.
+    condenser_x_article_backfill_days: int = 7
+    # Articles per probe round, whatever the probe asks for. Each is a paced X
+    # request (~1s apart), and both scheduler lanes run the step.
+    condenser_x_article_batch: int = 5
+    # Hand-outs before a tweet is given up on. Counted at hand-out, so three rounds
+    # of X being down (45 minutes) skip that article permanently.
+    condenser_x_article_max_attempts: int = 3
 
     # --- rss source (condenser/rss.py) ---
     # Master switch for the polling loop; polling itself is subscription-driven.

@@ -5,6 +5,7 @@ gets from the web ``/authorize`` page — so the server needed no new auth path.
 """
 
 import logging
+from typing import Optional
 
 import httpx
 
@@ -53,3 +54,16 @@ class ProbeClient:
     def push_following(self, users: list) -> dict:
         """Replace the server's followed-accounts list (whole-list semantics)."""
         return self._request('POST', '/api/sources/x/following', json={'users': users})
+
+    def pending_articles(self, limit: Optional[int] = None) -> list[str]:
+        """The end-of-round work order: tweet ids whose article body is missing.
+
+        Asking spends an attempt on every id handed out, and the server caps the
+        batch, so the probe normally leaves ``limit`` to it.
+        """
+        params = {'limit': limit} if limit else None
+        return self._request('GET', '/api/sources/x/articles/pending', params=params).get('tweet_ids') or []
+
+    def push_articles(self, articles: list) -> dict:
+        """``[{tweet_id, article}]`` — each detail tweet's ``article`` block only."""
+        return self._request('POST', '/api/sources/x/articles', json={'articles': articles})

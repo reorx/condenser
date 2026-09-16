@@ -74,10 +74,11 @@ def build_item_snapshot(key: ItemKey) -> Optional[dict]:
     if key.source == 'telegram':
         return build_snapshot(key.ref1, key.ref2)
     if key.source == 'x':
-        row = x_source.get_row(key.ref1)
+        row = x_source.get_row(key.ref1, with_content=True)
         # the snapshot *is* the envelope payload (quote already nested), so the
-        # record replays without x_tweets / x_feed_items
-        return x_payload(row) if row is not None else None
+        # record replays without x_tweets / x_feed_items — including an article's
+        # rendered body (v21), for RSS's reason below: X has a retention sweep too
+        return x_payload(row, with_content=True) if row is not None else None
     if key.source == 'rss':
         row = rss_source.get_row(key.ref1)
         if row is None:
@@ -236,6 +237,24 @@ def rss_article(entry_id: int) -> Optional[dict]:
         return None
     is_read = db.is_item_read('rss', entry_id, 0)
     envelope = rss_envelope(json.loads(rec.raw_data), is_read, bool(rec.is_saved), with_content=True)
+    return stamp_notes([envelope])[0]
+
+
+def x_article(tweet_id: int) -> Optional[dict]:
+    """A saved tweet's envelope with its article body, out of its snapshot alone.
+
+    ``rss_article``'s counterpart behind ``GET /api/x/tweets/{id}``. Not decoration
+    here either: ``cleanup.sweep_x_retention`` deletes tweets, and a record the
+    reader kept must not lose the article it was kept for. A snapshot taken before
+    the body arrived replays with ``content_html: null`` — the preview is what
+    there is.
+    """
+    rec = db.get_saved_item('x', tweet_id, 0)
+    if rec is None:
+        return None
+    is_read = db.is_item_read('x', tweet_id, 0)
+    verdict, reason = db.get_feedback('x', tweet_id, 0)
+    envelope = x_envelope(json.loads(rec.raw_data), is_read, bool(rec.is_saved), verdict, reason, with_content=True)
     return stamp_notes([envelope])[0]
 
 

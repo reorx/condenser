@@ -46,6 +46,9 @@ FOLLOWING_PAGE_SIZE = 20
 # place the probe makes a burst of requests. The `bird` CLI paced its --all crawl
 # the same way; dropping the pacing would be a silent change in exposure.
 FOLLOWING_PAGE_DELAY = 1.0
+# Between article detail requests at the end of a round (plan 2026-09-16) — the same
+# burst of X reads, so the same pacing.
+ARTICLE_FETCH_DELAY = FOLLOWING_PAGE_DELAY
 
 
 class XSourceError(RuntimeError):
@@ -124,6 +127,23 @@ def fetch_following_users(timeout_ms: int = DEFAULT_TIMEOUT_MS, max_pages: int =
         else:
             log.warning('follow list: stopped at the %d-page cap, the list may be incomplete', max_pages)
     return list(users.values())
+
+
+def fetch_tweet_article(tweet_id: str, timeout_ms: int = DEFAULT_TIMEOUT_MS) -> Optional[dict]:
+    """One tweet's ``article`` block from TweetDetail, or None when it has none.
+
+    Timeline endpoints return an X Article as its title + preview only; the body
+    (``content`` / ``plainText`` / ``coverMedia`` / ``media`` …, xbird >= 1.3.0)
+    exists only on the detail path. Just the ``article`` block is returned — the
+    detail tweet's ``text`` is title + the whole body, and the server must never
+    see it in place of the timeline's title.
+    """
+    with _session(timeout_ms) as client:
+        result = client.get_tweet(str(tweet_id))
+    if not result.success:
+        raise XSourceError(f'tweet {tweet_id}: {result.error}')
+    article = to_json(result.tweet).get('article')
+    return article if isinstance(article, dict) else None
 
 
 def check_auth(timeout_ms: int = DEFAULT_TIMEOUT_MS) -> str:

@@ -126,6 +126,26 @@ struct APIClientTests {
         #expect(posted.bodyJSON?["reason"] as? String == "ai_slop")
     }
 
+    @Test("xTweet：GET /api/x/tweets/{id}，回的是带 content_html 的整个 envelope")
+    func xTweetDetail() async throws {
+        let captured = MockURLProtocol.respond(status: 200, json: #"""
+            {"source": "x", "key": "x:2099707280845332534", "datetime": "2026-09-16T12:00:00Z",
+             "is_read": false, "is_saved": false,
+             "x": {"id": "2099707280845332534", "author_id": null, "author_handle": "a", "author_name": "A",
+                   "text": "标题", "created_at": null, "first_seen_at": null, "media": null, "metrics": null,
+                   "quote": null, "rt_of_handle": null, "reply_to_id": null, "urls": null,
+                   "article": {"title": "标题", "previewText": "预览", "has_content": true,
+                               "content_html": "<p>正文</p>"},
+                   "feed": "foryou", "feed_kind": "home", "verdict": null, "verdict_meta": null}}
+            """#)
+        let item = try await makeClient().xTweet(id: "2099707280845332534")
+        #expect(captured.method == "GET")
+        #expect(captured.url?.path() == "/api/x/tweets/2099707280845332534")
+        #expect(captured.authorization == "Bearer tok_test")
+        #expect(item.x?.article?.contentHTML == "<p>正文</p>")
+        #expect(item.x?.article?.hasContent == true)
+    }
+
     @Test("401 → APIError.unauthorized")
     func unauthorized() async throws {
         _ = MockURLProtocol.respond(status: 401, json: #"{"detail": "unauthorized"}"#)
