@@ -185,8 +185,10 @@ def test_rewrite_url_branches():
     # untouchable
     for raw in ('', '#top', 'mailto:a@b.c', 'javascript:void(0)', 'data:image/png;base64,AAAA', 'tel:+1'):
         assert rw(raw) == raw
-    # excluded hosts keep their absolute form
-    assert rw('https://x.com/a/status/1') == 'https://x.com/a/status/1'
+    # excluded hosts keep their absolute form — except an X status, which the X handler
+    # renders (plan 2026-09-17; the full X rule is in tests/test_purifier_x.py)
+    assert rw('https://x.com/a') == 'https://x.com/a'
+    assert rw('https://x.com/a/status/1') == '/p/x.com/a/status/1'
     assert rw('https://www.twitter.com/a') == 'https://www.twitter.com/a'
     assert rw('https://t.me/chan/1') == 'https://t.me/chan/1'
     # already ours: never double-wrapped
@@ -290,7 +292,7 @@ PROXY_HTML = """<!DOCTYPE html><html><head>
 <iframe src="https://ads.example"></iframe><object data="x.swf"></object><embed src="y.swf">
 <a href="item?id=1" onclick="track()">thread</a>
 <a href="javascript:void(0)">[–]</a>
-<a href="https://x.com/u/status/1">tweet</a>
+<a href="https://x.com/u/status/1">tweet</a><a href="https://x.com/u">profile</a>
 <form action="reply?id=1" method="post"><input name="q"></form>
 <img src="s.gif" srcset="s.gif 1x, s2.gif 2x" width="14">
 <picture><source srcset="p.webp 1x"><img src="p.png"></picture>
@@ -338,7 +340,7 @@ def test_proxy_rewrites_every_resource_and_link_against_base():
     assert 'poster="/pa/cdn.example/root/poster.jpg"' in out
     assert "url('/pa/cdn.example/root/inline.png')" in out
     # excluded host stays a real link out
-    assert 'href="https://x.com/u/status/1"' in out
+    assert 'href="/p/x.com/u/status/1"' in out and 'href="https://x.com/u"' in out
     # media the asset proxy would refuse is absolutized instead of broken
     assert 'src="https://cdn.example/root/v.mp4"' in out
     # <noscript> is unwrapped so its fallback <img> renders (we never run scripts anyway)

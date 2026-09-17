@@ -16,7 +16,7 @@ import httpx
 from fastapi import APIRouter, Depends, Request, Response
 from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
 
-from .. import db, purifier, purifier_html
+from .. import db, purifier, purifier_html, purifier_x
 from ..auth import READER_COOKIE_MAX_AGE, READER_COOKIE_NAME, reader_authenticated, require_device
 from ..config import Settings, get_settings
 from ..crypto import PURIFIER_TICKET_MAX_AGE, sign_purifier_ticket, sign_reader_cookie, verify_purifier_ticket
@@ -29,6 +29,7 @@ api_router = APIRouter(prefix='/api/purifier', tags=['purifier'])
 # Injection seams (tests replace these; production never does).
 _fetch_page = purifier.fetch_page
 _fetch_puremd = purifier.fetch_puremd
+_fetch_x = purifier_x.fetch_conversation
 
 # Only sent when scripts are allowed to survive: they may run, but not talk back.
 _ALLOW_JS_CSP = (
@@ -94,10 +95,20 @@ async def purified_document(request: Request, host: str, settings: Settings = De
     if not reader_authenticated(request, settings):
         return HTMLResponse(purifier_html.unauthorized_page(target.url), status_code=401)
 
-    full_page_url = target.own_path('p', '_mode=proxy')
+    passthrough = purifier.passthrough_url(target, settings)
+    if passthrough is not None:
+        return RedirectResponse(passthrough, status_code=302)
+    # An X status has no whole page to offer: the error page's "full page" link would
+    # just render the same conversation again.
+    full_page_url = None if purifier.x_status_id(target) else target.own_path('p', '_mode=proxy')
     try:
         result = await purifier.render_document(
-            target, settings, own_origin=_own_origin(request), fetch_page=_fetch_page, fetch_puremd=_fetch_puremd
+            target,
+            settings,
+            own_origin=_own_origin(request),
+            fetch_page=_fetch_page,
+            fetch_puremd=_fetch_puremd,
+            fetch_x=_fetch_x,
         )
     except (purifier.PurifierError, httpx.HTTPError) as exc:
         logger.info('purifier failed %s: %s', target.url, exc)

@@ -1,0 +1,360 @@
+{
+ "status": {
+  "type": "status",
+  "url": "https://x.com/JustZht/status/2082691966135845151",
+  "id": "2082691966135845151",
+  "text": "算是更新了下个人简介页，meta tag 里之前写的我还在上学，总算是都删掉了",
+  "raw_text": {
+   "text": "算是更新了下个人简介页，meta tag 里之前写的我还在上学，总算是都删掉了",
+   "display_text_range": [
+    0,
+    39
+   ],
+   "facets": []
+  },
+  "author": {
+   "screen_name": "JustZht",
+   "url": "https://x.com/JustZht",
+   "id": "2723909239",
+   "name": "JustZht",
+   "avatar_url": "https://pbs.twimg.com/profile_images/1457510106979966977/GvDhI2rH_200x200.jpg",
+   "verification": {
+    "verified": false,
+    "verified_at": null,
+    "type": null
+   },
+   "type": "profile"
+  },
+  "replies": 2,
+  "reposts": 0,
+  "likes": 20,
+  "bookmarks": 1,
+  "quotes": 0,
+  "embed_card": "tweet",
+  "created_at": "Thu Jul 30 04:57:13 +0000 2026",
+  "created_timestamp": 1785387433,
+  "views": 2437,
+  "is_note_tweet": false,
+  "community_note": null,
+  "lang": "zh",
+  "replying_to": null,
+  "media": {},
+  "source": "Twitter Web App",
+  "provider": "twitter",
+  "reposted_by": null
+ },
+ "thread": [
+  {
+   "type": "status",
+   "url": "https://x.com/JustZht/status/2082691966135845151",
+   "id": "2082691966135845151",
+   "text": "算是更新了下个人简介页，meta tag 里之前写的我还在上学，总算是都删掉了",
+   "raw_text": {
+    "text": "算是更新了下个人简介页，meta tag 里之前写的我还在上学，总算是都删掉了",
+    "display_text_range": [
+     0,
+     39
+    ],
+    "facets": []
+   },
+   "author": {
+    "screen_name": "JustZht",
+    "url": "https://x.com/JustZht",
+    "id": "2723909239",
+    "name": "JustZht",
+    "avatar_url": "https://pbs.twimg.com/profile_images/1457510106979966977/GvDhI2rH_200x200.jpg",
+    "verification": {
+     "verified": false,
+     "verified_at": null,
+     "type": null
+    },
+    "type": "profile"
+   },
+   "replies": 2,
+   "reposts": 0,
+   "likes": 20,
+   "bookmarks": 1,
+   "quotes": 0,
+   "embed_card": "tweet",
+   "created_at": "Thu Jul 30 04:57:13 +0000 2026",
+   "created_timestamp": 1785387433,
+   "views": 2437,
+   "is_note_tweet": false,
+   "community_note": null,
+   "lang": "zh",
+   "replying_to": null,
+   "media": {},
+   "source": "Twitter Web App",
+   "provider": "twitter",
+   "reposted_by": null
+  }
+ ],
+ "replies": [
+  {
+   "type": "status",
+   "url": "https://x.com/Danielzmeow/status/2082985888594940117",
+   "id": "2082985888594940117",
+   "text": "@JustZht 我艹我才知道你是CMU的。。。",
+   "raw_text": {
+    "text": "@JustZht 我艹我才知道你是CMU的。。。",
+    "display_text_range": [
+     9,
+     24
+    ],
+    "facets": [
+     {
+      "type": "mention",
+      "indices": [
+       0,
+       8
+      ],
+      "original": "JustZht",
+      "id": "2723909239"
+     }
+    ]
+   },
+   "author": {
+    "screen_name": "Danielzmeow",
+    "url": "https://x.com/Danielzmeow",
+    "id": "1502482959827292161",
+    "name": "danielzhang🍂",
+    "avatar_url": "https://pbs.twimg.com/profile_images/2005616187078737920/eIXHe5KE_200x200.jpg",
+    "verification": {
+     "verified": true,
+     "verified_at": null,
+     "type": "individual"
+    },
+    "type": "profile"
+   },
+   "replies": 1,
+   "reposts": 0,
+   "likes": 0,
+   "bookmarks": 0,
+   "quotes": 0,
+   "embed_card": "tweet",
+   "created_at": "Fri Jul 31 00:25:10 +0000 2026",
+   "created_timestamp": 1785457510,
+   "views": 104,
+   "is_note_tweet": false,
+   "community_note": null,
+   "lang": "ja",
+   "replying_to": {
+    "screen_name": "JustZht",
+    "status": "2082691966135845151",
+    "url": "https://x.com/JustZht/status/2082691966135845151",
+    "profile_url": "https://x.com/JustZht"
+   },
+   "media": {},
+   "source": "Twitter Web App",
+   "provider": "twitter",
+   "reposted_by": null
+  },
+  {
+   "type": "status",
+   "url": "https://x.com/JustZht/status/2082993408935862556",
+   "id": "2082993408935862556",
+   "text": "@Danielzmeow 就一年半的 INI 项目，找工向的！",
+   "raw_text": {
+    "text": "@Danielzmeow 就一年半的 INI 项目，找工向的！",
+    "display_text_range": [
+     13,
+     31
+    ],
+    "facets": [
+     {
+      "type": "mention",
+      "indices": [
+       0,
+       12
+      ],
+      "original": "Danielzmeow",
+      "id": "1502482959827292161"
+     }
+    ]
+   },
+   "author": {
+    "screen_name": "JustZht",
+    "url": "https://x.com/JustZht",
+    "id": "2723909239",
+    "name": "JustZht",
+    "avatar_url": "https://pbs.twimg.com/profile_images/1457510106979966977/GvDhI2rH_200x200.jpg",
+    "verification": {
+     "verified": false,
+     "verified_at": null,
+     "type": null
+    },
+    "type": "profile"
+   },
+   "replies": 1,
+   "reposts": 0,
+   "likes": 2,
+   "bookmarks": 0,
+   "quotes": 0,
+   "embed_card": "tweet",
+   "created_at": "Fri Jul 31 00:55:03 +0000 2026",
+   "created_timestamp": 1785459303,
+   "views": 67,
+   "is_note_tweet": false,
+   "community_note": null,
+   "lang": "zh",
+   "replying_to": {
+    "screen_name": "Danielzmeow",
+    "status": "2082985888594940117",
+    "url": "https://x.com/Danielzmeow/status/2082985888594940117",
+    "profile_url": "https://x.com/Danielzmeow"
+   },
+   "media": {},
+   "source": "Twitter Web App",
+   "provider": "twitter",
+   "reposted_by": null
+  },
+  {
+   "type": "status",
+   "url": "https://x.com/Danielzmeow/status/2082995401196806278",
+   "id": "2082995401196806278",
+   "text": "@JustZht 老师这个我更想听了，我也想找工🥺",
+   "raw_text": {
+    "text": "@JustZht 老师这个我更想听了，我也想找工🥺",
+    "display_text_range": [
+     9,
+     25
+    ],
+    "facets": [
+     {
+      "type": "mention",
+      "indices": [
+       0,
+       8
+      ],
+      "original": "JustZht",
+      "id": "2723909239"
+     }
+    ]
+   },
+   "author": {
+    "screen_name": "Danielzmeow",
+    "url": "https://x.com/Danielzmeow",
+    "id": "1502482959827292161",
+    "name": "danielzhang🍂",
+    "avatar_url": "https://pbs.twimg.com/profile_images/2005616187078737920/eIXHe5KE_200x200.jpg",
+    "verification": {
+     "verified": true,
+     "verified_at": null,
+     "type": "individual"
+    },
+    "type": "profile"
+   },
+   "replies": 0,
+   "reposts": 0,
+   "likes": 0,
+   "bookmarks": 0,
+   "quotes": 0,
+   "embed_card": "tweet",
+   "created_at": "Fri Jul 31 01:02:58 +0000 2026",
+   "created_timestamp": 1785459778,
+   "views": 55,
+   "is_note_tweet": false,
+   "community_note": null,
+   "lang": "zh",
+   "replying_to": {
+    "screen_name": "JustZht",
+    "status": "2082993408935862556",
+    "url": "https://x.com/JustZht/status/2082993408935862556",
+    "profile_url": "https://x.com/JustZht"
+   },
+   "media": {},
+   "source": "Twitter for iPhone",
+   "provider": "twitter",
+   "reposted_by": null
+  },
+  {
+   "type": "status",
+   "url": "https://x.com/JustZht/status/2082693056269029651",
+   "id": "2082693056269029651",
+   "text": "https://haotianzheng.com/?t=202607291001",
+   "raw_text": {
+    "text": "https://t.co/qzYxwreb9x",
+    "display_text_range": [
+     0,
+     23
+    ],
+    "facets": [
+     {
+      "type": "url",
+      "indices": [
+       0,
+       23
+      ],
+      "original": "https://t.co/qzYxwreb9x",
+      "replacement": "https://haotianzheng.com/?t=202607291001",
+      "display": "haotianzheng.com/?t=202607291001"
+     }
+    ]
+   },
+   "author": {
+    "screen_name": "JustZht",
+    "url": "https://x.com/JustZht",
+    "id": "2723909239",
+    "name": "JustZht",
+    "avatar_url": "https://pbs.twimg.com/profile_images/1457510106979966977/GvDhI2rH_200x200.jpg",
+    "verification": {
+     "verified": false,
+     "verified_at": null,
+     "type": null
+    },
+    "type": "profile"
+   },
+   "replies": 3,
+   "reposts": 0,
+   "likes": 10,
+   "bookmarks": 0,
+   "quotes": 0,
+   "embed_card": "tweet",
+   "created_at": "Thu Jul 30 05:01:33 +0000 2026",
+   "created_timestamp": 1785387693,
+   "possibly_sensitive": false,
+   "views": 726,
+   "is_note_tweet": false,
+   "community_note": null,
+   "lang": null,
+   "replying_to": {
+    "screen_name": "JustZht",
+    "status": "2082691966135845151",
+    "url": "https://x.com/JustZht/status/2082691966135845151",
+    "profile_url": "https://x.com/JustZht"
+   },
+   "media": {},
+   "source": "Twitter Web App",
+   "card": {
+    "url": "https://haotianzheng.com/?t=202607291001",
+    "title": "郑昊天 Haotian Zheng (a.k.a JustZht)",
+    "description": "I work on Apple software, occasionally make my own apps and games, and for the rest of the time, tinker with blogs, cameras, cars, and whatever comes next.",
+    "domain": "haotianzheng.com",
+    "image": {
+     "width": 800,
+     "height": 419,
+     "url": "https://pbs.twimg.com/card_img/2098155742335561728/_tqaWEk-?format=jpg&name=800x419"
+    }
+   },
+   "provider": "twitter",
+   "reposted_by": null
+  }
+ ],
+ "author": {
+  "screen_name": "JustZht",
+  "url": "https://x.com/JustZht",
+  "id": "2723909239",
+  "name": "JustZht",
+  "avatar_url": "https://pbs.twimg.com/profile_images/1457510106979966977/GvDhI2rH_200x200.jpg",
+  "verification": {
+   "verified": false,
+   "verified_at": null,
+   "type": null
+  },
+  "type": "profile"
+ },
+ "cursor": {
+  "bottom": "DAAKCgABHSZt_F___-kLAAIAAABQRW1QQzZ3QUFBZlEvZ0dKTjB2R3AvQUFBQUFVYzV6VlBBaFpCSHh6bk5relRGcEVUSE9oSGVDRWFJUndjNkVDaEtkcFExUnpvU1VmOUc2Q0cIAAMAAAACCwAEAAAABkJvdHRvbQAA"
+ },
+ "code": 200
+}

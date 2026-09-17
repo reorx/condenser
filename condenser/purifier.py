@@ -13,6 +13,11 @@ link rewritten into ``/pa`` (assets) or ``/p`` (documents). Three renderings:
   short, pure.md's Markdown is rendered instead. It loses images and costs quota,
   which is why it is the fallback and not the default.
 
+One kind of link skips all three: an X status (x.com / twitter.com / a FixTweet
+mirror) is claimed before any mode is resolved and built from FxEmbed's JSON API by
+``purifier_x.py`` — a data source rather than a rendering, and the only module that
+knows FxEmbed exists (plan kb/plans/2026-09-17-purifier-x-fxembed.md).
+
 This module holds everything that is not HTTP-routing: URL helpers, mode
 resolution, the fetch (with its one https→http retry), the lxml sanitizer, CSS /
 srcset rewriting, readability extraction, the pure.md client + Markdown render,
@@ -41,17 +46,22 @@ from lxml import etree
 from markdown_it import MarkdownIt
 from readability import Document
 
-from . import preview, purifier_html
+from . import preview, purifier_html, purifier_x
 from .config import Settings
 
 Mode = Literal['proxy', 'readable', 'puremd']
+# What produced a document: a mode, or the X handler — which is never selectable and
+# never in MODE_RULES (a data source, not a rendering strategy).
+Rendering = Literal['proxy', 'readable', 'puremd', 'x']
 
 # Which hosts render whole-page rather than article-only. A code constant by
 # decision (plan §0.7); env overrides can come when a second entry needs one.
 MODE_RULES: dict[str, Mode] = {'news.ycombinator.com': 'proxy'}
 SELECTABLE_MODES = ('proxy', 'readable')
 # Links to these stay as they are inside a rewritten page — they open in the X /
-# Telegram app, never in the proxy. Mirrors the iOS side's exclusion list.
+# Telegram app, never in the proxy — with one exception: an X *status* link goes
+# through, since the X handler renders it (plan 2026-09-17 §1.4). Profiles, Spaces,
+# search stay deep links. Mirrors the iOS side's exclusion rule.
 EXCLUDED_REWRITE_HOSTS = frozenset({'x.com', 'twitter.com', 't.me'})
 _HOST_PREFIXES = ('www.', 'mobile.', 'm.')
 CONTROL_PARAMS = ('_pt', '_mode')
@@ -59,6 +69,7 @@ CONTROL_PARAMS = ('_pt', '_mode')
 # Fetch seam: same shape as preview._fetch_capped, so tests inject one fake for both.
 FetchPage = Callable[..., Awaitable[tuple[str, str, bytes]]]
 FetchPuremd = Callable[[str, Settings], Awaitable[str]]
+FetchConversation = purifier_x.FetchConversation
 
 
 class PurifierError(Exception):
@@ -239,6 +250,10 @@ def rewrite_url(href: str, base_url: str, own_origin: str, kind: Literal['p', 'p
     condenser itself (already ``/p`` / ``/pa`` / ``/api`` — never wrapped twice) and
     hosts we would refuse anyway → the absolute URL, unwrapped. Everything else →
     root-relative ``/{kind}/host/path?q#f``.
+
+    An X status link is the excluded hosts' one exception, as a document only. The rule
+    is a fact about URL shapes and ignores whether the X handler is switched on: when
+    it is off, ``/p`` sends such a link on to the original (``passthrough_url``).
     """
     raw = href.strip()
     if not raw or raw.startswith('#'):
@@ -249,7 +264,11 @@ def rewrite_url(href: str, base_url: str, own_origin: str, kind: Literal['p', 'p
         return href
     netloc = parts.netloc.rsplit('@', 1)[-1].lower()
     own = urlsplit(own_origin)
-    if netloc == own.netloc.lower() or _bare_host(netloc) in EXCLUDED_REWRITE_HOSTS or not host_allowed(netloc):
+    if netloc == own.netloc.lower() or not host_allowed(netloc):
+        return absolute
+    if _bare_host(netloc) in EXCLUDED_REWRITE_HOSTS and not (
+        kind == 'p' and purifier_x.parse_status_url(netloc, parts.path)
+    ):
         return absolute
     out = f'/{kind}/{netloc}{parts.path}'
     if parts.query:
@@ -271,6 +290,21 @@ def resolve_base(raw_html: str, final_url: str) -> str:
         return final_url
     href = next(g for g in match.groups() if g is not None)
     return urljoin(final_url, href.strip())
+
+
+def x_status_id(target: Target) -> Optional[str]:
+    """The status an X status link names (x.com, twitter.com or a FixTweet mirror),
+    whether or not the X handler is switched on."""
+    return purifier_x.parse_status_url(target.host, target.path)
+
+
+def passthrough_url(target: Target, settings: Settings) -> Optional[str]:
+    """A target this server deliberately does not render → where to send the reader.
+    One case: an X status while the X handler is off — readable mode would only scrape
+    x.com's empty shell, so the link goes where it pointed."""
+    if x_status_id(target) is not None and not purifier_x.enabled(settings):
+        return target.url
+    return None
 
 
 def resolve_mode(host: str, override: Optional[str]) -> Mode:
@@ -336,7 +370,7 @@ def rewrite_srcset(value: str, base_url: str, own_origin: str) -> str:
 @dataclass(frozen=True)
 class Toolbar:
     original_url: str
-    mode: Mode
+    mode: Rendering
     full_page_url: Optional[str]
 
 
@@ -712,6 +746,7 @@ def asset_type_allowed(content_type: str) -> bool:
 # functions they replace (plan §4.3), so the defaults are bound under other names.
 _DEFAULT_FETCH_PAGE = fetch_page
 _DEFAULT_FETCH_PUREMD = fetch_puremd
+_DEFAULT_FETCH_X = purifier_x.fetch_conversation
 
 
 # --- cache ------------------------------------------------------------------
@@ -720,7 +755,7 @@ _DEFAULT_FETCH_PUREMD = fetch_puremd
 @dataclass(frozen=True)
 class DocumentResult:
     html: str
-    mode: Mode
+    mode: Rendering
 
 
 @dataclass(frozen=True)
@@ -788,13 +823,20 @@ async def render_document(
     mode_override: Optional[str] = None,
     fetch_page: Optional[FetchPage] = None,
     fetch_puremd: Optional[FetchPuremd] = None,
+    fetch_x: Optional[FetchConversation] = None,
 ) -> DocumentResult:
     """A /p request → the page to serve. Cached per (upstream URL, mode).
 
-    proxy mode lets fetch errors propagate (the router renders them); readable mode
-    is this module's one broad-catch boundary — whatever fails on the way to an
-    article becomes the reason to try pure.md.
+    An X status is claimed first, while the X handler is on: ``_mode`` never reaches
+    it (there is no x.com page to show whole). Otherwise, proxy mode lets fetch errors
+    propagate (the router renders them); readable mode is this module's one
+    broad-catch boundary — whatever fails on the way to an article becomes the reason
+    to try pure.md.
     """
+    fetch_x = fetch_x or _DEFAULT_FETCH_X
+    status_id = x_status_id(target) if purifier_x.enabled(settings) else None
+    if status_id is not None:
+        return await _render_x(status_id, settings, own_origin, fetch_x)
     mode = resolve_mode(target.host, mode_override or target.mode_override)
     key = (target.url, mode)
     cached = _cache_get(key)
@@ -804,7 +846,8 @@ async def render_document(
     if mode == 'proxy':
         result = await _render_proxy(target, settings, own_origin, fetch)
     else:
-        result = await _render_readable(target, settings, own_origin, fetch, fetch_puremd or _DEFAULT_FETCH_PUREMD)
+        puremd = fetch_puremd or _DEFAULT_FETCH_PUREMD
+        result = await _render_readable(target, settings, own_origin, fetch, puremd, fetch_x)
     _cache_put(key, result, settings.condenser_purifier_cache_ttl)
     return result
 
@@ -830,20 +873,34 @@ async def _render_proxy(target: Target, settings: Settings, own_origin: str, fet
 
 
 async def _render_readable(
-    target: Target, settings: Settings, own_origin: str, fetch: FetchPage, puremd: FetchPuremd
+    target: Target,
+    settings: Settings,
+    own_origin: str,
+    fetch: FetchPage,
+    puremd: FetchPuremd,
+    fetch_x: FetchConversation,
 ) -> DocumentResult:
     full_page_url = target.own_path('p', '_mode=proxy')
     original_url = target.url
     extracted: Optional[tuple[str, str, int]] = None
+    handoff: Optional[str] = None
     reason = ''
     try:
         fetched = await _fetch_document(target, settings, fetch)
         original_url = fetched.final_url
-        extracted = await asyncio.to_thread(extract_readable, fetched.html, fetched.base_url, own_origin)
-        if extracted is None:
-            reason = 'no article found'
+        handoff = _x_status_at(fetched.final_url, settings)
+        if handoff is None:
+            extracted = await asyncio.to_thread(extract_readable, fetched.html, fetched.base_url, own_origin)
+            if extracted is None:
+                reason = 'no article found'
     except Exception as exc:  # noqa: BLE001 - the boundary: any failure here is why we fall back
         reason = str(exc) or type(exc).__name__
+
+    if handoff is not None:
+        # A shortener (t.co, bit.ly…) that landed on an X status: the fetch above got
+        # x.com's empty shell, so the X handler renders what the link meant (plan
+        # §1.5). Outside the boundary — an X failure is the answer, not a pure.md cue.
+        return await _render_x(handoff, settings, own_origin, fetch_x)
 
     long_enough = extracted is not None and extracted[2] >= settings.condenser_purifier_min_readable_chars
     toolbar = Toolbar(original_url=original_url, mode='readable', full_page_url=full_page_url)
@@ -876,6 +933,49 @@ async def _render_readable(
             mode='readable',
         )
     raise UpstreamFetchError(reason or 'could not render')
+
+
+def _x_status_at(url: str, settings: Settings) -> Optional[str]:
+    if not purifier_x.enabled(settings):
+        return None
+    parts = urlsplit(url)
+    return purifier_x.parse_status_url(parts.netloc, parts.path)
+
+
+async def _render_x(status_id: str, settings: Settings, own_origin: str, fetch_x: FetchConversation) -> DocumentResult:
+    """One FxEmbed request → the reader shell around ``purifier_x``'s markup. Cached per
+    status, so x.com, twitter.com and the mirrors share an entry; failures are not."""
+    key = (f'x:{status_id}', 'x')
+    cached = _cache_get(key)
+    if cached is not None:
+        return cached
+    try:
+        http_status, payload = await fetch_x(status_id, settings)
+        conversation = purifier_x.check_conversation(http_status, payload)
+    except purifier_x.FxEmbedError as exc:
+        raise UpstreamFetchError(str(exc), status=exc.status) from exc
+    except ValueError as exc:  # a JSON content type with a body that is not JSON
+        raise UpstreamFetchError(f'FxEmbed 返回了无法解析的内容：{exc}') from exc
+    page = purifier_x.render(
+        conversation,
+        link=lambda url: rewrite_url(url, url, own_origin, 'p'),
+        asset=lambda url: rewrite_url(url, url, own_origin, 'pa'),
+        replies_limit=settings.condenser_purifier_x_replies,
+    )
+    original_url = page.original_url or f'https://x.com/i/status/{status_id}'
+    result = DocumentResult(
+        html=purifier_html.reader_page(
+            title=page.title,
+            body_html=page.body_html,
+            toolbar=Toolbar(original_url=original_url, mode='x', full_page_url=None),
+            notice=None,
+            heading=False,
+            extra_css=purifier_html.X_CSS,
+        ),
+        mode='x',
+    )
+    _cache_put(key, result, settings.condenser_purifier_cache_ttl)
+    return result
 
 
 async def _render_puremd(

@@ -1,0 +1,1322 @@
+{
+ "status": {
+  "type": "status",
+  "url": "https://x.com/derbederdusler/status/1770888775830262034",
+  "id": "1770888775830262034",
+  "text": "@jack",
+  "raw_text": {
+   "text": "@jack https://t.co/j0vbZrENcJ",
+   "display_text_range": [
+    5,
+    5
+   ],
+   "facets": [
+    {
+     "type": "mention",
+     "indices": [
+      0,
+      5
+     ],
+     "original": "jack",
+     "id": "12"
+    },
+    {
+     "type": "media",
+     "indices": [
+      6,
+      29
+     ],
+     "id": "1770888772571316224",
+     "display": "pic.x.com/j0vbZrENcJ",
+     "original": "https://t.co/j0vbZrENcJ",
+     "replacement": "https://x.com/derbederdusler/status/1770888775830262034/photo/1"
+    }
+   ]
+  },
+  "author": {
+   "screen_name": "derbederdusler",
+   "url": "https://x.com/derbederdusler",
+   "id": "1420469290369789958",
+   "name": "𝕯𝖊𝖗𝖇𝖊𝖉𝖊𝖗",
+   "avatar_url": "https://pbs.twimg.com/profile_images/2068802435938689025/Iqb-7nQc_200x200.jpg",
+   "verification": {
+    "verified": true,
+    "verified_at": null,
+    "type": "individual"
+   },
+   "type": "profile"
+  },
+  "replies": 22,
+  "reposts": 138,
+  "likes": 8033,
+  "bookmarks": 92,
+  "quotes": 7,
+  "embed_card": "summary_large_image",
+  "created_at": "Thu Mar 21 19:02:40 +0000 2024",
+  "created_timestamp": 1711047760,
+  "possibly_sensitive": false,
+  "views": 462056,
+  "is_note_tweet": false,
+  "community_note": null,
+  "lang": null,
+  "replying_to": {
+   "screen_name": "jack",
+   "status": "20",
+   "url": "https://x.com/jack/status/20",
+   "profile_url": "https://x.com/jack"
+  },
+  "media": {
+   "all": [
+    {
+     "type": "photo",
+     "id": "1770888772571316224",
+     "url": "https://pbs.twimg.com/media/GJN19MHXQAAeNDq.jpg?name=orig",
+     "width": 1080,
+     "height": 786
+    }
+   ],
+   "photos": [
+    {
+     "type": "photo",
+     "id": "1770888772571316224",
+     "url": "https://pbs.twimg.com/media/GJN19MHXQAAeNDq.jpg?name=orig",
+     "width": 1080,
+     "height": 786
+    }
+   ]
+  },
+  "provider": "twitter",
+  "reposted_by": null
+ },
+ "thread": [
+  {
+   "type": "status",
+   "url": "https://x.com/jack/status/20",
+   "id": "20",
+   "text": "just setting up my twttr",
+   "raw_text": {
+    "text": "just setting up my twttr",
+    "display_text_range": [
+     0,
+     24
+    ],
+    "facets": []
+   },
+   "author": {
+    "screen_name": "jack",
+    "url": "https://x.com/jack",
+    "id": "12",
+    "name": "jack",
+    "avatar_url": "https://pbs.twimg.com/profile_images/1661201415899951105/azNjKOSH_200x200.jpg",
+    "verification": {
+     "verified": true,
+     "verified_at": null,
+     "type": "individual"
+    },
+    "type": "profile"
+   },
+   "replies": 18019,
+   "reposts": 124621,
+   "likes": 310601,
+   "bookmarks": 21491,
+   "quotes": 7168,
+   "embed_card": "tweet",
+   "created_at": "Tue Mar 21 20:50:14 +0000 2006",
+   "created_timestamp": 1142974214,
+   "views": null,
+   "is_note_tweet": false,
+   "community_note": null,
+   "lang": "en",
+   "replying_to": null,
+   "media": {},
+   "provider": "twitter",
+   "reposted_by": null
+  },
+  {
+   "type": "status",
+   "url": "https://x.com/derbederdusler/status/1770888775830262034",
+   "id": "1770888775830262034",
+   "text": "@jack",
+   "raw_text": {
+    "text": "@jack https://t.co/j0vbZrENcJ",
+    "display_text_range": [
+     5,
+     5
+    ],
+    "facets": [
+     {
+      "type": "mention",
+      "indices": [
+       0,
+       5
+      ],
+      "original": "jack",
+      "id": "12"
+     },
+     {
+      "type": "media",
+      "indices": [
+       6,
+       29
+      ],
+      "id": "1770888772571316224",
+      "display": "pic.x.com/j0vbZrENcJ",
+      "original": "https://t.co/j0vbZrENcJ",
+      "replacement": "https://x.com/derbederdusler/status/1770888775830262034/photo/1"
+     }
+    ]
+   },
+   "author": {
+    "screen_name": "derbederdusler",
+    "url": "https://x.com/derbederdusler",
+    "id": "1420469290369789958",
+    "name": "𝕯𝖊𝖗𝖇𝖊𝖉𝖊𝖗",
+    "avatar_url": "https://pbs.twimg.com/profile_images/2068802435938689025/Iqb-7nQc_200x200.jpg",
+    "verification": {
+     "verified": true,
+     "verified_at": null,
+     "type": "individual"
+    },
+    "type": "profile"
+   },
+   "replies": 22,
+   "reposts": 138,
+   "likes": 8033,
+   "bookmarks": 92,
+   "quotes": 7,
+   "embed_card": "summary_large_image",
+   "created_at": "Thu Mar 21 19:02:40 +0000 2024",
+   "created_timestamp": 1711047760,
+   "possibly_sensitive": false,
+   "views": 462056,
+   "is_note_tweet": false,
+   "community_note": null,
+   "lang": null,
+   "replying_to": {
+    "screen_name": "jack",
+    "status": "20",
+    "url": "https://x.com/jack/status/20",
+    "profile_url": "https://x.com/jack"
+   },
+   "media": {
+    "all": [
+     {
+      "type": "photo",
+      "id": "1770888772571316224",
+      "url": "https://pbs.twimg.com/media/GJN19MHXQAAeNDq.jpg?name=orig",
+      "width": 1080,
+      "height": 786
+     }
+    ],
+    "photos": [
+     {
+      "type": "photo",
+      "id": "1770888772571316224",
+      "url": "https://pbs.twimg.com/media/GJN19MHXQAAeNDq.jpg?name=orig",
+      "width": 1080,
+      "height": 786
+     }
+    ]
+   },
+   "provider": "twitter",
+   "reposted_by": null
+  }
+ ],
+ "replies": [
+  {
+   "type": "status",
+   "url": "https://x.com/bugalomnqobi/status/1903113292727353560",
+   "id": "1903113292727353560",
+   "text": "@derbederdusler @jack it should be the other way around with Jack instead of Elon",
+   "raw_text": {
+    "text": "@derbederdusler @jack it should be the other way around with Jack instead of Elon",
+    "display_text_range": [
+     22,
+     81
+    ],
+    "facets": [
+     {
+      "type": "mention",
+      "indices": [
+       0,
+       15
+      ],
+      "original": "derbederdusler",
+      "id": "1420469290369789958"
+     },
+     {
+      "type": "mention",
+      "indices": [
+       16,
+       21
+      ],
+      "original": "jack",
+      "id": "12"
+     }
+    ]
+   },
+   "author": {
+    "screen_name": "bugalomnqobi",
+    "url": "https://x.com/bugalomnqobi",
+    "id": "146154191",
+    "name": "Bugalo Mnqobi",
+    "avatar_url": "https://pbs.twimg.com/profile_images/2095448171442753539/tOz6SJBN_200x200.jpg",
+    "verification": {
+     "verified": false,
+     "verified_at": null,
+     "type": null
+    },
+    "type": "profile"
+   },
+   "replies": 0,
+   "reposts": 0,
+   "likes": 40,
+   "bookmarks": 0,
+   "quotes": 0,
+   "embed_card": "tweet",
+   "created_at": "Fri Mar 21 15:55:41 +0000 2025",
+   "created_timestamp": 1742572541,
+   "views": 3482,
+   "is_note_tweet": false,
+   "community_note": null,
+   "lang": "en",
+   "replying_to": {
+    "screen_name": "derbederdusler",
+    "status": "1770888775830262034",
+    "url": "https://x.com/derbederdusler/status/1770888775830262034",
+    "profile_url": "https://x.com/derbederdusler"
+   },
+   "media": {},
+   "provider": "twitter",
+   "reposted_by": null
+  },
+  {
+   "type": "status",
+   "url": "https://x.com/Bad_Boy_Tos/status/1903075580246933600",
+   "id": "1903075580246933600",
+   "text": "@derbederdusler @jack liberal tears are the best",
+   "raw_text": {
+    "text": "@derbederdusler @jack liberal tears are the best",
+    "display_text_range": [
+     22,
+     48
+    ],
+    "facets": [
+     {
+      "type": "mention",
+      "indices": [
+       0,
+       15
+      ],
+      "original": "derbederdusler",
+      "id": "1420469290369789958"
+     },
+     {
+      "type": "mention",
+      "indices": [
+       16,
+       21
+      ],
+      "original": "jack",
+      "id": "12"
+     }
+    ]
+   },
+   "author": {
+    "screen_name": "Bad_Boy_Tos",
+    "url": "https://x.com/Bad_Boy_Tos",
+    "id": "15390380",
+    "name": "'Tos 🇺🇸 🇱🇨 🏝️",
+    "avatar_url": "https://pbs.twimg.com/profile_images/2996895950/dbda677b28264c48c48a66fc73362872_200x200.jpeg",
+    "verification": {
+     "verified": true,
+     "verified_at": null,
+     "type": "individual"
+    },
+    "type": "profile"
+   },
+   "replies": 3,
+   "reposts": 0,
+   "likes": 24,
+   "bookmarks": 1,
+   "quotes": 0,
+   "embed_card": "tweet",
+   "created_at": "Fri Mar 21 13:25:50 +0000 2025",
+   "created_timestamp": 1742563550,
+   "views": 4135,
+   "is_note_tweet": false,
+   "community_note": null,
+   "lang": "en",
+   "replying_to": {
+    "screen_name": "derbederdusler",
+    "status": "1770888775830262034",
+    "url": "https://x.com/derbederdusler/status/1770888775830262034",
+    "profile_url": "https://x.com/derbederdusler"
+   },
+   "media": {},
+   "provider": "twitter",
+   "reposted_by": null
+  },
+  {
+   "type": "status",
+   "url": "https://x.com/therapifry/status/1770921544291696995",
+   "id": "1770921544291696995",
+   "text": "@derbederdusler @jack Amazing Xeet™! You won the internet today!",
+   "raw_text": {
+    "text": "@derbederdusler @jack Amazing Xeet™! You won the internet today!",
+    "display_text_range": [
+     22,
+     64
+    ],
+    "facets": [
+     {
+      "type": "mention",
+      "indices": [
+       0,
+       15
+      ],
+      "original": "derbederdusler",
+      "id": "1420469290369789958"
+     },
+     {
+      "type": "mention",
+      "indices": [
+       16,
+       21
+      ],
+      "original": "jack",
+      "id": "12"
+     }
+    ]
+   },
+   "author": {
+    "screen_name": "therapifry",
+    "url": "https://x.com/therapifry",
+    "id": "1705927835045474304",
+    "name": "french",
+    "avatar_url": "https://pbs.twimg.com/profile_images/2072878193871134720/XepmJFK5_200x200.jpg",
+    "verification": {
+     "verified": false,
+     "verified_at": null,
+     "type": null
+    },
+    "type": "profile"
+   },
+   "replies": 0,
+   "reposts": 0,
+   "likes": 10,
+   "bookmarks": 0,
+   "quotes": 1,
+   "embed_card": "tweet",
+   "created_at": "Thu Mar 21 21:12:52 +0000 2024",
+   "created_timestamp": 1711055572,
+   "views": 1827,
+   "is_note_tweet": false,
+   "community_note": null,
+   "lang": "en",
+   "replying_to": {
+    "screen_name": "derbederdusler",
+    "status": "1770888775830262034",
+    "url": "https://x.com/derbederdusler/status/1770888775830262034",
+    "profile_url": "https://x.com/derbederdusler"
+   },
+   "media": {},
+   "provider": "twitter",
+   "reposted_by": null
+  },
+  {
+   "type": "status",
+   "url": "https://x.com/YellowEvoFive/status/1771203416070504490",
+   "id": "1771203416070504490",
+   "text": "@derbederdusler @jack Ngl i would switch the logos",
+   "raw_text": {
+    "text": "@derbederdusler @jack Ngl i would switch the logos",
+    "display_text_range": [
+     22,
+     50
+    ],
+    "facets": [
+     {
+      "type": "mention",
+      "indices": [
+       0,
+       15
+      ],
+      "original": "derbederdusler",
+      "id": "1420469290369789958"
+     },
+     {
+      "type": "mention",
+      "indices": [
+       16,
+       21
+      ],
+      "original": "jack",
+      "id": "12"
+     }
+    ]
+   },
+   "author": {
+    "screen_name": "YellowEvoFive",
+    "url": "https://x.com/YellowEvoFive",
+    "id": "1546398449431728128",
+    "name": "1998 Mitsubishi Lancer Evolution V",
+    "avatar_url": "https://pbs.twimg.com/profile_images/1643985535181131780/HQVM2eZY_200x200.jpg",
+    "verification": {
+     "verified": false,
+     "verified_at": null,
+     "type": null
+    },
+    "type": "profile"
+   },
+   "replies": 1,
+   "reposts": 0,
+   "likes": 10,
+   "bookmarks": 0,
+   "quotes": 0,
+   "embed_card": "tweet",
+   "created_at": "Fri Mar 22 15:52:56 +0000 2024",
+   "created_timestamp": 1711122776,
+   "views": 1329,
+   "is_note_tweet": false,
+   "community_note": null,
+   "lang": "en",
+   "replying_to": {
+    "screen_name": "derbederdusler",
+    "status": "1770888775830262034",
+    "url": "https://x.com/derbederdusler/status/1770888775830262034",
+    "profile_url": "https://x.com/derbederdusler"
+   },
+   "media": {},
+   "provider": "twitter",
+   "reposted_by": null
+  },
+  {
+   "type": "status",
+   "url": "https://x.com/InkDemonnD/status/1939255960654004489",
+   "id": "1939255960654004489",
+   "text": "@derbederdusler @jack Dear god the Elon Musk worshippers are unfunny",
+   "raw_text": {
+    "text": "@derbederdusler @jack Dear god the Elon Musk worshippers are unfunny",
+    "display_text_range": [
+     22,
+     68
+    ],
+    "facets": [
+     {
+      "type": "mention",
+      "indices": [
+       0,
+       15
+      ],
+      "original": "derbederdusler",
+      "id": "1420469290369789958"
+     },
+     {
+      "type": "mention",
+      "indices": [
+       16,
+       21
+      ],
+      "original": "jack",
+      "id": "12"
+     }
+    ]
+   },
+   "author": {
+    "screen_name": "InkDemonnD",
+    "url": "https://x.com/InkDemonnD",
+    "id": "1739033202923114496",
+    "name": "Ink",
+    "avatar_url": "https://pbs.twimg.com/profile_images/2081985717727903744/qfPjU1he_200x200.jpg",
+    "verification": {
+     "verified": false,
+     "verified_at": null,
+     "type": null
+    },
+    "type": "profile"
+   },
+   "replies": 0,
+   "reposts": 0,
+   "likes": 2,
+   "bookmarks": 0,
+   "quotes": 0,
+   "embed_card": "tweet",
+   "created_at": "Sun Jun 29 09:33:45 +0000 2025",
+   "created_timestamp": 1751189625,
+   "views": 600,
+   "is_note_tweet": false,
+   "community_note": null,
+   "lang": "en",
+   "replying_to": {
+    "screen_name": "derbederdusler",
+    "status": "1770888775830262034",
+    "url": "https://x.com/derbederdusler/status/1770888775830262034",
+    "profile_url": "https://x.com/derbederdusler"
+   },
+   "media": {},
+   "provider": "twitter",
+   "reposted_by": null
+  },
+  {
+   "type": "status",
+   "url": "https://x.com/patty_c4kes/status/1989326085100638449",
+   "id": "1989326085100638449",
+   "text": "@derbederdusler @jack ts so corny bro 💔🥀",
+   "raw_text": {
+    "text": "@derbederdusler @jack ts so corny bro 💔🥀",
+    "display_text_range": [
+     22,
+     40
+    ],
+    "facets": [
+     {
+      "type": "mention",
+      "indices": [
+       0,
+       15
+      ],
+      "original": "derbederdusler",
+      "id": "1420469290369789958"
+     },
+     {
+      "type": "mention",
+      "indices": [
+       16,
+       21
+      ],
+      "original": "jack",
+      "id": "12"
+     }
+    ]
+   },
+   "author": {
+    "screen_name": "patty_c4kes",
+    "url": "https://x.com/patty_c4kes",
+    "id": "1915500190938607616",
+    "name": "pats funnies",
+    "avatar_url": "https://pbs.twimg.com/profile_images/2096336940891082753/C2bG221q_200x200.jpg",
+    "verification": {
+     "verified": false,
+     "verified_at": null,
+     "type": null
+    },
+    "type": "profile"
+   },
+   "replies": 0,
+   "reposts": 0,
+   "likes": 2,
+   "bookmarks": 0,
+   "quotes": 0,
+   "embed_card": "tweet",
+   "created_at": "Fri Nov 14 13:34:33 +0000 2025",
+   "created_timestamp": 1763127273,
+   "views": 419,
+   "is_note_tweet": false,
+   "community_note": null,
+   "lang": "en",
+   "replying_to": {
+    "screen_name": "derbederdusler",
+    "status": "1770888775830262034",
+    "url": "https://x.com/derbederdusler/status/1770888775830262034",
+    "profile_url": "https://x.com/derbederdusler"
+   },
+   "media": {},
+   "provider": "twitter",
+   "reposted_by": null
+  },
+  {
+   "type": "status",
+   "url": "https://x.com/FoggyTao/status/1771191113895776304",
+   "id": "1771191113895776304",
+   "text": "@derbederdusler @jack 🫣😂😂😂",
+   "raw_text": {
+    "text": "@derbederdusler @jack 🫣😂😂😂",
+    "display_text_range": [
+     22,
+     26
+    ],
+    "facets": [
+     {
+      "type": "mention",
+      "indices": [
+       0,
+       15
+      ],
+      "original": "derbederdusler",
+      "id": "1420469290369789958"
+     },
+     {
+      "type": "mention",
+      "indices": [
+       16,
+       21
+      ],
+      "original": "jack",
+      "id": "12"
+     }
+    ]
+   },
+   "author": {
+    "screen_name": "FoggyTao",
+    "url": "https://x.com/FoggyTao",
+    "id": "1268410230997565442",
+    "name": "Ms Wong",
+    "avatar_url": "https://pbs.twimg.com/profile_images/1282450393306259457/Y385jEeC_200x200.jpg",
+    "verification": {
+     "verified": false,
+     "verified_at": null,
+     "type": null
+    },
+    "type": "profile"
+   },
+   "replies": 0,
+   "reposts": 0,
+   "likes": 1,
+   "bookmarks": 0,
+   "quotes": 0,
+   "embed_card": "tweet",
+   "created_at": "Fri Mar 22 15:04:03 +0000 2024",
+   "created_timestamp": 1711119843,
+   "views": 794,
+   "is_note_tweet": false,
+   "community_note": null,
+   "lang": null,
+   "replying_to": {
+    "screen_name": "derbederdusler",
+    "status": "1770888775830262034",
+    "url": "https://x.com/derbederdusler/status/1770888775830262034",
+    "profile_url": "https://x.com/derbederdusler"
+   },
+   "media": {},
+   "provider": "twitter",
+   "reposted_by": null
+  },
+  {
+   "type": "status",
+   "url": "https://x.com/Giallo_Posting/status/2035472590576537676",
+   "id": "2035472590576537676",
+   "text": "@derbederdusler @jack This is like the predecessor to Kirkifications",
+   "raw_text": {
+    "text": "@derbederdusler @jack This is like the predecessor to Kirkifications",
+    "display_text_range": [
+     22,
+     68
+    ],
+    "facets": [
+     {
+      "type": "mention",
+      "indices": [
+       0,
+       15
+      ],
+      "original": "derbederdusler",
+      "id": "1420469290369789958"
+     },
+     {
+      "type": "mention",
+      "indices": [
+       16,
+       21
+      ],
+      "original": "jack",
+      "id": "12"
+     }
+    ]
+   },
+   "author": {
+    "screen_name": "Giallo_Posting",
+    "url": "https://x.com/Giallo_Posting",
+    "id": "1674963908564762624",
+    "name": "I Really Like Horror Movies",
+    "avatar_url": "https://pbs.twimg.com/profile_images/1674964200266031105/joCWoUI8_200x200.jpg",
+    "verification": {
+     "verified": false,
+     "verified_at": null,
+     "type": null
+    },
+    "type": "profile"
+   },
+   "replies": 0,
+   "reposts": 0,
+   "likes": 1,
+   "bookmarks": 0,
+   "quotes": 0,
+   "embed_card": "tweet",
+   "created_at": "Sat Mar 21 21:44:17 +0000 2026",
+   "created_timestamp": 1774129457,
+   "views": 123,
+   "is_note_tweet": false,
+   "community_note": null,
+   "lang": "en",
+   "replying_to": {
+    "screen_name": "derbederdusler",
+    "status": "1770888775830262034",
+    "url": "https://x.com/derbederdusler/status/1770888775830262034",
+    "profile_url": "https://x.com/derbederdusler"
+   },
+   "media": {},
+   "provider": "twitter",
+   "reposted_by": null
+  },
+  {
+   "type": "status",
+   "url": "https://x.com/MoodysGlobal/status/1770979107184021506",
+   "id": "1770979107184021506",
+   "text": "@derbederdusler @jack He literally threw it away.",
+   "raw_text": {
+    "text": "@derbederdusler @jack He literally threw it away.",
+    "display_text_range": [
+     22,
+     49
+    ],
+    "facets": [
+     {
+      "type": "mention",
+      "indices": [
+       0,
+       15
+      ],
+      "original": "derbederdusler",
+      "id": "1420469290369789958"
+     },
+     {
+      "type": "mention",
+      "indices": [
+       16,
+       21
+      ],
+      "original": "jack",
+      "id": "12"
+     }
+    ]
+   },
+   "author": {
+    "screen_name": "MoodysGlobal",
+    "url": "https://x.com/MoodysGlobal",
+    "id": "161562952",
+    "name": "Moody's (Ottawa, Toronto)",
+    "avatar_url": "https://pbs.twimg.com/profile_images/458732294308499456/DttOq-e1_200x200.jpeg",
+    "verification": {
+     "verified": false,
+     "verified_at": null,
+     "type": null
+    },
+    "type": "profile"
+   },
+   "replies": 1,
+   "reposts": 0,
+   "likes": 1,
+   "bookmarks": 0,
+   "quotes": 0,
+   "embed_card": "tweet",
+   "created_at": "Fri Mar 22 01:01:37 +0000 2024",
+   "created_timestamp": 1711069297,
+   "views": 859,
+   "is_note_tweet": false,
+   "community_note": null,
+   "lang": "en",
+   "replying_to": {
+    "screen_name": "derbederdusler",
+    "status": "1770888775830262034",
+    "url": "https://x.com/derbederdusler/status/1770888775830262034",
+    "profile_url": "https://x.com/derbederdusler"
+   },
+   "media": {},
+   "provider": "twitter",
+   "reposted_by": null
+  },
+  {
+   "type": "status",
+   "url": "https://x.com/rajeshcloud/status/1772129023264485514",
+   "id": "1772129023264485514",
+   "text": "@derbederdusler @jack Chucky is @elonmusk and @benshapiro can be his little play thing",
+   "raw_text": {
+    "text": "@derbederdusler @jack Chucky is @elonmusk and @benshapiro can be his little play thing https://t.co/EyDf4AILld",
+    "display_text_range": [
+     22,
+     86
+    ],
+    "facets": [
+     {
+      "type": "mention",
+      "indices": [
+       0,
+       15
+      ],
+      "original": "derbederdusler",
+      "id": "1420469290369789958"
+     },
+     {
+      "type": "mention",
+      "indices": [
+       16,
+       21
+      ],
+      "original": "jack",
+      "id": "12"
+     },
+     {
+      "type": "mention",
+      "indices": [
+       32,
+       41
+      ],
+      "original": "elonmusk",
+      "id": "44196397"
+     },
+     {
+      "type": "mention",
+      "indices": [
+       46,
+       57
+      ],
+      "original": "benshapiro",
+      "id": "17995040"
+     },
+     {
+      "type": "media",
+      "indices": [
+       87,
+       110
+      ],
+      "id": "1772129015588933632",
+      "display": "pic.x.com/EyDf4AILld",
+      "original": "https://t.co/EyDf4AILld",
+      "replacement": "https://x.com/rajeshcloud/status/1772129023264485514/photo/1"
+     }
+    ]
+   },
+   "author": {
+    "screen_name": "rajeshcloud",
+    "url": "https://x.com/rajeshcloud",
+    "id": "153881609",
+    "name": "Rajesh Savji Parmar",
+    "avatar_url": "https://pbs.twimg.com/profile_images/1993448431776395264/OCVSadik_200x200.jpg",
+    "verification": {
+     "verified": false,
+     "verified_at": null,
+     "type": null
+    },
+    "type": "profile"
+   },
+   "replies": 0,
+   "reposts": 0,
+   "likes": 0,
+   "bookmarks": 0,
+   "quotes": 0,
+   "embed_card": "player",
+   "created_at": "Mon Mar 25 05:10:58 +0000 2024",
+   "created_timestamp": 1711343458,
+   "possibly_sensitive": false,
+   "views": 384,
+   "is_note_tweet": false,
+   "community_note": null,
+   "lang": "en",
+   "replying_to": {
+    "screen_name": "derbederdusler",
+    "status": "1770888775830262034",
+    "url": "https://x.com/derbederdusler/status/1770888775830262034",
+    "profile_url": "https://x.com/derbederdusler"
+   },
+   "media": {
+    "all": [
+     {
+      "id": "1772129015588933632",
+      "url": "https://video.twimg.com/tweet_video/GJfd81ZXUAA6dDS.mp4",
+      "thumbnail_url": "https://pbs.twimg.com/tweet_video_thumb/GJfd81ZXUAA6dDS.jpg",
+      "duration": 0,
+      "width": 498,
+      "height": 280,
+      "format": "video/mp4",
+      "type": "gif",
+      "formats": [
+       {
+        "url": "https://video.twimg.com/tweet_video/GJfd81ZXUAA6dDS.mp4",
+        "bitrate": 0,
+        "container": "mp4",
+        "codec": "h264"
+       }
+      ],
+      "publisher": null
+     }
+    ],
+    "videos": [
+     {
+      "id": "1772129015588933632",
+      "url": "https://video.twimg.com/tweet_video/GJfd81ZXUAA6dDS.mp4",
+      "thumbnail_url": "https://pbs.twimg.com/tweet_video_thumb/GJfd81ZXUAA6dDS.jpg",
+      "duration": 0,
+      "width": 498,
+      "height": 280,
+      "format": "video/mp4",
+      "type": "gif",
+      "formats": [
+       {
+        "url": "https://video.twimg.com/tweet_video/GJfd81ZXUAA6dDS.mp4",
+        "bitrate": 0,
+        "container": "mp4",
+        "codec": "h264"
+       }
+      ],
+      "publisher": null
+     }
+    ]
+   },
+   "provider": "twitter",
+   "reposted_by": null
+  },
+  {
+   "type": "status",
+   "url": "https://x.com/QuimGarrell/status/2032194836854341709",
+   "id": "2032194836854341709",
+   "text": "@derbederdusler @jack 🤣🤣🤣",
+   "raw_text": {
+    "text": "@derbederdusler @jack 🤣🤣🤣",
+    "display_text_range": [
+     22,
+     25
+    ],
+    "facets": [
+     {
+      "type": "mention",
+      "indices": [
+       0,
+       15
+      ],
+      "original": "derbederdusler",
+      "id": "1420469290369789958"
+     },
+     {
+      "type": "mention",
+      "indices": [
+       16,
+       21
+      ],
+      "original": "jack",
+      "id": "12"
+     }
+    ]
+   },
+   "author": {
+    "screen_name": "QuimGarrell",
+    "url": "https://x.com/QuimGarrell",
+    "id": "1260846660076388353",
+    "name": "Quim Garrell",
+    "avatar_url": "https://pbs.twimg.com/profile_images/2074228102973030400/96vBFhU2_200x200.jpg",
+    "verification": {
+     "verified": false,
+     "verified_at": null,
+     "type": null
+    },
+    "type": "profile"
+   },
+   "replies": 0,
+   "reposts": 0,
+   "likes": 0,
+   "bookmarks": 0,
+   "quotes": 0,
+   "embed_card": "tweet",
+   "created_at": "Thu Mar 12 20:39:40 +0000 2026",
+   "created_timestamp": 1773347980,
+   "views": 86,
+   "is_note_tweet": false,
+   "community_note": null,
+   "lang": null,
+   "replying_to": {
+    "screen_name": "derbederdusler",
+    "status": "1770888775830262034",
+    "url": "https://x.com/derbederdusler/status/1770888775830262034",
+    "profile_url": "https://x.com/derbederdusler"
+   },
+   "media": {},
+   "provider": "twitter",
+   "reposted_by": null
+  },
+  {
+   "type": "status",
+   "url": "https://x.com/Frau_brille/status/1771314600681632061",
+   "id": "1771314600681632061",
+   "text": "@derbederdusler @jack 🤣🤣🤣🤣",
+   "raw_text": {
+    "text": "@derbederdusler @jack 🤣🤣🤣🤣",
+    "display_text_range": [
+     22,
+     26
+    ],
+    "facets": [
+     {
+      "type": "mention",
+      "indices": [
+       0,
+       15
+      ],
+      "original": "derbederdusler",
+      "id": "1420469290369789958"
+     },
+     {
+      "type": "mention",
+      "indices": [
+       16,
+       21
+      ],
+      "original": "jack",
+      "id": "12"
+     }
+    ]
+   },
+   "author": {
+    "screen_name": "Frau_brille",
+    "url": "https://x.com/Frau_brille",
+    "id": "2499322699",
+    "name": "Gemini🌺",
+    "avatar_url": "https://pbs.twimg.com/profile_images/1750446388461056001/rSEMl8Hx_200x200.jpg",
+    "verification": {
+     "verified": false,
+     "verified_at": null,
+     "type": null
+    },
+    "type": "profile"
+   },
+   "replies": 0,
+   "reposts": 0,
+   "likes": 0,
+   "bookmarks": 0,
+   "quotes": 0,
+   "embed_card": "tweet",
+   "created_at": "Fri Mar 22 23:14:44 +0000 2024",
+   "created_timestamp": 1711149284,
+   "views": 438,
+   "is_note_tweet": false,
+   "community_note": null,
+   "lang": null,
+   "replying_to": {
+    "screen_name": "derbederdusler",
+    "status": "1770888775830262034",
+    "url": "https://x.com/derbederdusler/status/1770888775830262034",
+    "profile_url": "https://x.com/derbederdusler"
+   },
+   "media": {},
+   "provider": "twitter",
+   "reposted_by": null
+  },
+  {
+   "type": "status",
+   "url": "https://x.com/haruhiprophet/status/2035486686415827028",
+   "id": "2035486686415827028",
+   "text": "@derbederdusler @jack that isn't charlie kirk",
+   "raw_text": {
+    "text": "@derbederdusler @jack that isn't charlie kirk",
+    "display_text_range": [
+     22,
+     45
+    ],
+    "facets": [
+     {
+      "type": "mention",
+      "indices": [
+       0,
+       15
+      ],
+      "original": "derbederdusler",
+      "id": "1420469290369789958"
+     },
+     {
+      "type": "mention",
+      "indices": [
+       16,
+       21
+      ],
+      "original": "jack",
+      "id": "12"
+     }
+    ]
+   },
+   "author": {
+    "screen_name": "haruhiprophet",
+    "url": "https://x.com/haruhiprophet",
+    "id": "1969303883819499520",
+    "name": "ミスティック (mystic)",
+    "avatar_url": "https://pbs.twimg.com/profile_images/2007208253693071360/d8XZJ1xW_200x200.jpg",
+    "verification": {
+     "verified": false,
+     "verified_at": null,
+     "type": null
+    },
+    "type": "profile"
+   },
+   "replies": 0,
+   "reposts": 0,
+   "likes": 0,
+   "bookmarks": 0,
+   "quotes": 0,
+   "embed_card": "tweet",
+   "created_at": "Sat Mar 21 22:40:18 +0000 2026",
+   "created_timestamp": 1774132818,
+   "views": 150,
+   "is_note_tweet": false,
+   "community_note": null,
+   "lang": "en",
+   "replying_to": {
+    "screen_name": "derbederdusler",
+    "status": "1770888775830262034",
+    "url": "https://x.com/derbederdusler/status/1770888775830262034",
+    "profile_url": "https://x.com/derbederdusler"
+   },
+   "media": {},
+   "provider": "twitter",
+   "reposted_by": null
+  },
+  {
+   "type": "status",
+   "url": "https://x.com/posypr/status/1771357349774573697",
+   "id": "1771357349774573697",
+   "text": "@derbederdusler @jack 😅",
+   "raw_text": {
+    "text": "@derbederdusler @jack 😅",
+    "display_text_range": [
+     22,
+     23
+    ],
+    "facets": [
+     {
+      "type": "mention",
+      "indices": [
+       0,
+       15
+      ],
+      "original": "derbederdusler",
+      "id": "1420469290369789958"
+     },
+     {
+      "type": "mention",
+      "indices": [
+       16,
+       21
+      ],
+      "original": "jack",
+      "id": "12"
+     }
+    ]
+   },
+   "author": {
+    "screen_name": "posypr",
+    "url": "https://x.com/posypr",
+    "id": "167927899",
+    "name": "PosyPR",
+    "avatar_url": "https://pbs.twimg.com/profile_images/1052443566528716800/B08jQQC8_200x200.jpg",
+    "verification": {
+     "verified": false,
+     "verified_at": null,
+     "type": null
+    },
+    "type": "profile"
+   },
+   "replies": 0,
+   "reposts": 0,
+   "likes": 0,
+   "bookmarks": 0,
+   "quotes": 0,
+   "embed_card": "tweet",
+   "created_at": "Sat Mar 23 02:04:37 +0000 2024",
+   "created_timestamp": 1711159477,
+   "views": 417,
+   "is_note_tweet": false,
+   "community_note": null,
+   "lang": null,
+   "replying_to": {
+    "screen_name": "derbederdusler",
+    "status": "1770888775830262034",
+    "url": "https://x.com/derbederdusler/status/1770888775830262034",
+    "profile_url": "https://x.com/derbederdusler"
+   },
+   "media": {},
+   "provider": "twitter",
+   "reposted_by": null
+  },
+  {
+   "type": "status",
+   "url": "https://x.com/princeofone/status/1771183026774430060",
+   "id": "1771183026774430060",
+   "text": "@derbederdusler @jack 😭😭😭",
+   "raw_text": {
+    "text": "@derbederdusler @jack 😭😭😭",
+    "display_text_range": [
+     22,
+     25
+    ],
+    "facets": [
+     {
+      "type": "mention",
+      "indices": [
+       0,
+       15
+      ],
+      "original": "derbederdusler",
+      "id": "1420469290369789958"
+     },
+     {
+      "type": "mention",
+      "indices": [
+       16,
+       21
+      ],
+      "original": "jack",
+      "id": "12"
+     }
+    ]
+   },
+   "author": {
+    "screen_name": "princeofone",
+    "url": "https://x.com/princeofone",
+    "id": "2860958618",
+    "name": "Prince✧",
+    "avatar_url": "https://pbs.twimg.com/profile_images/2086839965212884992/DR4-RU2I_200x200.jpg",
+    "verification": {
+     "verified": false,
+     "verified_at": null,
+     "type": null
+    },
+    "type": "profile"
+   },
+   "replies": 0,
+   "reposts": 0,
+   "likes": 0,
+   "bookmarks": 0,
+   "quotes": 0,
+   "embed_card": "tweet",
+   "created_at": "Fri Mar 22 14:31:55 +0000 2024",
+   "created_timestamp": 1711117915,
+   "views": 470,
+   "is_note_tweet": false,
+   "community_note": null,
+   "lang": null,
+   "replying_to": {
+    "screen_name": "derbederdusler",
+    "status": "1770888775830262034",
+    "url": "https://x.com/derbederdusler/status/1770888775830262034",
+    "profile_url": "https://x.com/derbederdusler"
+   },
+   "media": {},
+   "provider": "twitter",
+   "reposted_by": null
+  }
+ ],
+ "author": {
+  "screen_name": "derbederdusler",
+  "url": "https://x.com/derbederdusler",
+  "id": "1420469290369789958",
+  "name": "𝕯𝖊𝖗𝖇𝖊𝖉𝖊𝖗",
+  "avatar_url": "https://pbs.twimg.com/profile_images/2068802435938689025/Iqb-7nQc_200x200.jpg",
+  "verification": {
+   "verified": true,
+   "verified_at": null,
+   "type": "individual"
+  },
+  "type": "profile"
+ },
+ "cursor": {
+  "bottom": "DAAKCgABHSZtQvx__zULAAIAAADQRW1QQzZ3QUFBZlEvZ0dKTjB2R3AvQUFBQUJFY004NXY1UllBVFJpVWxCOW4xMEFxQUFBQUFBQUFBQlFhYVRkMDVGYUEyQmlUZGZXRUZ0RVNHSk9Ud3dTWHdXTWNQM09KWjF2UVRCdWJnWWpVMTVEeEdKVDVQcGNYY1QwYWFSVW9SVmJBWUJpVHlCMXNWNUFDR3VtZkJZZFhRUWtZbFNBZjQ1ZEFnUmlYM2ZVZjF2Q0tHSlNCbENjWFVXd2NQNEJiV05vd1ZCaVVpTzhWRmhBdwgAAwAAAAILAAQAAAAGQm90dG9tAAA"
+ },
+ "code": 200
+}

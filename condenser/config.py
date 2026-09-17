@@ -383,6 +383,14 @@ class Settings(BaseSettings):
     # "the key is the switch" convention; it has a quota, so nothing spends it by
     # default.
     condenser_puremd_api_key: str = ''
+    # X status links render from FxEmbed's anonymous JSON API (condenser/purifier_x.py,
+    # plan 2026-09-17). FxEmbed takes no key, so the address is the switch: empty =
+    # handler off, and a /p request for a status is 302'd to the original link. Also
+    # the self-hosting entry point (FxEmbed runs as a Cloudflare Worker or container).
+    condenser_purifier_x_api_base: str = 'https://api.fxtwitter.com'
+    # Top-level reply threads shown under a status, in FxEmbed's ranking order; the
+    # status author's own replies are kept whatever their rank.
+    condenser_purifier_x_replies: int = 20
 
     # --- link preview fetching (condenser/preview.py) ---
     # Total per-request timeout (seconds) for fetching a URL/its image.

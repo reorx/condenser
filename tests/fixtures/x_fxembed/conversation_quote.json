@@ -1,0 +1,410 @@
+{
+ "status": {
+  "type": "status",
+  "url": "https://x.com/novoreorx/status/2079732304914862528",
+  "id": "2079732304914862528",
+  "text": "新增了 HackerNews Top 20 信息源",
+  "raw_text": {
+   "text": "新增了 HackerNews Top 20 信息源 https://t.co/ONypPaqZBF",
+   "display_text_range": [
+    0,
+    25
+   ],
+   "facets": [
+    {
+     "type": "media",
+     "indices": [
+      26,
+      49
+     ],
+     "id": "2079732292269043712",
+     "display": "pic.x.com/ONypPaqZBF",
+     "original": "https://t.co/ONypPaqZBF",
+     "replacement": "https://x.com/novoreorx/status/2079732304914862528/photo/1"
+    }
+   ]
+  },
+  "author": {
+   "screen_name": "novoreorx",
+   "url": "https://x.com/novoreorx",
+   "id": "132736859",
+   "name": "Reorx",
+   "avatar_url": "https://pbs.twimg.com/profile_images/579924232685010944/obcxKbEE_200x200.png",
+   "verification": {
+    "verified": true,
+    "verified_at": null,
+    "type": "individual"
+   },
+   "type": "profile"
+  },
+  "replies": 2,
+  "reposts": 0,
+  "likes": 0,
+  "bookmarks": 3,
+  "quotes": 0,
+  "embed_card": "summary_large_image",
+  "created_at": "Wed Jul 22 00:56:35 +0000 2026",
+  "created_timestamp": 1784681795,
+  "possibly_sensitive": false,
+  "views": 2013,
+  "is_note_tweet": false,
+  "community_note": null,
+  "lang": "zh",
+  "replying_to": null,
+  "media": {
+   "all": [
+    {
+     "type": "photo",
+     "id": "2079732292269043712",
+     "url": "https://pbs.twimg.com/media/HNyxgDya8AAO0kC.jpg?name=orig",
+     "width": 945,
+     "height": 2048
+    }
+   ],
+   "photos": [
+    {
+     "type": "photo",
+     "id": "2079732292269043712",
+     "url": "https://pbs.twimg.com/media/HNyxgDya8AAO0kC.jpg?name=orig",
+     "width": 945,
+     "height": 2048
+    }
+   ]
+  },
+  "quote": {
+   "type": "status",
+   "url": "https://x.com/novoreorx/status/2077963033142530148",
+   "id": "2077963033142530148",
+   "text": "我做了一个自部署的阅读器，叫 Condenser，可以用 Twitter 的方式刷 Telegram 上关注的频道。刚刚测了下 iOS 版也可以用了。repo 还没有修整，但是非常的 agent native，因此如果你有兴趣的话，直接 clone 下来让你的 agent 来安装部署，应该是完全没问题的\n\nhttps://github.com/reorx/condenser",
+   "raw_text": {
+    "text": "我做了一个自部署的阅读器，叫 Condenser，可以用 Twitter 的方式刷 Telegram 上关注的频道。刚刚测了下 iOS 版也可以用了。repo 还没有修整，但是非常的 agent native，因此如果你有兴趣的话，直接 clone 下来让你的 agent 来安装部署，应该是完全没问题的\n\nhttps://t.co/OBH3uSbLPS https://t.co/Y1BIvLoNjI",
+    "display_text_range": [
+     0,
+     177
+    ],
+    "facets": [
+     {
+      "type": "url",
+      "indices": [
+       154,
+       177
+      ],
+      "original": "https://t.co/OBH3uSbLPS",
+      "replacement": "https://github.com/reorx/condenser",
+      "display": "github.com/reorx/condenser"
+     },
+     {
+      "type": "media",
+      "indices": [
+       178,
+       201
+      ],
+      "id": "2077961408793432065",
+      "display": "pic.x.com/Y1BIvLoNjI",
+      "original": "https://t.co/Y1BIvLoNjI",
+      "replacement": "https://x.com/novoreorx/status/2077963033142530148/photo/1"
+     },
+     {
+      "type": "media",
+      "indices": [
+       178,
+       201
+      ],
+      "id": "2077961427235885056",
+      "display": "pic.x.com/Y1BIvLoNjI",
+      "original": "https://t.co/Y1BIvLoNjI",
+      "replacement": "https://x.com/novoreorx/status/2077963033142530148/photo/1"
+     }
+    ]
+   },
+   "author": {
+    "screen_name": "novoreorx",
+    "url": "https://x.com/novoreorx",
+    "id": "132736859",
+    "name": "Reorx",
+    "avatar_url": "https://pbs.twimg.com/profile_images/579924232685010944/obcxKbEE_200x200.png",
+    "verification": {
+     "verified": true,
+     "verified_at": null,
+     "type": "individual"
+    },
+    "type": "profile"
+   },
+   "replies": 2,
+   "reposts": 1,
+   "likes": 10,
+   "bookmarks": 15,
+   "quotes": 1,
+   "embed_card": "summary_large_image",
+   "created_at": "Fri Jul 17 03:46:08 +0000 2026",
+   "created_timestamp": 1784259968,
+   "possibly_sensitive": false,
+   "views": 4385,
+   "is_note_tweet": false,
+   "community_note": null,
+   "lang": "zh",
+   "replying_to": null,
+   "media": {
+    "all": [
+     {
+      "type": "photo",
+      "id": "2077961408793432065",
+      "url": "https://pbs.twimg.com/media/HNZm5EwaUAEiU5d.jpg?name=orig",
+      "width": 2336,
+      "height": 1644
+     },
+     {
+      "type": "photo",
+      "id": "2077961427235885056",
+      "url": "https://pbs.twimg.com/media/HNZm6Jdb0AAXPrV.jpg?name=orig",
+      "width": 1206,
+      "height": 2622
+     }
+    ],
+    "photos": [
+     {
+      "type": "photo",
+      "id": "2077961408793432065",
+      "url": "https://pbs.twimg.com/media/HNZm5EwaUAEiU5d.jpg?name=orig",
+      "width": 2336,
+      "height": 1644
+     },
+     {
+      "type": "photo",
+      "id": "2077961427235885056",
+      "url": "https://pbs.twimg.com/media/HNZm6Jdb0AAXPrV.jpg?name=orig",
+      "width": 1206,
+      "height": 2622
+     }
+    ],
+    "mosaic": {
+     "type": "mosaic_photo",
+     "formats": {
+      "jpeg": "https://mosaic.fxtwitter.com/jpeg/2077963033142530148/HNZm5EwaUAEiU5d/HNZm6Jdb0AAXPrV",
+      "webp": "https://mosaic.fxtwitter.com/webp/2077963033142530148/HNZm5EwaUAEiU5d/HNZm6Jdb0AAXPrV"
+     }
+    }
+   },
+   "source": "Twitter Web App",
+   "provider": "twitter",
+   "reposted_by": null
+  },
+  "source": "Twitter for iPhone",
+  "provider": "twitter",
+  "reposted_by": null
+ },
+ "thread": [
+  {
+   "type": "status",
+   "url": "https://x.com/novoreorx/status/2079732304914862528",
+   "id": "2079732304914862528",
+   "text": "新增了 HackerNews Top 20 信息源",
+   "raw_text": {
+    "text": "新增了 HackerNews Top 20 信息源 https://t.co/ONypPaqZBF",
+    "display_text_range": [
+     0,
+     25
+    ],
+    "facets": [
+     {
+      "type": "media",
+      "indices": [
+       26,
+       49
+      ],
+      "id": "2079732292269043712",
+      "display": "pic.x.com/ONypPaqZBF",
+      "original": "https://t.co/ONypPaqZBF",
+      "replacement": "https://x.com/novoreorx/status/2079732304914862528/photo/1"
+     }
+    ]
+   },
+   "author": {
+    "screen_name": "novoreorx",
+    "url": "https://x.com/novoreorx",
+    "id": "132736859",
+    "name": "Reorx",
+    "avatar_url": "https://pbs.twimg.com/profile_images/579924232685010944/obcxKbEE_200x200.png",
+    "verification": {
+     "verified": true,
+     "verified_at": null,
+     "type": "individual"
+    },
+    "type": "profile"
+   },
+   "replies": 2,
+   "reposts": 0,
+   "likes": 0,
+   "bookmarks": 3,
+   "quotes": 0,
+   "embed_card": "summary_large_image",
+   "created_at": "Wed Jul 22 00:56:35 +0000 2026",
+   "created_timestamp": 1784681795,
+   "possibly_sensitive": false,
+   "views": 2013,
+   "is_note_tweet": false,
+   "community_note": null,
+   "lang": "zh",
+   "replying_to": null,
+   "media": {
+    "all": [
+     {
+      "type": "photo",
+      "id": "2079732292269043712",
+      "url": "https://pbs.twimg.com/media/HNyxgDya8AAO0kC.jpg?name=orig",
+      "width": 945,
+      "height": 2048
+     }
+    ],
+    "photos": [
+     {
+      "type": "photo",
+      "id": "2079732292269043712",
+      "url": "https://pbs.twimg.com/media/HNyxgDya8AAO0kC.jpg?name=orig",
+      "width": 945,
+      "height": 2048
+     }
+    ]
+   },
+   "quote": {
+    "type": "status",
+    "url": "https://x.com/novoreorx/status/2077963033142530148",
+    "id": "2077963033142530148",
+    "text": "我做了一个自部署的阅读器，叫 Condenser，可以用 Twitter 的方式刷 Telegram 上关注的频道。刚刚测了下 iOS 版也可以用了。repo 还没有修整，但是非常的 agent native，因此如果你有兴趣的话，直接 clone 下来让你的 agent 来安装部署，应该是完全没问题的\n\nhttps://github.com/reorx/condenser",
+    "raw_text": {
+     "text": "我做了一个自部署的阅读器，叫 Condenser，可以用 Twitter 的方式刷 Telegram 上关注的频道。刚刚测了下 iOS 版也可以用了。repo 还没有修整，但是非常的 agent native，因此如果你有兴趣的话，直接 clone 下来让你的 agent 来安装部署，应该是完全没问题的\n\nhttps://t.co/OBH3uSbLPS https://t.co/Y1BIvLoNjI",
+     "display_text_range": [
+      0,
+      177
+     ],
+     "facets": [
+      {
+       "type": "url",
+       "indices": [
+        154,
+        177
+       ],
+       "original": "https://t.co/OBH3uSbLPS",
+       "replacement": "https://github.com/reorx/condenser",
+       "display": "github.com/reorx/condenser"
+      },
+      {
+       "type": "media",
+       "indices": [
+        178,
+        201
+       ],
+       "id": "2077961408793432065",
+       "display": "pic.x.com/Y1BIvLoNjI",
+       "original": "https://t.co/Y1BIvLoNjI",
+       "replacement": "https://x.com/novoreorx/status/2077963033142530148/photo/1"
+      },
+      {
+       "type": "media",
+       "indices": [
+        178,
+        201
+       ],
+       "id": "2077961427235885056",
+       "display": "pic.x.com/Y1BIvLoNjI",
+       "original": "https://t.co/Y1BIvLoNjI",
+       "replacement": "https://x.com/novoreorx/status/2077963033142530148/photo/1"
+      }
+     ]
+    },
+    "author": {
+     "screen_name": "novoreorx",
+     "url": "https://x.com/novoreorx",
+     "id": "132736859",
+     "name": "Reorx",
+     "avatar_url": "https://pbs.twimg.com/profile_images/579924232685010944/obcxKbEE_200x200.png",
+     "verification": {
+      "verified": true,
+      "verified_at": null,
+      "type": "individual"
+     },
+     "type": "profile"
+    },
+    "replies": 2,
+    "reposts": 1,
+    "likes": 10,
+    "bookmarks": 15,
+    "quotes": 1,
+    "embed_card": "summary_large_image",
+    "created_at": "Fri Jul 17 03:46:08 +0000 2026",
+    "created_timestamp": 1784259968,
+    "possibly_sensitive": false,
+    "views": 4385,
+    "is_note_tweet": false,
+    "community_note": null,
+    "lang": "zh",
+    "replying_to": null,
+    "media": {
+     "all": [
+      {
+       "type": "photo",
+       "id": "2077961408793432065",
+       "url": "https://pbs.twimg.com/media/HNZm5EwaUAEiU5d.jpg?name=orig",
+       "width": 2336,
+       "height": 1644
+      },
+      {
+       "type": "photo",
+       "id": "2077961427235885056",
+       "url": "https://pbs.twimg.com/media/HNZm6Jdb0AAXPrV.jpg?name=orig",
+       "width": 1206,
+       "height": 2622
+      }
+     ],
+     "photos": [
+      {
+       "type": "photo",
+       "id": "2077961408793432065",
+       "url": "https://pbs.twimg.com/media/HNZm5EwaUAEiU5d.jpg?name=orig",
+       "width": 2336,
+       "height": 1644
+      },
+      {
+       "type": "photo",
+       "id": "2077961427235885056",
+       "url": "https://pbs.twimg.com/media/HNZm6Jdb0AAXPrV.jpg?name=orig",
+       "width": 1206,
+       "height": 2622
+      }
+     ],
+     "mosaic": {
+      "type": "mosaic_photo",
+      "formats": {
+       "jpeg": "https://mosaic.fxtwitter.com/jpeg/2077963033142530148/HNZm5EwaUAEiU5d/HNZm6Jdb0AAXPrV",
+       "webp": "https://mosaic.fxtwitter.com/webp/2077963033142530148/HNZm5EwaUAEiU5d/HNZm6Jdb0AAXPrV"
+      }
+     }
+    },
+    "source": "Twitter Web App",
+    "provider": "twitter",
+    "reposted_by": null
+   },
+   "source": "Twitter for iPhone",
+   "provider": "twitter",
+   "reposted_by": null
+  }
+ ],
+ "replies": [],
+ "author": {
+  "screen_name": "novoreorx",
+  "url": "https://x.com/novoreorx",
+  "id": "132736859",
+  "name": "Reorx",
+  "avatar_url": "https://pbs.twimg.com/profile_images/579924232685010944/obcxKbEE_200x200.png",
+  "verification": {
+   "verified": true,
+   "verified_at": null,
+   "type": "individual"
+  },
+  "type": "profile"
+ },
+ "cursor": {
+  "bottom": "DAAKCgABHSZtifR___0LAAIAAAAoRW1QQzZ3QUFBZlEvZ0dKTjB2R3AvQUFBQUFFYzNMR0RMbHJSd0E9PQgAAwAAAAILAAQAAAAGQm90dG9tAAA"
+ },
+ "code": 200
+}
