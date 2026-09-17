@@ -177,6 +177,30 @@ def test_a_bodiless_detail_block_stores_no_body(xa_env):
     assert listed['article'] == {'title': TITLE, 'previewText': PREVIEW, 'has_content': False}
 
 
+def test_an_unknown_detail_key_never_reaches_the_list(xa_env):
+    """``split_article`` keeps an allowlist, not a denylist (review 2026-09-17
+    finding 8): the card's pair is all ``article`` ever holds, so a body-ish key
+    xbird adds later (``contentState``, say) lands in the body, not the list."""
+    grown = {**DETAIL['article'], 'contentState': {'blocks': ['...']}}
+    with _client() as client:
+        _login(client)
+        _subscribe(client)
+        _ingest(client, xa_env, [article_tweet(article=grown)])
+        listed = _timeline_x(client)[str(ARTICLE_ID)]
+    row = db.get_x_tweet(ARTICLE_ID)
+    assert json.loads(row.article) == {'title': TITLE, 'previewText': PREVIEW}
+    assert listed['article'] == {'title': TITLE, 'previewText': PREVIEW, 'has_content': True}
+    assert json.loads(row.article_detail)['contentState'] == {'blocks': ['...']}
+
+
+def test_split_article_keeps_only_the_cards_pair():
+    assert x.split_article({'title': 't', 'previewText': 'p', 'contentState': 'x'}) == ({'title': 't', 'previewText': 'p'}, None)
+    assert x.split_article({'title': 't', 'content': 'body', 'extra': 1}) == ({'title': 't'}, {'content': 'body', 'extra': 1})
+    assert x.split_article({'previewText': 'p', 'content': None}) == ({'previewText': 'p'}, None)
+    assert x.split_article({}) == ({}, None)
+    assert x.split_article('nope') == (None, None)
+
+
 def test_the_work_order_endpoints_are_gone(xa_env):
     """Plan 2026-09-17 replaced the end-of-round work order with the inline read."""
     with _client() as client:
@@ -200,6 +224,18 @@ def test_the_full_text_becomes_searchable(xa_env):
     # a search hit is a list item: flag, no body
     article = after['items'][0]['x']['article']
     assert article['has_content'] is True and 'content_html' not in article
+
+
+def test_the_full_text_stays_searchable_after_a_bodiless_repush(xa_env):
+    """Every round's timeline re-push re-indexes the tweet; the document must be
+    built from the stored body, not from the push that has none."""
+    with _client() as client:
+        _login(client)
+        _subscribe(client)
+        _ingest(client, xa_env, [article_tweet()])
+        _ingest(client, xa_env, [timeline_tweet()])
+        hits = client.get('/api/search', params={'q': BODY_ONLY_PHRASE}).json()
+    assert [item['key'] for item in hits['items']] == [f'x:{ARTICLE_ID}']
 
 
 def test_the_verdict_still_reads_title_and_preview_only(xa_env):
@@ -310,7 +346,29 @@ def test_a_snapshot_saved_before_the_body_existed_replays_without_one(xa_env):
         db.XFeedItem.delete().execute()
         db.XTweet.delete().execute()
         article = client.get(f'/api/x/tweets/{ARTICLE_ID}').json()['x']['article']
-    assert article['has_content'] is False and article['content_html'] is None
+    # not False: a snapshot taken before the body existed does not know whether
+    # the live row has one by now, and both clients read null as "say nothing"
+    assert article['has_content'] is None and article['content_html'] is None
+
+
+def test_a_snapshot_taken_before_the_body_does_not_freeze_the_flag(xa_env):
+    """Saved on the round the read failed, body read the next round (review
+    2026-09-17 finding 4): the saved list must not keep saying 「未获取到正文」
+    while the timeline card offers 「查看全文」 — the snapshot's own answer is
+    null, and the detail endpoint reads the live row."""
+    key = f'x:{ARTICLE_ID}'
+    with _client() as client:
+        _login(client)
+        _subscribe(client)
+        _ingest(client, xa_env, [timeline_tweet()])
+        assert client.post('/api/records', json={'key': key}).status_code == 200
+        _ingest(client, xa_env, [article_tweet()])
+        saved = client.get('/api/records').json()[0]['x']['article']
+        listed = _timeline_x(client)[str(ARTICLE_ID)]['article']
+        detail = client.get(f'/api/x/tweets/{ARTICLE_ID}').json()['x']['article']
+    assert saved['has_content'] is None and 'content_html' not in saved
+    assert listed['has_content'] is True
+    assert detail['has_content'] is True and detail['content_html'].count('<h2>') == 7
 
 
 def test_the_detail_endpoint_404s_on_an_unknown_tweet(xa_env):

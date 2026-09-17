@@ -345,15 +345,16 @@ public struct XMetrics: Codable, Equatable, Sendable {
     }
 }
 
-/// X 长文。timeline 查询只给标题 + ~200 字符预览；正文由 probe 在轮次末尾经
-/// TweetDetail 补抓（2026-09-16，schema v21），列表只说「有没有」（`hasContent`），
+/// X 长文。timeline 查询只给标题 + ~200 字符预览；正文由 probe 采集推文时内联读
+/// TweetDetail 合并进来（2026-09-17，schema v21），列表只说「有没有」（`hasContent`），
 /// 正文是服务端从 Markdown 渲染好的 HTML（`contentHTML`），只有
 /// `GET /api/x/tweets/{id}` 与收藏快照才带——RSS 列表摘录 / 详情全文的同一种拆分。
 /// camelCase 的 `previewText` 是上游原样，snake_case 的两个是服务端算的。
 public struct XArticle: Codable, Equatable, Sendable {
     public let title: String?
     public let previewText: String?
-    /// 服务端已存有正文。旧服务端 / 改版前的收藏快照没有这个字段 → nil，按没有处理
+    /// 服务端已存有正文；false = probe 没拿到。旧服务端 / 改版前的收藏快照没有这个字段 → nil；
+    /// 无正文时收藏的快照服务端给 null → 也是 nil（活行现在可能已有正文）。nil 两句提示都不挂
     public let hasContent: Bool?
     /// 渲染好的正文 HTML：封面 `<figure>` 打头，独占一段的图是 `<figure>` +
     /// `<figcaption>`，图片带 width/height、URL 是绝对的 pbs.twimg.com。

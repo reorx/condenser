@@ -10,7 +10,7 @@ import argparse
 import logging
 import sys
 
-from .cache import SeenCache
+from .cache import ArticleFailures, SeenCache
 from .client import ProbeClient, ServerError
 from .config import ConfigError, load_settings
 from .runner import run_round
@@ -49,26 +49,26 @@ def _check(settings) -> int:
     return 1 if failures else 0
 
 
-def _run_once(settings, cache=None, kinds=None) -> int:
+def _run_once(settings, cache=None, kinds=None, failures=None) -> int:
     with ProbeClient(settings.api_base, settings.token, settings.timeout) as client:
         try:
-            outcomes = run_round(client, timeout_ms=settings.x_timeout_ms, cache=cache, kinds=kinds)
+            outcomes = run_round(client, timeout_ms=settings.x_timeout_ms, cache=cache, kinds=kinds, failures=failures)
         except ServerError as e:
             log.error('could not read probe-config: %s', e)
             return 1
     return 1 if any(not o.ok for o in outcomes) else 0
 
 
-def _watch(settings, cache=None) -> int:
+def _watch(settings, cache=None, failures=None) -> int:
     def run_task(task):
         log.info('task %s: round for kinds %s', task.name, ','.join(task.kinds))
-        _run_once(settings, cache, kinds=set(task.kinds))
+        _run_once(settings, cache, kinds=set(task.kinds), failures=failures)
 
     for task in TASKS:
         log.info('schedule: %s (%s) at minutes %s', task.name, ','.join(task.kinds), task.minutes)
     # One full round up front: the process just (re)started — possibly at login —
     # and For You should not wait up to an hour for its first slot.
-    _run_once(settings, cache)
+    _run_once(settings, cache, failures=failures)
     try:
         build_scheduler(run_task).start()
     except KeyboardInterrupt:
@@ -99,10 +99,13 @@ def main() -> int:
 
     if args.command == 'check':
         return _check(settings)
+    # --no-cache is the manual full re-push; it forgets the article failures too,
+    # so the whole window's bodies get one more read.
     cache = None if args.no_cache else SeenCache()
+    failures = None if args.no_cache else ArticleFailures()
     if args.command == 'watch':
-        return _watch(settings, cache)
-    return _run_once(settings, cache)
+        return _watch(settings, cache, failures)
+    return _run_once(settings, cache, failures=failures)
 
 
 if __name__ == '__main__':

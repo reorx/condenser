@@ -184,6 +184,19 @@ describe('XCard', () => {
     expect(screen.queryByRole('button', { name: '查看全文' })).toBeNull();
   });
 
+  it('says nothing either way when the flag is null (a snapshot saved before the body existed)', () => {
+    wrap(
+      <XCard
+        item={makeItem({
+          text: 'Superrepos',
+          article: { title: 'Superrepos', previewText: 'Different workloads…', has_content: null },
+        })}
+      />,
+    );
+    expect(screen.queryByText('未获取到正文')).toBeNull();
+    expect(screen.queryByRole('button', { name: '查看全文' })).toBeNull();
+  });
+
   it('offers 查看全文 once the body exists, and opens the pane instead of expanding', async () => {
     // The body renders in the detail pane only — one rendering to highlight on,
     // RssCard's arrangement. The card itself never fetches it.

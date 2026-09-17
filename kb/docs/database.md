@@ -86,12 +86,19 @@ untouched — the verdict's `judge_text`, `search.x_document` and both cards rea
 "title + preview", so the body is opted into per reader, never slipped in under them.
 
 Written by the ordinary ingest (plan 2026-09-17): the probe merges each new article's
-TweetDetail `article` block into the tweet it pushes, and `x.split_article` peels the
-body keys off `article` whatever their values, keeping them as `article_detail` only when
-`content` or `plainText` has text. `ParsedTweet.row()` carries the key **only when there
-is a body**, so `upsert_x_tweet` — which updates exactly the keys it is given — leaves a
-stored body alone when the next round's timeline re-push arrives without one, while a push
-that does carry one (an edited article, a `run --no-cache`) replaces it. Shape-based ADD
+TweetDetail `article` block into the tweet it pushes, and `x.split_article` keeps only
+the card's pair (`ARTICLE_CARD_KEYS` = `title` / `previewText`, an **allowlist** — a
+body-ish key xbird adds later cannot grow the list payload) in `article`; every other
+key becomes `article_detail`, and only when `content` or `plainText` has text.
+`ParsedTweet.row()` carries the key **only when there is a body**, so `upsert_x_tweet`
+— which updates exactly the keys it is given — leaves a stored body alone when the next
+round's timeline re-push arrives without one, while a push that does carry one (an edited
+article, a `run --no-cache`) replaces it. `article_detail` is therefore **the body's
+archive**; `raw` is *the last push as pushed* and loses the body on the first bodiless
+re-push (review 2026-09-17 finding 3). In the envelope the list carries
+`article.has_content` (true/false from the live row; **null** when a saved snapshot is
+replayed that was taken before the body existed — it does not know, and both clients say
+nothing on null). Shape-based ADD
 COLUMN before `create_tables` (`_migrate_x_article_v21`, the v14–v20 position), verified
 on copies of a v10 and a v19 archive (integrity ok, table writable after). No backfill —
 historical rows are NULL = no body until a probe push brings one. `search.TOKENIZER_VERSION`

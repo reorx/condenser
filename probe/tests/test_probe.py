@@ -12,7 +12,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from condenser_probe import xsource
-from condenser_probe.cache import SeenCache
+from condenser_probe.cache import ArticleFailures, SeenCache
 from condenser_probe.client import ProbeClient, ServerError
 from condenser_probe.config import ConfigError, load_settings
 from condenser_probe.runner import run_round
@@ -227,7 +227,9 @@ def test_a_new_article_is_pushed_with_its_body_merged_in():
         fetched.append(tweet_id)
         return body(tweet_id)
 
-    outcomes = run_round(client, fetch=_feed(article_tweet('11'), *tweets(1)), fetch_article=fetch_article, article_delay=0)
+    outcomes = run_round(
+        client, fetch=_feed(article_tweet('11'), *tweets(1)), fetch_article=fetch_article, article_delay=0
+    )
     assert fetched == ['11']
     pushed = {t['id']: t for t in _pushed(client)}
     # the article block grew the body; the tweet's own text stays the timeline's title
@@ -271,23 +273,41 @@ def test_a_failed_read_still_pushes_the_tweet_but_leaves_it_out_of_the_cache(tmp
     assert set(cache.load('novoreorx')) == {'11', '1000'}
 
 
-def test_an_unexpected_error_in_the_read_is_contained_the_same_way(tmp_path):
-    """xbird maps the detail response outside its own error values; a crash in that
-    mapping must cost the body, never the feed."""
+def test_a_crash_in_the_mapping_is_final_for_that_tweet_alone(tmp_path):
+    """xbird maps the detail response outside its own error values, so a crash in
+    that mapping is this tweet's: X answered, the answer is one we cannot read, and
+    the next round would crash the same way. It costs the body, never the feed —
+    and, unlike a transport error, it is remembered (no re-read) and leaves the
+    breaker alone (review 2026-09-17 finding 1)."""
     cache = _cache(tmp_path)
     client = FakeClient([USER])
+    calls = []
 
-    def crash(tweet_id):
-        raise KeyError('article_results')
+    def fetch_article(tweet_id):
+        calls.append(tweet_id)
+        if tweet_id == '11':
+            raise KeyError('article_results')
+        return body(tweet_id)
 
-    outcomes = run_round(client, fetch=_feed(article_tweet('11')), fetch_article=crash, article_delay=0, cache=cache)
-    assert outcomes[0].ok and [t['id'] for t in _pushed(client)] == ['11']
-    assert cache.load('novoreorx') == {}
+    fetch = _feed(article_tweet('11'), article_tweet('12'))
+    outcomes = run_round(client, fetch=fetch, fetch_article=fetch_article, article_delay=0, cache=cache)
+    assert outcomes[0].ok and calls == ['11', '12']  # 12 was still read
+    pushed = {t['id']: t for t in _pushed(client)}
+    assert pushed['11']['article'] == {'title': 'title 11', 'previewText': 'p'}
+    assert pushed['12']['article'] == body('12')
+    assert outcomes[0].articles_fetched == 1 and outcomes[0].articles_failed == 0
+    assert outcomes[0].articles_abandoned == 1
+    assert set(cache.load('novoreorx')) == {'11', '12'}
+
+    run_round(client, fetch=fetch, fetch_article=fetch_article, article_delay=0, cache=cache)
+    assert calls == ['11', '12']
 
 
-def test_the_first_failure_opens_the_breaker_for_the_rest_of_the_round(tmp_path):
+def test_two_consecutive_failures_open_the_breaker_for_the_rest_of_the_round(tmp_path):
     """A dead session fails every read the same way; one timeout per article would
-    hold every push of the round back by minutes. The skipped ones retry next round."""
+    hold every push of the round back by minutes. The skipped ones retry next round.
+    Two, not one: a single tweet whose detail fails must not switch the bodies off
+    for everyone behind it (review 2026-09-17 finding 1)."""
     cache = _cache(tmp_path)
     client = FakeClient([FOLLOWING, USER])
     calls = []
@@ -302,8 +322,8 @@ def test_the_first_failure_opens_the_breaker_for_the_rest_of_the_round(tmp_path)
         return _feed(article_tweet('21'), *tweets(1))(feed)
 
     outcomes = run_round(client, fetch=fetch, fetch_article=boom, article_delay=0, cache=cache)
-    # one read for the whole round, across feeds
-    assert calls == ['11']
+    # two reads for the whole round, across feeds
+    assert calls == ['11', '12']
     assert [o.ok for o in outcomes] == [True, True]
     assert [o.articles_failed for o in outcomes] == [2, 1]
     assert {t['id'] for t in _pushed(client, 'following')} == {'11', '12'}
@@ -315,6 +335,156 @@ def test_the_first_failure_opens_the_breaker_for_the_rest_of_the_round(tmp_path)
     calls.clear()
     run_round(client, fetch=fetch, fetch_article=lambda i: calls.append(i) or body(i), article_delay=0, cache=cache)
     assert calls == ['11', '12', '21']
+
+
+def test_a_read_that_answers_resets_the_breakers_count(tmp_path):
+    """Consecutive, not cumulative: a session that answers in between is alive. A
+    detail that answers *without* a body counts as an answer too."""
+    cache = _cache(tmp_path)
+    client = FakeClient([USER])
+    calls = []
+
+    def fetch_article(tweet_id):
+        calls.append(tweet_id)
+        if tweet_id in ('11', '13'):
+            raise xsource.XSourceError('HTTP 500')
+        return None if tweet_id == '12' else body(tweet_id)
+
+    fetch = _feed(article_tweet('11'), article_tweet('12'), article_tweet('13'), article_tweet('14'))
+    outcomes = run_round(client, fetch=fetch, fetch_article=fetch_article, article_delay=0, cache=cache)
+    assert calls == ['11', '12', '13', '14']
+    assert outcomes[0].articles_fetched == 1 and outcomes[0].articles_failed == 2
+    assert set(cache.load('novoreorx')) == {'12', '14'}
+
+
+def test_a_poison_article_costs_only_its_own_read_each_round(tmp_path):
+    """The review's reproduction: one tweet whose detail always fails (a tombstone,
+    say), first in Following, must not stall every other body for as long as it
+    stays in the window."""
+    cache = _cache(tmp_path)
+    client = FakeClient([FOLLOWING, USER])
+    calls = []
+
+    def fetch_article(tweet_id):
+        calls.append(tweet_id)
+        if tweet_id == '11':
+            raise xsource.XSourceError('tweet 11: Tweet not found in response')
+        return body(tweet_id)
+
+    def fetch(feed):
+        if feed['channel_id'] == 'following':
+            return _feed(article_tweet('11'), article_tweet('12'))(feed)
+        return _feed(article_tweet('21'))(feed)
+
+    for _ in range(3):
+        run_round(client, fetch=fetch, fetch_article=fetch_article, article_delay=0, cache=cache)
+    assert calls == ['11', '12', '21', '11', '11']
+    assert _pushed(client, 'following')[1]['article'] == body('12')
+    assert _pushed(client)[0]['article'] == body('21')
+    assert set(cache.load('following')) == {'12'} and set(cache.load('novoreorx')) == {'21'}
+
+
+def _failures(tmp_path, **kwargs):
+    return ArticleFailures(path=tmp_path / 'article-failures.json', **kwargs)
+
+
+def test_a_body_that_failed_five_real_reads_is_given_up(tmp_path):
+    """The bounded failure memory: a tombstone in a low-volume user feed would
+    otherwise be read every 15 minutes for weeks. Five real reads, then it is
+    remembered like a bodiless answer."""
+    cache, failures = _cache(tmp_path), _failures(tmp_path)
+    client = FakeClient([USER])
+    calls = []
+
+    def boom(tweet_id):
+        calls.append(tweet_id)
+        raise xsource.XSourceError('tweet 11: Tweet not found in response')
+
+    fetch = _feed(article_tweet('11'))
+    outcomes = [
+        run_round(client, fetch=fetch, fetch_article=boom, article_delay=0, cache=cache, failures=failures)[0]
+        for _ in range(6)
+    ]
+    assert calls == ['11'] * 5
+    assert [o.articles_failed for o in outcomes] == [1, 1, 1, 1, 0, 0]
+    assert [o.articles_abandoned for o in outcomes] == [0, 0, 0, 0, 1, 0]
+    assert set(cache.load('novoreorx')) == {'11'}
+    assert [len(batch) for _, batch in client.pushed] == [1, 1, 1, 1, 1]
+
+
+def test_reads_the_breaker_skipped_do_not_count_as_failures(tmp_path):
+    """Only a read that went out and failed is charged to its tweet; a skipped one
+    learned nothing about it."""
+    cache, failures = _cache(tmp_path), _failures(tmp_path)
+    client = FakeClient([USER])
+
+    def boom(tweet_id):
+        raise xsource.XSourceError('cookies expired')
+
+    fetch = _feed(article_tweet('11'), article_tweet('12'), article_tweet('13'))
+    run_round(client, fetch=fetch, fetch_article=boom, article_delay=0, cache=cache, failures=failures)
+    assert {k: v['n'] for k, v in failures.load().items()} == {'11': 1, '12': 1}
+
+
+def test_a_failed_ingest_pauses_the_rounds_article_reads(tmp_path):
+    """Bodies read before a push that failed are lost, and the next feed's would be
+    too — the server is what is down. So the rest of the round reads none (review
+    2026-09-17 finding 2); nothing is charged to the tweets, and the next round
+    reads them all."""
+    cache, failures = _cache(tmp_path), _failures(tmp_path)
+    client = FakeClient([FOLLOWING, USER], fail_on=['following'])
+    calls = []
+
+    def fetch(feed):
+        if feed['channel_id'] == 'following':
+            return _feed(article_tweet('11'))(feed)
+        return _feed(article_tweet('21'), *tweets(1))(feed)
+
+    def fetch_article(tweet_id):
+        calls.append(tweet_id)
+        return body(tweet_id)
+
+    outcomes = run_round(
+        client, fetch=fetch, fetch_article=fetch_article, article_delay=0, cache=cache, failures=failures
+    )
+    assert calls == ['11']
+    assert [o.ok for o in outcomes] == [False, True]
+    assert outcomes[1].articles_failed == 1
+    assert {t['id'] for t in _pushed(client)} == {'21', '1000'}
+    assert _pushed(client)[0]['article'] == {'title': 'title 21', 'previewText': 'p'}
+    assert set(cache.load('novoreorx')) == {'1000'} and cache.load('following') == {}
+    assert failures.load() == {}
+
+    client.fail_on = set()
+    run_round(client, fetch=fetch, fetch_article=fetch_article, article_delay=0, cache=cache, failures=failures)
+    assert calls == ['11', '11', '21']
+
+
+def test_the_failure_memory_is_bounded_by_time_and_tolerates_a_bad_file(tmp_path):
+    failures = _failures(tmp_path, max_age_hours=24)
+    old = datetime(2026, 9, 17, 0, 0, tzinfo=timezone.utc)
+    assert failures.bump('11', now=old) == 1
+    assert failures.bump('11', now=old + timedelta(hours=1)) == 2
+    assert failures.bump('12', now=old + timedelta(hours=30)) == 1
+    assert set(failures.load()) == {'12'}  # 11's last failure fell out of the window
+
+    failures.path.write_text('{not json')
+    assert failures.load() == {}
+    assert failures.bump('13') == 1
+
+
+def test_an_unwritable_failure_memory_does_not_break_the_round(tmp_path, monkeypatch):
+    failures = _failures(tmp_path)
+    monkeypatch.setattr(ArticleFailures, '_write', lambda *a, **k: (_ for _ in ()).throw(OSError('read-only')))
+    client = FakeClient([USER])
+
+    def boom(tweet_id):
+        raise xsource.XSourceError('HTTP 429')
+
+    outcomes = run_round(
+        client, fetch=_feed(article_tweet('11')), fetch_article=boom, article_delay=0, failures=failures
+    )
+    assert outcomes[0].ok and outcomes[0].articles_failed == 1
 
 
 def test_a_detail_with_no_body_is_final(tmp_path):
@@ -365,6 +535,18 @@ def test_article_reads_are_paced():
         sleep=sleeps.append,
     )
     assert sleeps == [0.5, 0.5]  # between reads, not before the first
+
+
+def test_article_pacing_spans_the_feeds_of_a_round():
+    """The reader is the round's: the first read of the next feed still waits."""
+    client = FakeClient([FOLLOWING, USER])
+    sleeps = []
+
+    def fetch(feed):
+        return _feed(article_tweet('11' if feed['channel_id'] == 'following' else '21'))(feed)
+
+    run_round(client, fetch=fetch, fetch_article=body, article_delay=0.5, sleep=sleeps.append)
+    assert sleeps == [0.5]
 
 
 def test_the_default_article_pacing_is_the_follow_crawls():

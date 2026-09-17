@@ -1,24 +1,28 @@
 """One probe round: ask the server what to fetch, read X per feed, push it back.
 
 Almost stateless: the server owns the feed list and deduplicates by tweet id, so
-a crashed, sleeping or reinstalled probe has nothing to recover. The one piece of
-local state is the ``SeenCache`` (opt-out via ``--no-cache``), which only decides
-what to *skip* — losing it costs a redundant push, never data. See cache.py.
+a crashed, sleeping or reinstalled probe has nothing to recover. The local state
+is the ``SeenCache`` (opt-out via ``--no-cache``), which only decides what to
+*skip* — losing it costs a redundant push, never data — and, beside it, the
+``ArticleFailures`` memory. See cache.py.
 
 X Articles are read **inline** (plan 2026-09-17): a timeline read carries a
 long-form post's title and preview only, so each new one gets a TweetDetail read
 before its feed is pushed, and the detail's ``article`` block — body included —
-rides up in the same ingest. A read that raises costs the body, never the tweet,
+rides up in the same ingest. A read that fails costs the body, never the tweet,
 and is retried by the cache's own structure: the tweet is pushed but not recorded,
-so the next round sees it as new and reads it again. See ``_read_articles``.
+so the next round sees it as new and reads it again. What is *not* retried — a
+detail xbird cannot map, a body that failed ``ARTICLE_MAX_FAILURES`` real reads,
+and X answering without a body — is final and cached. See ``ArticleReader``.
 """
 
 import logging
 import time
 from dataclasses import dataclass
+from enum import Enum
 from typing import Callable, Iterable, Optional
 
-from .cache import SeenCache
+from .cache import ArticleFailures, SeenCache
 from .client import ProbeClient, ServerError
 from .xsource import (
     ARTICLE_FETCH_DELAY,
@@ -31,6 +35,15 @@ from .xsource import (
 
 log = logging.getLogger('condenser_probe.runner')
 
+# Consecutive failed reads (of different tweets — a tweet is read once a round)
+# that open the round's breaker. Two, not one: one tweet whose detail fails for
+# its own reasons must not switch the bodies off for everyone behind it, while a
+# dead session or a rate limit fails the second read just like the first.
+BREAKER_FAILURES = 2
+# Real reads (gone out and failed) a body gets before it is given up. Skipped
+# reads — the breaker was open — are not charged: they learned nothing about it.
+ARTICLE_MAX_FAILURES = 5
+
 
 @dataclass
 class FeedOutcome:
@@ -41,15 +54,27 @@ class FeedOutcome:
     result: Optional[dict] = None
     articles_fetched: int = 0  # new long-form posts pushed with their body
     articles_failed: int = 0  # ...pushed without it, to be read again next round
+    articles_abandoned: int = 0  # ...pushed without it for good (given up)
 
     @property
     def ok(self) -> bool:
         return self.error is None
 
 
+class Read(Enum):
+    """What one detail read came to."""
+
+    BODY = 'body'  # the detail carried a body: merged into the tweet
+    EMPTY = 'empty'  # X answered without one: final
+    FAILED = 'failed'  # transport / session / rate limit / not found: read again next round
+    SKIPPED = 'skipped'  # the breaker was open: read again next round, not charged
+    ABANDONED = 'abandoned'  # xbird could not map the answer, or the failure cap: final
+
+
 @dataclass
 class ArticleReader:
-    """One round's article reads: the pacing between them and the circuit breaker.
+    """One round's article reads: the pacing between them, the circuit breaker and
+    the failure memory.
 
     Shared by every feed of the round, because what the breaker guards against is
     round-wide — a dead session or a rate limit fails every read the same way, and
@@ -60,29 +85,61 @@ class ArticleReader:
     fetch: Callable[[str], Optional[dict]]
     delay: float
     sleep: Callable[[float], None]
+    failures: Optional[ArticleFailures] = None
     reads: int = 0
+    consecutive_failures: int = 0
     open: bool = False
 
-    def read(self, channel_id: str, tweet_id: str) -> tuple[bool, Optional[dict]]:
-        """One paced detail read -> (whether the read happened, the body block or None).
+    def read(self, channel_id: str, tweet_id: str) -> tuple[Read, Optional[dict]]:
+        """One paced detail read -> (what it came to, the body block for ``BODY``).
 
-        Did not happen = it raised, or the breaker was already open. Any exception
-        counts — xbird maps the detail response outside its own error values, and a
-        body must never cost its tweet the push. The first one opens the breaker.
+        Two kinds of failure are told apart. ``XSourceError`` is X or the way to
+        it — session, transport, rate limit, a tombstone's "not found" — and is
+        the retried kind: charged to the tweet's failure count, and to the breaker
+        as one more consecutive failure. Any other exception is xbird failing to
+        map the answer, which is this one tweet's problem and would recur every
+        round: final, and it leaves the breaker alone. Any answer, body or not,
+        closes the consecutive count — the session is alive.
         """
         if self.open:
-            return False, None
+            return Read.SKIPPED, None
         if self.reads:
             self.sleep(self.delay)
         self.reads += 1
         try:
             detail = self.fetch(str(tweet_id))
-        except Exception as e:  # noqa: BLE001 - see the docstring
+        except XSourceError as e:
             log.error('%s: article %s: read failed: %s', channel_id, tweet_id, e)
-            log.warning('article reads paused for the rest of this round')
-            self.open = True
-            return False, None
-        return True, detail if _has_body(detail) else None
+            self.consecutive_failures += 1
+            if self.consecutive_failures >= BREAKER_FAILURES:
+                self.suspend(f'{self.consecutive_failures} reads failed in a row')
+            if self.failures and self.failures.bump(tweet_id) >= ARTICLE_MAX_FAILURES:
+                log.error(
+                    '%s: article %s: giving up on the body after %d failed reads',
+                    channel_id,
+                    tweet_id,
+                    ARTICLE_MAX_FAILURES,
+                )
+                return Read.ABANDONED, None
+            return Read.FAILED, None
+        except Exception as e:  # noqa: BLE001 - see the docstring
+            log.error(
+                '%s: article %s: could not read the detail (%s: %s), giving up on the body',
+                channel_id,
+                tweet_id,
+                type(e).__name__,
+                e,
+            )
+            self.consecutive_failures = 0
+            return Read.ABANDONED, None
+        self.consecutive_failures = 0
+        return (Read.BODY, detail) if _has_body(detail) else (Read.EMPTY, None)
+
+    def suspend(self, why: str) -> None:
+        """Open the breaker: no more reads this round (they retry next round)."""
+        if not self.open:
+            log.warning('article reads paused for the rest of this round: %s', why)
+        self.open = True
 
 
 def run_round(
@@ -95,6 +152,7 @@ def run_round(
     fetch_article: Callable[[str], Optional[dict]] = None,
     article_delay: float = ARTICLE_FETCH_DELAY,
     sleep: Callable[[float], None] = time.sleep,
+    failures: Optional[ArticleFailures] = None,
 ):
     """Fetch + push every enabled feed, new long-form posts with their bodies.
     One feed's failure never sinks the others, and an article read never sinks
@@ -123,7 +181,7 @@ def run_round(
         log.info('nothing subscribed%s — idle round', scope)
         return []
 
-    reader = ArticleReader(fetch_article, article_delay, sleep)
+    reader = ArticleReader(fetch_article, article_delay, sleep, failures)
     outcomes = []
     for feed in feeds:
         outcomes.append(_run_feed(client, feed, fetch, cache, reader))
@@ -179,14 +237,18 @@ def _run_feed(
     except ServerError as e:
         log.error('%s: ingest failed: %s', channel_id, e)
         outcome.error = str(e)
+        # The bodies just read are lost with the push, and the next feed's would
+        # be too: the server is what is down, so the round reads no more of them.
+        # Not a failure of any tweet's — nothing is charged, all read next round.
+        reader.suspend(f'{channel_id}: ingest failed')
         return outcome
     if cache:
         # After the push, never before: recording first would drop these tweets
-        # for good if the server rejected them. An article whose read raised stays
+        # for good if the server rejected them. An article whose read failed stays
         # out, so the next round finds it new and reads it again.
         cache.record(channel_id, [t for t in fresh if t.get('id') not in unread])
     log.info(
-        '%s: fetched %d (%d already pushed), new tweets %s, new items %s, parse errors %s, articles %d fetched, %d failed',
+        '%s: fetched %d (%d already pushed), new tweets %s, new items %s, parse errors %s, articles %d fetched, %d failed, %d abandoned',
         channel_id,
         outcome.fetched,
         outcome.skipped,
@@ -195,25 +257,20 @@ def _run_feed(
         outcome.result.get('parse_errors'),
         outcome.articles_fetched,
         outcome.articles_failed,
+        outcome.articles_abandoned,
     )
     return outcome
 
 
-def _read_articles(
-    channel_id: str, tweets: list, reader: ArticleReader, outcome: FeedOutcome
-) -> tuple[list, set]:
+def _read_articles(channel_id: str, tweets: list, reader: ArticleReader, outcome: FeedOutcome) -> tuple[list, set]:
     """Merge each long-form post's body into its tweet before the push.
 
     Returns the tweets to push — each article's block grown by the detail's, the
     tweet's own ``text`` untouched (on the detail path it is title + the whole body,
-    and the card needs the title) — and the ids whose read did not happen: those
-    are pushed as they are and kept out of the cache.
-
-    Two outcomes are told apart. A read that **raises** (session, rate limit,
-    timeout, or xbird failing to map the response) is transient: counted as failed,
-    retried next round, and it opens the round's breaker so the remaining articles
-    wait for that round too. A detail that answers **without a body** is X's final
-    word — pushed as is and remembered like any other tweet.
+    and the card needs the title) — and the ids whose body is still owed: those
+    are pushed as they are and kept out of the cache, so next round reads them
+    again. Everything else the reader decides is final (``Read``) and is pushed
+    bodiless *and* remembered.
     """
     pushed = []
     unread = set()
@@ -223,17 +280,19 @@ def _read_articles(
             pushed.append(tweet)
             continue
         tweet_id = tweet.get('id')
-        read, detail = reader.read(channel_id, tweet_id)
-        if not read:
-            unread.add(tweet_id)
-            outcome.articles_failed += 1
-            pushed.append(tweet)
-        elif detail is None:
-            log.warning('%s: article %s: the detail carries no body', channel_id, tweet_id)
-            pushed.append(tweet)
-        else:
+        status, detail = reader.read(channel_id, tweet_id)
+        if status is Read.BODY:
             pushed.append({**tweet, 'article': {**article, **detail}})
             outcome.articles_fetched += 1
+            continue
+        pushed.append(tweet)
+        if status is Read.EMPTY:
+            log.warning('%s: article %s: the detail carries no body', channel_id, tweet_id)
+        elif status is Read.ABANDONED:
+            outcome.articles_abandoned += 1
+        else:
+            unread.add(tweet_id)
+            outcome.articles_failed += 1
     return pushed, unread
 
 

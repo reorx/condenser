@@ -150,14 +150,17 @@ export interface XMetrics {
 }
 
 /** An X long-form post. A timeline query carries only the title + a ~200-char
- *  preview (the camelCase pair is xbird's, passed through); the body is fetched by
- *  the probe in a second step (plan 2026-09-16) and served by `GET /api/x/tweets/{id}`. */
+ *  preview (the camelCase pair is xbird's, passed through); the probe reads the
+ *  body inline, with the tweet (plan 2026-09-17), and `GET /api/x/tweets/{id}`
+ *  serves it. */
 export interface XArticle {
   title?: string | null;
   previewText?: string | null;
   /** Whether the server holds the body. On every surface — the card's 「查看全文」
-   *  keys off it. Absent on records saved before the feature. */
-  has_content?: boolean;
+   *  keys off it, and `false` is the probe's miss (「未获取到正文」). Absent on
+   *  records saved before the feature; `null` on a snapshot saved while there was
+   *  no body yet (the live row may have one by now): say nothing either way. */
+  has_content?: boolean | null;
   /** The body as server-rendered HTML (cover first, image sizes on every `<img>`).
    *  Only the detail endpoint and a saved snapshot carry it; null = no body yet. */
   content_html?: string | null;

@@ -280,6 +280,11 @@ def _x_article(row: dict, with_content: bool) -> Optional[dict]:
     Idempotent over a stored payload, which is the trap: a replayed snapshot has
     no ``has_article_content`` / ``article_detail`` columns, only the fields this
     function wrote the first time — so those are read back instead of being reset.
+    A snapshot that carries a body says True; one that does not says **None**, not
+    False: it was taken when there was no body, and the live row may have one by
+    now (the read is retried next round), while the snapshot is what a saved list
+    renders for good. Both clients read null as "say nothing" — neither 「查看全文」
+    nor 「未获取到正文」 — and the detail endpoint reads the live row first.
     """
     article = _json_field(row.get('article'))
     if not isinstance(article, dict):
@@ -288,8 +293,10 @@ def _x_article(row: dict, with_content: bool) -> Optional[dict]:
     article = {k: v for k, v in article.items() if k != 'content_html'}
     if 'has_article_content' in row:
         article['has_content'] = bool(row['has_article_content'])
+    elif stored_html or article.get('has_content'):
+        article['has_content'] = True
     else:
-        article['has_content'] = bool(article.get('has_content'))
+        article['has_content'] = None
     if with_content:
         detail = _json_field(row.get('article_detail'))
         article['content_html'] = xarticle.render_html(detail) if detail else stored_html

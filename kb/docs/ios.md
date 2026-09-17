@@ -368,8 +368,8 @@ Plan `kb/plans/2026-09-16-x-article-full-content.md` §5.2。长文推的列表�
   `CondenserKit.articleBlocks(...)`。块渲染与 `ArticleImageView`（代理 + 全屏）挪进
   `Condenser/UI/ArticleBlocksView.swift`，两张 sheet 共用。
 - **`XDetailSheet`** 照抄 `RssDetailSheet` 的三态机：快照的 `contentHTML` 优先，否则
-  `reader.api.xTweet(id:)`，解析一次存 state。与 RSS 的差别是正文比推文晚到（probe 轮次末尾
-  才抓）：`hasContent == false` 也会问一次，但只有 `hasContent == true` 才挂「正在加载全文…」/
+  `reader.api.xTweet(id:)`，解析一次存 state。与 RSS 的差别是正文可能比推文晚到（probe 内联读
+  失败后下一轮重读）：`hasContent == false` 也会问一次，但只有 `hasContent == true` 才挂「正在加载全文…」/
   「正文加载失败」。长文模式下高亮锚在文章块上；推文自身文本（实际总为空）只做可选文本。
   分享图用取回的块画正文，没走完取正文时按钮禁用。
 - **`XCard`** 的文章卡在 `hasContent == true` 时带一行「查看全文」提示（整卡本来就点开详情）。

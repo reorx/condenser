@@ -1630,3 +1630,32 @@ v21 没部署，所以直接改设计、不写迁移。
 - **未部署**。上线顺序（计划 §8）：push master（服务端必须先上——老服务端会把合并后的整块存进
   `x_tweets.article`，列表载荷当场带全文）→ 探针机 `cd probe && uv sync` + `launchctl kickstart -k
   gui/$(id -u)/com.condenser.probe` → `condenser-probe run --no-cache` 一次补当前窗口 → iOS 随下个 build。
+
+## 2026-09-17 · 内联抓取的 code review 修复（probe 重试结构）
+
+Review `kb/reviews/2026-09-17-x-article-inline-fetch-code-review.md`（8 条，全部按建议处理）。
+核心问题：断路器把「会话 / 限流」和「这条推文的 detail 就是读不出来」当成一件事——一条 poison 长文排在
+Following 第一位，每轮第一个失败、开断路、不记缓存，后面所有长文每轮都被跳过，只要它在窗口里（低产
+user feed 可以是几周）整个正文功能等于关闭。计划删掉 attempts 上限时假设失败是瞬时的，对单条推文不成立。
+
+- **probe**（发现 1，三项都做；部分改变计划决策 2「只做结构性重试」）：`runner.ArticleReader.read`
+  返回 `Read` 枚举。只有 `XSourceError` 走结构性重试；其他异常（xbird 映射崩溃）是单条确定性的 →
+  终态、记缓存、不开断路器。断路器改为**连续两条**失败才开（`BREAKER_FAILURES = 2`），任何有回应的读
+  清零。新增本地有界失败记忆 `cache.ArticleFailures`（`~/.cache/condenser-probe/article-failures.json`，
+  全局按推文 id、24h 修剪、读写失败与 SeenCache 同一套处理）：真实失败满 `ARTICLE_MAX_FAILURES = 5`
+  次就当终态记入 SeenCache；断路后跳过的不计。`--no-cache` 一并忘掉。**发现 2**：ingest `ServerError`
+  → `reader.suspend`，同轮后续 feed 不再花 X 读（不计入失败记忆）。`FeedOutcome` 多一个
+  `articles_abandoned`，日志行 `articles N fetched, M failed, K abandoned`。
+- **服务端**：`split_article` 改 allowlist（发现 8）——`ARTICLE_CARD_KEYS = (title, previewText)`，其余键
+  全归 `article_detail`，`ARTICLE_DETAIL_KEYS` 删除。快照回放的 `has_content`（发现 4）：快照没带
+  `content_html` 时给 **null** 而非 false，收藏列表不再对后来才到正文的长文永久显示「未获取到正文」；
+  两端对 null 已是两句都不挂（web `has_content?: boolean | null`，iOS `Bool?` 解 null 为 nil，加了钉子）。
+- **文档 / 注释**（发现 3、5、7）：`raw` 改口为「最近一次推送的原样」、正文档案是 `article_detail`
+  （计划 §1.1、database.md v21）；types.ts / Models.swift / ios.md 的「轮次末尾 / second step」残留改成内联；
+  计划 §10 与 probe.md 补上广告过滤、语言过滤造成的白读和失败记忆的代价。
+- **测试**（发现 6 缺口 + 新行为先红后绿）：后端 924（+4：allowlist 两条、快照 null 两条、无正文重推后
+  仍可搜——这条本就通过，补钉子），probe 67（+8：映射崩溃终态、两次失败开断路、有回应清零、poison 三轮
+  复现、5 次放弃、跳过不计、ingest 失败断路、记忆修剪 / 坏文件 / 不可写、跨 feed 节流），web 309
+  （+2：未承诺 + 请求失败的措辞、卡片 null 两句都不挂），`tsc -b` 通过，iOS Kit 336（现有用例内加
+  null 解码断言）。
+- **未部署**，上线顺序不变（计划 §8）。

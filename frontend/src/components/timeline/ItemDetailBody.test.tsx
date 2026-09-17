@@ -172,6 +172,15 @@ describe('ItemDetailBody (X article)', () => {
     expect(screen.getByText('我做了个 Mac 工具。')).toBeInTheDocument();
   });
 
+  it('with no body promised, a failed request still says the body was not fetched, not that it failed to load', async () => {
+    vi.mocked(api.xTweet).mockRejectedValue(new Error('offline'));
+    wrap(xArticleItem({ ...ARTICLE, has_content: false }));
+    expect(screen.queryByText('正在加载全文…')).toBeNull();
+    expect(await screen.findByText('未获取到 article 正文')).toBeInTheDocument();
+    expect(screen.queryByText('正文加载失败')).toBeNull();
+    expect(screen.getByText('我做了个 Mac 工具。')).toBeInTheDocument();
+  });
+
   it('does not claim the body is missing before the answer is in', () => {
     vi.mocked(api.xTweet).mockReturnValue(new Promise(() => {}));
     wrap(xArticleItem({ ...ARTICLE, has_content: false }));

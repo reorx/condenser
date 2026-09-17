@@ -98,31 +98,53 @@ as its title + a ~200-char preview; the body exists only on TweetDetail
 whose `article.title` is set through `xsource.fetch_tweet_article` (1s apart,
 `ARTICLE_FETCH_DELAY` = the follow crawl's pacing) and merges the detail's `article` block
 into the timeline's: `{**article, **detail}`. The server splits it again at parse time
-(`x.split_article`: the six body keys → `x_tweets.article_detail`). Four rules:
+(`x.split_article`: an allowlist — `article` keeps only `title` / `previewText`, every
+other key is the body's → `x_tweets.article_detail`). The rules, after the 2026-09-17
+review (`kb/reviews/2026-09-17-x-article-inline-fetch-code-review.md`):
 
 * **only the `article` block is merged, never the detail tweet.** A detail tweet's `text`
   is title + the whole body; pushed in place of the timeline's it would turn every card
   into three thousand characters.
-* **a read that raises costs the body, never the tweet.** The tweet is pushed bodiless but
-  left out of `cache.record`, so the next round finds it new and reads it again. That is
-  the entire retry mechanism — structural, like the timeline read's own: no attempt
-  counter, no in-round retry. *Any* exception counts, not just `XSourceError`: xbird maps
-  the detail response outside its own error values.
-* **one breaker per round** (`runner.ArticleReader`, shared by every feed of the round):
-  the first read that raises skips the round's remaining reads — all pushed bodiless,
-  uncached, read next round. A dead session or a rate limit fails every read alike, and
-  one timeout per article would hold each feed's push back by minutes.
+* **a read that fails costs the body, never the tweet** — and which kind of failure it
+  is decides what happens next (`runner.Read`):
+  * `XSourceError` (session, transport, rate limit, a tombstone's "not found" — xbird
+    reports remote failures as values and `xsource` raises every one as this) is the
+    **retried** kind: the tweet is pushed bodiless but left out of `cache.record`, so the
+    next round finds it new and reads it again. That is the retry mechanism —
+    structural, like the timeline read's own: no in-round retry.
+  * any other exception is xbird failing to map the answer — this one tweet's, and it
+    would recur every round: logged at error, **final**, cached, and it leaves the
+    breaker alone.
+* **the breaker opens on two consecutive failures** (`BREAKER_FAILURES`, one
+  `ArticleReader` per round shared by every feed): from then on the round's remaining
+  reads are skipped — pushed bodiless, uncached, read next round. Any answer, body or
+  not, resets the count. Two rather than one because one tweet whose detail fails for
+  its own reasons must not switch the bodies off for everyone behind it, while a dead
+  session or a rate limit fails the second read just like the first; the price is one
+  extra timeout per round while the session is dead. A feed whose **ingest fails opens
+  it too** — the server is what is down, reading more would only lose more — without
+  charging any tweet.
+* **a body is given up after five real reads** (`ARTICLE_MAX_FAILURES`, counted in
+  `cache.ArticleFailures` — `~/.cache/condenser-probe/article-failures.json`, one file
+  keyed by tweet id, pruned by the same 24h window; unreadable = empty, unwritable = a
+  warning). Only reads that went out and failed count; a read the breaker skipped learned
+  nothing. This is what stops a tombstone in a quiet user feed being read every fifteen
+  minutes for weeks. `run --no-cache` forgets it along with the seen cache.
 * **a detail that answers without a body is final.** `None`, or empty `content` /
   `plainText`, is X's answer rather than a fault: pushed as is, cached, warning logged.
 
 What is observable is deliberately small (plan decision 3): each feed's log line ends in
-`articles N fetched, M failed`, a failed read logs at error level, an opened breaker at
-warning — and on the reading side a card whose `has_content` is false says 「未获取到正文」.
-No status row, counter or retry button. Accepted costs: a For You article whose read
-failed is usually gone (For You re-samples, so the tweet rarely comes back); an article
-that scrolls out of the timeline window before a successful read keeps its preview; a
-Following tweet the server's age filter turns into a body-only archive entry still costs
-a read.
+`articles N fetched, M failed, K abandoned`, a failed read logs at error level, an opened
+breaker at warning — and on the reading side a card whose `has_content` is false says
+「未获取到正文」. No status row, counter or retry button. Accepted costs: a For You
+article whose read failed is usually gone (For You re-samples, so the tweet rarely comes
+back); an article that scrolls out of the timeline window before a successful read keeps
+its preview; a session dead for more than ~5 rounds (≈75 min) costs the one or two
+articles tried first each round their body for good (the failure cap; `run --no-cache`
+is the remedy); and **reads the server then throws away** — the probe does not know
+what the server will drop, so a Following tweet the age filter turns into a body-only
+archive entry, one the ad filter drops (author not followed) and a For You tweet the
+language filter drops each still cost a TweetDetail (~4 reads/hour on For You).
 
 This replaced the end-of-round **work order** of 2026-09-16, which never shipped: split off
 the push, its failures were invisible behind a healthy `last push`, and charging attempts at
@@ -130,8 +152,8 @@ hand-out would have burned a week's backlog in ~6 hours of a dead session. Verif
 end on 2026-09-17 against a scratch server with the real X session
 (`tmp/2026-09-17-x-article-inline/e2e_probe.py`): a real article read inline (7 h2 / 4
 figures rendered, body-only phrase searchable, `text` still the title), a nonexistent id's
-read failing → pushed bodiless + uncached + breaker opened, and the second round reading
-exactly that one again. Plan `kb/plans/2026-09-17-x-article-inline-fetch.md`.
+read failing → pushed bodiless + uncached + breaker opened (one failure opened it then;
+since the review it takes two), and the second round reading exactly that one again. Plan `kb/plans/2026-09-17-x-article-inline-fetch.md`.
 
 ⚠️ **Deploy order: server first.** A pre-v21 server stores the whole merged block in
 `x_tweets.article`, and the list payload would carry the body on the spot. Then `uv sync` in

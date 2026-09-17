@@ -74,6 +74,9 @@ struct XModelsDecodingTests {
         #expect(before.hasContent == false && before.contentHTML == nil)
         let listed = try #require(shapes["list"]?.x?.article)
         #expect(listed.hasContent == true && listed.contentHTML == nil)
+        // 无正文时收藏的快照：服务端回 null 而非 false（活行可能已有正文）→ nil，两句都不挂
+        let frozen = try decoder.decode(XArticle.self, from: Data(#"{"title":"t","previewText":"p","has_content":null}"#.utf8))
+        #expect(frozen.hasContent == nil)
     }
 
     @Test("x_article.json 详情（真实后端输出）：content_html 切得出封面图 + 带尺寸的配图 + 文本块")

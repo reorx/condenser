@@ -22,6 +22,17 @@ failure modes are designed to be dull:
 
 Entries are pruned by age rather than by count, so the file stays a few hundred
 integers without a policy anyone has to tune.
+
+``ArticleFailures`` (2026-09-17) is the second, smaller piece of state, kept to the
+same rules: how many times each long-form post's TweetDetail read went out and
+failed. It exists because the article retry is *structural* — a tweet whose read
+failed is left out of the seen cache, so the next round reads it again — and a
+tweet whose detail fails every time (a tombstone, a shape xbird cannot map) would
+otherwise be read every fifteen minutes for as long as it stays in the timeline
+window, weeks in a quiet user feed. After ``runner.ARTICLE_MAX_FAILURES`` real
+reads the body is given up and the tweet cached like one X answered without a
+body. Same failure modes: unreadable = empty, unwritable = a warning, never a
+failed round; the same 24h window prunes it.
 """
 
 import json
@@ -34,6 +45,7 @@ from typing import Optional
 log = logging.getLogger('condenser_probe.cache')
 
 DEFAULT_ROOT = Path.home() / '.cache' / 'condenser-probe' / 'seen'
+DEFAULT_FAILURES_PATH = DEFAULT_ROOT.parent / 'article-failures.json'
 DEFAULT_MAX_AGE_HOURS = 24
 
 _SAFE_NAME = re.compile(r'[^a-z0-9_.-]+')
@@ -90,6 +102,44 @@ class SeenCache:
         path = self.path(channel_id)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(seen))
+
+
+class ArticleFailures:
+    """Per-tweet count of TweetDetail reads that went out and failed (see the module
+    docstring). One file, global rather than per feed — a tweet id is global, and
+    the same article reached through Following and its author's feed is one read."""
+
+    def __init__(self, path: Path = DEFAULT_FAILURES_PATH, max_age_hours: int = DEFAULT_MAX_AGE_HOURS):
+        self.path = Path(path)
+        self.max_age = timedelta(hours=max_age_hours)
+
+    def load(self) -> dict[str, dict]:
+        """id -> {n: count, at: last-failure ISO timestamp}. A missing or corrupt
+        file reads as empty: forgetting a count costs a few more reads, nothing else."""
+        try:
+            data = json.loads(self.path.read_text())
+        except (OSError, ValueError):
+            return {}
+        return data if isinstance(data, dict) else {}
+
+    def bump(self, tweet_id, now: Optional[datetime] = None) -> int:
+        """Charge one failed read to this tweet and return its total within the window."""
+        now = now or _now()
+        key = str(tweet_id)
+        failures = self.load()
+        entry = failures.get(key) if isinstance(failures.get(key), dict) else {}
+        count = (entry.get('n') if isinstance(entry.get('n'), int) else 0) + 1
+        failures[key] = {'n': count, 'at': now.isoformat(timespec='seconds')}
+        pruned = {k: v for k, v in failures.items() if isinstance(v, dict) and _within(v.get('at'), now, self.max_age)}
+        try:
+            self._write(pruned)
+        except OSError as e:
+            log.warning('could not write the article failure memory: %s', e)
+        return count
+
+    def _write(self, failures: dict) -> None:
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.path.write_text(json.dumps(failures))
 
 
 def _entry_id(entry) -> Optional[str]:

@@ -74,11 +74,11 @@ class ParsedTweet:
     quote_of: Optional[int] = None
     rt_of_handle: Optional[str] = None
     reply_to_id: Optional[int] = None
-    # An X Article's card pair (title / previewText, plus any other upstream key
-    # that is not a body key) — what the verdict, search and both cards read.
+    # An X Article's card pair (title / previewText — ``ARTICLE_CARD_KEYS``, and
+    # nothing else) — what the verdict, search and both cards read.
     article: Optional[dict] = None
     # ...and its body, when the probe read the tweet's detail before pushing it
-    # (plan 2026-09-17): ``ARTICLE_DETAIL_KEYS`` split off ``article`` at this
+    # (plan 2026-09-17): every other key of the pushed block, split off at this
     # boundary, None unless there is actual text. See ``split_article``.
     article_detail: Optional[dict] = None
     # t.co expansion metadata (xbird >= 1.2.0; None from an older probe), normalized
@@ -200,26 +200,27 @@ def parse_urls(value: Any) -> Optional[list]:
     return urls or None
 
 
-# xbird's detail-only article keys (>= 1.3.0, TweetDetail only) — what
-# ``article_detail`` stores. The upstream pair (title / previewText) is deliberately
-# not among them: it stays in ``article``, which every other reader treats as the
-# card's two fields.
-ARTICLE_DETAIL_KEYS = ('content', 'plainText', 'coverMedia', 'media', 'publishedAt', 'modifiedAt')
+# The card's pair — all ``article`` (and so the list payload) ever holds. An
+# allowlist, not a list of the body keys to strip: xbird's TweetDetail block
+# (>= 1.3.0: ``content`` / ``plainText`` / ``coverMedia`` / ``media`` /
+# ``publishedAt`` / ``modifiedAt`` today) is where new body-ish keys will appear,
+# and a denylist would let each one grow the list silently (review 2026-09-17).
+ARTICLE_CARD_KEYS = ('title', 'previewText')
 
 
 def split_article(value: Any) -> tuple[Optional[dict], Optional[dict]]:
     """A pushed ``article`` block -> (the card's half, the body half or None).
 
     The probe merges the detail's block into the timeline's, so one block arrives
-    carrying both. The body keys leave ``article`` whatever their values — the list
-    payload is built from that column and must never carry a body — and become a
+    carrying both. Only the card's pair stays in ``article`` — the list payload is
+    built from that column and must never carry a body — and the rest becomes a
     body only when ``content`` or ``plainText`` has text: an empty one is X's
     answer that there is nothing to show, not a body.
     """
     if not isinstance(value, dict):
         return None, None
-    article = {k: v for k, v in value.items() if k not in ARTICLE_DETAIL_KEYS}
-    detail = {k: value[k] for k in ARTICLE_DETAIL_KEYS if value.get(k) is not None}
+    article = {k: v for k, v in value.items() if k in ARTICLE_CARD_KEYS}
+    detail = {k: v for k, v in value.items() if k not in ARTICLE_CARD_KEYS and v is not None}
     if not any(isinstance(detail.get(k), str) and detail[k].strip() for k in ('content', 'plainText')):
         detail = None
     return article, detail
