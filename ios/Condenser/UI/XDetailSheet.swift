@@ -152,9 +152,11 @@ struct XDetailSheet: View {
     }
 
     /// sheet 自己的按钮不走 openURL 环境（那是给子树用的，读到的是外层列表的
-    /// 那份，Safari 会从这张 sheet 背后弹出来），所以直接调统一出口
+    /// 那份，Safari 会从这张 sheet 背后弹出来），所以直接调统一出口。
+    /// 两个按钮都是「去 X」：不经 Purifier——阅读开关开着时推文链接会进代理，而读者此刻
+    /// 就在读这条推文，点这里要的是 X app（点赞、回复），不是它的讨论页
     private func open(_ url: URL) {
-        openExternalURL(url) { safariItem = SafariItem(url: $0) }
+        openExternalURL(url, purify: false) { safariItem = SafariItem(url: $0) }
     }
 
     private var header: some View {

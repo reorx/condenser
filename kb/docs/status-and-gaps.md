@@ -1659,3 +1659,25 @@ user feed 可以是几周）整个正文功能等于关闭。计划删掉 attemp
   （+2：未承诺 + 请求失败的措辞、卡片 null 两句都不挂），`tsc -b` 通过，iOS Kit 336（现有用例内加
   null 解码断言）。
 - **未部署**，上线顺序不变（计划 §8）。
+
+## 2026-09-17 · Purifier 代理 X 推文（FxEmbed API 渲染讨论页）
+
+Plan `kb/plans/2026-09-17-purifier-x-fxembed.md`（§8 是实现记录）。推翻 2026-09-07 计划
+「X 链接一律深链」的那一条，范围只到推文链接。
+
+- **后端**：新模块 `purifier_x.py` 是唯一知道 FxEmbed 的地方。一条推文链接（x.com / twitter.com
+  及 fixupx / fxtwitter / vxtwitter / twittpr）在 `render_document` 最前面被接走，一次
+  `/2/conversation/{id}` 拿到祖先链、主推和回复，渲染进 `reader_page`，按 status id 缓存。
+  短链的 `final_url` 落在推文上也会转交。`rewrite_url` 让 X 推文链接进 `/p`（主页 / Spaces /
+  搜索不进）。`CONDENSER_PURIFIER_X_API_BASE` 置空即关，关闭时 `/p` 302 回原链接。
+- **实测踩到的**：Cloudflare 拦 `python-httpx` UA（403 challenge），必须带项目 UA；`replies` 是
+  conversation module 而不是扁平列表，也不保证树序，按 `replying_to` 重建；自串续篇在 `replies`
+  里而不在 `thread` 里；facet 下标是 code point 且 note tweet 的会过期；FxEmbed 的 `article`
+  现在带 Draft.js 正文（本期未渲染）。
+- **iOS**：`isPurifierExcluded(host:path:)` 取代 `isPurifierExcludedHost`；`openExternalURL`
+  改写成功即不走 X 深链；X 详情页「在 X 上打开」「作者主页」传 `purify: false`。
+- **测试**：后端 959（+36：`test_purifier_x.py` 35 例 + `test_purifier.py` 改两处 X 断言），
+  Kit 337，iOS `make build` 通过。真实 API 走查（隔离实例）截图在 `tmp/2026-09-17-purifier-x/`；
+  五条真实推文 0.5–0.8s 出页，真实 t.co 链接经两次重定向后被转交。
+- **未部署**。master 上还压着未推送的 v21（上线顺序见上一条），这次的提交跟着一起走；生产机到
+  `api.fxtwitter.com` 能不能通（计划风险 1）上线时实测。iOS 跟下一个 build。

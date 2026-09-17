@@ -9,24 +9,28 @@ import CondenserKit
 /// 逼你登录的壳；没装 X app（深链打不开）就回落 in-app Safari，行为与从前一致。
 /// 其余链接一律 in-app Safari：为读一条链接把人踢出 app 的代价太大。
 ///
-/// Purifier 开着时（plan 2026-09-07），非 X / 非 t.me 的 http(s) 链接先改写成服务端
-/// 阅读代理地址 `/p/<host>/…` 再交给 Safari；X 深链仍按原始 URL 判断，改写只影响
-/// 最终落到浏览器里的那条。逻辑在 `Purifier.shared` 里，这里的 8 个调用现场零改动。
+/// Purifier 开着时（plan 2026-09-07），http(s) 链接先改写成服务端阅读代理地址
+/// `/p/<host>/…` 再交给 Safari（t.me 与 X 除推文外的链接不改写）。**改写成功就不再走
+/// X 深链**（plan 2026-09-17 §1.6）：X 推文由服务端渲染成讨论页，而开关的语义就是
+/// 「我要在 condenser 里读」——不让它先于深链，X 推文在手机上几乎永远进不了代理。
+/// 代价：代理页里再想进 X app 要靠原网页链接，SFSafariViewController 里通常跳不进去。
+/// 明确要进 X 的按钮（「在 X 上打开」）传 `purify: false`，行为与从前一致。
 ///
 /// 不用 `canOpenURL` 判断，直接 `open` 拿结果回落：`canOpenURL` 要求
 /// Info.plist 声明 `LSApplicationQueriesSchemes`，漏了就永远返回 false，
 /// 于是深链静默失效成「一切照旧」——这种回归没有测试抓得住。
 @MainActor
-func openExternalURL(_ url: URL, fallback: @escaping (URL) -> Void) {
+func openExternalURL(_ url: URL, purify: Bool = true, fallback: @escaping (URL) -> Void) {
     let app = UIApplication.shared
-    let purified = Purifier.shared.rewrittenURL(for: url) ?? url
+    let rewritten = purify ? Purifier.shared.rewrittenURL(for: url) : nil
+    let purified = rewritten ?? url
     // Mac：没有 X app 可深链，也没有 in-app Safari（Catalyst 上 SFSafariViewController
     // 本来就是转手给 Safari）。桌面上「在浏览器里打开」就是读者期待的行为，直接开。
     if Platform.isMac {
         app.open(purified)
         return
     }
-    guard let deepLink = xAppURL(for: url) else {
+    guard rewritten == nil, let deepLink = xAppURL(for: url) else {
         fallback(purified)
         return
     }

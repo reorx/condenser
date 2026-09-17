@@ -3,8 +3,9 @@ import Testing
 @testable import CondenserKit
 
 // 外链 → 服务端阅读代理 `/p/<host>/<path>?<query>` 的改写（plan 2026-09-07 §5.2）。
-// 只有一个函数、一个判断：能改写就给改写后的 URL，不该改写（X / t.me / 非 http(s) /
-// 自身域名）就返回 nil，调用方用原 URL。路径与 query 按原始字节透传——用
+// 只有一个函数、一个判断：能改写就给改写后的 URL，不该改写（X 除推文外的链接 / t.me /
+// 非 http(s) / 自身域名）就返回 nil，调用方用原 URL。X 推文链接进代理由服务端的 X handler
+// 渲染（plan 2026-09-17）。路径与 query 按原始字节透传——用
 // percentEncodedPath / percentEncodedQuery，绝不经过 .path / URLQueryItem 二次编码。
 
 @Suite("Purifier 链接改写")
@@ -67,11 +68,23 @@ struct PurifierLinkTests {
         #expect(rewrite("https://a.example/x?y=1#sec") == "https://condenser.example/p/a.example/x?y=1#sec")
     }
 
-    @Test("X 的域名不改写：x.com / twitter.com 及 www. / mobile. / m. 变体")
-    func excludesX() {
+    @Test("X 推文链接改写进代理（服务端 X handler 渲染讨论页），query 与尾巴原样")
+    func rewritesXStatus() {
+        #expect(rewrite("https://x.com/jack/status/20?s=20", ticket: "T")
+            == "https://condenser.example/p/x.com/jack/status/20?s=20&_pt=T")
+        #expect(rewrite("https://twitter.com/i/web/status/20")
+            == "https://condenser.example/p/twitter.com/i/web/status/20")
+        #expect(rewrite("https://mobile.twitter.com/jack/status/20/photo/1")
+            == "https://condenser.example/p/mobile.twitter.com/jack/status/20/photo/1")
+    }
+
+    @Test("X 的其余链接不改写：主页 / Spaces / 搜索 / 长文，含 www. / mobile. / m. 变体")
+    func excludesRestOfX() {
         for raw in [
-            "https://x.com/a/status/1", "https://twitter.com/a", "https://www.x.com/a",
-            "https://mobile.twitter.com/a", "https://m.x.com/a",
+            "https://twitter.com/a", "https://www.x.com/a", "https://mobile.twitter.com/a", "https://m.x.com/a",
+            "https://x.com/i/spaces/1YqKDqWqdPLJV", "https://x.com/search?q=a",
+            "https://x.com/i/article/2095826308504731649", "https://x.com/jack/status/abc",
+            "https://x.com/jack/status/20/likes",
         ] {
             #expect(rewrite(raw) == nil, Comment(rawValue: raw))
         }
@@ -118,14 +131,20 @@ struct PurifierLinkTests {
         #expect(rewrite("https://a.example/x", base: slashed) == "https://condenser.example/p/a.example/x")
     }
 
-    @Test("isPurifierExcludedHost：只认这三个域名及其变体")
-    func excludedHostPredicate() {
-        #expect(isPurifierExcludedHost("x.com"))
-        #expect(isPurifierExcludedHost("www.twitter.com"))
-        #expect(isPurifierExcludedHost("t.me"))
-        #expect(!isPurifierExcludedHost("news.ycombinator.com"))
-        #expect(!isPurifierExcludedHost("fixupx.com"))
-        #expect(!isPurifierExcludedHost("xx.com"))
+    @Test("isPurifierExcluded：与后端 rewrite_url 同一条规则——t.me 全排除，X 只放行推文")
+    func excludedPredicate() {
+        #expect(isPurifierExcluded(host: "x.com", path: "/jack"))
+        #expect(isPurifierExcluded(host: "www.twitter.com", path: ""))
+        #expect(isPurifierExcluded(host: "t.me", path: "/chan/1"))
+        #expect(!isPurifierExcluded(host: "x.com", path: "/jack/status/20"))
+        for path in ["/i/status/20", "/i/web/status/20", "/jack/statuses/20", "/jack/status/20/",
+                     "/jack/status/20/video/2", "/jack/status/20/analytics"] {
+            #expect(!isPurifierExcluded(host: "twitter.com", path: path), Comment(rawValue: path))
+        }
+        #expect(isPurifierExcluded(host: "x.com", path: "/a_handle_far_too_long/status/20"))
+        #expect(!isPurifierExcluded(host: "news.ycombinator.com", path: "/item"))
+        #expect(!isPurifierExcluded(host: "fixupx.com", path: "/jack/status/20"))
+        #expect(!isPurifierExcluded(host: "xx.com", path: "/jack"))
     }
 
     @Test("HN 用户页也走代理（无害，plan §0.4）")

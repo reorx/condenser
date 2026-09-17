@@ -355,6 +355,14 @@ SFSafariViewController（Mac 上是系统浏览器）；plan `kb/plans/2026-09-0
   「打开原文」→ 地址栏 condenser 域名、后端 `ticket → /p?_pt 302 → /p 200`；开关关 →
   原站；X 推文 → x.com。Mac Catalyst 是沙盒 app，`defaults write` 要写进
   `~/Library/Containers/com.reorx.condenser/Data/Library/Preferences/`，写到外面开关不生效。
+- **X 推文进代理（2026-09-17，plan `kb/plans/2026-09-17-purifier-x-fxembed.md`）**：服务端用
+  FxEmbed API 把一条推文渲染成讨论页，所以 Kit 的排除判定从「按 host」改成
+  `isPurifierExcluded(host:path:)`——x.com / twitter.com 的**推文路径**改写，主页 / Spaces /
+  搜索 / 长文仍是原链接（与后端 `rewrite_url` 同一个正则形状）。`openExternalURL` 的分支顺序
+  跟着改：**改写成功就不再走 X 深链**（开关的语义是「在 condenser 里读」；不这样推文在手机上
+  几乎进不了代理）。代价：代理页里想去 X app 要靠「原网页」，SFSafariViewController 里通常跳不
+  进去。X 详情页的「在 X 上打开」「作者主页」两个按钮传 `purify: false`——读者正在读这条推文，
+  点这里要的是 app。Kit 337 例；没做模拟器走查（模拟器没有 X app，深链分支本来就走不到）。
 
 ## X 长文全文（2026-09-16）
 
