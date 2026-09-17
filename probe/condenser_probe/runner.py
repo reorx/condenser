@@ -5,11 +5,12 @@ a crashed, sleeping or reinstalled probe has nothing to recover. The one piece o
 local state is the ``SeenCache`` (opt-out via ``--no-cache``), which only decides
 what to *skip* — losing it costs a redundant push, never data. See cache.py.
 
-A round ends with the **article step** (plan 2026-09-16): the server hands out a
-work order of X Article tweets still missing their body, the probe reads each
-through TweetDetail and pushes the ``article`` blocks back. The order is the
-server's own dedup — a tweet that got its body is simply not on the next one — so
-nothing about it touches the SeenCache.
+X Articles are read **inline** (plan 2026-09-17): a timeline read carries a
+long-form post's title and preview only, so each new one gets a TweetDetail read
+before its feed is pushed, and the detail's ``article`` block — body included —
+rides up in the same ingest. A read that raises costs the body, never the tweet,
+and is retried by the cache's own structure: the tweet is pushed but not recorded,
+so the next round sees it as new and reads it again. See ``_read_articles``.
 """
 
 import logging
@@ -38,10 +39,50 @@ class FeedOutcome:
     skipped: int = 0  # already pushed by an earlier round (SeenCache)
     error: Optional[str] = None
     result: Optional[dict] = None
+    articles_fetched: int = 0  # new long-form posts pushed with their body
+    articles_failed: int = 0  # ...pushed without it, to be read again next round
 
     @property
     def ok(self) -> bool:
         return self.error is None
+
+
+@dataclass
+class ArticleReader:
+    """One round's article reads: the pacing between them and the circuit breaker.
+
+    Shared by every feed of the round, because what the breaker guards against is
+    round-wide — a dead session or a rate limit fails every read the same way, and
+    one timeout per article would hold each feed's push back by minutes. It closes
+    again with the next round, which is a new reader.
+    """
+
+    fetch: Callable[[str], Optional[dict]]
+    delay: float
+    sleep: Callable[[float], None]
+    reads: int = 0
+    open: bool = False
+
+    def read(self, channel_id: str, tweet_id: str) -> tuple[bool, Optional[dict]]:
+        """One paced detail read -> (whether the read happened, the body block or None).
+
+        Did not happen = it raised, or the breaker was already open. Any exception
+        counts — xbird maps the detail response outside its own error values, and a
+        body must never cost its tweet the push. The first one opens the breaker.
+        """
+        if self.open:
+            return False, None
+        if self.reads:
+            self.sleep(self.delay)
+        self.reads += 1
+        try:
+            detail = self.fetch(str(tweet_id))
+        except Exception as e:  # noqa: BLE001 - see the docstring
+            log.error('%s: article %s: read failed: %s', channel_id, tweet_id, e)
+            log.warning('article reads paused for the rest of this round')
+            self.open = True
+            return False, None
+        return True, detail if _has_body(detail) else None
 
 
 def run_round(
@@ -55,14 +96,12 @@ def run_round(
     article_delay: float = ARTICLE_FETCH_DELAY,
     sleep: Callable[[float], None] = time.sleep,
 ):
-    """Fetch + push every enabled feed, then the article bodies the server asks for.
-    One feed's failure never sinks the others, and the article step never sinks
-    the round.
+    """Fetch + push every enabled feed, new long-form posts with their bodies.
+    One feed's failure never sinks the others, and an article read never sinks
+    its feed.
 
     ``kinds`` scopes the round to a slice of probe-config (the scheduler runs
-    For You and the rest on different cadences); None means every feed. The
-    article step runs in every scoped round alike — the work order is computed
-    server-side, so a second lane asking is harmless.
+    For You and the rest on different cadences); None means every feed.
     """
     fetch = fetch or (lambda feed: fetch_feed(feed, timeout_ms=timeout_ms))
     fetch_following = fetch_following or (lambda: fetch_following_users(timeout_ms=timeout_ms))
@@ -84,58 +123,13 @@ def run_round(
         log.info('nothing subscribed%s — idle round', scope)
         return []
 
+    reader = ArticleReader(fetch_article, article_delay, sleep)
     outcomes = []
     for feed in feeds:
-        outcomes.append(_run_feed(client, feed, fetch, cache))
+        outcomes.append(_run_feed(client, feed, fetch, cache, reader))
     ok = sum(1 for o in outcomes if o.ok)
     log.info('round done: %d/%d feeds ok', ok, len(outcomes))
-    # After every feed, never before: an article this round ingested is only on the
-    # work order because it is already stored when the probe asks.
-    _run_articles(client, fetch_article, article_delay, sleep)
     return outcomes
-
-
-def _run_articles(
-    client: ProbeClient,
-    fetch_article: Callable[[str], Optional[dict]],
-    delay: float,
-    sleep: Callable[[float], None],
-) -> None:
-    """Read the article bodies on the server's work order and push them back.
-
-    Never fatal, and outside the round's exit status: the feeds are already
-    delivered, and whatever this step drops the server hands out again next round
-    (until the tweet's attempts run out — they are spent when handed out, not here).
-    """
-    try:
-        tweet_ids = client.pending_articles()
-    except ServerError as e:
-        log.error('articles: could not read the work order: %s', e)
-        return
-    if not tweet_ids:
-        return
-
-    articles = []
-    for i, tweet_id in enumerate(tweet_ids):
-        if i:
-            sleep(delay)
-        try:
-            article = fetch_article(tweet_id)
-        except XSourceError as e:
-            log.error('article %s: fetch failed: %s', tweet_id, e)
-            continue
-        if article is None:
-            log.warning('article %s: the tweet detail carries no article', tweet_id)
-            continue
-        articles.append({'tweet_id': tweet_id, 'article': article})
-    if not articles:
-        return
-    try:
-        result = client.push_articles(articles)
-    except ServerError as e:
-        log.error('articles: push failed: %s', e)
-        return
-    log.info('articles: %d on the work order, %d fetched, %s stored', len(tweet_ids), len(articles), result.get('stored'))
 
 
 def _sync_following(client: ProbeClient, fetch_following: Callable[[], list]) -> None:
@@ -155,7 +149,11 @@ def _sync_following(client: ProbeClient, fetch_following: Callable[[], list]) ->
 
 
 def _run_feed(
-    client: ProbeClient, feed: dict, fetch: Callable[[dict], list], cache: Optional[SeenCache] = None
+    client: ProbeClient,
+    feed: dict,
+    fetch: Callable[[dict], list],
+    cache: Optional[SeenCache],
+    reader: ArticleReader,
 ) -> FeedOutcome:
     channel_id = feed.get('channel_id', '?')
     outcome = FeedOutcome(channel_id=channel_id)
@@ -175,6 +173,7 @@ def _run_feed(
     if not fresh:
         log.info('%s: fetched %d, all already pushed', channel_id, outcome.fetched)
         return outcome
+    fresh, unread = _read_articles(channel_id, fresh, reader, outcome)
     try:
         outcome.result = client.ingest(channel_id, fresh)
     except ServerError as e:
@@ -183,15 +182,62 @@ def _run_feed(
         return outcome
     if cache:
         # After the push, never before: recording first would drop these tweets
-        # for good if the server rejected them.
-        cache.record(channel_id, fresh)
+        # for good if the server rejected them. An article whose read raised stays
+        # out, so the next round finds it new and reads it again.
+        cache.record(channel_id, [t for t in fresh if t.get('id') not in unread])
     log.info(
-        '%s: fetched %d (%d already pushed), new tweets %s, new items %s, parse errors %s',
+        '%s: fetched %d (%d already pushed), new tweets %s, new items %s, parse errors %s, articles %d fetched, %d failed',
         channel_id,
         outcome.fetched,
         outcome.skipped,
         outcome.result.get('new_tweets'),
         outcome.result.get('new_items'),
         outcome.result.get('parse_errors'),
+        outcome.articles_fetched,
+        outcome.articles_failed,
     )
     return outcome
+
+
+def _read_articles(
+    channel_id: str, tweets: list, reader: ArticleReader, outcome: FeedOutcome
+) -> tuple[list, set]:
+    """Merge each long-form post's body into its tweet before the push.
+
+    Returns the tweets to push — each article's block grown by the detail's, the
+    tweet's own ``text`` untouched (on the detail path it is title + the whole body,
+    and the card needs the title) — and the ids whose read did not happen: those
+    are pushed as they are and kept out of the cache.
+
+    Two outcomes are told apart. A read that **raises** (session, rate limit,
+    timeout, or xbird failing to map the response) is transient: counted as failed,
+    retried next round, and it opens the round's breaker so the remaining articles
+    wait for that round too. A detail that answers **without a body** is X's final
+    word — pushed as is and remembered like any other tweet.
+    """
+    pushed = []
+    unread = set()
+    for tweet in tweets:
+        article = tweet.get('article')
+        if not isinstance(article, dict) or not article.get('title'):
+            pushed.append(tweet)
+            continue
+        tweet_id = tweet.get('id')
+        read, detail = reader.read(channel_id, tweet_id)
+        if not read:
+            unread.add(tweet_id)
+            outcome.articles_failed += 1
+            pushed.append(tweet)
+        elif detail is None:
+            log.warning('%s: article %s: the detail carries no body', channel_id, tweet_id)
+            pushed.append(tweet)
+        else:
+            pushed.append({**tweet, 'article': {**article, **detail}})
+            outcome.articles_fetched += 1
+    return pushed, unread
+
+
+def _has_body(detail) -> bool:
+    return isinstance(detail, dict) and any(
+        isinstance(detail.get(k), str) and detail[k].strip() for k in ('content', 'plainText')
+    )

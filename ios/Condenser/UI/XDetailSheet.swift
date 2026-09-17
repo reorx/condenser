@@ -88,8 +88,9 @@ struct XDetailSheet: View {
 
     /// 长文正文区。正文到手：标题 + 全文块；没到手：标题 + 预览卡（卡片同款），
     /// 服务端说有正文（`hasContent`）时才挂「正在加载全文…」/「正文加载失败」——
-    /// 没正文的长文也会去问一次（列表加载之后 probe 可能刚抓到），但不对着一篇
-    /// 大概率没有正文的文章转圈。
+    /// 没正文的长文也会去问一次（probe 这轮没读到的，下一轮会再读），但不对着一篇
+    /// 大概率没有正文的文章转圈。问完仍没有，就明说「未获取到 article 正文」（web 同款）：
+    /// 那是 probe 没拿到，和请求本身失败是两回事。
     @ViewBuilder
     private var articleSection: some View {
         if let blocks = articleBlocks, !blocks.isEmpty {
@@ -101,20 +102,26 @@ struct XDetailSheet: View {
             ArticleBlocksView(blocks: blocks, annotations: annotations, viewerItem: $viewerItem)
         } else if let article = tweet.article {
             XArticleCard(article: article)
-            if article.hasContent == true {
-                if !articleLoaded {
+            let promised = article.hasContent == true
+            if !articleLoaded {
+                if promised {
                     HStack(spacing: 6) {
                         ProgressView().controlSize(.small)
                         Text("正在加载全文…")
                     }
                     .readingFont(.caption)
                     .foregroundStyle(.secondary)
-                } else if articleFailed {
-                    // 不弹错：退回的标题 + 预览本来就在屏幕上，是这条推文的真实样子
-                    Text("正文加载失败")
-                        .readingFont(.caption)
-                        .foregroundStyle(.secondary)
                 }
+            } else if articleFailed, promised {
+                // 不弹错：退回的标题 + 预览本来就在屏幕上，是这条推文的真实样子
+                Text("正文加载失败")
+                    .readingFont(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                // 列表本就说没有正文时，请求失败也改变不了这个事实，同一句
+                Text("未获取到 article 正文")
+                    .readingFont(.caption)
+                    .foregroundStyle(.secondary)
             }
         }
     }

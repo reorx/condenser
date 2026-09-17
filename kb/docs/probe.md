@@ -89,33 +89,52 @@ cron-style setups. Tests stub xbird + the server, so `uv run pytest` needs no X 
 (`test_xsource.py` = the adapter, `test_probe.py` = orchestration over a stubbed fetch).
 
 
-## The article step (2026-09-16)
+## Inline article reads (2026-09-17)
 
-A round ends with **X Article bodies**. Timeline endpoints return a long-form post as
-its title + a ~200-char preview; the body exists only on TweetDetail
-(`client.get_tweet`, which xbird >= 1.3.0 maps with `article_details=True`). So after
-every feed is ingested, `runner._run_articles` asks the server for a **work order**
-(`GET /api/sources/x/articles/pending` — the server picks the tweets and caps the batch
-at `CONDENSER_X_ARTICLE_BATCH`, 5), reads each through `xsource.fetch_tweet_article`
-(1s apart, `ARTICLE_FETCH_DELAY` = the follow crawl's pacing) and pushes back
-`[{tweet_id, article}]` in one `POST /api/sources/x/articles`. Four rules:
+X Article bodies ride up **with their tweets**. Timeline endpoints return a long-form post
+as its title + a ~200-char preview; the body exists only on TweetDetail
+(`client.get_tweet`, which xbird >= 1.3.0 maps with `article_details=True`). So
+`runner._run_feed`, after the SeenCache filter and before the ingest, reads every new tweet
+whose `article.title` is set through `xsource.fetch_tweet_article` (1s apart,
+`ARTICLE_FETCH_DELAY` = the follow crawl's pacing) and merges the detail's `article` block
+into the timeline's: `{**article, **detail}`. The server splits it again at parse time
+(`x.split_article`: the six body keys → `x_tweets.article_detail`). Four rules:
 
-* **only the `article` block goes up, never the detail tweet.** A detail tweet's `text`
-  is title + the whole body; pushed through ingest it would overwrite the timeline's
-  title and every card would turn into three thousand characters.
-* **after the feeds, never before** — a new article is on this round's order only
-  because it is already stored when the probe asks.
-* **never fatal and outside the exit status**: a failed work-order request, a failed
-  fetch (per tweet, the `_run_feed` isolation) or a refused push is logged and dropped;
-  the server hands the tweet out again next round.
-* **no SeenCache.** The order is the server's own dedup: a tweet that got its body is
-  not on the next one, and attempts are charged at hand-out (3, so a tweet that breaks
-  the probe cannot come back forever). Both scheduler lanes run the step; the second
-  asking is harmless.
+* **only the `article` block is merged, never the detail tweet.** A detail tweet's `text`
+  is title + the whole body; pushed in place of the timeline's it would turn every card
+  into three thousand characters.
+* **a read that raises costs the body, never the tweet.** The tweet is pushed bodiless but
+  left out of `cache.record`, so the next round finds it new and reads it again. That is
+  the entire retry mechanism — structural, like the timeline read's own: no attempt
+  counter, no in-round retry. *Any* exception counts, not just `XSourceError`: xbird maps
+  the detail response outside its own error values.
+* **one breaker per round** (`runner.ArticleReader`, shared by every feed of the round):
+  the first read that raises skips the round's remaining reads — all pushed bodiless,
+  uncached, read next round. A dead session or a rate limit fails every read alike, and
+  one timeout per article would hold each feed's push back by minutes.
+* **a detail that answers without a body is final.** `None`, or empty `content` /
+  `plainText`, is X's answer rather than a fault: pushed as is, cached, warning logged.
 
-Verified end to end on 2026-09-16 against a scratch server with the real X session: one
-article (3265 chars of Markdown, 3 images + cover) fetched, pushed, rendered and made
-searchable in 1.2s (`tmp/2026-09-16-x-article/e2e_probe.py`). Plan
-`kb/plans/2026-09-16-x-article-full-content.md`. ⚠️ Deploying it is a `launchctl
-kickstart` after `uv sync` in `probe/` (the lock moved xbird 1.2.0 → 1.3.0); until then
-the running probe never asks, and the work order just stays unclaimed.
+What is observable is deliberately small (plan decision 3): each feed's log line ends in
+`articles N fetched, M failed`, a failed read logs at error level, an opened breaker at
+warning — and on the reading side a card whose `has_content` is false says 「未获取到正文」.
+No status row, counter or retry button. Accepted costs: a For You article whose read
+failed is usually gone (For You re-samples, so the tweet rarely comes back); an article
+that scrolls out of the timeline window before a successful read keeps its preview; a
+Following tweet the server's age filter turns into a body-only archive entry still costs
+a read.
+
+This replaced the end-of-round **work order** of 2026-09-16, which never shipped: split off
+the push, its failures were invisible behind a healthy `last push`, and charging attempts at
+hand-out would have burned a week's backlog in ~6 hours of a dead session. Verified end to
+end on 2026-09-17 against a scratch server with the real X session
+(`tmp/2026-09-17-x-article-inline/e2e_probe.py`): a real article read inline (7 h2 / 4
+figures rendered, body-only phrase searchable, `text` still the title), a nonexistent id's
+read failing → pushed bodiless + uncached + breaker opened, and the second round reading
+exactly that one again. Plan `kb/plans/2026-09-17-x-article-inline-fetch.md`.
+
+⚠️ **Deploy order: server first.** A pre-v21 server stores the whole merged block in
+`x_tweets.article`, and the list payload would carry the body on the spot. Then `uv sync` in
+`probe/` (xbird 1.2.0 → 1.3.0) + `launchctl kickstart`, then **one `condenser-probe run
+--no-cache`** so the articles already pushed without a body — everything still in the
+timeline window — get read.

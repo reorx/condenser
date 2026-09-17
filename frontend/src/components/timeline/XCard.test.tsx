@@ -161,7 +161,26 @@ describe('XCard', () => {
     // the title appears once — inside the article card, not also as the body text
     expect(screen.getByText('Superrepos')).toBeInTheDocument();
     expect(screen.getByText('Different workloads…')).toBeInTheDocument();
-    // no body fetched yet, so nothing more to offer
+    // a payload without the flag (pre-v21) claims nothing either way
+    expect(screen.queryByRole('button', { name: '查看全文' })).toBeNull();
+    expect(screen.queryByText('未获取到正文')).toBeNull();
+  });
+
+  it('says 未获取到正文 when the server has no body, as plain text rather than a button', () => {
+    // The probe reads the body with the tweet (plan 2026-09-17), so `has_content:
+    // false` is no longer "on its way" but "the probe did not get it" — which the
+    // reader should see while scanning, not discover by opening the pane.
+    wrap(
+      <XCard
+        item={makeItem({
+          text: 'Superrepos',
+          article: { title: 'Superrepos', previewText: 'Different workloads…', has_content: false },
+        })}
+      />,
+    );
+
+    expect(screen.getByText('未获取到正文')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '未获取到正文' })).toBeNull();
     expect(screen.queryByRole('button', { name: '查看全文' })).toBeNull();
   });
 

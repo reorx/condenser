@@ -8,17 +8,16 @@ is registered with — it is just another authorized device.
 """
 
 import logging
-from typing import Optional
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 
 from .. import db, forwards, preview, records, x
 from ..auth import require_auth
 from ..config import Settings, get_settings
 from ..items import x_envelope
 from ..sources import x as x_source
-from ..types import XArticlesBody, XFollowingBody, XIngestBody, XSubscribeBody, XSubscriptionPatch
+from ..types import XFollowingBody, XIngestBody, XSubscribeBody, XSubscriptionPatch
 
 log = logging.getLogger('condenser.routers.x')
 
@@ -118,27 +117,6 @@ def ingest(request: Request, body: XIngestBody, settings: Settings = Depends(get
     result = x.ingest_tweets(channel_id, body.tweets, settings)
     _kick_verdict(request)
     return {'channel_id': channel_id, **result.as_dict()}
-
-
-@router.get('/sources/x/articles/pending')
-def get_pending_articles(
-    limit: Optional[int] = Query(None, ge=1, le=50),
-    settings: Settings = Depends(get_settings),
-):
-    """The probe's end-of-round work order: article tweets still missing a body.
-
-    Handing an id out spends one of its attempts, so ask only for what this round
-    will fetch. Ids are strings, like everywhere else a snowflake crosses the wire.
-    """
-    _require_source_enabled(settings)
-    return {'tweet_ids': [str(tweet_id) for tweet_id in x.article_pending(limit, settings)]}
-
-
-@router.post('/sources/x/articles')
-def push_articles(body: XArticlesBody, settings: Settings = Depends(get_settings)):
-    """Take back the ``article`` block of each detail tweet the work order named."""
-    _require_source_enabled(settings)
-    return x.store_article_details(body.articles)
 
 
 def _kick_verdict(request: Request) -> None:

@@ -46,8 +46,8 @@ FOLLOWING_PAGE_SIZE = 20
 # place the probe makes a burst of requests. The `bird` CLI paced its --all crawl
 # the same way; dropping the pacing would be a silent change in exposure.
 FOLLOWING_PAGE_DELAY = 1.0
-# Between article detail requests at the end of a round (plan 2026-09-16) — the same
-# burst of X reads, so the same pacing.
+# Between article detail reads (plan 2026-09-17: one per new long-form post, before
+# its feed is pushed) — a burst of X reads like the follow crawl, so the same pacing.
 ARTICLE_FETCH_DELAY = FOLLOWING_PAGE_DELAY
 
 

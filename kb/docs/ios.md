@@ -373,6 +373,12 @@ Plan `kb/plans/2026-09-16-x-article-full-content.md` §5.2。长文推的列表�
   「正文加载失败」。长文模式下高亮锚在文章块上；推文自身文本（实际总为空）只做可选文本。
   分享图用取回的块画正文，没走完取正文时按钮禁用。
 - **`XCard`** 的文章卡在 `hasContent == true` 时带一行「查看全文」提示（整卡本来就点开详情）。
+- **2026-09-17 内联抓取之后**（plan `kb/plans/2026-09-17-x-article-inline-fetch.md` §6）：probe 抓推文时
+  就读正文，`hasContent == false` 从「还在路上」变成「probe 没拿到」，所以要说出来——卡片在
+  `hasContent == false` 时挂一行 tertiary 灰字「未获取到正文」（老载荷没有这个字段，两句都不挂）；
+  `XDetailSheet` 问完仍没正文时，预览卡下方一行「未获取到 article 正文」，未承诺正文的请求失败也是
+  这一句，「正文加载失败」只留给列表承诺了正文、请求却没取回来的情况。Kit 无改动。走查截图
+  `tmp/2026-09-17-x-article-inline-fetch/ios-*`。
 
 已知：块管线沿用 `rssPlainText`，所以 `<h2>` 在 iOS 上是普通文本行（web 有小标题样式）——
 RSS 同样如此，不是这次引入的。模拟器走查截图 `tmp/2026-09-16-x-article-full-content/ios-*`

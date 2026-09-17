@@ -81,24 +81,28 @@ Virtual tables (`x_vec_labeled`, `search_index`) are created with raw SQL in `in
 
 Adds `x_tweets.article_detail` (TEXT, JSON of xbird >= 1.3.0's six detail keys —
 `content` Markdown / `plainText` / `coverMedia` / `media[]` / `publishedAt` /
-`modifiedAt`; **not** `title` / `previewText`) and `x_tweets.article_attempts`
-(INTEGER NOT NULL DEFAULT 0, work-order hand-outs). `article` keeps its timeline pair
+`modifiedAt`; **not** `title` / `previewText`). `article` keeps its timeline pair
 untouched — the verdict's `judge_text`, `search.x_document` and both cards read it as
 "title + preview", so the body is opted into per reader, never slipped in under them.
-Neither column is in `ParsedTweet.row()`, so `upsert_x_tweet`'s whole-row update on a
-re-push leaves both alone (the `is_filtered` extension-column contract).
 
-Written by the probe's end-of-round step: `db.claim_x_article_backlog` (read-then-write
-→ `IMMEDIATE`) hands out article tweets with no body whose **first** sighting across
-feeds is inside `CONDENSER_X_ARTICLE_BACKFILL_DAYS`, requires a feed row (an article
-seen only inside a quote has no card), and charges `article_attempts` at hand-out;
-`db.set_x_article_details` writes `article_detail` and nothing else. Shape-based ADD
-COLUMNs before `create_tables` (`_migrate_x_article_v21`, the v14–v20 position),
-verified on copies of a v10 and a v19 archive (integrity ok, table writable after).
-No backfill — historical rows are NULL = no body, and the work order only reaches back
-the window. `search.TOKENIZER_VERSION` 4 → 5 for the new document part (a rebuild at
-the first boot, finding nothing new — every later body is indexed on push). Plan
-`kb/plans/2026-09-16-x-article-full-content.md`.
+Written by the ordinary ingest (plan 2026-09-17): the probe merges each new article's
+TweetDetail `article` block into the tweet it pushes, and `x.split_article` peels the
+body keys off `article` whatever their values, keeping them as `article_detail` only when
+`content` or `plainText` has text. `ParsedTweet.row()` carries the key **only when there
+is a body**, so `upsert_x_tweet` — which updates exactly the keys it is given — leaves a
+stored body alone when the next round's timeline re-push arrives without one, while a push
+that does carry one (an edited article, a `run --no-cache`) replaces it. Shape-based ADD
+COLUMN before `create_tables` (`_migrate_x_article_v21`, the v14–v20 position), verified
+on copies of a v10 and a v19 archive (integrity ok, table writable after). No backfill —
+historical rows are NULL = no body until a probe push brings one. `search.TOKENIZER_VERSION`
+4 → 5 for the new document part (a rebuild at the first boot, finding nothing new — every
+later body is indexed by the ingest that brought it). Plans
+`kb/plans/2026-09-16-x-article-full-content.md`, `kb/plans/2026-09-17-x-article-inline-fetch.md`.
+
+The first cut (2026-09-16, never deployed) also added `article_attempts` for an
+end-of-round work order; plan 2026-09-17 removed both. A dev database that ran that build
+keeps the dead column — the migration is shape-based and skips once `article_detail`
+exists, and nothing reads it.
 
 ### v20 — 2026-09-16 · RSS failure backoff
 

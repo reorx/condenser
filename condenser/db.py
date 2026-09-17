@@ -345,16 +345,13 @@ class XTweet(CondenserBaseModel):
     urls = TextField(null=True)
     raw = TextField(null=True)
     fetched_at = DateTimeField()
-    # v21: an X Article's body (plan 2026-09-16) — JSON of xbird's six detail keys
-    # (content / plainText / coverMedia / media / publishedAt / modifiedAt), fetched
-    # through TweetDetail by the probe in a second step. ``article`` above keeps its
-    # timeline pair: the verdict, search and both cards read it as "title + preview".
-    # Not in ``ParsedTweet.row()``, so a re-push leaves both columns alone (the
-    # ``messages.is_filtered`` extension-column contract).
+    # v21: an X Article's body — JSON of xbird's six detail keys (content / plainText
+    # / coverMedia / media / publishedAt / modifiedAt), which the probe reads through
+    # TweetDetail and merges into the pushed tweet (plan 2026-09-17); ``x.split_article``
+    # peels them off ``article`` above, which keeps its timeline pair: the verdict,
+    # search and both cards read it as "title + preview". ``ParsedTweet.row()`` only
+    # carries this key when the push had a body, so a bodiless re-push leaves it alone.
     article_detail = TextField(null=True)
-    # Hand-outs of this tweet on the probe's work order, counted when handed out
-    # rather than on a reported failure (``claim_x_article_backlog``).
-    article_attempts = IntegerField(default=0)
 
     class Meta:
         table_name = 'x_tweets'
@@ -809,19 +806,20 @@ def _migrate_rss_backoff_v20() -> None:
 
 
 def _migrate_x_article_v21() -> None:
-    """Add the article-detail columns to a pre-v21 ``x_tweets`` table.
+    """Add the article-body column to a pre-v21 ``x_tweets`` table.
 
-    Shape-based ADD COLUMNs before ``create_tables``, the v14–v20 position. No
-    backfill: every existing row reads NULL as "no body yet", and the probe's work
-    order only reaches back ``CONDENSER_X_ARTICLE_BACKFILL_DAYS`` — older articles
-    keep their preview, which is the plan's stated cost (§9.5).
+    Shape-based ADD COLUMN before ``create_tables``, the v14–v20 position. No
+    backfill: every existing row reads NULL as "no body", and only a probe push can
+    bring one — ``condenser-probe run --no-cache`` re-pushes the articles still in
+    X's timeline window; older ones keep their preview (plan 2026-09-17 §10).
+
+    A dev database that ran the unreleased work-order build (2026-09-16) also has
+    an ``article_attempts`` column. Nothing reads it; it is left in place.
     """
     cols = [r[1] for r in tdb.db.execute_sql('PRAGMA table_info(x_tweets)').fetchall()]
     if not cols or 'article_detail' in cols:
         return
-    with tdb.db.atomic():
-        tdb.db.execute_sql('ALTER TABLE x_tweets ADD COLUMN article_detail TEXT')
-        tdb.db.execute_sql('ALTER TABLE x_tweets ADD COLUMN article_attempts INTEGER NOT NULL DEFAULT 0')
+    tdb.db.execute_sql('ALTER TABLE x_tweets ADD COLUMN article_detail TEXT')
 
 
 def _backfill_rss_excerpts() -> None:
@@ -1959,55 +1957,6 @@ def insert_x_tweet_if_absent(fields: dict) -> None:
     from the feed itself, so an existing row is never overwritten.
     """
     XTweet.insert(**fields).on_conflict_ignore().execute()
-
-
-def claim_x_article_backlog(since: datetime, max_attempts: int, limit: int) -> list[int]:
-    """Hand out article tweets still missing their body, newest sighting first,
-    and charge each one an attempt in the same transaction.
-
-    The window is the tweet's **first** sighting across every feed — For You
-    resurfaces week-old tweets, and "arrived in this reader recently" is the set
-    worth a TweetDetail request. A feed row is required, which is what keeps an
-    article seen only inside a quote off the list: it has no card, so no detail
-    to open.
-
-    Charged at hand-out, not on a reported failure: a probe that dies on a tweet
-    reports nothing, and that tweet must still stop coming back. Read-then-write,
-    hence IMMEDIATE (see the module's locking note).
-    """
-    with tdb.db.atomic(lock_type='IMMEDIATE'):
-        cur = tdb.db.execute_sql(
-            'SELECT f.tweet_id, MIN(f.first_seen_at) AS seen '
-            'FROM x_feed_items f JOIN x_tweets t ON t.id = f.tweet_id '
-            'WHERE t.article IS NOT NULL AND json_extract(t.article, \'$.title\') IS NOT NULL '
-            '  AND t.article_detail IS NULL AND t.article_attempts < ? '
-            'GROUP BY f.tweet_id HAVING MIN(f.first_seen_at) >= ? '
-            'ORDER BY seen DESC, f.tweet_id DESC LIMIT ?',
-            (max_attempts, since.strftime('%Y-%m-%d %H:%M:%S'), limit),
-        )
-        ids = [row[0] for row in cur.fetchall()]
-        if ids:
-            XTweet.update(article_attempts=XTweet.article_attempts + 1).where(XTweet.id.in_(ids)).execute()
-    return ids
-
-
-def set_x_article_details(details: dict[int, dict]) -> list[int]:
-    """Store article bodies by tweet id; returns the ids that had a row to land on.
-
-    Writes ``article_detail`` and nothing else — the pushed tweet's ``text`` is the
-    title *plus the whole body*, and the card depends on it staying the title.
-    """
-    stored = []
-    with tdb.db.atomic():
-        for tweet_id, detail in details.items():
-            updated = (
-                XTweet.update(article_detail=json.dumps(detail, ensure_ascii=False))
-                .where(XTweet.id == tweet_id)
-                .execute()
-            )
-            if updated:
-                stored.append(tweet_id)
-    return stored
 
 
 def existing_x_feed_item_ids(channel_id: str, tweet_ids: list[int]) -> set[int]:

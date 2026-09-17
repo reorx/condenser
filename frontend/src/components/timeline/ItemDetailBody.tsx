@@ -106,12 +106,14 @@ function RssDetailBody({ item, annotations }: Props) {
 
 /** An X long-form post: title, then the article body the probe fetched.
  *
- * RSS's arrangement with X's two differences. The body arrives *after* the tweet
- * (a second probe step), so it is asked for even when the list said there was
- * none yet — but only a body the list promised (`has_content`) earns the loading
- * line. And its images are on pbs.twimg.com, so they go through the proxy like
- * every other tweet image. Until the body is in hand the preview stands in, and a
- * failed fetch settles there without a toast. */
+ * RSS's arrangement with X's two differences. The probe reads the body along with
+ * the tweet, but a failed read is retried next round, so the body can land after
+ * the list did: it is asked for even when the list said there was none — only a
+ * body the list promised (`has_content`) earns the loading line, though. And its
+ * images are on pbs.twimg.com, so they go through the proxy like every other tweet
+ * image. Until the body is in hand the preview stands in; once the server has
+ * answered without one, a line says so (「未获取到 article 正文」 — the probe's
+ * miss), which is a different thing from the request itself failing. */
 function XArticleDetailBody({ item, annotations }: Props) {
   const tweet = item.x!;
   const listed = tweet.article!;
@@ -139,15 +141,20 @@ function XArticleDetailBody({ item, annotations }: Props) {
       ) : (
         <>
           {listed.previewText && <p className={PLAIN_PROSE}>{listed.previewText}</p>}
-          {promised &&
-            (article.isPending ? (
+          {article.isPending ? (
+            promised && (
               <div className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground">
                 <Spinner className="size-3" />
                 正在加载全文…
               </div>
-            ) : (
-              article.isError && <p className="mt-2 text-xs text-muted-foreground">正文加载失败</p>
-            ))}
+            )
+          ) : article.isError ? (
+            // Only a promised body failed to *load*; for one the list already said
+            // was missing, the failed request changes nothing about that.
+            <p className="mt-2 text-xs text-muted-foreground">{promised ? '正文加载失败' : '未获取到 article 正文'}</p>
+          ) : (
+            <p className="mt-2 text-xs text-muted-foreground">未获取到 article 正文</p>
+          )}
         </>
       )}
     </div>

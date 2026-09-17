@@ -1,30 +1,32 @@
-"""Behavior tests for X Article full text (plan 2026-09-16).
+"""Behavior tests for X Article full text (plans 2026-09-16 and 2026-09-17).
 
 The timeline queries X serves the probe carry an article's title and a ~200-char
-preview, nothing more; only TweetDetail carries the body. So the body arrives in
-a second step the server drives: at the end of every round the probe asks for a
-**work order** (``GET /api/sources/x/articles/pending``), fetches each tweet's
-detail, and pushes back *only the article block* (``POST /api/sources/x/articles``).
+preview, nothing more; only TweetDetail carries the body. The probe reads that
+detail the moment it first sees a long-form post and merges the detail's
+``article`` block into the tweet it is about to push, so the body arrives through
+the ordinary ingest (plan 2026-09-17 — the end-of-round work order it replaced is
+gone, and pinned gone below).
 
 What these tests pin is the part that is easy to break later:
 
-* the work order — the 7-day window by first sighting, attempts burned on hand-out
-  (so a tweet that kills the probe cannot be handed out forever), newest first;
-* the push touches nothing but ``article_detail`` — a detail tweet's ``text`` is
-  title + the whole body, and writing it would turn the card into three thousand
-  characters;
+* ingest splits the pushed ``article`` block: the card's pair stays in
+  ``article``, the body goes to ``article_detail`` — and only a block with an
+  actual body earns one;
+* a later push without the body (every round's timeline re-read) keeps the stored
+  body — ``ParsedTweet.row()`` leaves the column out instead of writing NULL;
 * the list payload says *whether* there is a body (``has_content``) and never
   carries it; the body is ``GET /api/x/tweets/{id}``'s, rendered to HTML, with the
   saved snapshot as its fallback once retention takes the row;
 * full text is searchable, and the verdict does not read it (it is billed).
 
-Plan: kb/plans/2026-09-16-x-article-full-content.md
+Plans: kb/plans/2026-09-16-x-article-full-content.md,
+kb/plans/2026-09-17-x-article-inline-fetch.md
 """
 
 import copy
 import json
 import os
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -41,6 +43,7 @@ DETAIL = json.loads((FIXTURES / 'article_detail.json').read_text())
 ARTICLE_ID = int(DETAIL['id'])
 TITLE = DETAIL['article']['title']
 PREVIEW = DETAIL['article']['previewText']
+DETAIL_KEYS = {'content', 'plainText', 'coverMedia', 'media', 'publishedAt', 'modifiedAt'}
 # A phrase that is in the body and nowhere in the title or preview.
 BODY_ONLY_PHRASE = '明码标价'
 
@@ -68,6 +71,14 @@ def timeline_tweet(tweet_id=ARTICLE_ID, title=TITLE, preview=PREVIEW):
         'authorId': DETAIL['authorId'],
         'article': {'title': title, 'previewText': preview},
     }
+
+
+def article_tweet(tweet_id=ARTICLE_ID, article=None):
+    """What the probe pushes once it read the detail: the timeline tweet — its
+    ``text`` still the title — with the detail's ``article`` block merged in."""
+    tweet = timeline_tweet(tweet_id)
+    tweet['article'] = {**tweet['article'], **copy.deepcopy(article or DETAIL['article'])}
+    return tweet
 
 
 def plain_tweet(tweet_id, text='just a tweet'):
@@ -100,219 +111,80 @@ def _ingest(client, monkeypatch, tweets, at=NOW, channel_id='foryou'):
     return r.json()
 
 
-def _pending(client, **params):
-    r = client.get('/api/sources/x/articles/pending', params=params)
-    assert r.status_code == 200, r.text
-    return r.json()['tweet_ids']
-
-
-def _push(client, articles):
-    r = client.post('/api/sources/x/articles', json={'articles': articles})
-    assert r.status_code == 200, r.text
-    return r.json()
-
-
-def _push_detail(client, tweet_id=ARTICLE_ID, article=None):
-    return _push(client, [{'tweet_id': str(tweet_id), 'article': article or DETAIL['article']}])
-
-
 def _timeline_x(client):
     r = client.get('/api/timeline', params={'source': 'x', 'limit': 50})
     assert r.status_code == 200, r.text
     return {item['x']['id']: item['x'] for item in r.json()['items']}
 
 
-# --- the work order ---------------------------------------------------------------
+# --- ingest --------------------------------------------------------------------------
 
 
-def test_an_article_tweet_without_a_body_is_handed_out(xa_env):
+def test_ingest_splits_the_body_off_the_cards_pair(xa_env):
     with _client() as client:
         _login(client)
         _subscribe(client)
-        _ingest(client, xa_env, [timeline_tweet(), plain_tweet(1)])
-        # ids cross the wire as strings (snowflakes exceed JS's integer range)
-        assert _pending(client) == [str(ARTICLE_ID)]
-
-
-def test_every_hand_out_burns_an_attempt_until_the_cap(xa_env):
-    """Counted at hand-out, not on a reported failure: a probe that crashes on a
-    tweet never reports anything, and the tweet must still stop coming back."""
-    with _client() as client:
-        _login(client)
-        _subscribe(client)
-        _ingest(client, xa_env, [timeline_tweet()])
-        for _ in range(3):
-            assert _pending(client) == [str(ARTICLE_ID)]
-        assert _pending(client) == []
-    assert db.get_x_tweet(ARTICLE_ID).article_attempts == 3
-
-
-def test_the_attempt_cap_is_configurable(xa_env):
-    xa_env.setenv('CONDENSER_X_ARTICLE_MAX_ATTEMPTS', '1')
-    with _client() as client:
-        _login(client)
-        _subscribe(client)
-        _ingest(client, xa_env, [timeline_tweet()])
-        assert _pending(client) == [str(ARTICLE_ID)]
-        assert _pending(client) == []
-
-
-def test_the_window_is_seven_days_of_first_sighting(xa_env):
-    """By ``first_seen_at``, not ``created_at``: For You resurfaces old tweets, and
-    what matters is what arrived in this reader recently."""
-    inside = ARTICLE_ID + 1
-    outside = ARTICLE_ID + 2
-    with _client() as client:
-        _login(client)
-        _subscribe(client)
-        _ingest(client, xa_env, [timeline_tweet(inside, title='inside')], at=NOW - timedelta(days=7))
-        _ingest(client, xa_env, [timeline_tweet(outside, title='outside')], at=NOW - timedelta(days=7, seconds=1))
-        assert _pending(client) == [str(inside)]
-
-
-def test_an_old_tweet_first_seen_today_is_in_the_window(xa_env):
-    old = timeline_tweet()
-    old['createdAt'] = 'Wed May 27 10:00:00 +0000 2026'
-    with _client() as client:
-        _login(client)
-        _subscribe(client)
-        _ingest(client, xa_env, [old])
-        assert _pending(client) == [str(ARTICLE_ID)]
-
-
-def test_the_window_is_configurable(xa_env):
-    xa_env.setenv('CONDENSER_X_ARTICLE_BACKFILL_DAYS', '1')
-    with _client() as client:
-        _login(client)
-        _subscribe(client)
-        _ingest(client, xa_env, [timeline_tweet()], at=NOW - timedelta(days=2))
-        assert _pending(client) == []
-
-
-def test_the_order_is_newest_sighting_first_and_the_limit_holds(xa_env):
-    ids = [ARTICLE_ID + i for i in range(3)]
-    with _client() as client:
-        _login(client)
-        _subscribe(client)
-        for i, tweet_id in enumerate(ids):
-            _ingest(client, xa_env, [timeline_tweet(tweet_id, title=f't{i}')], at=NOW - timedelta(hours=3 - i))
-        assert _pending(client, limit=2) == [str(ids[2]), str(ids[1])]
-    # only what was handed out paid for it
-    assert db.get_x_tweet(ids[0]).article_attempts == 0
-
-
-def test_the_batch_setting_caps_whatever_the_probe_asks_for(xa_env):
-    xa_env.setenv('CONDENSER_X_ARTICLE_BATCH', '2')
-    with _client() as client:
-        _login(client)
-        _subscribe(client)
-        _ingest(client, xa_env, [timeline_tweet(ARTICLE_ID + i, title=f't{i}') for i in range(4)])
-        assert len(_pending(client, limit=50)) == 2
-        assert len(_pending(client)) == 2  # no limit = the batch
-
-
-def test_a_tweet_already_holding_its_body_is_not_handed_out(xa_env):
-    with _client() as client:
-        _login(client)
-        _subscribe(client)
-        _ingest(client, xa_env, [timeline_tweet()])
-        _push_detail(client)
-        assert _pending(client) == []
-
-
-def test_an_article_seen_only_inside_a_quote_is_not_handed_out(xa_env):
-    """An embedded quote has no feed row, so no card and no detail to open."""
-    quoting = plain_tweet(1, 'look at this')
-    quoting['quotedTweet'] = timeline_tweet()
-    with _client() as client:
-        _login(client)
-        _subscribe(client)
-        _ingest(client, xa_env, [quoting])
-        assert db.get_x_tweet(ARTICLE_ID) is not None
-        assert _pending(client) == []
-
-
-def test_article_fetching_can_be_switched_off(xa_env):
-    xa_env.setenv('CONDENSER_X_ARTICLE_ENABLED', 'false')
-    with _client() as client:
-        _login(client)
-        _subscribe(client)
-        _ingest(client, xa_env, [timeline_tweet()])
-        assert _pending(client) == []
-    assert db.get_x_tweet(ARTICLE_ID).article_attempts == 0
-
-
-def test_both_probe_endpoints_are_refused_while_the_source_is_off(xa_env):
-    xa_env.setenv('CONDENSER_X_ENABLED', 'false')
-    with _client() as client:
-        _login(client)
-        assert client.get('/api/sources/x/articles/pending').status_code == 503
-        assert client.post('/api/sources/x/articles', json={'articles': []}).status_code == 503
-
-
-# --- the push -------------------------------------------------------------------
-
-
-def test_the_push_stores_the_detail_and_nothing_else(xa_env):
-    with _client() as client:
-        _login(client)
-        _subscribe(client)
-        _ingest(client, xa_env, [timeline_tweet()])
-        result = _push_detail(client)
-    assert result == {'received': 1, 'stored': 1, 'skipped': 0}
+        result = _ingest(client, xa_env, [article_tweet()])
+    assert result['stored'] == 1 and result['parse_errors'] == 0
 
     row = db.get_x_tweet(ARTICLE_ID)
     stored = json.loads(row.article_detail)
-    assert set(stored) == {'content', 'plainText', 'coverMedia', 'media', 'publishedAt', 'modifiedAt'}
+    assert set(stored) == DETAIL_KEYS
     assert stored['content'] == DETAIL['article']['content']
-    # the card's two fields are exactly what the timeline pushed
+    # the card's two fields are exactly the timeline's — the body is not among them
     assert row.text == TITLE
+    assert json.loads(row.article) == {'title': TITLE, 'previewText': PREVIEW}
+    # ...while the archive keeps what was pushed, body included (re-parse after drift)
+    assert json.loads(row.raw)['article']['content'] == DETAIL['article']['content']
+
+
+def test_a_repush_without_the_body_keeps_it(xa_env):
+    """Every round re-reads the timeline, and a tweet that fell out of the probe's
+    cache comes back bodiless; ``upsert_x_tweet`` overwrites only what it is given."""
+    with _client() as client:
+        _login(client)
+        _subscribe(client)
+        _ingest(client, xa_env, [article_tweet()])
+        _ingest(client, xa_env, [timeline_tweet()])
+    row = db.get_x_tweet(ARTICLE_ID)
+    assert json.loads(row.article_detail)['content'] == DETAIL['article']['content']
     assert json.loads(row.article) == {'title': TITLE, 'previewText': PREVIEW}
 
 
-def test_a_repush_from_the_timeline_keeps_the_body(xa_env):
-    """``upsert_x_tweet`` overwrites the columns it is given; the detail is not one."""
+def test_a_later_push_that_carries_a_body_replaces_the_stored_one(xa_env):
+    """An edited article, or a ``run --no-cache`` re-push: the newest body wins."""
+    edited = {**DETAIL['article'], 'content': '## 改过了\n\n新的正文', 'plainText': '改过了 新的正文'}
     with _client() as client:
         _login(client)
         _subscribe(client)
-        _ingest(client, xa_env, [timeline_tweet()])
-        _pending(client)
-        _push_detail(client)
-        _ingest(client, xa_env, [timeline_tweet()])
+        _ingest(client, xa_env, [article_tweet()])
+        _ingest(client, xa_env, [article_tweet(article=edited)])
+    assert json.loads(db.get_x_tweet(ARTICLE_ID).article_detail)['content'] == '## 改过了\n\n新的正文'
+
+
+def test_a_bodiless_detail_block_stores_no_body(xa_env):
+    """X answering the detail with an empty body is X's answer, not a body."""
+    empty = {**DETAIL['article'], 'content': '  ', 'plainText': ''}
+    with _client() as client:
+        _login(client)
+        _subscribe(client)
+        _ingest(client, xa_env, [article_tweet(article=empty)])
+        listed = _timeline_x(client)[str(ARTICLE_ID)]
     row = db.get_x_tweet(ARTICLE_ID)
-    assert row.article_detail is not None
-    assert row.article_attempts == 1
+    assert row.article_detail is None
+    # and the detail keys still stay out of the card's pair
+    assert json.loads(row.article) == {'title': TITLE, 'previewText': PREVIEW}
+    assert listed['article'] == {'title': TITLE, 'previewText': PREVIEW, 'has_content': False}
 
 
-def test_a_push_without_a_body_stores_nothing(xa_env):
+def test_the_work_order_endpoints_are_gone(xa_env):
+    """Plan 2026-09-17 replaced the end-of-round work order with the inline read."""
     with _client() as client:
         _login(client)
-        _subscribe(client)
-        _ingest(client, xa_env, [timeline_tweet()])
-        _pending(client)
-        result = _push_detail(client, article={'title': TITLE, 'previewText': PREVIEW, 'content': '  '})
-        assert result == {'received': 1, 'stored': 0, 'skipped': 1}
-        # the attempt it was handed out on stays spent
-        assert db.get_x_tweet(ARTICLE_ID).article_attempts == 1
-        assert _pending(client) == [str(ARTICLE_ID)]
-    assert db.get_x_tweet(ARTICLE_ID).article_detail is None
-
-
-def test_a_push_for_an_unknown_or_malformed_entry_is_skipped_not_rejected(xa_env):
-    with _client() as client:
-        _login(client)
-        _subscribe(client)
-        _ingest(client, xa_env, [timeline_tweet()])
-        result = _push(
-            client,
-            [
-                {'tweet_id': '999', 'article': DETAIL['article']},
-                {'tweet_id': 'nope', 'article': DETAIL['article']},
-                {'tweet_id': str(ARTICLE_ID), 'article': 'not an object'},
-                {'tweet_id': str(ARTICLE_ID), 'article': DETAIL['article']},
-            ],
-        )
-    assert result == {'received': 4, 'stored': 1, 'skipped': 3}
+        assert client.get('/api/sources/x/articles/pending').status_code == 404
+        # 405 when a built frontend is present: the SPA mount at / takes the unrouted
+        # POST and refuses the method — either way no handler is left behind it
+        assert client.post('/api/sources/x/articles', json={'articles': []}).status_code in (404, 405)
 
 
 def test_the_full_text_becomes_searchable(xa_env):
@@ -321,7 +193,7 @@ def test_the_full_text_becomes_searchable(xa_env):
         _subscribe(client)
         _ingest(client, xa_env, [timeline_tweet()])
         before = client.get('/api/search', params={'q': BODY_ONLY_PHRASE}).json()
-        _push_detail(client)
+        _ingest(client, xa_env, [article_tweet()])
         after = client.get('/api/search', params={'q': BODY_ONLY_PHRASE}).json()
     assert before['items'] == []
     assert [item['key'] for item in after['items']] == [f'x:{ARTICLE_ID}']
@@ -338,7 +210,7 @@ def test_the_verdict_still_reads_title_and_preview_only(xa_env):
         _subscribe(client)
         _ingest(client, xa_env, [timeline_tweet()])
         before = verdict.judge_text(db.x_tweet_judge_rows([ARTICLE_ID])[0])
-        _push_detail(client)
+        _ingest(client, xa_env, [article_tweet()])
         after = verdict.judge_text(db.x_tweet_judge_rows([ARTICLE_ID])[0])
     assert before == after == f'{TITLE}\n{PREVIEW}'
 
@@ -352,7 +224,7 @@ def test_the_list_says_whether_there_is_a_body_and_never_carries_it(xa_env):
         _subscribe(client)
         _ingest(client, xa_env, [timeline_tweet(), plain_tweet(1)])
         before = _timeline_x(client)
-        _push_detail(client)
+        _ingest(client, xa_env, [article_tweet()])
         after = _timeline_x(client)
 
     assert before[str(ARTICLE_ID)]['article'] == {'title': TITLE, 'previewText': PREVIEW, 'has_content': False}
@@ -369,8 +241,7 @@ def test_the_detail_endpoint_returns_the_envelope_with_the_rendered_article(xa_e
     with _client() as client:
         _login(client)
         _subscribe(client)
-        _ingest(client, xa_env, [timeline_tweet()])
-        _push_detail(client)
+        _ingest(client, xa_env, [article_tweet()])
         r = client.get(f'/api/x/tweets/{ARTICLE_ID}')
     assert r.status_code == 200, r.text
     item = r.json()
@@ -384,7 +255,7 @@ def test_the_detail_endpoint_returns_the_envelope_with_the_rendered_article(xa_e
     assert item['x']['text'] == TITLE
 
 
-def test_the_detail_endpoint_before_the_body_arrives(xa_env):
+def test_the_detail_endpoint_for_an_article_without_a_body(xa_env):
     with _client() as client:
         _login(client)
         _subscribe(client)
@@ -412,8 +283,7 @@ def test_a_saved_article_keeps_its_body_after_retention_takes_the_row(xa_env):
     with _client() as client:
         _login(client)
         _subscribe(client)
-        _ingest(client, xa_env, [timeline_tweet()])
-        _push_detail(client)
+        _ingest(client, xa_env, [article_tweet()])
         assert client.post('/api/records', json={'key': key}).status_code == 200
         db.XFeedItem.delete().execute()
         db.XTweet.delete().execute()
@@ -461,7 +331,7 @@ def test_the_detail_endpoint_needs_auth(xa_env):
 # --- schema ------------------------------------------------------------------------
 
 
-def test_a_pre_v21_archive_gains_the_columns_and_keeps_its_rows(xa_env):
+def test_a_pre_v21_archive_gains_the_column_and_keeps_its_rows(xa_env):
     path = os.environ['CONDENSER_DB_PATH']
     db.init_db(path)
     db.tdb.db.execute_sql('DROP TABLE x_tweets')
@@ -479,8 +349,12 @@ def test_a_pre_v21_archive_gains_the_columns_and_keeps_its_rows(xa_env):
     db.init_db(path)
 
     assert db.get_meta('schema_version') == str(db.SCHEMA_VERSION)
+    cols = [r[1] for r in db.tdb.db.execute_sql('PRAGMA table_info(x_tweets)').fetchall()]
+    assert 'article_detail' in cols
+    # the work order's attempt counter died with it (plan 2026-09-17)
+    assert 'article_attempts' not in cols
     row = db.get_x_tweet(7)
-    assert row.text == 'kept' and row.article_detail is None and row.article_attempts == 0
+    assert row.text == 'kept' and row.article_detail is None
     # and the table still takes writes (the ADD COLUMN ordering trap reports on write)
-    db.upsert_x_tweet(x.parse_tweet(copy.deepcopy(timeline_tweet(8))).row(NOW))
-    assert db.get_x_tweet(8).article_attempts == 0
+    db.upsert_x_tweet(x.parse_tweet(article_tweet(8)).row(NOW))
+    assert json.loads(db.get_x_tweet(8).article_detail)['content'] == DETAIL['article']['content']

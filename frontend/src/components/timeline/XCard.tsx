@@ -166,9 +166,11 @@ function XCardImpl({ item, observe, pendingKeys }: Props) {
             </p>
           )}
           {/* The body never expands in place: it renders once, in the pane, which
-              is where highlights live (RssCard's arrangement). Offered only once
-              the probe has fetched it — before that the preview is all there is. */}
-          {tweet.article.has_content && (
+              is where highlights live (RssCard's arrangement). The probe reads it
+              with the tweet (plan 2026-09-17), so a server without one means the
+              read did not work — said here, where the reader scans, rather than
+              left for the pane to reveal. A payload without the flag says nothing. */}
+          {tweet.article.has_content ? (
             <button
               type="button"
               onClick={() => openPane(item)}
@@ -176,6 +178,8 @@ function XCardImpl({ item, observe, pendingKeys }: Props) {
             >
               查看全文
             </button>
+          ) : (
+            tweet.article.has_content === false && <p className="mt-1 text-xs text-muted-foreground">未获取到正文</p>
           )}
         </div>
       )}

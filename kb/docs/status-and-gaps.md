@@ -1596,3 +1596,37 @@ Plan `kb/plans/2026-09-16-x-article-full-content.md`。长文推此前只有标�
   丢失；引用长文的 quote 卡看不出是长文；7 天前的存量永远只有预览。另记两条：iOS 块管线不画
   小标题样式（RSS 既有）；`make build-mac MAC_SIGN=adhoc` 在编译前就过不了 provisioning 检查
   （既有问题，本次用 `CODE_SIGNING_ALLOWED=NO` 绕过验证编译）。
+
+## 2026-09-17 · X 长文正文改为采集时内联抓取（推翻工作单）
+
+Plan `kb/plans/2026-09-17-x-article-inline-fetch.md`。复核 v21 工作单的可观测性时
+（`kb/notes/2026-09-16-x-article-status-observability.md`）发现两处根本问题：抓正文和推推文
+拆成两步后，失败被一个健康的 `last push` 盖住；发放即扣次数在会话失效时约 6 小时烧光 7 天窗口。
+v21 没部署，所以直接改设计、不写迁移。
+
+- **probe**：`_run_articles` 删除。`_run_feed` 在 SeenCache 过滤之后、ingest 之前，对每条
+  `article.title` 非空的新推文读 TweetDetail，把详情的 `article` 块合并进去（`text` 保持 timeline
+  的标题）。读抛异常（任何异常——xbird 的响应映射不走它自己的错误值）→ 推文照推、不记缓存，
+  下一轮自然重读；详情无正文 → 终态，记缓存。**断路器是整轮一个**（`ArticleReader`，由
+  `run_round` 建、各 feed 共享），与计划 §4「`_run_feed` 内局部布尔」的写法不同，按 §1.1「一轮一个」
+  的本意实现：会话失效时整轮只撞一次超时，而不是每个 feed 各一次。断路后跳过的长文也计入
+  `articles_failed`（本轮没拿到、下一轮再读的都算）。`ProbeClient` 删两个方法。
+- **服务端**：`x.split_article` 在 parse 时把六个正文键从 `article` 剥出，有实际文本才成为
+  `ParsedTweet.article_detail`；`row()` 只在有正文时带这一列，timeline 的无正文重推不会清掉已存
+  正文，带正文的重推（改过的文章、`--no-cache`）覆盖。删 `article_pending` /
+  `store_article_details`、`claim_x_article_backlog` / `set_x_article_details`、两个端点、
+  `XArticlesBody`、`article_attempts`、四个 `CONDENSER_X_ARTICLE_*`。`SCHEMA_VERSION` 仍 21。
+  「端点已删除」的测试里 POST 实际回 405 而非 404：本地有 `frontend/dist` 时 SPA 挂载点接住未路由的
+  POST 拒绝方法，断言放宽为 404/405。
+- **web / iOS**：卡片 `has_content === false` 显示灰字「未获取到正文」（非按钮）；详情在服务端回答
+  无正文后显示「未获取到 article 正文」，「正文加载失败」只留给承诺了正文却请求失败的情况。
+- **测试**：后端 920 全绿（工作单一节约 16 个用例换成 5 个 ingest 行为用例 + 端点已删除 + 迁移断言
+  无 `article_attempts`），probe 59（文章一节整段换成 11 个内联用例，含跨 feed 断路、非
+  `XSourceError` 异常、结构性重试两轮），web 307（+2），`tsc -b` 与 iOS `make build` 通过（Kit 无改动）。
+- **真实端到端**（临时库 + 真 X 会话，`tmp/2026-09-17-x-article-inline/e2e_probe.py`）：第 1 轮样本
+  长文内联读到正文（列表 `has_content: true`、`text` 仍是标题，详情 7 个 h2 / 4 个 figure，
+  「明码标价」可搜到），不存在的 id 读失败 → 无正文推上去、未入缓存、断路打开；第 2 轮只有这一条被
+  当作新推文重读。web 卡片 / 面板与 iOS 卡片 / sheet 截图在 `tmp/2026-09-17-x-article-inline-fetch/`。
+- **未部署**。上线顺序（计划 §8）：push master（服务端必须先上——老服务端会把合并后的整块存进
+  `x_tweets.article`，列表载荷当场带全文）→ 探针机 `cd probe && uv sync` + `launchctl kickstart -k
+  gui/$(id -u)/com.condenser.probe` → `condenser-probe run --no-cache` 一次补当前窗口 → iOS 随下个 build。

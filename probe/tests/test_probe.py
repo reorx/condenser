@@ -13,7 +13,7 @@ import pytest
 
 from condenser_probe import xsource
 from condenser_probe.cache import SeenCache
-from condenser_probe.client import ServerError
+from condenser_probe.client import ProbeClient, ServerError
 from condenser_probe.config import ConfigError, load_settings
 from condenser_probe.runner import run_round
 
@@ -24,27 +24,13 @@ USER = {'channel_id': 'novoreorx', 'kind': 'user', 'handle': 'novoreorx', 'n': 1
 class FakeClient:
     """Stands in for ProbeClient: canned probe-config, recorded ingests."""
 
-    def __init__(
-        self,
-        feeds,
-        fail_on=(),
-        sync_following=False,
-        following_fails=False,
-        pending=(),
-        pending_fails=False,
-        articles_fail=False,
-    ):
+    def __init__(self, feeds, fail_on=(), sync_following=False, following_fails=False):
         self.feeds = feeds
         self.fail_on = set(fail_on)
         self.sync_following = sync_following
         self.following_fails = following_fails
         self.pushed = []
         self.followed = None
-        self.pending = list(pending)
-        self.pending_fails = pending_fails
-        self.articles_fail = articles_fail
-        self.pending_calls = 0
-        self.pushed_articles = []
 
     def probe_config(self):
         return {'feeds': self.feeds, 'sync_following': self.sync_following}
@@ -60,18 +46,6 @@ class FakeClient:
             raise ServerError('nope')
         self.followed = users
         return {'received': len(users), 'stored': len(users)}
-
-    def pending_articles(self, limit=None):
-        self.pending_calls += 1
-        if self.pending_fails:
-            raise ServerError('404')
-        return list(self.pending)
-
-    def push_articles(self, articles):
-        if self.articles_fail:
-            raise ServerError('boom')
-        self.pushed_articles.append(articles)
-        return {'received': len(articles), 'stored': len(articles), 'skipped': 0}
 
 
 def tweets(n):
@@ -219,110 +193,202 @@ def test_the_follow_list_is_synced_even_with_nothing_to_fetch():
     assert client.followed == [{'username': 'a'}]
 
 
-# --- article bodies (plan 2026-09-16) ---------------------------------------------
+# --- article bodies, read inline (plan 2026-09-17) --------------------------------
 
 
-def article(tweet_id):
-    return {'title': f'title {tweet_id}', 'content': f'body of {tweet_id}', 'plainText': f'body of {tweet_id}'}
+def article_tweet(tweet_id):
+    """A long-form post as a timeline read returns it: title + preview, no body."""
+    return {'id': tweet_id, 'text': f'title {tweet_id}', 'article': {'title': f'title {tweet_id}', 'previewText': 'p'}}
 
 
-def _articles_round(client, fetch_article, **kwargs):
-    return run_round(client, fetch=lambda feed: tweets(2), fetch_article=fetch_article, article_delay=0, **kwargs)
+def body(tweet_id):
+    """The detail's ``article`` block (xbird >= 1.3.0): the pair again, plus the body."""
+    return {
+        'title': f'title {tweet_id}',
+        'previewText': 'p',
+        'content': f'## body of {tweet_id}',
+        'plainText': f'body of {tweet_id}',
+    }
 
 
-def test_the_round_ends_by_fetching_the_work_order_and_pushing_the_bodies_back():
-    client = FakeClient([USER], pending=['11', '12'])
+def _feed(*entries):
+    return lambda feed: [dict(e, article=dict(e['article'])) if 'article' in e else dict(e) for e in entries]
+
+
+def _pushed(client, channel_id='novoreorx'):
+    return [t for cid, batch in client.pushed if cid == channel_id for t in batch]
+
+
+def test_a_new_article_is_pushed_with_its_body_merged_in():
+    client = FakeClient([USER])
     fetched = []
 
     def fetch_article(tweet_id):
         fetched.append(tweet_id)
-        return article(tweet_id)
+        return body(tweet_id)
 
-    outcomes = _articles_round(client, fetch_article)
-    assert [o.ok for o in outcomes] == [True]
-    assert fetched == ['11', '12']
-    # only the article block goes up, one push for the round
-    assert client.pushed_articles == [
-        [{'tweet_id': '11', 'article': article('11')}, {'tweet_id': '12', 'article': article('12')}]
-    ]
-
-
-def test_the_work_order_is_asked_for_after_every_feed_is_ingested():
-    """This round's new articles are on the order only because they are already
-    stored when the probe asks — asking first would delay each by a round."""
-    order = []
-    client = FakeClient([HOME, USER], pending=['11'])
-    ingest, pending = client.ingest, client.pending_articles
-    client.ingest = lambda channel_id, t: order.append(f'ingest {channel_id}') or ingest(channel_id, t)
-    client.pending_articles = lambda limit=None: order.append('pending') or pending(limit)
-    _articles_round(client, article)
-    assert order == ['ingest foryou', 'ingest novoreorx', 'pending']
+    outcomes = run_round(client, fetch=_feed(article_tweet('11'), *tweets(1)), fetch_article=fetch_article, article_delay=0)
+    assert fetched == ['11']
+    pushed = {t['id']: t for t in _pushed(client)}
+    # the article block grew the body; the tweet's own text stays the timeline's title
+    assert pushed['11']['article'] == body('11')
+    assert pushed['11']['text'] == 'title 11'
+    assert 'article' not in pushed['1000']
+    assert outcomes[0].ok and outcomes[0].articles_fetched == 1 and outcomes[0].articles_failed == 0
 
 
-def test_an_empty_work_order_touches_neither_x_nor_the_push():
+def test_a_tweet_without_an_article_never_reads_the_detail():
     client = FakeClient([USER])
     calls = []
-    _articles_round(client, lambda tweet_id: calls.append(tweet_id))
-    assert client.pending_calls == 1
-    assert calls == [] and client.pushed_articles == []
+    untitled = {'id': '12', 'text': 'x', 'article': {'previewText': 'no title'}}
+    run_round(client, fetch=_feed(*tweets(3), untitled), fetch_article=lambda i: calls.append(i), article_delay=0)
+    assert calls == []
+    assert len(_pushed(client)) == 4
 
 
-def test_one_failing_article_does_not_sink_the_others():
-    client = FakeClient([USER], pending=['11', '12', '13'])
-
-    def fetch_article(tweet_id):
-        if tweet_id == '12':
-            raise xsource.XSourceError('HTTP 404')
-        return article(tweet_id)
-
-    outcomes = _articles_round(client, fetch_article)
-    assert [o.ok for o in outcomes] == [True]
-    assert [a['tweet_id'] for a in client.pushed_articles[0]] == ['11', '13']
-
-
-def test_a_detail_without_an_article_is_not_pushed():
-    client = FakeClient([USER], pending=['11', '12'])
-    _articles_round(client, lambda tweet_id: None if tweet_id == '11' else article(tweet_id))
-    assert [a['tweet_id'] for a in client.pushed_articles[0]] == ['12']
-
-
-def test_nothing_is_pushed_when_every_article_failed():
-    client = FakeClient([USER], pending=['11'])
+def test_a_failed_read_still_pushes_the_tweet_but_leaves_it_out_of_the_cache(tmp_path):
+    """The retry is structural: the next round's timeline still carries the post, and
+    with no cache entry it is new again — so the read happens again."""
+    cache = _cache(tmp_path)
+    client = FakeClient([USER])
+    fetch = _feed(article_tweet('11'), *tweets(1))
 
     def boom(tweet_id):
+        raise xsource.XSourceError('HTTP 429')
+
+    outcomes = run_round(client, fetch=fetch, fetch_article=boom, article_delay=0, cache=cache)
+    assert outcomes[0].ok and outcomes[0].articles_failed == 1
+    # the body never holds the tweet back
+    assert {t['id'] for t in _pushed(client)} == {'11', '1000'}
+    assert _pushed(client)[0]['article'] == {'title': 'title 11', 'previewText': 'p'}
+    assert set(cache.load('novoreorx')) == {'1000'}
+
+    retried = []
+    run_round(client, fetch=fetch, fetch_article=lambda i: retried.append(i) or body(i), article_delay=0, cache=cache)
+    assert retried == ['11']
+    assert [t['id'] for t in client.pushed[1][1]] == ['11']
+    assert client.pushed[1][1][0]['article'] == body('11')
+    assert set(cache.load('novoreorx')) == {'11', '1000'}
+
+
+def test_an_unexpected_error_in_the_read_is_contained_the_same_way(tmp_path):
+    """xbird maps the detail response outside its own error values; a crash in that
+    mapping must cost the body, never the feed."""
+    cache = _cache(tmp_path)
+    client = FakeClient([USER])
+
+    def crash(tweet_id):
+        raise KeyError('article_results')
+
+    outcomes = run_round(client, fetch=_feed(article_tweet('11')), fetch_article=crash, article_delay=0, cache=cache)
+    assert outcomes[0].ok and [t['id'] for t in _pushed(client)] == ['11']
+    assert cache.load('novoreorx') == {}
+
+
+def test_the_first_failure_opens_the_breaker_for_the_rest_of_the_round(tmp_path):
+    """A dead session fails every read the same way; one timeout per article would
+    hold every push of the round back by minutes. The skipped ones retry next round."""
+    cache = _cache(tmp_path)
+    client = FakeClient([FOLLOWING, USER])
+    calls = []
+
+    def boom(tweet_id):
+        calls.append(tweet_id)
         raise xsource.XSourceError('cookies expired')
 
-    _articles_round(client, boom)
-    assert client.pushed_articles == []
+    def fetch(feed):
+        if feed['channel_id'] == 'following':
+            return _feed(article_tweet('11'), article_tweet('12'))(feed)
+        return _feed(article_tweet('21'), *tweets(1))(feed)
+
+    outcomes = run_round(client, fetch=fetch, fetch_article=boom, article_delay=0, cache=cache)
+    # one read for the whole round, across feeds
+    assert calls == ['11']
+    assert [o.ok for o in outcomes] == [True, True]
+    assert [o.articles_failed for o in outcomes] == [2, 1]
+    assert {t['id'] for t in _pushed(client, 'following')} == {'11', '12'}
+    assert {t['id'] for t in _pushed(client)} == {'21', '1000'}
+    assert cache.load('following') == {}
+    assert set(cache.load('novoreorx')) == {'1000'}
+
+    # the breaker is the round's, not the process's: the next round reads again
+    calls.clear()
+    run_round(client, fetch=fetch, fetch_article=lambda i: calls.append(i) or body(i), article_delay=0, cache=cache)
+    assert calls == ['11', '12', '21']
 
 
-def test_the_article_step_never_sinks_the_round():
-    """An older server without the endpoint, or a push the server refuses: the
-    feeds were already delivered, and the server will hand the order out again."""
-    no_endpoint = FakeClient([USER], pending_fails=True)
-    assert [o.ok for o in _articles_round(no_endpoint, article)] == [True]
+def test_a_detail_with_no_body_is_final(tmp_path):
+    """X answered — no article, or an empty one. The next round would get the same
+    answer, so the tweet is pushed as it is and remembered."""
+    cache = _cache(tmp_path)
+    client = FakeClient([USER])
+    empty = {'title': 'title 12', 'previewText': 'p', 'content': ' ', 'plainText': ''}
+    calls = []
 
-    refused = FakeClient([USER], pending=['11'], articles_fail=True)
-    assert [o.ok for o in _articles_round(refused, article)] == [True]
+    def fetch_article(tweet_id):
+        calls.append(tweet_id)
+        return None if tweet_id == '11' else empty
+
+    fetch = _feed(article_tweet('11'), article_tweet('12'))
+    outcomes = run_round(client, fetch=fetch, fetch_article=fetch_article, article_delay=0, cache=cache)
+    assert outcomes[0].articles_fetched == 0 and outcomes[0].articles_failed == 0
+    assert [t['article'] for t in _pushed(client)] == [
+        {'title': 'title 11', 'previewText': 'p'},
+        {'title': 'title 12', 'previewText': 'p'},
+    ]
+    assert set(cache.load('novoreorx')) == {'11', '12'}
+
+    run_round(client, fetch=fetch, fetch_article=fetch_article, article_delay=0, cache=cache)
+    assert calls == ['11', '12']
 
 
-def test_article_fetches_are_paced():
+def test_already_pushed_articles_are_not_read_again(tmp_path):
+    cache = _cache(tmp_path)
+    client = FakeClient([USER])
+    calls = []
+    fetch = _feed(article_tweet('11'))
+    run_round(client, fetch=fetch, fetch_article=lambda i: calls.append(i) or body(i), article_delay=0, cache=cache)
+    run_round(client, fetch=fetch, fetch_article=lambda i: calls.append(i) or body(i), article_delay=0, cache=cache)
+    assert calls == ['11']
+
+
+def test_article_reads_are_paced():
     """X is aggressive about automated reading; a burst of detail requests is the
     same exposure the follow-list crawl paces for."""
-    client = FakeClient([USER], pending=['11', '12', '13'])
+    client = FakeClient([USER])
     sleeps = []
     run_round(
         client,
-        fetch=lambda feed: tweets(2),
-        fetch_article=article,
+        fetch=_feed(article_tweet('11'), article_tweet('12'), article_tweet('13')),
+        fetch_article=body,
         article_delay=0.5,
         sleep=sleeps.append,
     )
-    assert sleeps == [0.5, 0.5]  # between fetches, not before the first
+    assert sleeps == [0.5, 0.5]  # between reads, not before the first
 
 
 def test_the_default_article_pacing_is_the_follow_crawls():
     assert xsource.ARTICLE_FETCH_DELAY == xsource.FOLLOWING_PAGE_DELAY
+
+
+def test_a_failed_feed_read_reads_no_articles():
+    client = FakeClient([USER])
+    calls = []
+
+    def fetch(feed):
+        raise xsource.XSourceError('cookies expired')
+
+    run_round(client, fetch=fetch, fetch_article=lambda i: calls.append(i), article_delay=0)
+    assert calls == []
+
+
+def test_the_round_asks_the_server_for_nothing_but_config_and_ingest():
+    """The end-of-round work order is gone (plan 2026-09-17), on both sides of the
+    wire: the real client lost its two methods, and a round runs without them."""
+    assert not hasattr(ProbeClient, 'pending_articles') and not hasattr(ProbeClient, 'push_articles')
+    client = FakeClient([USER])
+    outcomes = run_round(client, fetch=_feed(article_tweet('11')), fetch_article=body, article_delay=0)
+    assert [o.ok for o in outcomes] == [True]
 
 
 # --- the incremental cache ----------------------------------------------------

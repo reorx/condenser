@@ -12,6 +12,12 @@ tags:
 
 # X Article 全文：probe 补抓 + 服务端渲染 HTML + 两端详情加载
 
+> ⚠️ **决策 2（「轮次末尾问服务端要工作单」）已被推翻**：
+> [2026-09-17 内联抓取计划](2026-09-17-x-article-inline-fetch.md)。probe 首见长文即读 TweetDetail、
+> 随同一次 ingest 推上去，工作单的两个端点、`article_attempts`、四个 `CONDENSER_X_ARTICLE_*`
+> 设置全部删除（v21 从未部署，无迁移包袱）。下文 §1 决策 2、§2 数据流、§3.1 待办查询、§4.7 /
+> §4.8、§6 描述的是被取代的设计；渲染、搜索、两端详情页照旧。
+>
 > **状态：已实现（2026-09-16）**，未部署。上游 xbird 1.3.0 已就绪并已推送（`8113c60`）。
 > 上游接口变更见 `../../../xbird/kb/sessions/2026-09-16-x-article-full-content.md`。
 >

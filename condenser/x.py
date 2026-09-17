@@ -74,7 +74,13 @@ class ParsedTweet:
     quote_of: Optional[int] = None
     rt_of_handle: Optional[str] = None
     reply_to_id: Optional[int] = None
+    # An X Article's card pair (title / previewText, plus any other upstream key
+    # that is not a body key) — what the verdict, search and both cards read.
     article: Optional[dict] = None
+    # ...and its body, when the probe read the tweet's detail before pushing it
+    # (plan 2026-09-17): ``ARTICLE_DETAIL_KEYS`` split off ``article`` at this
+    # boundary, None unless there is actual text. See ``split_article``.
+    article_detail: Optional[dict] = None
     # t.co expansion metadata (xbird >= 1.2.0; None from an older probe), normalized
     # to snake_case [{url, expanded_url, display_url, indices}] at this parse
     # boundary — the wire is camelCase but the DB column, envelope and both clients
@@ -89,7 +95,7 @@ class ParsedTweet:
     warnings: list[str] = field(default_factory=list)
 
     def row(self, fetched_at: datetime) -> dict:
-        return {
+        fields = {
             'id': self.id,
             'author_id': self.author_id,
             'author_handle': self.author_handle,
@@ -106,6 +112,12 @@ class ParsedTweet:
             'raw': json.dumps(self.raw, ensure_ascii=False),
             'fetched_at': fetched_at,
         }
+        # Only a push that carries a body writes the column: every round re-reads
+        # the timeline, which never has one, and ``upsert_x_tweet`` updates exactly
+        # the keys it is given — a None here would wipe the stored body.
+        if self.article_detail is not None:
+            fields['article_detail'] = json.dumps(self.article_detail, ensure_ascii=False)
+        return fields
 
 
 @dataclass
@@ -188,6 +200,31 @@ def parse_urls(value: Any) -> Optional[list]:
     return urls or None
 
 
+# xbird's detail-only article keys (>= 1.3.0, TweetDetail only) — what
+# ``article_detail`` stores. The upstream pair (title / previewText) is deliberately
+# not among them: it stays in ``article``, which every other reader treats as the
+# card's two fields.
+ARTICLE_DETAIL_KEYS = ('content', 'plainText', 'coverMedia', 'media', 'publishedAt', 'modifiedAt')
+
+
+def split_article(value: Any) -> tuple[Optional[dict], Optional[dict]]:
+    """A pushed ``article`` block -> (the card's half, the body half or None).
+
+    The probe merges the detail's block into the timeline's, so one block arrives
+    carrying both. The body keys leave ``article`` whatever their values — the list
+    payload is built from that column and must never carry a body — and become a
+    body only when ``content`` or ``plainText`` has text: an empty one is X's
+    answer that there is nothing to show, not a body.
+    """
+    if not isinstance(value, dict):
+        return None, None
+    article = {k: v for k, v in value.items() if k not in ARTICLE_DETAIL_KEYS}
+    detail = {k: value[k] for k in ARTICLE_DETAIL_KEYS if value.get(k) is not None}
+    if not any(isinstance(detail.get(k), str) and detail[k].strip() for k in ('content', 'plainText')):
+        detail = None
+    return article, detail
+
+
 def parse_tweet(raw: Any) -> ParsedTweet:
     """One bird entry -> a storable tweet. Raises XParseError only when unkeyable."""
     if not isinstance(raw, dict):
@@ -206,6 +243,7 @@ def parse_tweet(raw: Any) -> ParsedTweet:
     rt = RT_PREFIX_RE.match(text) if text else None
     media = raw.get('media') if isinstance(raw.get('media'), list) else None
     quoted = raw.get('quotedTweet') if isinstance(raw.get('quotedTweet'), dict) else None
+    article, article_detail = split_article(raw.get('article'))
 
     return ParsedTweet(
         id=tweet_id,
@@ -223,7 +261,8 @@ def parse_tweet(raw: Any) -> ParsedTweet:
         quote_of=_as_int(quoted.get('id')) if quoted else None,
         rt_of_handle=rt.group(1) if rt else None,
         reply_to_id=_as_int(raw.get('inReplyToStatusId')),
-        article=raw.get('article') if isinstance(raw.get('article'), dict) else None,
+        article=article,
+        article_detail=article_detail,
         urls=parse_urls(raw.get('urls')),
         lang=raw.get('lang') if isinstance(raw.get('lang'), str) else None,
         raw=raw,
@@ -585,72 +624,6 @@ def ingest_tweets(channel_id: str, entries: list, settings: Optional[Settings] =
     _learn_user_identity(channel_id, kept)
     _record_push(channel_id, result, now)
     return result
-
-
-# --- article bodies (plan 2026-09-16) -----------------------------------------
-#
-# A timeline query returns an X Article as its title + a ~200-char preview; the body
-# only comes back from TweetDetail, one request per tweet. The server cannot make
-# that request, so it hands the probe a work order at the end of each round and
-# takes back the ``article`` block of each detail tweet. One mechanism covers this
-# round's new articles (already ingested when the probe asks), the backlog inside
-# the window, and retries.
-
-# xbird's additive detail keys (>= 1.3.0) — what ``article_detail`` stores. The
-# upstream pair (title / previewText) is deliberately not among them: it stays in
-# ``article``, which every other reader treats as the card's two fields.
-ARTICLE_DETAIL_KEYS = ('content', 'plainText', 'coverMedia', 'media', 'publishedAt', 'modifiedAt')
-
-
-def article_pending(limit: Optional[int], settings: Settings) -> list[int]:
-    """This round's work order: tweet ids whose article body is still missing.
-
-    Handing an id out spends one of its attempts (``db.claim_x_article_backlog``).
-    ``limit`` is the probe's ask; the batch setting caps it either way.
-    """
-    if not settings.condenser_x_article_enabled:
-        return []
-    batch = settings.condenser_x_article_batch
-    limit = min(limit, batch) if limit else batch
-    since = _now() - timedelta(days=settings.condenser_x_article_backfill_days)
-    return db.claim_x_article_backlog(since, settings.condenser_x_article_max_attempts, limit)
-
-
-def article_detail(article: Any) -> Optional[dict]:
-    """The storable half of a pushed ``article`` block, or None when it has no body.
-
-    A block without ``content`` or ``plainText`` is what X returns when the detail
-    request silently degraded; storing it would take the tweet off the work order
-    with nothing to show for it. The attempt it was handed out on stays spent.
-    """
-    if not isinstance(article, dict):
-        return None
-    detail = {k: article[k] for k in ARTICLE_DETAIL_KEYS if article.get(k) is not None}
-    if not any(isinstance(detail.get(k), str) and detail[k].strip() for k in ('content', 'plainText')):
-        return None
-    return detail
-
-
-def store_article_details(entries: list) -> dict:
-    """Store one probe push of article bodies; re-index the tweets that took one.
-
-    Judged per entry: a malformed one, a bodiless one or one for a tweet we do not
-    have is skipped, never a reason to reject the rest.
-    """
-    details: dict[int, dict] = {}
-    for entry in entries:
-        if not isinstance(entry, dict):
-            continue
-        tweet_id = _as_int(entry.get('tweet_id'))
-        detail = article_detail(entry.get('article'))
-        if tweet_id is not None and detail is not None:
-            details[tweet_id] = detail
-    stored = db.set_x_article_details(details)
-    # Search indexes the full text (plan §1.4) — the tweets that just got one.
-    search.index_x_tweets(stored)
-    if len(stored) < len(entries):
-        log.info('x articles: stored %d of %d pushed bodies', len(stored), len(entries))
-    return {'received': len(entries), 'stored': len(stored), 'skipped': len(entries) - len(stored)}
 
 
 def _learn_user_identity(channel_id: str, parsed: list[ParsedTweet]) -> None:

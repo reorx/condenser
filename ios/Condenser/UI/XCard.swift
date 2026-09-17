@@ -167,13 +167,15 @@ struct XCard: View {
     }
 }
 
-/// 长文卡：标题 + ~200 字符预览（timeline 查询只给得到这两样）。正文由 probe 另抓，
-/// 在详情里渲染（`XDetailSheet`），卡片上最多提示一句有正文
+/// 长文卡：标题 + ~200 字符预览（timeline 查询只给得到这两样）。正文由 probe 抓推文时
+/// 顺手读 TweetDetail 带上来，在详情里渲染（`XDetailSheet`），卡片上只提示一句有没有
 struct XArticleCard: View {
     let article: XArticle
-    /// 卡片上用（2026-09-16）：服务端已有正文时在预览下挂一行「查看全文」。只是提示——
-    /// 卡片本身不展开（正文只在详情里出现一次，高亮只能有一份底本），点整张卡进详情。
-    /// 详情 sheet 的回落态也画这张卡，那里不挂
+    /// 卡片上用：服务端已有正文时在预览下挂一行「查看全文」（2026-09-16），没有时挂一行
+    /// 灰字「未获取到正文」（2026-09-17）——正文随推文一起抓之后，没有就是 probe 没拿到，
+    /// 不再是「还在路上」，浏览时就该看见。只是提示，卡片本身不展开（正文只在详情里出现
+    /// 一次，高亮只能有一份底本），点整张卡进详情。老载荷没有 `hasContent`，两句都不挂。
+    /// 详情 sheet 的回落态也画这张卡，那里不挂（sheet 自己在卡下面说）
     var showsFullTextHint = false
 
     var body: some View {
@@ -189,10 +191,16 @@ struct XArticleCard: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(4)
             }
-            if showsFullTextHint, article.hasContent == true {
-                Text("查看全文")
-                    .readingFont(.caption, weight: .medium)
-                    .foregroundStyle(.tint)
+            if showsFullTextHint, let hasContent = article.hasContent {
+                if hasContent {
+                    Text("查看全文")
+                        .readingFont(.caption, weight: .medium)
+                        .foregroundStyle(.tint)
+                } else {
+                    Text("未获取到正文")
+                        .readingFont(.caption)
+                        .foregroundStyle(.tertiary)
+                }
             }
         }
         .padding(10)

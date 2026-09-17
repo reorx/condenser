@@ -155,7 +155,7 @@ describe('ItemDetailBody (X article)', () => {
     expect(api.xTweet).not.toHaveBeenCalled();
   });
 
-  it('with no body on the server yet, shows the preview and promises nothing', async () => {
+  it('with no body on the server, keeps the preview and says the body was not fetched', async () => {
     const list = xArticleItem({ ...ARTICLE, has_content: false });
     vi.mocked(api.xTweet).mockResolvedValue({
       ...list,
@@ -164,9 +164,18 @@ describe('ItemDetailBody (X article)', () => {
     wrap(list);
     expect(screen.getByText('我做了个 Mac 工具。')).toBeInTheDocument();
     expect(screen.queryByText('正在加载全文…')).toBeNull();
-    // it still asks — the body may have arrived since the list was loaded
+    // it still asks — a failed read is retried by the next probe round
     await vi.waitFor(() => expect(api.xTweet).toHaveBeenCalled());
+    expect(await screen.findByText('未获取到 article 正文')).toBeInTheDocument();
+    // not a request error: that one has its own line
     expect(screen.queryByText('正文加载失败')).toBeNull();
+    expect(screen.getByText('我做了个 Mac 工具。')).toBeInTheDocument();
+  });
+
+  it('does not claim the body is missing before the answer is in', () => {
+    vi.mocked(api.xTweet).mockReturnValue(new Promise(() => {}));
+    wrap(xArticleItem({ ...ARTICLE, has_content: false }));
+    expect(screen.queryByText('未获取到 article 正文')).toBeNull();
   });
 
   it('picks up a body that arrived after the list was loaded', async () => {
