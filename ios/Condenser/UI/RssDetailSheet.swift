@@ -47,7 +47,6 @@ struct RssDetailSheet: View {
         }
         .task(id: entry.id) { await loadArticle() }
         .readingFontScale()
-        .edgeSwipeToDismiss()
         .detailSheetPresentation()
         .externalLinks(safari: $safariItem)
         .sheet(item: $safariItem) { item in

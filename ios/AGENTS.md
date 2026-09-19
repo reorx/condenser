@@ -63,9 +63,12 @@ chip 行（手机上一行摆不下这些中文标签），只在「这一下确
   （先撞上标注再读内容；靛蓝是因为琥珀/橙/天蓝都已有含义），卡片与详情 sheet 共用。
   Kit 面是两个属性：`displaySummary`（trim 后非空才算有）+ `contentText`；详情 sheet
   两样都给——摘要块在上、全文接在下面，因为点进来是要读文章的。
-  sheet 还挂了 `.edgeSwipeToDismiss()`（`EdgeSwipeDismiss.swift`，可复用）：长文滚到
-  底后下拉手势只会回滚内容，从左边缘右滑是给单手补的退路；手势用普通 `gesture` 不用
-  `highPriorityGesture`，否则会抢走从边缘起手的纵向滚动。
+  **左边缘右滑关闭**（`EdgeSwipeDismiss.swift`）起于这张 sheet：长文滚到底后下拉手势
+  只会回滚内容，从左边缘右滑是给单手补的退路；手势用普通 `gesture` 不用
+  `highPriorityGesture`，否则会抢走从边缘起手的纵向滚动。2026-09-19 起它不再挂在某个
+  抽屉上，而是由 `detailSheetPresentation()` 的 iPhone 分支替**四个源**统一挂（之前只有
+  RSS 有，X / HN / Telegram 三个关不掉）——新加的详情抽屉只要走这个修饰就自带；判定
+  门槛在 Kit 的 `EdgeSwipe`（有测试）。
 - **列表只有摘录，全文按需取**（2026-08-23）：envelope 的 `content_excerpt` 是服务端
   剥好的约 500 字纯文本，`content` 只有 `GET /api/rss/entries/{id}` 与改版前存下的
   收藏快照才带（feed 正文平均 13.9KB、最长一条 7.1MB，一页 30 条全带就是一次几 MB

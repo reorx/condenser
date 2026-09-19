@@ -126,7 +126,7 @@ extension View {
     }
 }
 
-/// 详情视图自身的呈现修饰。iPhone：半屏/全屏两档 + grabber。Mac 分两种情况：
+/// 详情视图自身的呈现修饰。iPhone：半屏/全屏两档 + grabber + 左边缘右滑关闭。Mac 分两种情况：
 /// 在右侧栏里（`detailColumnDismiss` 非 nil）——顶部一行关闭钮，关闭走环境里的动作；
 /// 仍以 sheet 出现时（DEBUG 路由直接弹的详情）——Catalyst 的默认 sheet 是一块约 460pt
 /// 见方的固定框，读一篇长文像从门缝里看，改成 `.page` 尺寸 + 右上角关闭钮。
@@ -156,7 +156,10 @@ struct DetailSheetPresentation: ViewModifier {
                         .padding(12)
                 }
         } else {
+            // 左边缘右滑关闭挂在这里而不是各个抽屉自己身上：四个源的抽屉都经过这个修饰，
+            // 漏挂一个就是一个单手关不掉的抽屉。Mac 的两种形态没有触摸手势，不需要
             content
+                .edgeSwipeToDismiss()
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
         }
