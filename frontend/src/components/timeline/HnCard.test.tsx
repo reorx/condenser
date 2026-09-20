@@ -161,11 +161,22 @@ describe('HnCard', () => {
     const meta = screen.getByText('120 points');
     expect(title.compareDocumentPosition(summary) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(summary.compareDocumentPosition(meta) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // The label leads the block (iOS `AiSummaryBlock`): "a machine wrote this"
+    // is met before the words, not discovered under them.
+    const label = screen.getByText('AI 摘要');
+    expect(title.compareDocumentPosition(label) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(label.compareDocumentPosition(summary) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it('shows no summary block without one', () => {
     wrap(<HnCard item={makeItem()} />);
     expect(screen.queryByText('AI 摘要')).toBeNull();
+  });
+
+  it('treats a whitespace-only summary as none — no block, and the preview keeps its description', () => {
+    wrap(<HnCard item={makeItem({ summary: '  \n', preview: makePreview() })} />);
+    expect(screen.queryByText('AI 摘要')).toBeNull();
+    expect(screen.getByText('Og description')).toBeInTheDocument();
   });
 
   it('drops the preview description under a summary — same information twice', () => {
@@ -185,7 +196,10 @@ describe('HnCard', () => {
   // the anchor, so the extension can open the thread without an Algolia search.
   it('tags the title and comments links with the story for the Vibe Reader delegate', () => {
     wrap(<HnCard item={makeItem()} />);
-    for (const link of [screen.getByRole('link', { name: 'A story' }), screen.getByRole('link', { name: '45 comments' })]) {
+    for (const link of [
+      screen.getByRole('link', { name: 'A story' }),
+      screen.getByRole('link', { name: '45 comments' }),
+    ]) {
       expect(link).toHaveAttribute('data-vr-hn-id', '101');
       expect(link).toHaveAttribute('data-vr-title', 'A story');
       expect(link).toHaveAttribute('data-vr-hn-score', '120');

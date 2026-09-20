@@ -138,7 +138,6 @@ export function ItemDetailInfo({ item, sub }: Props) {
             <span className="text-muted-foreground"> · 源站声明的时间不可信，已按抓取时间排列</span>
           </DetailRow>
         )}
-        {rss.summary && <DetailRow label="AI 摘要">{rss.summary}</DetailRow>}
         <DetailRow label="Feed">
           <span className="break-all text-muted-foreground">{rss.feed_url}</span>
         </DetailRow>
@@ -165,7 +164,13 @@ export function ItemDetailInfo({ item, sub }: Props) {
       {hn.qualified_at && <DetailRow label="入选时间">{fullDateLabel(hn.qualified_at)}</DetailRow>}
       <DetailRow label="热度">
         {hn.score} 分 ·{' '}
-        <a href={hnCommentsUrl(hn.id)} target="_blank" rel="noreferrer" {...hnLinkAttrs(hn)} className="hover:underline">
+        <a
+          href={hnCommentsUrl(hn.id)}
+          target="_blank"
+          rel="noreferrer"
+          {...hnLinkAttrs(hn)}
+          className="hover:underline"
+        >
           {hn.comments_count} 条评论
         </a>
       </DetailRow>
@@ -177,7 +182,6 @@ export function ItemDetailInfo({ item, sub }: Props) {
         </DetailRow>
       )}
       {hn.domain && <DetailRow label="域名">{hn.domain}</DetailRow>}
-      {hn.summary && <DetailRow label="AI 摘要">{hn.summary}</DetailRow>}
       <DetailRow label="条目 ID">{item.key}</DetailRow>
     </dl>
   );

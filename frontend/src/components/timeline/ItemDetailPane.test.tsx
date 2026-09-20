@@ -179,9 +179,12 @@ describe('ItemDetailPane', () => {
     expect(screen.queryByText('入选时间')).not.toBeInTheDocument();
   });
 
-  it('lists the AI summary of a story, and skips the row without one', async () => {
+  it('shows the AI summary of a story once — the body block, not an info row too — and nothing without one', async () => {
     renderPane({ ...hnItem, hn: { ...hnItem.hn!, summary: '文章讲了 X。讨论认为 Y。' } });
+    // `getByText` throws on a second match: the same words twice in one drawer
+    // is what the info row used to cause.
     expect(screen.getByText('文章讲了 X。讨论认为 Y。')).toBeInTheDocument();
+    expect(screen.getByText('AI 摘要')).toBeInTheDocument();
     cleanup();
     renderPane(hnItem);
     expect(screen.queryByText('AI 摘要')).not.toBeInTheDocument();

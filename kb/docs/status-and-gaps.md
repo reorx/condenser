@@ -1681,3 +1681,24 @@ Plan `kb/plans/2026-09-17-purifier-x-fxembed.md`（§8 是实现记录）。推�
   五条真实推文 0.5–0.8s 出页，真实 t.co 链接经两次重定向后被转交。
 - **未部署**。master 上还压着未推送的 v21（上线顺序见上一条），这次的提交跟着一起走；生产机到
   `api.fxtwitter.com` 能不能通（计划风险 1）上线时实测。iOS 跟下一个 build。
+
+## 2026-09-19 · Web 的 AI 摘要块对齐 iOS（`AiSummaryBlock`）
+
+Plan `kb/plans/2026-09-19-web-ai-summary-block.md`（文末是实现记录；实现落在 09-20）。纯前端。
+
+- **新组件** `components/timeline/AiSummaryBlock.tsx`，iOS 同名组件的 web 版：浅靛蓝底、左侧 3px
+  同色竖条、8px 圆角、`Sparkles`「AI 摘要」标注在块内**顶部**。此前 web 是裸段落 + 底部灰 chip。
+  四处统一换上：`HnCard`、`RssCard`、`ItemDetailBody` 的 RSS 与 HN 两支。卡片上**不截断**
+  （iOS 的 8 行 + more 不搬）。
+- **抽屉里摘要只出现一次**：`ItemDetailInfo` 的 HN / RSS「AI 摘要」行删掉，HN 摘要搬进正文区
+  （块在 `AnnotatedText` 之外——机器的话不可标注）。外链 story 没有 self-text，有摘要时这一节
+  只渲染块，原来的「无正文即 return null」让了路。
+- **踩到的**：`border-l` + `rounded-lg` 画出来是沿圆角弯曲、两端收尖的括号，不是 iOS 那根被圆角
+  裁切的直条——改成 `overflow-hidden` + `::before`。只有放大截图才看得出来。另外导出了
+  `displaySummary`：RssCard 的摘录回退和 HnCard 的预览 description 丢弃是在摘要上**分支**，
+  继续用真值判断的话，纯空白摘要会落到「无块也无摘录」。
+- **未对齐、有意留着**：iOS `RssCard` 有摘要时还会先画 3 行正文开头，web 仍是「有摘要就不给摘录」
+  ——内容取舍，不是块的样式，计划备注里记着。
+- **测试**：web 319（+10，先红后绿），`pnpm build` 通过。harness 浅 / 深色 + 真实数据走查
+  （库副本 + 假摘要，dev 库未动）截图 11 张在 `tmp/2026-09-19-web-ai-summary-block/`。
+- **未部署**：改动在 `frontend/`，push master 即生产部署，和前面压着的提交一起等上线。

@@ -98,9 +98,20 @@ describe('RssCard', () => {
   it('shows the summary instead of the excerpt, and says that it is one', () => {
     wrap(<RssCard item={makeItem({ summary: '这篇文章讲了三件事。' })} />);
     expect(screen.getByText('这篇文章讲了三件事。')).toBeInTheDocument();
-    expect(screen.getByText('AI 摘要')).toBeInTheDocument();
+    // The label leads the block (iOS `AiSummaryBlock`), under the title.
+    const title = screen.getByRole('link', { name: 'An entry' });
+    const label = screen.getByText('AI 摘要');
+    const summary = screen.getByText('这篇文章讲了三件事。');
+    expect(title.compareDocumentPosition(label) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(label.compareDocumentPosition(summary) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     // the excerpt is the fallback, not a second paragraph under the summary
     expect(screen.queryByText('the feed body')).toBeNull();
+  });
+
+  it('falls back to the excerpt when the summary is only whitespace', () => {
+    wrap(<RssCard item={makeItem({ summary: '  \n' })} />);
+    expect(screen.queryByText('AI 摘要')).toBeNull();
+    expect(screen.getByText('the feed body')).toBeInTheDocument();
   });
 
   it('renders the excerpt as plain text when there is no summary', () => {

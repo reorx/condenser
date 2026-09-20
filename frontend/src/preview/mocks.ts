@@ -1,6 +1,6 @@
 // Mock data for the component preview page (`/preview.html`, dev-only). Lets us render
 // real components with deterministic data and screenshot them to verify visual changes.
-import type { DisplayMessage, HnStory, LinkPreview, TimelineItem, XTweet } from '@/lib/types';
+import type { DisplayMessage, HnStory, LinkPreview, RssEntry, TimelineItem, XTweet } from '@/lib/types';
 
 export const CHANNEL_ID = 1833253016;
 
@@ -115,6 +115,36 @@ export function makeXItem(
     is_read: flags.is_read ?? false,
     is_saved: flags.is_saved ?? false,
     x,
+  };
+}
+
+/** Wrap an RssEntry in its item envelope; override only what a case cares about. */
+export function makeRssItem(
+  over: Partial<RssEntry> & Pick<RssEntry, 'id'>,
+  flags: { is_read?: boolean; is_saved?: boolean } = {},
+): TimelineItem {
+  const rss: RssEntry = {
+    guid: null,
+    feed_url: 'https://blog.example/atom.xml',
+    feed_title: 'Example Blog',
+    title: 'A feed entry',
+    link: 'https://blog.example/post',
+    author: null,
+    content_excerpt: 'The opening of the article, as plain text.',
+    content_truncated: false,
+    summary: null,
+    published_at: '2026-06-23T02:20:00Z',
+    first_seen_at: '2026-06-23T02:30:00Z',
+    sort_at: '2026-06-23T02:20:00Z',
+    ...over,
+  };
+  return {
+    source: 'rss',
+    key: `rss:${rss.id}`,
+    datetime: rss.sort_at ?? rss.first_seen_at,
+    is_read: flags.is_read ?? false,
+    is_saved: flags.is_saved ?? false,
+    rss,
   };
 }
 
@@ -305,4 +335,34 @@ export const dayItems: TimelineItem[] = [
     text: '关注的人的时间线按发布时间排序，和 TG 频道一个语义；For You 才按抓取时间。',
     metrics: { reply_count: 3, retweet_count: 1, like_count: 26 },
   }),
+  // RSS cards: one with an LLM summary (`AiSummaryBlock` — side by side with the
+  // HN story above, the two surfaces that carry it), one falling back to its
+  // excerpt. The first carries its article inline, the saved-snapshot shape, so
+  // the detail pane renders block + body here without a backend.
+  makeRssItem({
+    id: 9001,
+    title: 'Notes on running a personal reader for a year',
+    link: 'https://blog.example/personal-reader',
+    author: 'Example Author',
+    content_truncated: true,
+    summary:
+      '作者回顾了自建阅读器一年的使用：订阅数从 30 涨到 200，真正每天读的不到 20 个。' +
+      '他认为摘要的价值不在省时间，而在帮人决定"这篇值不值得点开"，并列出了三条让订阅列表保持可读的清理规则。',
+    content:
+      '<p>A year ago I moved all of my reading into one self-hosted timeline.</p>' +
+      '<h2>What changed</h2><p>The list grew from 30 feeds to 200, and I read fewer than 20 of them daily.</p>',
+  }),
+  makeRssItem(
+    {
+      id: 9002,
+      feed_url: 'https://feeds.example/weekly.xml',
+      feed_title: null,
+      title: 'Weekly links #112',
+      link: 'https://feeds.example/weekly/112',
+      content_excerpt:
+        'No summary was written for this one, so the card prints the opening of the article as plain text instead — ' +
+        'the fallback the summary block replaces when the server has one.',
+    },
+    { is_read: true },
+  ),
 ];

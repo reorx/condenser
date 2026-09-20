@@ -84,8 +84,48 @@ describe('ItemDetailBody (RSS)', () => {
 
   it('marks the AI summary as machine words above the article', async () => {
     wrap(rssItem({ summary: '三句话摘要。', content: '<p>body</p>' }));
-    expect(screen.getByText('三句话摘要。')).toBeInTheDocument();
-    expect(screen.getByText('AI 摘要')).toBeInTheDocument();
+    const label = screen.getByText('AI 摘要');
+    const summary = screen.getByText('三句话摘要。');
+    const body = screen.getByText('body');
+    expect(label.compareDocumentPosition(summary) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(summary.compareDocumentPosition(body) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+});
+
+function hnItem(over: Record<string, unknown> = {}): TimelineItem {
+  return {
+    source: 'hn',
+    key: 'hn:3',
+    datetime: '2026-08-20T10:00:00Z',
+    is_read: true,
+    is_saved: false,
+    hn: { id: 3, text: null, summary: null, ...over },
+  } as unknown as TimelineItem;
+}
+
+describe('ItemDetailBody (HN summary)', () => {
+  it('renders the summary block for an external-link story, which has no body of its own', () => {
+    wrap(hnItem({ summary: '文章讲了 X。讨论认为 Y。' }));
+    const label = screen.getByText('AI 摘要');
+    const summary = screen.getByText('文章讲了 X。讨论认为 Y。');
+    expect(label.compareDocumentPosition(summary) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('puts the block above a self-post body, outside the highlightable text', () => {
+    const { container } = wrap(hnItem({ summary: '摘要在上。', text: '<p>self post body</p>' }));
+    const summary = screen.getByText('摘要在上。');
+    const body = screen.getByText('self post body');
+    expect(summary.compareDocumentPosition(body) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // Machine words are not annotatable (iOS's rule): the block sits outside the
+    // `AnnotatedText` layer (its root is the `relative` div) that indexes the body.
+    const annotated = body.closest('div.relative')!;
+    expect(annotated).not.toContainElement(summary);
+    expect(container).toContainElement(summary);
+  });
+
+  it('a whitespace-only summary does not keep a body-less story alive', () => {
+    const { container } = wrap(hnItem({ summary: '  ' }));
+    expect(container).toBeEmptyDOMElement();
   });
 });
 

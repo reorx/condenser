@@ -7,7 +7,9 @@
 // is an X long-form post's article (its title stays outside the highlightable
 // body, like RSS's does). The AI
 // summary and quoted tweets are other people's / a machine's words — deliberately
-// not annotatable, matching iOS (the fallback is the item-level note).
+// not annotatable, matching iOS (the fallback is the item-level note). The summary
+// (RSS and HN) is drawn here all the same, as an `AiSummaryBlock` above the body
+// and outside the highlight layer — this is its one place in the pane.
 import { Spinner } from '@/components/Spinner';
 import { AnnotatedText } from '@/components/annotations/AnnotatedText';
 import { useRssArticle } from '@/hooks/useRssArticle';
@@ -18,6 +20,8 @@ import { proxyImages, sanitizeHtml } from '@/lib/sanitize';
 import { xBodyText } from '@/lib/xUrls';
 import type { TimelineItem } from '@/lib/types';
 import { cn } from '@/lib/utils';
+
+import { AiSummaryBlock, displaySummary } from './AiSummaryBlock';
 
 type AnnotationsModel = ReturnType<typeof useItemAnnotations>;
 
@@ -64,14 +68,7 @@ function RssDetailBody({ item, annotations }: Props) {
 
   return (
     <div>
-      {entry.summary && (
-        <div className="mb-3 rounded-md border-l-2 border-indigo-400/70 bg-indigo-500/5 px-3 py-2">
-          <p className="text-sm leading-relaxed break-words text-foreground/90">{entry.summary}</p>
-          <span className="mt-1 inline-block rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
-            AI 摘要
-          </span>
-        </div>
-      )}
+      <AiSummaryBlock summary={entry.summary} className="mb-3" />
       {html ? (
         <AnnotatedText
           annotations={annotations.annotations}
@@ -163,7 +160,7 @@ function XArticleDetailBody({ item, annotations }: Props) {
 
 /**
  * Source-dispatched body for the pane. Renders nothing when the item has no body
- * text *and* nothing was ever highlighted on it; with annotations but no body
+ * text, no AI summary *and* nothing was ever highlighted on it; with annotations but no body
  * (the text was derived away), the annotated layer still mounts so the orphan
  * list can say so instead of the highlights silently vanishing.
  */
@@ -200,17 +197,25 @@ export function ItemDetailBody({ item, annotations }: Props) {
     <div className={PLAIN_PROSE}>{linkify(xText, tweet.urls)}</div>
   ) : null;
 
-  if (!content && annotations.annotations.length === 0) return null;
+  // An HN story's summary sits above its body and outside `AnnotatedText` (iOS
+  // `HnDetailSheet`: meta → summary block → body). An external-link story has no
+  // body of its own, so the summary alone is reason enough to render the section.
+  const summary = displaySummary(hn?.summary);
+  const hasAnnotatable = !!content || annotations.annotations.length > 0;
+  if (!summary && !hasAnnotatable) return null;
   return (
     <div className="border-b px-4 py-3">
-      <AnnotatedText
-        annotations={annotations.annotations}
-        onCreate={annotations.add}
-        onSetComment={annotations.setComment}
-        onDelete={annotations.remove}
-      >
-        {content}
-      </AnnotatedText>
+      <AiSummaryBlock summary={summary} className={hasAnnotatable ? 'mb-3' : undefined} />
+      {hasAnnotatable && (
+        <AnnotatedText
+          annotations={annotations.annotations}
+          onCreate={annotations.add}
+          onSetComment={annotations.setComment}
+          onDelete={annotations.remove}
+        >
+          {content}
+        </AnnotatedText>
+      )}
     </div>
   );
 }

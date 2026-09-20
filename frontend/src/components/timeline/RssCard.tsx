@@ -1,8 +1,8 @@
 // One feed entry: the feed as the header subject, the title as the main act, and a
 // body that is the LLM summary when there is one and the article's plain-text
-// excerpt when there is not (plan §0.4). Which of the two you are reading is marked,
-// because a summary is a machine's paraphrase and a card that hides that is lying
-// quietly.
+// excerpt when there is not (plan §0.4). Which of the two you are reading is marked
+// (`AiSummaryBlock`), because a summary is a machine's paraphrase and a card that
+// hides that is lying quietly.
 //
 // The full article does NOT expand in place (2026-08-24): 「查看全文」 opens the
 // item detail pane, which fetches and renders it — the iOS arrangement (detail =
@@ -20,6 +20,7 @@ import { useUnreadIndicator } from '@/lib/unreadIndicator';
 import { cn } from '@/lib/utils';
 import type { ReadTarget, TimelineItem } from '@/lib/types';
 
+import { AiSummaryBlock, displaySummary } from './AiSummaryBlock';
 import { AnnotationBadge } from './AnnotationBadge';
 import { ForwardedBadge } from './ForwardedBadge';
 import { VibeReaderBadge } from './VibeReaderBadge';
@@ -62,7 +63,8 @@ function RssCardImpl({ item, observe, pendingKeys }: Props) {
   // 「查看全文」 is offered on the server's word (`content_truncated`) when the card
   // shows the excerpt; a summary hides the excerpt entirely, so with one the entry
   // to the source text is always offered.
-  const hasMore = rss.summary ? true : rss.content_truncated;
+  const hasSummary = displaySummary(rss.summary) != null;
+  const hasMore = hasSummary ? true : rss.content_truncated;
 
   return (
     <article
@@ -136,13 +138,8 @@ function RssCardImpl({ item, observe, pendingKeys }: Props) {
         <p className="mt-1 text-sm leading-relaxed font-medium break-words">{rss.title || '(untitled)'}</p>
       )}
 
-      {rss.summary ? (
-        <div className="mt-1.5">
-          <p className="text-sm leading-relaxed break-words text-foreground/90">{rss.summary}</p>
-          <span className="mt-1 inline-block rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
-            AI 摘要
-          </span>
-        </div>
+      {hasSummary ? (
+        <AiSummaryBlock summary={rss.summary} className="mt-1.5" />
       ) : (
         rss.content_excerpt && (
           <p className="mt-1 line-clamp-5 text-sm leading-relaxed break-words text-foreground/90">

@@ -1,6 +1,6 @@
 // A Hacker News story card: title as the main act (external link, or the comments
 // page for self-posts), the AI summary under it when the server wrote one (marked
-// as machine words, RssCard's chip), score/comments/domain/day-rank meta, sanitized
+// as machine words — `AiSummaryBlock`), score/comments/domain/day-rank meta, sanitized
 // self-post text behind a clamp toggle, muted job posts, and the shared
 // details-pane entry on the submitted time.
 import { memo, useCallback, useMemo, useState } from 'react';
@@ -17,6 +17,7 @@ import { cn } from '@/lib/utils';
 import { hnLinkAttrs } from '@/lib/vibeReader';
 import type { ReadTarget, TimelineItem } from '@/lib/types';
 
+import { AiSummaryBlock, displaySummary } from './AiSummaryBlock';
 import { AnnotationBadge } from './AnnotationBadge';
 import { ForwardedBadge } from './ForwardedBadge';
 import { VibeReaderBadge } from './VibeReaderBadge';
@@ -90,7 +91,8 @@ function HnCardImpl({ item, observe, pendingKeys }: Props) {
   // (the summary was written from the article the description opens), so the
   // preview keeps only its title / image / site line — and is dropped outright
   // when the description was all it had.
-  const preview = hn.url && hn.preview ? (hn.summary ? { ...hn.preview, description: null } : hn.preview) : null;
+  const hasSummary = displaySummary(hn.summary) != null;
+  const preview = hn.url && hn.preview ? (hasSummary ? { ...hn.preview, description: null } : hn.preview) : null;
   const showPreview = !!preview && !!(preview.title || preview.description || preview.image);
   // Three read states: pending (judged read, sync unconfirmed) > unread > read.
   const isPending = pendingKeys?.has(item.key) ?? false;
@@ -175,16 +177,9 @@ function HnCardImpl({ item, observe, pendingKeys }: Props) {
 
       {/* The LLM summary (schema v19): what the article says, then what the thread
           makes of it — the reader decides from here whether to open either. Under
-          the title and above the meta line, in RssCard's exact dress, so machine
-          words look the same on every card that carries them. */}
-      {hn.summary && (
-        <div className="mt-1.5">
-          <p className="text-sm leading-relaxed break-words text-foreground/90">{hn.summary}</p>
-          <span className="mt-1 inline-block rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
-            AI 摘要
-          </span>
-        </div>
-      )}
+          the title and above the meta line, in the shared `AiSummaryBlock`, so
+          machine words look the same on every surface that carries them. */}
+      <AiSummaryBlock summary={hn.summary} className="mt-1.5" />
 
       <div className={cn('mt-1 flex items-center gap-2 text-xs text-muted-foreground', isJob && 'opacity-70')}>
         {hn.day_rank != null && (
