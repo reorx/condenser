@@ -1,7 +1,7 @@
 # Condenser Frontend — Agent Guide
 
 React 19 + Vite 6 + TS(strict) + Tailwind v4 + shadcn/ui (new-york) + TanStack Query v5 +
-React Router v7, **pnpm**. See the root `CLAUDE.md` for the cross-cutting frontend notes
+React Router v7, **pnpm**. See `kb/docs/frontend.md` for the cross-cutting frontend notes
 (auth gate, scroll-to-read, optimistic mutations, theme, etc.). This file is the **component
 inventory** and the rules for keeping it accurate.
 
@@ -174,7 +174,7 @@ Two conventions this list exists to protect:
   `replace` — so a search is shareable and Back leaves the page rather than un-typing a word.
 - `hooks/` — data + behavior hooks (`useTimeline`, `useSources`, `useSubscriptions`,
   `useChannelFilter`, `useScrollToRead` (armed "看过即读" judgement + `pendingKeys` green
-  sync state + confirm-then-flip cache writes — see the root AGENTS.md bullet),
+  sync state + confirm-then-flip cache writes — see `kb/docs/frontend.md`),
   `useNewContent`, `useRefresh`, `useCollapsedSources`
   (sidebar collapse persistence), `useHnFeedRules` (the front feed's three admission rules —
   option lists, the coercion that fills a pre-floors config with the server's defaults, the

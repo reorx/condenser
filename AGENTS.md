@@ -1,409 +1,277 @@
 # Condenser — Agent Overview
 
-Self-hosted, single-user **timeline reader** in the Google Reader mold. It started as a
-Telegram-channel aggregator (`spec.md` is that original design, `draft.md` the brief) and
-now federates **four sources** — Telegram channels, Hacker News, X (via a local probe),
-and RSS — into one timeline, with a web frontend and an iOS app. **v1 is shipped**:
-multi-stage Docker build (frontend + backend in one image), GitHub Actions →
-ghcr.io/reorx/condenser → webhook deploy to https://condenser.reorx.com (Ansible role
-`condenser` in the deploy workspace, host port 3459, SQLite bind-mounted at
-`/opt/apps/condenser/data/`) — **a push to master is a production deploy** when it
-touches something the image consumes (`condenser/`, `frontend/` minus tests/preview,
-`pyproject.toml` / `uv.lock`, `Dockerfile`); the workflow's `paths` filter skips docs-,
-`kb/`-, `ios/`-, `probe/`-, `tests/`-only pushes (2026-09-07), and `workflow_dispatch`
-is the manual rebuild.
+Self-hosted, single-user **timeline reader** in the Google Reader mold. It federates
+**four sources** — Telegram channels, Hacker News, X (through a local probe) and RSS —
+into one timeline, read from a web frontend and a native iOS / Mac Catalyst app.
+`spec.md` and `draft.md` are the original Telegram-only design; treat them as history.
+
+**A push to master is a production deploy** when it touches what the image consumes:
+`condenser/`, `frontend/` (minus tests, preview and docs), `pyproject.toml`, `uv.lock`,
+`Dockerfile`. GitHub Actions builds `ghcr.io/reorx/condenser` and a webhook deploys it to
+<https://condenser.reorx.com>. Pushes that only touch `kb/`, `ios/`, `probe/`, `tests/`
+or docs skip the build; `workflow_dispatch` is the manual rebuild. Host-side details live
+in the deploy workspace (Ansible role `condenser`).
 
 ## Architecture
 
-Single Python process: FastAPI + a Telethon MTProto **user-account** client on one asyncio
-loop. Shares **one SQLite file** with [telememo](https://pypi.org/project/telememo/)
-(a **PyPI dependency**; co-develop a local `../telememo` checkout via an editable overlay
-— see the README "Co-developing telememo locally" section).
+One Python process: FastAPI plus a Telethon MTProto **user-account** client on one asyncio
+loop, with the managers on `app.state` (`tg` / `hn` / `rss` / `verdict` / `cleanup`). It
+shares **one SQLite file** with [telememo](https://pypi.org/project/telememo/), a PyPI
+dependency. condenser's peewee models bind to telememo's `db`, so everything is one
+connection.
 
-- **telememo** owns `channels` / `messages` / `comments`, including the telememo-native
-  `messages.media_width` / `media_height` (filled on ingest, used by the frontend to
-  reserve image placeholder space; NULL pre-2026-06-18). condenser adds one **overlay
-  column**, `messages.is_filtered` — a rebuildable keyword-filter cache.
-- **condenser** owns everything else (`SCHEMA_VERSION` 21): reader state (`read_items` /
-  `saved_items` / `hidden_items` / `item_feedback`, all triple-keyed
-  `(source, ref1, ref2)`, plus `forward_records` — the same triple, but a **log**
-  with its own id: one row per publish, so a second forward keeps its own comment).
-  `saved_items` is since v18 "the items the reader acted on", not just bookmarks:
-  `is_saved` + item `note` + JSON `annotations`, under the invariant *row exists ⟺
-  saved ∨ note ∨ annotations* — unsave keeps an annotated row, and a first
-  note/annotation takes the full snapshot (see `kb/docs/database.md` v18). Then `subscriptions` (multi-source composite PK) +
-  `keyword_filters`, the source archives (`hn_stories`; `x_tweets` + `x_feed_items` +
-  `x_following`; `rss_feeds` + `rss_entries`), the verdict layer (`x_embeddings`,
-  `x_attributes`, `x_vec_labeled` — a sqlite-vec `vec0` virtual table), full-text
-  `search_index` (FTS5), and app state (`tg_session`, `devices`, `app_meta`,
-  `link_previews`).
+- **telememo** owns `channels` / `messages` / `comments`. condenser adds one overlay
+  column, `messages.is_filtered`, a rebuildable keyword-filter cache.
+- **condenser** owns the rest (`SCHEMA_VERSION` 21):
+  - reader state, keyed by the `(source, ref1, ref2)` triple: `read_items`,
+    `saved_items`, `hidden_items`, `item_feedback`, and `forward_records` (a log with its
+    own id, one row per publish)
+  - `subscriptions` (multi-source composite PK) and `keyword_filters`
+  - source archives: `hn_stories`; `x_tweets` / `x_feed_items` / `x_following`;
+    `rss_feeds` / `rss_entries`
+  - the verdict layer: `x_embeddings`, `x_attributes`, `x_vec_labeled` (a sqlite-vec
+    `vec0` virtual table)
+  - `search_index` (FTS5)
+  - app state: `tg_session`, `devices`, `app_meta`, `link_previews`
+- `saved_items` holds every item the reader acted on, not only bookmarks: a row exists
+  ⟺ saved ∨ note ∨ annotations, so unsaving keeps an annotated row.
 
-condenser's peewee models bind to telememo's `db` instance, so everything is one
-connection. `condenser/db.py:init_db()` initializes telememo tables (+ `is_filtered`)
-then condenser tables. ⚠️ Two ordering constraints in `init_db` are load-bearing
-(`vectors.load()` before the migrations; shape-based `ADD COLUMN`s before
-`create_tables`) — get either wrong and SQLite reports `database disk image is
-malformed`.
+⚠️ `db.init_db()` has two load-bearing ordering constraints: `vectors.load()` before the
+migrations, and shape-based `ADD COLUMN`s before `create_tables`. Get either wrong and
+SQLite reports `database disk image is malformed`.
 
-**The schema changelog (v3–v21), table details and migration conventions live in
-`kb/docs/database.md`** — read it before adding tables/columns, writing a migration, or
-touching `init_db`.
+Read `kb/docs/database.md` before adding tables or columns, writing a migration, or
+touching `init_db`. It has table ownership, migration conventions and the schema
+changelog (v3–v21).
 
 ## Key modules (`condenser/`)
 
+Each row gives the role and what must not break. The full story of a module is its
+docstring and inline comments; read them before editing.
+
+### Core and API
+
 | File | Role |
 |---|---|
-| `config.py` / `crypto.py` | env settings; Fernet session encryption + signed cookie from `CONDENSER_SECRET_KEY` |
-| `db.py` | condenser tables (peewee, bound to telememo's db) + CRUD + shared `init_db`. Also the retention SQL `cleanup.py` calls (`sweep_x_retention` + `sqlite_freelist_ratio` / `vacuum`) — all SQL lives here, the `delete_channel_messages` precedent, including the docstring convention of naming what is *intentionally preserved* |
-| `filters.py` | keyword-filter **materialization** into `messages.is_filtered` (on ingest + rule change) |
-| `items.py` | item keys (`tg:{cid}:{mid}` / `hn:{sid}` / `x:{tweet_id}` / `rss:{entry_id}` ↔ the stored `(source, ref1, ref2)` triple) + the item **envelope** (`{source, key, datetime, is_read, is_saved, <source payload>}`, plus `feedback` on X and `forwarded_by_me`, which is stamped on afterwards by `forwards.stamp` rather than built here) shared by timeline + records. The per-source payload rules — X snowflake ids as **strings**, feed-dependent X `datetime`, RSS `sort_at` beside the unclamped `published_at`, `_json_field` tolerance — are commented at the relevant functions. RSS's payload is the one that comes in **two sizes**: the list carries `content_excerpt` (+ `content_truncated`) and the article only arrives under `with_content=True`, which is `GET /api/rss/entries/{id}` and the saved snapshot. X's does too since v21: every surface gets `article.has_content`, and only `with_content=True` (`GET /api/x/tweets/{id}` + the snapshot) renders `article.content_html` through `xarticle` — `_x_article` reads a replayed snapshot's own fields back instead of resetting them |
-| `timeline.py` + `sources/` | **federated timeline merge** (Phase 2): each provider in `sources/` (telegram / hn / x / rss) returns `SourceUnit` pages; `timeline.py` k-way merges them by timestamp under a **composite cursor** `base64(json {source: pos})` — a source absent from the map restarts from its top, bad/legacy cursors → 422. The per-source merge **floor**, `query_new`'s synthetic "now" anchors and the rest of the cursor semantics are in the module docstring + inline comments; `query_new_count` (2026-09-07, `GET /timeline/new/count`) is `query_new`'s number alone — each provider's `count_new` runs the `fetch_new` WHERE under a `COUNT`, so the iOS pill never pulls 100 envelopes to read one integer; each provider's own rules live in its module (see the source rows below) |
-| `verdict.py` | the **For You verdict pipeline** on `app.state.verdict`, kicked by ingest: ensemble of enabled + shadow channels (`CONDENSER_VERDICT_CHANNELS`, default `b`), cold-start + OOD gates, training set read live from `item_feedback` ∪ `saved_items`, KNN index reconciled (not written through). **Pipeline, channel designs and evaluation: `kb/docs/x-verdict.md`** — read it before touching any verdict module |
-| `channels.py` | the vocabulary the channels share (`ChannelScore`, verdict constants) + the combiners; production `resolve` is a per-channel **vote** (attributable, scale-free), abstain = `None` never 0.0 |
-| `authors.py` | verdict **channel A** — the author prior: a Beta-smoothed tally over the reader's own labels; no API call, no table, reads no text; abstains below a minimum evidence mass |
-| `attributes.py` | verdict **channel C** — LLM-extracted `topics` / `STYLE_FLAGS` (closed taxonomy, definitions shipped in the prompt) + attributed flag scoring in code; the project's first per-item billed component, fenced by its **own API key** (`CONDENSER_ATTR_API_KEY` = the on switch) |
-| `ngram.py` | verdict **channel D** — naive Bayes over the words of labeled tweets ("how it talks"); no API call, refit per round, names its evidence; **not wired into the running verdict** |
-| `vectors.py` | the **only** module that knows sqlite-vec exists: extension load, float32 BLOB pack/unpack, vec0 `upsert`/`knn`; degrades to no-op when the extension is unavailable, so an unsupported host loses only the verdict |
-| `embedding.py` | OpenAI-compatible embeddings (`CONDENSER_EMBEDDING_*`, default DashScope `text-embedding-v4@256`); `available()` is false without an API key → the whole verdict pipeline stays inert; `model_tag` = `name@dims` (a model/dimension change re-embeds, never migrates) |
-| `prospective.py` | the verdict's **online** evidence: precision measured only on tweets judged *before* the reader labeled them (selection-bias-free by construction); per-channel attribution + shadow replay at unrun thresholds |
-| `records.py` | source-decoupled snapshots into `saved_items.raw_data` keyed by item key: TG = album rows + channel info, HN = story JSON, X and RSS = the envelope payload itself (X's quote already nested; RSS's computed `sort_at` included, since it does not survive the entry row, **and its article body**, which the list payload stopped carrying on 2026-08-23 — a snapshot is this module's promise that a record renders without its source tables); rendered back into envelopes without source tables. `rss_article` serves that stored body back to the detail endpoint; `x_article` does the same for an X long-form post's rendered `content_html` (v21 — `sweep_x_retention` deletes tweets too). Since v17 the two halves are reusable rather than saved-only: `build_item_snapshot(key)` is the snapshot builder `forwards` takes too, and `render_item` takes `is_saved` instead of hard-coding True (a forwarded item is not necessarily bookmarked). Since v18 also the orchestration for item notes + annotations (`set_note` / `add_annotation` — snapshot pre-built *outside* `db.py`'s IMMEDIATE lock, only when no row exists) and `stamp_notes`, the `forwards.stamp`-style post-hoc envelope stamp that carries `note` / `annotations` to every list surface |
-| `forwards.py` | **forward records** (v17) — `records.py`'s sibling, and the read half of "what I republished, and what I wrote". `list_rendered` pages `{record, item}` by offset, rendering the item from the record's own snapshot so it survives retention (a snapshotless record — a native TG forward needs no archive row — renders `item: null`; the comment and link are the record's real body), and hard-sets `forwarded_by_me` on its items (true by construction, but the flag must be present — every other list surface stamps it). `stamp` sets the **`forwarded_by_me`** envelope flag on the four list surfaces. ⚠️ the name is not `is_forwarded`: the Telegram payload already has that one and it points the *other* way. The write side is deliberately elsewhere — `tg.forward_item` appends through `db.add_forward_record` after the send succeeds, inside a **try/except that swallows** (the project's error rule inverted, on purpose: the message is already in Telegram, and a 500 here makes the client retry and post it twice) — and the response carries `recorded: bool` so a swallowed write is *named* to the client (still a 200; a retry would post twice) instead of the badge lighting and then silently going out |
-| `forward.py` | renders a **non-Telegram** item into a message for the user's own channel (a TG item forwards natively — that path stays in `tg.py`). Three shapes: **HN** = title line → article + source line → discussion (Telegram builds its card from the *first* URL), **X** = a bare `fixupx.com` link (FixTweet embeds where x.com serves none), **RSS** = HN's shape minus the discussion line. The why of each shape is the module docstring; everything interpolated is `html.escape`d |
-| `search.py` | the **only** module that knows FTS5 exists (`vectors.py`'s arrangement, same rationale): tokenizer, index maintenance, the per-source documents, the query, and hits → envelopes. Core design: CJK runs are **bigram-indexed in Python** and phrase-queried (substring semantics), with a deliberately **asymmetric** single-character rule, every token quoted (the whole injection story), and `TOKENIZER_VERSION` triggering a full rebuild on tokenizer edits **and** new sources alike (5: an X article's full `plainText` joined `x_document`, v21 — searchable, while the verdict's `judge_text` deliberately still reads title + preview only, since embedding and channel C are billed per token). The full story is the module docstring + comments, pinned by tests |
-| `preview.py` | source-agnostic link previews: fetch a URL (async httpx) + extract metadata (`metadata_parser`), `link_previews` cache, per-message batch w/ Telegram-bonus fill, image fetch for the proxy |
-| `purifier.py` | the **Purifier** — the iOS reading proxy (plan `kb/plans/2026-09-07-purifier.md`, 2026-09-07): `GET /p/<host>/<path>?<query>` fetches the page server-side and returns one that depends on nothing but condenser — scripts gone, every asset rewritten to `/pa/…`, every link to `/p/…`. Three renderings: `proxy` (whole page, `MODE_RULES` picks it for HN), `readable` (default: readability-lxml + our own inline template) and `puremd`, which is only ever **fallen back to** (upstream 4xx/5xx, non-HTML, or < `min_readable_chars` of prose; `CONDENSER_PUREMD_API_KEY` is the switch). An X **status** link skips all three: `purifier_x.py` claims it first (its row). HTML is walked with lxml, never regexed; JS is always dropped (`allow_js` is an env var, not a client toggle, and adds a CSP). Auth is the odd one: `/p` and `/pa` accept only the `condenser_reader` cookie (minted from a 5-minute `/api/purifier/ticket` the app appends as `_pt=`, then 302'd away) or the app session cookie — never Bearer. Since the 2026-09-08 review fixes (`kb/reviews/2026-09-07-purifier-code-review.md`) ticket and cookie both **sign the device id** — the ticket endpoint is Bearer-only (`require_device`), every `/p` `/pa` request checks `db.get_device` still exists, so revoking a device on the web page kills its cookie, and logout deletes it; the ticket is *short-lived*, not one-shot. Traps pinned by tests: `raw_path` for undecoded paths (but the **host** segment is unquoted — IDN hosts arrive percent-encoded and httpx only IDNA-encodes Unicode; decoding is fenced by a forbidden-char check so `%2F` cannot smuggle a path into the host), control params stripped by regex (never `parse_qsl`), https→http retry **only** on transport errors, libxml2 not knowing `<embed>` is void (unwrap, don't remove), CSS attribute selectors (`img[src='s.gif']`) rewritten alongside the attribute — HN's mobile layout depends on them — and three the review added: `javascript:` / `vbscript:` (and `data:` on navigation targets) dropped from **every** URL attribute including `action` / `formaction` / `xlink:href`, not just `href`; `host_allowed` rejecting all-numeric / hex label spellings (`127.1`, `0x7f.1`) and trailing dots; and proxy mode stripping the `<?xml …?>` prologue + mapping lxml's `ValueError` / `ParserError` to `UpstreamFetchError` so the 502 page renders. Every `/pa` response (and `/api/preview/image`) carries `Content-Security-Policy: sandbox; script-src 'none'` + `nosniff` — `image/*` admits SVG, and an SVG opened top-level is a document. Templates in `purifier_html.py`, endpoints in `routers/purifier.py` (each a broad-catch boundary → 400/401/415/502 HTML pages carrying the original link) |
-| `purifier_x.py` | the Purifier's **X handler** (plan `kb/plans/2026-09-17-purifier-x-fxembed.md`, 2026-09-17): an X status link (x.com / twitter.com + the fixupx / fxtwitter / vxtwitter / twittpr mirrors) is **built from FxEmbed's anonymous JSON API** (`/2/conversation/{id}`, one request) rather than fetched — x.com is an empty shell, fixupx 302s browser UAs back to it. The only module that knows FxEmbed exists: `purifier.py` claims the target before `resolve_mode` (`_mode` never reaches it), hands in `link` / `asset` rewriters, wraps the markup in `reader_page` and caches per status id; a shortener whose `final_url` lands on a status is handed over too, outside readable's pure.md boundary. `rewrite_url` sends X **status** links to `/p` while profiles / Spaces / search stay absolute (iOS `isPurifierExcluded(host:path:)` mirrors it). `CONDENSER_PURIFIER_X_API_BASE` is the switch — empty → `/p` 302s a status to the original, since the rewrite rule is a URL-shape fact that ignores it — and the self-hosting entry. Measured API facts the code leans on (module docstring): Cloudflare 403s a `python-httpx` UA (the project UA passes), the body's `code` outranks the HTTP status, `thread` = ancestors ending in the status, `replies` = X's conversation modules, not a flat list (tree rebuilt from `replying_to`, cut by top-level thread, threads the author speaks in always kept, a self-thread continuation pulled up under the focus), facet indices count code points and can be stale (each validated against the text). Markup is escaped by construction and skips the sanitizer (two links must stay absolute); images go `name=medium` through `/pa`, a video is a proxied poster linking a ≤2.5 Mbps mp4, an article is a card only (FxEmbed's Draft.js `content` is not rendered) |
-| `hn.py` | `HNManager` (on `app.state.hn`, peer of `TgManager`): subscription-driven front-page sampling (`topstories` diff → `hn_stories`, sticky `first_seen_at`), serial rate-limited hckrnews history backfill, link-preview prefetch, then `_qualify` (admission, v14) as admission's deliberate last step — the rule itself lives in `sources/hn.py:qualify` — then `_top_up` (plan 2026-09-03: trues the closed days D−2 / D−1-after-noon up to their final top N through `stamp_history`, stamped at `first_seen_at`, so a late riser the rate line never had a slot for lands under its own day, behind the cursor, and `/timeline/new` deliberately does not report it; measured +5 points of hckrnews-top-20 recall, ~1 story/day) and, since v19, `_summarize_round` after it (`hn_summary.py`, guarded on its own like `RssManager`'s). The hardening rules (**null item ≠ dead**, catch-all loop guard, threadsafe `kick()`, preview attempt accounting) are documented at each function. `routers/hn.py` = subscriptions + status; its config PATCH **merges** into `hn.sub_config` (three admission knobs share the column — a whole-value write would disarm two). HTTP via injectable `fetch_json`/`fetch_preview`/`fetch_article`/`summarize` (tests need no network and spend nothing). Plans: `kb/plans/2026-07-19-multi-source-hn.md`, `…-hn-phase1-review-fixes.md` |
-| `x.py` | X (Twitter) source, **push model** — the server never talks to X; the local probe (`probe/`, `kb/docs/probe.md`) reads the logged-in session via `xbird` and pushes JSON. Owns tolerant `parse_tweet` + idempotent `ingest_tweets` (raw archived for re-parse after format drift), the Following feed's **ad + age filters** and the For You **language filter** (all fail-open — rationale at each function), `probe_config` and `status`, plus the **article split** (v21, plan 2026-09-17): the probe merges each new long-form post's TweetDetail `article` block into the tweet it pushes, and `split_article` keeps only the card pair (`ARTICLE_CARD_KEYS`, an allowlist) in `article` while every other key becomes `ParsedTweet.article_detail` (only when there is actual text) — `row()` leaves the column out when there is no body, so every round's bodiless timeline re-push keeps the stored one. The pushed `text` stays the timeline's title (on the detail path it is title + the whole body). `sources/x.py` is the timeline provider (and, since v21, keeps a list column set that reads only `has_article_content` and a `_COLS_FULL` for `rows_by_id(with_content=True)`): feed-dependent `SORT_AT_SQL`, an **explicit `ROW_NUMBER()` dedup priority** (account subscription > following > For You), and per-feed `aggregate` admission (`none` \| `positive` \| `all`; **For You is opt-in** — a capacity decision) that `bulk_read_scope` shares, so "mark all read" burns exactly what the view showed. `routers/x.py` adds ingest / following (refuses an empty push over a non-empty list) / avatar-proxy endpoints; 503 when `CONDENSER_X_ENABLED=false`. Design history: `kb/plans/2026-07-24-x-source-local-probe.md`, `kb/plans/2026-07-30-x-following-feed.md` |
-| `rss.py` | **RSS source** — the simplest here, deliberately: a published standard, so no probe, no reverse-engineered API, nothing to judge. `RssManager` (on `app.state.rss`) polls enabled feeds through an injectable `fetch_feed` (parsing is deliberately **not** injectable — real-world XML is the whole risk surface); three failure modes are told apart (**304 = hit**, bozo-with-entries = warning, `NotAFeedError` for clean-parsing HTML), and ingest applies the **unread window** so an import does not land as unread backlog. A warning is written with the `''`-clears / `None`-keeps convention, so a 304 (which parsed no document) cannot erase the previous round's complaint. An all-301/308 redirect chain **moves the key**: `db.migrate_rss_feed_url` walks the URL across its three tables in one transaction, but only at the tail of a round that was 200 + parsed + ingested, and never onto a URL already subscribed — the reason to follow it at all is that the forwarding expires with the old domain (plan `kb/plans/2026-08-22-rss-post-launch-fixes.md` §4). `sources/rss.py` (the provider)'s one real decision is the clamped `sort_at` — computed in SQL, never written to the stored row, carried in the envelope for snapshot replay. `routers/rss.py` follows the HN/X shape except PATCH/DELETE key the feed by `?url=`, plus `GET /rss/entries/{id}` — the **article half** of the 2026-08-23 payload split: the timeline ships a 500-char `content_excerpt` (materialized at ingest, schema v16) and the body is fetched by whoever opens one. The provider keeps **two selects** for it, and the list one names its columns precisely so the body cannot creep back into `e.*`. **Failure backoff** (v20, 2026-09-16, reversing plan 2026-08-22 §3 after 11/77 production feeds failed every round for three weeks): `backoff_delay` = poll interval × 2^(n-1) capped at a week, `poll_once` skips feeds whose `next_attempt_at` is ahead (`deferred` in the round stats), `error_count ≥ CONDENSER_RSS_ABNORMAL_FAILURES` marks the row **abnormal** for the subscriptions page; resume / re-subscribe / `POST …/subscriptions/refresh` (one feed, now, pause switch notwithstanding — Miniflux's Refresh) waive the wait but keep the streak. Still never auto-paused or unsubscribed. Rationale: the two module docstrings + plans `kb/plans/2026-08-20-rss-source-opml-llm-summary.md`, `…-2026-08-23-rss-list-excerpt-detail-endpoint.md`, `…-2026-09-16-rss-failure-backoff.md` |
-| `summary.py` | the **LLM summary pipeline** for RSS entries — the card shows 2-3 Chinese sentences instead of somebody else's HTML. The project's second per-item billed component, fenced like the first (channel C): a switch, its **own** key `CONDENSER_SUMMARY_API_KEY` (= the on switch, no fallback), a per-round batch cap, and counts on `/api/rss/status`. Hangs off `poll_once`'s tail (no loop of its own — RSS content only arrives with a round), summarizes **unread entries of enabled feeds only**, one request per entry, newest first. Two rules to know before touching it: a failure is charged to whoever caused it (a provider that never answered burns no retry and ends the round; a rejected input costs the entry one of three attempts), and `summary_model` is **provenance, not a re-do contract** — it also carries the `skip:short` sentinel, which is what stops a markup-heavy one-liner re-entering every batch forever. Thinking is turned **off** by default (measured: 1274 reasoning tokens against 99 of answer, and `max_tokens` does not bound them) |
-| `hn_summary.py` | the **HN summary pipeline** (plan 2026-09-02 Phase B, schema v19) — the third per-item billed component, `summary.py`'s sibling rather than a branch inside it: its own prompt (2-3 Chinese sentences on the article, 1-2 on what the thread makes of it), own candidate SQL, own switch `CONDENSER_HN_SUMMARY_ENABLED` + batch cap, counts on `/api/hn/status` — but **the RSS key** (`CONDENSER_SUMMARY_API_KEY`, deliberately shared) and the RSS transport (`summary.complete`, the one place a failure is assigned to whoever caused it). What differs is the **material**: an HN story carries nothing, so each costs one Algolia request (the whole tree, through `HNManager`'s `fetch_json`; top-level comments + two reply levels, cut at a char budget) and one article fetch (`preview._fetch_capped` → readability → `plain_text`; a self-post uses its `text`). Both failures are *not* the model's fault and charge nothing: no article → the prompt says so and carries the preview description (plan §0.7, a deliberate fork from RSS's "never fetch"); Algolia down → the story skips this round. Runs after `_qualify` (a story admitted this round is a candidate this round), summarizes admitted + unread + formed (≥10 comments **or** ≥3h on the page) stories **once** — no refresh when the thread grows. `SKIP_EMPTY` is the `skip:short` arrangement for a story with nothing to read |
-| `xarticle.py` | X Article body → the detail pane's HTML (v21, plan `kb/plans/2026-09-16-x-article-full-content.md`): the stored Markdown through **markdown-it-py with raw HTML escaped** (X's MARKDOWN entity carries anything), a lone image as `<figure>` + `<figcaption>` with `width`/`height` looked up by URL in `media[]` (iOS reserves space from them, and turns the caption into the next text block), the cover first, image URLs left on pbs.twimg.com (iOS proxies per block, web rewrites with `sanitize.proxyImages`). No package imports — `text.py`'s arrangement, `items.py` renders through it |
-| `text.py` | feed HTML → prose (`plain_text`) + the list payload's cut (`excerpt`, `EXCERPT_CHARS` = 500). A module of its own because two unrelated things share the stripping — the summariser's billed input and the unbilled `content_excerpt` — and because `items.py` needs it while `summary.py` imports `db`, which imports `items`. No package imports of its own; that is the point. ⚠️ `_drop_noise` (script/style removal) is a **hand-written scan, not a substitution** — the obvious `<(script|style)\b.*?</\1\s*>` is quadratic on a page whose openers never close (measured 1MB = 97s), and this now runs at every ingest and over the whole archive in the v16 backfill |
-| `cleanup.py` | **daily retention sweep** (on `app.state.cleanup`): wakes hourly against a **database breakpoint** (not a timer — deploys restart the process too often), runs rounds on a worker thread (VACUUM's exclusive lock), rules duck-typed + isolated per rule (`DEFAULT_RULES`: X and RSS retention). Rationale, including the deliberate absence of `kick()`, is the module docstring. ⚠️ a test module with a fixed clock in the past must disable the retention rules or the startup round deletes its fixtures (see Conventions & gotchas). `GET /api/cleanup/status` exists so "ran, found nothing" does not look like "never ran" |
-| `tg.py` | `TgManager`: lifecycle (C1), step-login→encrypted storage, realtime ingest, backfill scheduling, subscription orchestration |
-| `auth.py` + `routers/*` | C2 endpoints behind `require_auth` = app-password cookie **or** device Bearer token (`devices` table, sha256 hash only, issued via the web `/authorize` page for the iOS app; management endpoints are cookie-only — see `kb/plans/2026-07-16-mobile-client-api-device-token.md`); `routers/channels.py` = avatar proxy, `routers/preview.py` = link-preview + image proxy; `routers/common.py` = `parse_key_or_422`, shared by every key-driven endpoint; `routers/forwards.py` = the publish log (`GET /api/forwards` + `DELETE /api/forwards/{id}` — no POST: a record is created by forwarding, never claimed); `/api/tg/status` carries `phone` |
-| `app.py` / `__main__.py` | FastAPI factory + lifespan; uvicorn entry; serves a static frontend dir if present via `SPAStaticFiles` (index.html fallback for client routes — `/authorize` cold-load depends on it; unknown `/api/*` still 404). Also `SelectiveGZipMiddleware` (2026-09-08): Starlette's gzip with `image/*` `video/*` `audio/*` `font/*` (+ the font/zip/pdf application types) passed through as identity — every proxied byte (Telegram media, avatars, `/pa` images) was being gzipped on the ingest loop for zero gain, measured ~14ms/MB; HTML + JSON still compress at level 6 |
+| `config.py` / `crypto.py` | env settings (`CONDENSER_*`); Fernet session encryption and signed cookies from `CONDENSER_SECRET_KEY` |
+| `app.py` / `__main__.py` | FastAPI factory + lifespan; uvicorn entry. Serves `frontend/dist` through `SPAStaticFiles` (index.html fallback for client routes; unknown `/api/*` still 404). `SelectiveGZipMiddleware` passes image / video / audio / font responses through uncompressed |
+| `auth.py` + `routers/` | every endpoint sits behind `require_auth`: app-password cookie **or** device Bearer token (`devices` table, sha256 only, issued on the web `/authorize` page). Device management is cookie-only. `routers/common.py:parse_key_or_422` is shared by every key-driven endpoint. Plan: `kb/plans/2026-07-16-mobile-client-api-device-token.md` |
+| `db.py` | condenser's tables, CRUD and `init_db`. **All SQL lives here**, retention sweeps included. A destructive function's docstring names what it *intentionally preserves* |
+
+### Items, timeline, reader state
+
+| File | Role |
+|---|---|
+| `items.py` | item keys (`tg:{cid}:{mid}` / `hn:{sid}` / `x:{tweet_id}` / `rss:{entry_id}` ↔ the stored triple) and the item **envelope** `{source, key, datetime, is_read, is_saved, <source payload>}` every list surface shares. X ids cross the API as **strings**. RSS entries and X articles come in two sizes: lists carry `content_excerpt` / `article.has_content`, the body arrives only under `with_content=True` (the detail endpoints and snapshots) |
+| `timeline.py` + `sources/` | federated merge: each provider (telegram / hn / x / rss) returns `SourceUnit` pages, k-way merged by timestamp under a composite cursor `base64(json {source: pos})`. A source absent from the cursor restarts from its top; an invalid cursor is a 422. `query_new` / `query_new_count` back the new-content poll and the iOS pill |
+| `filters.py` | materializes keyword filters into `messages.is_filtered`, on ingest and on rule change |
+| `records.py` | saved records: snapshots in `saved_items.raw_data`, plus item notes and annotations (v18). A snapshot must render **without its source tables**, since retention deletes them, so it carries the article body and computed fields such as RSS `sort_at`. `build_item_snapshot` is shared with forwards; `stamp_notes` adds `note` / `annotations` to list envelopes |
+| `forwards.py` / `forward.py` | the forward log's read side (`/forwards` list, the `forwarded_by_me` stamp) / rendering a non-Telegram item into a Telegram message. ⚠️ `forwarded_by_me` is not `is_forwarded`, Telegram's flag for the opposite direction. The write is in `tg.forward_item`, which **deliberately swallows** a failed record write and answers `recorded: false`: the message is already sent, and a 500 would make the client retry and post it twice |
+| `search.py` | the only module that knows FTS5. CJK runs are bigram-tokenized in Python and phrase-queried; every token is quoted. The index is a rebuildable cache: bump `TOKENIZER_VERSION` when the tokenizer or any source's document changes. Plan: `kb/plans/2026-08-08-full-text-search.md` |
+| `preview.py` | link previews for any source: fetch + metadata extraction, the `link_previews` cache, image fetch for the proxy |
+
+### Sources
+
+| File | Role |
+|---|---|
+| `tg.py` | `TgManager`: lifecycle, step login with encrypted session storage, realtime ingest, backfill, subscriptions, forwarding. Read `kb/docs/content-update-mechanism.md` before touching ingest or sync |
+| `hn.py` + `sources/hn.py` + `routers/hn.py` | `HNManager` samples the front page into `hn_stories` once an HN subscription exists. Round order: sample → preview prefetch → `_qualify` → `_top_up` → `_summarize_round`. Admission is **one-way** and stored (`qualified_at`); the read path never re-ranks. The config PATCH **merges** into `sub_config`, because three admission knobs share the column. HTTP is injectable (`fetch_json` and friends). Plans: `kb/plans/2026-07-19-multi-source-hn.md`, `…2026-08-14-hn-story-admission.md`, `…2026-09-03-hn-day-close-top-up.md` |
+| `x.py` + `sources/x.py` + `routers/x.py` | **push model**: the server never talks to X, the local probe pushes JSON (`kb/docs/probe.md`). Parsing is tolerant and raw JSON is archived for re-parsing. The ad, age and language filters fail open. Dedup priority is account > Following > For You. For You sorts by `first_seen_at` and joins the aggregate only per its `aggregate` config (`none` \| `positive` \| `all`), which `bulk_read_scope` shares. An article body (v21) is stored in `article_detail`, and a bodiless re-push must not wipe it. 503 when `CONDENSER_X_ENABLED=false` |
+| `rss.py` + `sources/rss.py` + `routers/rss.py` | `RssManager` polls with conditional requests through an injectable `fetch_feed`; parsing is deliberately not injectable. Ingest applies the unread window. Lists ship a 500-char `content_excerpt` and the body comes from `GET /api/rss/entries/{id}`, so keep the list select's explicit column list. `sort_at` is computed in SQL and never stored. Failing feeds back off exponentially up to a week and get marked `abnormal`, never auto-paused. An all-301/308 redirect migrates the feed's URL key. PATCH / DELETE key a feed by `?url=`. Plans: `kb/plans/2026-08-20-rss-source-opml-llm-summary.md`, `…2026-09-16-rss-failure-backoff.md` |
+| `summary.py` / `hn_summary.py` | billed LLM summaries for RSS entries and HN stories, run at the tail of each polling round. `CONDENSER_SUMMARY_API_KEY` is the on switch for both, with no fallback key; HN adds `CONDENSER_HN_SUMMARY_ENABLED`. One request per item, a per-round cap, and a failure is charged to whoever caused it. `summary_model` is provenance and also carries the `skip:short` / `skip:empty` sentinels |
+| `xarticle.py` / `text.py` | X Article Markdown → HTML (raw HTML escaped) / feed HTML → plain text and excerpt. Both have **no package imports**, because `items.py` depends on them; keep it that way. ⚠️ `text._drop_noise` is a hand-written scan: the obvious regex is quadratic on unclosed tags |
+| `cleanup.py` | daily retention sweep (X and RSS rules) and the VACUUM decision. Wakes hourly against a timestamp in `app_meta`, since deploys restart the process too often for a timer, and runs on a worker thread. `GET /api/cleanup/status` reports the last round |
+
+### X For You verdict
+
+Read `kb/docs/x-verdict.md` before touching any of these or the verdict scripts.
+
+| File | Role |
+|---|---|
+| `verdict.py` | the pipeline on `app.state.verdict`, kicked by ingest: an ensemble of enabled and shadow channels (`CONDENSER_VERDICT_CHANNELS`, default `b`), cold-start and OOD gates, training set read live from `item_feedback` ∪ `saved_items` |
+| `channels.py` | shared vocabulary (`ChannelScore`, verdict constants) and the combiners. Production `resolve` is a per-channel vote; abstain is `None`, never 0.0 |
+| `authors.py` / `attributes.py` / `ngram.py` | channel A (author prior, no API call) / channel C (LLM-extracted topics and style flags; billed, `CONDENSER_ATTR_API_KEY` is its switch) / channel D (naive Bayes, **not wired** into the running verdict). Channel B is the kNN in `verdict.py` |
+| `vectors.py` / `embedding.py` | the only module that knows sqlite-vec, a no-op when the extension is missing / OpenAI-compatible embeddings. Without an embedding key the whole pipeline stays inert. A model or dimension change re-embeds, never migrates |
+| `prospective.py` | online evidence: precision measured only on tweets judged *before* the reader labeled them |
+
+### Purifier (iOS reading proxy)
+
+| File | Role |
+|---|---|
+| `purifier.py` + `purifier_html.py` + `routers/purifier.py` | `GET /p/<host>/<path>` returns a page that depends on nothing but condenser: scripts dropped, assets rewritten to `/pa/…`, links to `/p/…`. Modes: `proxy`, `readable` (default), and `puremd` as fallback only. HTML is walked with lxml, never regexed. `/p` and `/pa` accept only the reader cookie (minted from a 5-minute ticket, bound to a device that must still exist) or the session cookie, never Bearer. Every security fix is pinned by a test; read `kb/reviews/2026-09-07-purifier-code-review.md` and `kb/plans/2026-09-07-purifier.md` before editing the sanitizer, URL parsing or the host guard |
+| `purifier_x.py` | X status links are **built** from FxEmbed's anonymous JSON API rather than fetched; the only module that knows FxEmbed. `CONDENSER_PURIFIER_X_API_BASE` empty turns it off, and `/p` then 302s to the original. iOS `isPurifierExcluded(host:path:)` mirrors the URL rule. Measured API quirks are in the module docstring; plan `kb/plans/2026-09-17-purifier-x-fxembed.md` |
 
 ## Conventions & gotchas
 
-- **Extension-column contract**: telememo write paths only touch native columns, so
-  `is_filtered` survives incremental edits. Never use full-row `INSERT OR REPLACE` in telememo.
-- **Filtering is materialized**, not query-time: matching happens on the write side; the
-  timeline query only reads the `is_filtered` boolean. Regex is reserved for later.
+- **Extension-column contract**: telememo's write paths touch only native columns, so
+  `is_filtered` survives edits. Never use a full-row `INSERT OR REPLACE` in telememo.
+- **Filtering is materialized**: matching happens on the write side, and the timeline
+  query only reads `is_filtered`.
+- **Rebuildable caches are rebuilt, never migrated**: `is_filtered`, `search_index`,
+  `x_embeddings` / `x_vec_labeled`.
+- **Billed components are fenced**: channel C runs only with `CONDENSER_ATTR_API_KEY`
+  set, the two summary pipelines only with `CONDENSER_SUMMARY_API_KEY`, each under a
+  per-round cap. Never add a fallback to another key, or deploying code starts spending.
+- **Tests never touch the network**: Telegram is mocked, and HN / RSS / summary HTTP goes
+  through injectable functions.
 - **peewee connections are thread-local**: tests close the main-thread connection between
-  cases (see `tests/conftest.py`) because TestClient runs the lifespan in a portal thread.
-- **A transaction that reads before it writes must be `atomic(lock_type='IMMEDIATE')`**, and
-  must not be nested (nesting turns it into a savepoint and drops the lock_type). A deferred
-  read-then-write transaction whose snapshot another connection has written past dies with an
-  *immediate* `database is locked` — SQLite skips the busy handler on the upgrade, so no
-  timeout or in-transaction retry saves it. Verified + pinned by `tests/test_db_locking.py`
-  (2026-08-23); write-first `atomic()` blocks and bare `get_or_create` are fine as they are.
-- **Fixed-clock tests vs the cleanup sweep**: a test module that seeds fixtures with old
-  timestamps must disable the retention rules (e.g. `CONDENSER_CLEANUP_RSS_ENABLED=false`),
-  or the cleanup round at app startup deletes them out from under the assertions — the trap
-  `test_x_verdict` hit on 2026-08-09; `tests/test_rss_timeline.py` shows the pattern.
-- **Cursor + albums**: album rows share date + adjacent ids; fetch `limit + buffer`, merge by
-  `grouped_id`, anchor cursor on the unit's min id, conservative `has_more` to avoid data loss.
+  cases (`tests/conftest.py`), because TestClient runs the lifespan in a portal thread.
+- **A transaction that reads before it writes must be `atomic(lock_type='IMMEDIATE')`**
+  and must not be nested, since nesting turns it into a savepoint and drops the lock
+  type. A deferred one dies with an immediate `database is locked` that no timeout or
+  retry saves. Pinned by `tests/test_db_locking.py`. Write-first `atomic()` blocks and
+  bare `get_or_create` are fine.
+- **Fixed-clock tests vs the cleanup sweep**: a test module seeding old timestamps must
+  disable the retention rules (e.g. `CONDENSER_CLEANUP_RSS_ENABLED=false`), or the
+  startup round deletes its fixtures. `tests/test_rss_timeline.py` shows the pattern.
+- **Cursor + albums**: album rows share a date and adjacent ids. Fetch `limit + buffer`,
+  merge by `grouped_id`, anchor the cursor on the unit's min id, and keep `has_more`
+  conservative.
 - A **PostToolUse formatter hook** rewrites files to single-quote style on save.
-- **Telegram is a user account (MTProto)** — ToS gray area; StringSession is encrypted at rest;
-  fetch layer backs off on `FloodWaitError` (spec D2).
-- **Telethon `StringSession` does NOT persist its entity cache** (only auth_key + DC). After a
-  restart, `client.get_entity(int)` for a peer Telethon hasn't met yet in the current process
-  fails with `Could not find input entity for PeerUser`. Always prefer `@username` over a bare
-  id when one is available — see `tg.py:_channel_handle`. The media + avatar proxies
-  (`routers/media.py`, `routers/channels.py`) route through it too (since 2026-06-24) so image
-  thumbnails and avatars survive restarts. Private channels (no username) fall through to the
-  int, but `TgManager._warm_entity_cache` (spawned in `startup`) iterates dialogs once on boot
-  to re-register every joined peer's access_hash, so the bare-id fallback resolves them for the
-  process lifetime. Persisting access_hash ourselves is the remaining durable alternative.
-- **Forward source names** (`fwd_from_channel_name` / `fwd_from_user_name`) are filled on
-  ingest by a three-tier cascade: (1) `message.forward.chat.title` / `forward.sender` —
-  Telethon-resolved entities, no API call; (2) persistent `EntityNameCache` JSON file at
-  `CONDENSER_ENTITY_CACHE_PATH`; (3) `await client.get_entity(id)` — backfill path only.
-  Realtime ingest passes `allow_network=False` so the event handler never blocks on Telegram
-  or risks FloodWait crashes. Backfill (`_iter_backfill`) passes True; outer FloodWait retry
-  covers it. Wired in `telememo/telegram.py:resolve_forward_entity_names`.
+- **Telegram is a user account (MTProto)**, a ToS gray area. The StringSession is
+  encrypted at rest, and the fetch layer backs off on `FloodWaitError`.
+- **Resolve Telegram peers through `tg._channel_handle`**, which prefers `@username`.
+  A StringSession does not persist Telethon's entity cache, so `get_entity(int)` fails
+  after a restart for peers not met in this process. Private channels fall back to the
+  int and depend on `TgManager._warm_entity_cache`, which walks the dialogs once on boot.
+- **Forward source names** are filled on ingest by a three-tier cascade: Telethon's
+  already-resolved entities, then the `EntityNameCache` JSON file
+  (`CONDENSER_ENTITY_CACHE_PATH`), then `get_entity`. Realtime ingest passes
+  `allow_network=False` so the event handler never waits on Telegram; only backfill may
+  use the third tier. See `telememo/telegram.py:resolve_forward_entity_names`.
 
-## Part A in telememo (`../telememo`, separate git repo)
+## telememo (`../telememo`, separate git repo)
 
-`service.py` (`TelegramService` facade; accepts `entity_cache=`; `subscribe` registers one
-handler for **both** `NewMessage` and `MessageEdited` since 0.2.0, so edits update stored
-text + re-dispatch), `db.py` (`init_db(optional_fields=...)` + forward columns + migration;
-`save_message_smart` updates a row in place when `edit_date` changed), `telegram.py`
-(module-level converters + `async resolve_forward_entity_names(md, client, cache, allow_network)`),
-`utils.py` (`group_messages_to_display(raw_messages_map=None)`, `extract_forward_info` reads
-`message.forward.chat`/`sender`), `entity_cache.py` (`EntityNameCache` JSON-backed
-id→name map), `types.py` (`SignInResult` + `fwd_*`), `tests/test_part_a.py`,
-`tests/test_forward_resolver.py`.
+Owns the Telegram fetch and storage layer: `TelegramService` (`service.py`), `db.py`,
+`telegram.py` converters, `entity_cache.py`. One handler serves both `NewMessage` and
+`MessageEdited`, and `save_message_smart` updates a row in place when `edit_date`
+changed. It has its own `CLAUDE.md`. To co-develop against a local checkout, use the
+editable overlay described in the README section "Co-developing telememo locally".
 
-## Frontend (`frontend/`, spec Part D)
+## Frontend (`frontend/`)
 
-React 19 + Vite 6 + TS(strict) + Tailwind v4 + shadcn/ui (new-york) + TanStack Query v5 +
-React Router v7, **pnpm**. Backend `app.py` auto-serves `frontend/dist` at `/` if present.
+React 19 + Vite 6 + TS (strict) + Tailwind v4 + shadcn/ui + TanStack Query v5 + React
+Router v7, pnpm. Two documents cover it:
 
-- `lib/api.ts` typed fetch client + `ApiError`; `lib/types.ts` mirrors the backend JSON.
-- **Auth gate** = the `tg-status` query: 401 → AppLogin, else `status` drives TgLogin/main
-  (`App.tsx`, `useTgStatus`). Global 401 handler re-runs tg-status but **must skip tg-status
-  itself** or the gate refetch-loops (`lib/queryClient.ts`). Since 2026-08-15 the Telegram
-  login is a wall **only for a Telegram-only install**: if `GET /api/sources` reports any
-  non-Telegram subscription, an unauthorized Telegram session no longer blocks the app. The
-  app went multi-source two sources ago, and an HN- or X-only install has content to show —
-  a phone-number form in front of it is a lock, not onboarding. That is exactly the shape of
-  the App Store review demo server (`kb.private/condenser/kb/docs/demo-server.md`), which is
-  what surfaced it.
-  Three details are load-bearing: the gate **waits** for the sources query instead of
-  deciding early (else the wall flashes at an install that has other sources), a failed
-  sources request falls back to walling (the pre-multi-source behavior), and
-  `/connect-telegram` renders `TgLogin` from inside the app — `SettingsDialog`'s Telegram row
-  links there when disconnected, and it is now the only way to reach the Telegram login at
-  all. `useSources` is `enabled`-gated in the gate so it never fires behind `AppLogin`.
-- **Scroll-past-to-read** via IntersectionObserver + debounced batch `POST /api/read`
-  (`useScrollToRead`); window is the scroll container (IO root = viewport). Since 2026-08-05
-  ("看过即读", both platforms): a card is judged read once the user has scrolled in the view
-  (armed) AND its **bottom edge is at/above the viewport bottom** — fully seen, not scrolled
-  away. Three states: unread = sky dot / **pending sync = emerald dot** (`pendingKeys`, also
-  the divider-mode border colors) / read = none. The cache flip + badge decrement run only on
-  server confirmation; a failed batch stays green and retries at debounce×5 (the lit green dot
-  IS the "sync is stuck" signal). Arming does a one-shot manual `getBoundingClientRect` sweep
-  of observed elements (IO won't re-fire without an intersection change), and the IO uses a
-  dense 0→1/0.05 threshold ladder so cards taller than the viewport still fire on the
-  bottom-edge crossing. `disarm()` re-gates after `jumpToNewest`; a page unload drops the
-  unsynced queue — honest by design, those items reload as unread. iOS mirrors the semantics
-  (Kit `ScrollReadModel` + `ReadReporter.unsyncedKeys`).
-- Timeline items carry only `channel_id` → joined to titles client-side (`useChannelLabels`).
-- **Reading-view shell**: `PageHeader` (`components/PageHeader.tsx`) is the unified top bar for
-  TimelineView + RecordsView — leading icon (`ChannelAvatar` for a channel, `IconBadge`-wrapped
-  lucide for All/Unread/Saved) + title + unread-count line on the left, icon-only actions
-  (native `title` tooltips, not shadcn Tooltip — avoids Radix `asChild` nesting on Popover
-  triggers) pinned right. The timeline `useInfiniteQuery` lives in `useTimeline` (lifted to
-  TimelineView) so the header can build the channel-filter control from loaded items;
-  `useChannelFilter` is owned by TimelineView and `Timeline` is presentational (props:
-  `query`/`items`/`visible`/`onClearFilter`/`emptyLabel`). Unread count = `sub.unread` (channel)
-  or sum over enabled subs (All/Unread); **total message count is not exposed by the backend**.
-- **Date dividers, not a sticky bar**: `Timeline` renders a static left-aligned day label
-  between day groups (no floating `sticky` header). The channel filter moved into `PageHeader`
-  (multi-channel views only). Content column has desktop-only `md:border-x` (`AppShell`).
-  Caveat: do NOT add the whole `query` object to the infinite-scroll `useEffect` deps — it's a
-  new ref every render and rebuilds the IntersectionObserver each time; list only the fields used.
-- Dates are UTC (Telegram native); `lib/format.ts:parseDate` handles both tz-aware (`+00:00`)
-  and naive forms (appends `Z`). Day grouping/calendar use the UTC day key. Media: try
-  thumbnail, `<img onError>` → file chip (video/file both report `media_type='document'`);
-  thumbnails open `Lightbox`. entities not rendered (backend doesn't persist them).
-- **Media skeleton + aspect-ratio transition**: `MessageMedia` `Thumb` reserves space with
-  inline `style={{ aspectRatio }}` (API `width/height` → exact; else 4/3 single / 1/1 grid),
-  shows `<Skeleton />` (in `components/ui/skeleton.tsx`) until `<img>.onLoad`, then fades the
-  image in via `opacity` and — for single images without API dimensions — overwrites the
-  aspect with `naturalWidth/naturalHeight`. `lockAspect` keeps multi-grid cells square.
-  WebPagePreview thumbs use the same skeleton+fade pattern (fixed-size, no aspect change).
-- **Forwarded messages**: `MessageCard` renders `↪ Forwarded` above the box, source name
-  (`from_channel_name` → `from_user_name` → `post_author`) as the first line inside the
-  box. The box is a rounded, soft-bg card (`rounded-lg border bg-muted/30 p-3`) indented
-  `ml-8` (2rem); the "Forwarded" label stays outside the indent. `forwardSourceName(msg)`
-  returns the name or null; null means just show "Forwarded" with no name line (private
-  source / cache miss / unresolvable peer). The save/bookmark icon is **always visible**
-  (no longer hover-only); amber when saved. Cards have `px-4 sm:px-5` inset.
-- **Forward records** (`/forwards`, 2026-08-23): the sidebar row under Saved, `ForwardsView`
-  (offset infinite scroll, `useForwards`) and `ForwardRecordRow` — the record's own
-  metadata (time, target, the comment verbatim, open + delete) rendered **above** the
-  item, because the comment belongs to the forward and the same item can carry two of
-  them. Delete says in as many words that the Telegram message stays. `ForwardedBadge`
-  puts a small `Repeat2` on the time line of all four cards when `forwarded_by_me` is
-  true; `ForwardDialog` patches that flag on across the item caches and invalidates
-  `['forwards']` on success, so the badge lights immediately.
-- **Optimistic mutation pattern** (M1+M2): timeline-wide via `setQueriesData({queryKey:['timeline']})`,
-  subscriptions via `setQueryData(['subscriptions'])`. Keyword CRUD invalidates `['filters-all']`
-  + `['timeline']` + `['subscriptions']` (backend recomputes `is_filtered`). Errors surface via `sonner` toasts
-  (`api.errorMessage`). shadcn primitives in `components/ui/` use individual `@radix-ui/react-*`
-  packages (not the unified `radix-ui`), button from `@/components/ui/button`.
-- **Theme**: `lib/theme.tsx` ThemeProvider (light/dark/system, default system, localStorage
-  `condenser-theme`); no-FOUC inline script in `index.html` sets the class pre-mount.
-- **New-content poll**: `useNewContent` polls `/api/timeline/new?after=head_cursor` (from page-1
-  `head_cursor`) every 30s, paused when hidden → floating banner → refetch + scroll-to-top.
-- **Avatars**: `ChannelAvatar` hits `/api/channels/{id}/avatar`, falls back to a colored initial.
-- **Vibe Reader link mode** (plan `kb/plans/2026-09-02-vibe-reader-link-mode-and-hn-summary.md`
-  Phase A, 2026-09-04; pairs with the `../vibe-reader-hn` extension): `lib/vibeReader.ts` is
-  the contract's copy on this side — `window.postMessage` on our own origin, accepted only
-  from `event.source === window` under the `vibe-reader` namespace, `v: 1`, pinned by its
-  test. `index.html`'s `<meta name="application-name" content="condenser">` is how the
-  extension's sidepanel recognizes a tab and injects its bridge; the bridge's presence *is*
-  "the sidepanel is open" (no heartbeat, `bye` on port drop). Two user decisions the store
-  enforces: the link switch's **truth lives in the extension** (`setLink` asks, `linked`
-  flips on `vibe-reader:link`, never optimistically; condenser keeps only the 不再提示
-  flag), and **only announced clicks get processed** — one click/auxclick delegate on the
-  document (`AppShell`) posts `condenser:open` for each new-tab http(s) link while linked,
-  skipping `NO_ARTICLE_HOSTS` (x.com / twitter.com / t.me / HN user pages; HN *item* pages
-  go through), never `preventDefault`ing. HN links carry `hnLinkAttrs` (`data-vr-hn-*`) so
-  the extension locks onto the thread without an Algolia search. No backend involvement.
-  Surfaces: `VibeReaderPrompt` toast, a `SettingsDialog` row with a mirrored `Switch`,
-  `VibeReaderDot` on the sidebar. **Phase D** (2026-09-05): `vibe-reader:status` lands in
-  the store's per-URL `statuses` map (keys are `new URL().href`-canonical, since the
-  extension echoes the browser-normalized `a.href` we announced), and `VibeReaderBadge`
-  on the time line of all four cards shows the state of the card's **last-touched** link
-  (spinner / lightning / struck lightning). Never persisted, never in React Query; `bye`
-  clears it along with the rest.
-- **Link previews**: clicking a message's **time** opens `LinkPreviewPane` (shadcn `Sheet`, mounted
-  once in `AppShell`, covers timeline + saved views) with previews for the message's URLs from
-  `GET /api/messages/{cid}/{mid}/previews` + a pinned "Open original in Telegram" footer link
-  (`tgMessageUrl`). The entry exists on **every** message (no whole-card click / previewable-links
-  gate anymore). `lib/extractUrls.ts` is the shared URL source (linkify + pane).
-  Thumbnails proxy via `/api/preview/image` (toggle with `CONDENSER_PREVIEW_IMAGE_PROXY`), falling
-  back to the media proxy for Telegram-bonus images.
+- `frontend/AGENTS.md` is the component / hooks / lib inventory and the preview harness.
+  Update its row in the same change whenever a component changes.
+- `kb/docs/frontend.md` is the cross-cutting behavior: auth gate, scroll-to-read, the
+  reading-view shell, cache mutation rules, forwards, Vibe Reader link mode, X surfaces.
+  Read it before changing a behavior that spans components.
 
-The **X block** on the Subscriptions page (`components/subscriptions/XSection.tsx` +
-`XSubscriptionRow.tsx`, `XGlyph.tsx`) manages the source: add For You / an account by
-handle, pause, unsubscribe, plus a status line whose job is to reveal that a silent feed is
-the *probe's* fault, not the server's (`last push` / `parse errors`). A user feed's `name`
-stays NULL until the first push teaches it the real display name, so the row falls back to
-`@handle` instead of rendering a placeholder next to the same handle.
+Know these before opening either:
 
-**X reading surfaces (Phase 2, 2026-07-25)**: `XCard` (+ `XQuoteCard` / `XMedia` /
-`XMediaThumb` / `XLightbox` / `XAvatar`, see `frontend/AGENTS.md`), a `/s/:source/:feed`
-route so each X feed has its own view, and `SidebarXFeedLink` rows. `feed` threads through
-`useTimeline` / `useTimelineDays` / `useNewContent` / `useBulkRead` and the matching
-endpoints. **For You is not in the aggregate timeline** (capacity decision — see the `x.py`
-row above); its sidebar row is the only way in. Tweet media and author avatars both route
-through backend proxies, so reading a tweet never contacts X from the browser.
+- The auth gate is the `tg-status` query. The global 401 handler must skip `tg-status`
+  itself, or the gate refetch-loops.
+- An item is flipped to read only on server confirmation; the green dot means pending.
+- Item envelopes sit in several caches at once. Patch them through `lib/itemCaches.ts`.
+- `lib/types.ts` mirrors the backend JSON. Change both sides together, and check the iOS
+  Kit models, since shipped builds decode the same payloads.
 
-**X feedback (Phase 3, 2026-07-25) + down-reason chips (schema v9)**:
-`POST /api/feedback {key, verdict, reason?}` / `DELETE /api/feedback/{key}`
-(`routers/reading.py`) write `item_feedback`; the envelope carries the label back as
-`feedback` plus the **sibling** field `feedback_reason` (never nested — shipped iOS
-builds decode `feedback` as a bare string). Phase 3 only records labels; acting on them
-is the verdict's job. `FEEDBACK_REASONS` (`topic` / `promo` / `ai_slop` /
-`engagement_farming`「博眼球」 / `author`) is pinned across `db.py` / `lib/sources.ts` /
-Kit by a test. **API rules, chip UX (web `XFeedbackButtons` + iOS) and the taxonomy
-decisions live in `kb/docs/x-feedback.md`** — read it before changing the feedback
-endpoints, the chip UI, or the reason set.
+## Local probe (`probe/`)
 
-## Local probe (`probe/`, monorepo)
+An independent uv package (`condenser-probe`) that runs on the user's own machine: the X
+source's fetch half, since X data exists only inside a logged-in browser session. Each
+round: `GET probe-config` → one X read per feed through `xbird` → a TweetDetail read for
+each new X Article → `POST ingest`. The server decides when the follow list re-syncs.
+`watch` is the long-running mode a launchd agent keeps alive, so **deploying the probe is
+`launchctl kickstart`, not `git push`**. A probe left running on old code is the usual
+cause of a silent feature.
 
-Independent uv package (`condenser-probe`) that runs on the user's own machine — the X
-source's **fetch half**, since X data only exists inside a logged-in browser session.
-Each round: `GET probe-config` → one X read per feed through the `xbird` library →
-a TweetDetail read for each new X Article, merged into the tweet (2026-09-17) →
-`POST ingest`; the server decides when the follow list re-syncs, so the probe keeps no
-schedule of its own. Configless beyond a server URL + device token; the local state is
-`SeenCache` + the `ArticleFailures` file beside it. `watch` (APScheduler, staggered cadences) is the
-long-running mode a launchd agent keeps alive — **deploys are `launchctl kickstart`,
-not `git push`**.
+Read `kb/docs/probe.md` before touching `probe/` or debugging a silent X feed.
 
-Details in `kb/docs/probe.md`: the xbird migration and its four kept invariants (wire
-shape, per-feed failures, all-or-nothing follow crawl, page pacing), credential
-resolution, the stale-code kickstart trap, SeenCache semantics, the schedule, and the
-inline article reads (structural retry through the SeenCache for `XSourceError` only, a
-two-failure breaker per round that an ingest failure also opens, and the bounded
-`ArticleFailures` memory that gives a body up after five real reads — 2026-09-17 review).
-Read it before touching `probe/` or debugging a silent X feed.
+## iOS app (`ios/`)
 
-## iOS app (`ios/`, monorepo)
+Native SwiftUI client with a pure-CLI workflow (xcodegen `project.yml` + Makefile,
+simulator through `simctl`). Two layers: `CondenserKit/`, a local SPM package of pure
+logic with Swift Testing, and the `Condenser/` app target. The same target builds as a
+**Mac Catalyst** app (`make build-mac`); platform differences live in `UI/Platform.swift`.
 
-Native SwiftUI read-only client, pure-CLI workflow (xcodegen `project.yml` + Makefile,
-simulator via `simctl`). Two layers: `CondenserKit/` local SPM package (pure logic +
-Swift Testing) and `Condenser/` app target. Device-token auth, envelope-based
-multi-source timeline (TG / HN / X / RSS cards), scroll-to-read, saved / subscriptions /
-settings tabs, share-as-image from every detail sheet, DEBUG deep-link walkthroughs.
-Since 2026-09-07 it **reopens where you left off** (tab, source filter, pushed feed,
-scroll anchor, open detail sheet — Kit `ReadingState` + the snapshot as the launch
-content) and only *tells* you about new items with a blue dismissible pill fed by
-`GET /api/timeline/new/count` (count only; `timeline.query_new_count` → per-source
-`count_new`), never auto-refreshing under the reader.
-**1.0.0 submitted for App Store review 2026-08-16** (paid USD 2.00, manual release);
-the RSS card and the HN summary block (2026-09-02) landed after that submission and ride the next build — a shipped client that meets an unknown source draws blank
-rows, which is why `CONDENSER_RSS_ENABLED` still ships false.
+- Auth is a device token. `/p` and `/pa` reader pages use the ticket flow instead.
+- Shipped builds decode the API as it was when they were built. Add fields beside
+  existing ones rather than changing their shape (`feedback_reason` sits next to
+  `feedback` for this reason). A client that meets an unknown source draws blank rows,
+  which is why `CONDENSER_RSS_ENABLED` defaults to false.
+- Release state: 1.1.0 is in TestFlight internal testing and the app is not on the App
+  Store yet. The current review status is in the private KB.
 
-Since 2026-09-04 the same target also builds as a **Mac Catalyst** app
-(`make build-mac`, plan `kb/plans/2026-09-04-mac-catalyst.md`): platform differences live
-in `UI/Platform.swift`, the Mac build is team-signed because Catalyst's data-protection
-keychain rejects ad-hoc builds, and the Mac App Store half (certs, archive, ASC macOS
-platform) is deliberately deferred until the iOS review clears.
-
-Details in `kb/docs/ios.md`: the phase-by-phase feature history with the design
-decisions behind each surface, and the signing / App Store 发布 record (素材、提审、
-demo server). Read it before iOS feature work; `ios/AGENTS.md` has the build commands
-and conventions; release 操作前先读私密 KB 的 ios-app-store-release.md.
+`ios/AGENTS.md` has the build commands and conventions. `kb/docs/ios.md` has the feature
+history and the design decisions behind each surface; read it before iOS feature work.
+Before any release operation, read `ios-app-store-release.md` in the private KB.
 
 ## Dev
 
 ```bash
 uv sync --extra dev    # telememo comes from PyPI; no ../telememo checkout needed
 cp .env.example .env   # fill TELEGRAM_API_ID/HASH, CONDENSER_APP_PASSWORD, CONDENSER_SECRET_KEY
-uv run pytest          # backend tests — Telegram mocked, HN HTTP mocked via injectable fetch
+uv run pytest          # backend tests
 
-# Local dev backend (auto-reload; watcher scoped to the Python sources):
+# Dev backend (auto-reload, watcher scoped to the Python sources):
 uv run uvicorn condenser.app:create_app --factory --reload --reload-dir condenser --port 8792
-# No-reload / prod-style run (binds 0.0.0.0): uv run python -m condenser
-
-# Co-developing telememo (npm-link style): overlay an editable install, then keep it
-# alive across `uv run` (which otherwise re-syncs to the lock and restores PyPI):
-#   uv pip install -e ../telememo && export UV_NO_SYNC=1
-# then add `--reload-dir ../telememo/telememo` above. Unlink with `uv sync`.
+# Prod-style run (binds 0.0.0.0): uv run python -m condenser
 
 cd frontend && pnpm install && pnpm dev   # proxies /api -> :8792 (CONDENSER_BACKEND overrides)
-pnpm build                                # -> frontend/dist (served by backend in prod)
+pnpm test                                 # vitest
+pnpm build                                # -> frontend/dist, served by the backend
 
-# Or launch both backend + frontend panes at once: tmuxp load .tmuxp.yaml
+# Both panes at once: tmuxp load .tmuxp.yaml
 
-# Log a browser session into the running dev app (the auth gate blocks walkthroughs):
+# Log a browser session into the running dev app, for walkthroughs behind the auth gate:
 scripts/dev-browser-login.sh [session] [--backend URL] [--frontend URL]
 ```
 
+Before a UI walkthrough, check that the dev backend was started with `--reload`
+(`ps -o command -p $(lsof -ti :8792 -sTCP:LISTEN)`), or the walkthrough verifies stale code.
+
 ### `scripts/`
+
+Each script's header comment has its usage and rationale.
 
 | Script | What it does |
 |---|---|
-| `x_verdict_backtest.py` | leave-one-out backtest of the For You verdict on your real labels — the tool that turns constants into decisions and picks the channels (`--channels a,b,d` on the same folds, `--sweep` per-channel grids). Read-only on the DB except the KNN index (trashed per fold, rebuilt at the end); `--embed-missing` is the only mode that calls an API. How to read its output: `kb/docs/x-verdict.md` |
-| `x_verdict_prospective.py` | the online counterpart: scores only tweets judged *before* they were labeled, so nothing here can be tuned against. Fully read-only (never touches the KNN index — safe on a live copy). Output order + shadow replay: `kb/docs/x-verdict.md` |
-| `dev-browser-login.sh` | Puts a logged-in session cookie into an `agent-browser` profile so a UI walkthrough can run behind the auth gate. The app password stays on stdin the whole way (envops → curl → cookie jar → cookie file → agent-browser), so it never reaches a command line or an agent transcript; the temp files are deleted on exit. Encodes two traps: agent-browser's cookie file must be bare `k=v; k2=v2` (a `Cookie: k=v` header line silently becomes a cookie *named* `Cookie: k`, stored but never sent), and a backend-issued cookie works on the Vite origin because cookies ignore ports. **Check the dev backend was started with `--reload`** (`ps -o command -p $(lsof -ti :8792 -sTCP:LISTEN)`) or the walkthrough verifies stale code |
-| `opml_picker.py` | trims an OPML down to a chosen subset: `uv run scripts/opml_picker.py feeds.opml` serves a checkbox page on localhost, opens a browser, and the 生成 button downloads the picked feeds as a new OPML. A **PEP 723 stdlib-only** script (nothing to install, no network of its own) and the only thing here that never touches the DB — a 203-feed Miniflux export is what it was built against. Removing feeds is the *only* edit it makes: outline attributes (including namespaced `miniflux:*` ones, whose prefix it re-registers) and the group nesting carry through untouched, and a group is emitted only when a feed of it survived. Pinned by `tests/test_opml_picker.py` |
-
-## Status / known gaps
-
-The dated work log lives in `kb/docs/status-and-gaps.md`: every feature landing since
-2026-06 with its measurements, test counts, deploy state and the traps found along the
-way — the project's memory of *why* things are the way they are. Chronological, oldest
-first, so **read from the tail to catch up on the current state**. Consult it when you
-need the history or evidence behind a feature (backtest numbers, deploy incidents,
-rejected designs); for "what is true right now", this file and the other `kb/docs/`
-pages are the authority.
+| `x_verdict_backtest.py` | leave-one-out backtest of the verdict on real labels. Read-only except the KNN index, which it rebuilds at the end; `--embed-missing` is the only mode that calls an API. Reading its output: `kb/docs/x-verdict.md` |
+| `x_verdict_prospective.py` | the online counterpart: scores only tweets judged before they were labeled. Fully read-only, safe on a live copy |
+| `dev-browser-login.sh` | puts a logged-in session cookie into an `agent-browser` profile. The app password stays on stdin and never reaches a command line or a transcript |
+| `opml_picker.py` | trims an OPML to a chosen subset through a localhost checkbox page. Stdlib only, never touches the DB |
+| `demo_bootstrap.py` | initializes and health-checks the App Store review demo instance. Runbook: `demo-server.md` in the private KB |
 
 ## Documentation
 
+`kb/docs/` describes the current state. `kb/plans/` holds the design record of each
+feature, `kb/reviews/` the code review reports, `kb/sessions/` dated session summaries.
+
 - `kb/docs/database.md` — table ownership, `init_db` ordering traps, migration
-  conventions, and the full schema changelog (v3–v21, newest first). Read before adding
-  tables/columns, writing a migration, or touching `db.init_db`.
-- `kb/docs/x-verdict.md` — the X For You verdict: pipeline (`verdict.py`), channels A–D
-  (`authors` / kNN / `attributes` / `ngram`), shared vocabulary (`channels.py`), vector
-  infra (`vectors.py` / `embedding.py`), and the two evaluation tools. Read before
-  touching any of these modules or the verdict scripts.
-- `kb/docs/x-feedback.md` — X up/down labels + down-reason chips: feedback API rules,
-  web/iOS chip UX, and the reason-taxonomy decisions. Read before changing the feedback
-  endpoints or `FEEDBACK_REASONS`.
+  conventions, schema changelog. Read before any schema work.
+- `kb/docs/content-update-mechanism.md` — Telegram realtime push, backfill, the manual
+  refresh / fetch-older / reset triggers, the enable toggle. Read before touching ingest
+  or sync.
+- `kb/docs/x-verdict.md` — the For You verdict: pipeline, channels A–D, vector
+  infrastructure, the two evaluation scripts. Read before touching a verdict module.
+- `kb/docs/x-feedback.md` — up / down labels and down-reason chips: API rules, chip UX on
+  web and iOS, the `FEEDBACK_REASONS` taxonomy (pinned across `db.py`, `lib/sources.ts`
+  and Kit by a test). Read before changing the feedback endpoints or the reason set.
 - `kb/docs/probe.md` — the local X probe: xbird invariants, credentials, SeenCache,
-  scheduling, the kickstart deploy trap. Read before touching `probe/` or debugging a
-  silent X feed.
-- `kb/docs/ios.md` — iOS feature history + signing / App Store release record. Read
-  before iOS feature work (build commands are in `ios/AGENTS.md`).
-- `kb/docs/status-and-gaps.md` — the dated work log (oldest first; read from the tail).
-  Consult for the history and evidence behind a feature: measurements, deploy
-  incidents, rejected designs.
-- `kb/docs/content-update-mechanism.md` — Read before touching ingest/sync: realtime push,
-  backfill, the manual refresh / fetch-older / reset triggers, the enable toggle, and how
-  fetch-older's id-anchored cursor paging works.
-- ⚠️ **凡是 app 审核/发布，或服务器部署/运维相关的文档，一律写进私密 KB 仓库
-  `../kb.private/condenser/kb/<docs|plans|sessions>/`，不进本库。** 本库是公开仓库
-  （<https://github.com/reorx/condenser>），而这类文档的价值恰恰在于它记着具体值——
-  Apple 账号标识、生产主机与端口、Caddy/DNS、审核表单。抹掉这些就没有文档了，所以整份
-  挪走、本库只留一行指针（判断标准见 `../kb.private/README.md`）。已经这样处理的：
-- `kb.private/condenser/kb/docs/ios-app-store-release.md` — iOS 首次发布全流程记录：
-  关键资产（app id / bundle ID / API keys）、已跑通的签名与出包链路、上传 build 与
-  提审前的剩余步骤、审核 demo 服务方案。做发布操作（传 build / 提审 / 出新版本）前读它。
-  同理 `kb.private/condenser/kb/sessions/2026-08-12-ios-signing-and-app-store-ready.md`。
-- `kb.private/condenser/kb/docs/demo-server.md` — `condenser-demo.reorx.com`，App Store
-  审核用的第二实例（只开 HN、无 Telegram 会话、不接 hookploy）。**提审前必读**：
-  `scripts/demo_bootstrap.py`（脚本本身在本库 `scripts/`）既是初始化也是健康检查，
-  外加审核表单怎么填、备注话术、每次提审前的 checklist。密码实值与 ASC 表单在同目录的
-  `ios-app-store-release.md`。决策记录是
-  `kb.private/condenser/kb/plans/2026-08-15-app-review-demo-server.md`。
-  （2026-08-16 从本库 `kb/docs/` + `kb/plans/` 整体挪过去。）
-- `kb/sessions/` — dated session summaries (history). Read the latest to catch up on recent work.
+  scheduling, inline article reads, the kickstart trap. Read before touching `probe/`.
+- `kb/docs/frontend.md` — frontend cross-cutting behavior. Read before changing a
+  behavior that spans components.
+- `kb/docs/timeline-message-box-components.md` — anatomy of the Telegram `MessageCard`
+  and its media sub-tree. Written 2026-06, before the HN / X / RSS cards and the detail
+  pane existed. Read before restructuring `MessageCard`.
+- `kb/docs/ios.md` — iOS feature history and design decisions. Read before iOS feature
+  work.
+- `kb/docs/status-and-gaps.md` — the dated work log, oldest first, so read from the tail.
+  Consult it for the evidence behind a feature: measurements, deploy incidents, rejected
+  designs. For what is true now, this file and the other docs are the authority.
+
+⚠️ **凡是 app 审核/发布、服务器部署/运维相关的文档，一律写进私密 KB 仓库
+`../kb.private/condenser/kb/<docs|plans|sessions>/`，不进本库。** 本库是公开仓库
+（<https://github.com/reorx/condenser>），这类文档的价值在于记着具体值（Apple 账号标识、
+生产主机与端口、审核表单），所以整份挪走，本库只留指针。判断标准见
+`../kb.private/README.md`。已有的：
+
+- `kb.private/condenser/kb/docs/ios-app-store-release.md` — iOS 发布全流程：关键资产、
+  签名与出包链路、各 build 的状态、当前审核状态。做发布操作（传 build / 提审 / 出新版本）
+  前读它。
+- `kb.private/condenser/kb/docs/demo-server.md` — App Store 审核用的第二实例
+  `condenser-demo.reorx.com`（只开 HN、无 Telegram 会话）。提审前必读：初始化与健康检查、
+  审核表单填法、每次提审前的 checklist。
