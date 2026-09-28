@@ -259,9 +259,13 @@ feature, `kb/reviews/` the code review reports, `kb/sessions/` dated session sum
   pane existed. Read before restructuring `MessageCard`.
 - `kb/docs/ios.md` — iOS feature history and design decisions. Read before iOS feature
   work.
-- `kb/docs/status-and-gaps.md` — the dated work log, oldest first, so read from the tail.
-  Consult it for the evidence behind a feature: measurements, deploy incidents, rejected
-  designs. For what is true now, this file and the other docs are the authority.
+- `kb/docs/status-and-gaps.md` — the dated work log up to 2026-09-19, oldest first, frozen
+  on 2026-09-28. Consult it for the evidence behind a feature: measurements, deploy
+  incidents, rejected designs. Its "not deployed / still open" lines are historical; new
+  work records go to `kb/sessions/`.
+- `kb/known-issues.md` (open problems and unverified items), `kb/next-up.md` (dated
+  checks), `kb/todo.md` (deferred features) — what is still open. Check `known-issues.md`
+  before working on an area, and `next-up.md` for items that have come due.
 
 ⚠️ **凡是 app 审核/发布、服务器部署/运维相关的文档，一律写进私密 KB 仓库
 `../kb.private/condenser/kb/<docs|plans|sessions>/`，不进本库。** 本库是公开仓库

@@ -8,6 +8,11 @@ tags:
 
 # Status / known gaps
 
+> ⚠️ **2026-09-28 起冻结，不再追加。** 这里记着的未完成事项都已核对过当前状态，仍然成立的
+> 迁到了 `kb/known-issues.md`（问题与未验收项）、`kb/next-up.md`（到期的复查）、
+> `kb/todo.md`（留到以后的功能）。以那三个文件为准：下文的「未部署 / 未做 / Still open」
+> 只代表写下那天的状态。新的工作记录写进 `kb/sessions/`。
+>
 > A dated, append-only work log: every feature landing since 2026-06, with its
 > measurements, test counts, deploy state and the traps found along the way — the
 > project's memory of *why* things are the way they are. **Chronological, oldest first:
