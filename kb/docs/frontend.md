@@ -1,5 +1,6 @@
 ---
 created: 2026-09-28
+updated: 2026-09-28
 tags:
   - frontend
   - react
@@ -77,8 +78,8 @@ mirrors the same semantics (Kit `ScrollReadModel` + `ReadReporter.unsyncedKeys`)
   every render and rebuilds the IntersectionObserver each time; list the fields used, as
   `useInfiniteScrollSentinel` does.
 - Timeline items carry only `channel_id`; titles are joined client-side (`useChannelLabels`).
-- Saved and Search use `DatedItemRow`, where each item states its own date, because those
-  views jump across days and sources.
+- Saved, Search and Forwards use `DatedItemRow`, where each item states its own date,
+  because those views jump across days and sources.
 
 ## Dates and media
 
@@ -100,14 +101,83 @@ mirrors the same semantics (Kit `ScrollReadModel` + `ReadReporter.unsyncedKeys`)
 
 ## Item detail pane and link previews
 
-Clicking a card's time opens `ItemDetailPane`, a shadcn `Sheet` mounted once in `AppShell`
-that covers every list view. It holds the full-info block, the save / note / forward
-actions, the annotatable body and the link-preview section; `frontend/AGENTS.md` describes
-each part. Telegram message previews come from `GET /api/messages/{cid}/{mid}/previews`,
-a single URL from `GET /api/preview`. `lib/extractUrls.ts` is the URL source shared by
-linkify and the pane. Preview thumbnails are proxied unless
-`CONDENSER_PREVIEW_IMAGE_PROXY` is off, falling back to the media proxy for images that
-came with the Telegram message.
+Clicking a card's time opens `ItemDetailPane`, a shadcn `Sheet` (`sm:max-w-xl`) mounted
+once in `AppShell` that covers every list view. The `lib/itemDetailPane.tsx` context holds
+the clicked `TimelineItem` envelope. Top to bottom:
+
+1. `ItemDetailInfo`, the per-source label/value block.
+2. The action row: 收藏, 评论 (`ItemNoteDialog`) and 转发 (`ForwardDialog`) on every
+   source, plus Telegram's live `MessageStatsRow`. 转发 without a configured
+   `forward_channel` toasts toward Settings instead of opening the dialog.
+3. `ItemDetailBody`, the annotatable body (see the next section).
+4. 链接预览: a Telegram message's links, or one URL for the other sources (the HN story
+   URL, whose ingest-prefetched `preview` renders at once; a tweet's first outbound link
+   via `xPreviewUrls`). The live fetch runs only when there is no prefetched preview.
+5. A footer with the original link and 隐藏 (`useHideItem`: optimistic removal, close,
+   toast with 撤销).
+
+Rules the parts share:
+
+- The envelope is a click-time snapshot. The pane mirrors its own save and note writes in
+  local state keyed on the envelope **object**; a reopen hands over a new object and the
+  overrides drop.
+- The body per source: Telegram text (linkified); the HN self-post HTML under its
+  `AiSummaryBlock`; X's `xBodyText`, the same derivation `XCard` prints, so a highlight
+  relocates across surfaces and iOS; the full RSS article via `useRssArticle`. An X
+  long-form post takes RSS's shape through `useXArticle`. A saved snapshot's inline body
+  skips either fetch.
+- Cards never expand an article in place. RSS 「查看全文」 and the X article card open the
+  pane, so there is exactly one rendering of an article to annotate.
+- AI summaries sit outside `AnnotatedText`: machine words are not highlightable, as on iOS.
+- While an RSS article is loading, the excerpt stands in and highlighting is off; a quote
+  taken against the excerpt would relocate against different text.
+- An X article body can arrive after the list did, so it is fetched even under
+  `has_content: false`, and a bodiless answer is not cached forever (`staleTime` is a
+  function). Only a promised body shows 加载中 or 「正文加载失败」; otherwise the pane says
+  「未获取到 article 正文」.
+- 评论's 保存并转发 saves the note first and only then opens `ForwardDialog` with it
+  prefilled, so nothing reaches Telegram without also reaching the notebook.
+
+Link previews: Telegram message previews come from
+`GET /api/messages/{cid}/{mid}/previews`, a single URL from `GET /api/preview`.
+`lib/extractUrls.ts` is the URL source shared by linkify and the pane. Preview thumbnails
+are proxied unless `CONDENSER_PREVIEW_IMAGE_PROXY` is off, falling back to the media proxy
+for images that came with the Telegram message.
+
+## Annotations and notes (schema v18)
+
+The web side of iOS's notes and highlights. A `saved_items` row exists while an item is
+saved or has a note or annotations, so these writes also move the Saved list.
+
+- Notes (`ItemNoteDialog`, `useNote`) and highlight comments (`AnnotationCommentDialog`)
+  are whole-text overwrites: saving empty is the delete. `useNote` invalidates
+  `['records']`, since the first note creates the saved row and clearing the last writing
+  drops it.
+- `lib/annotate.ts` is a behavior-identical port of CondenserKit's `Annotations.swift`,
+  pinned by the same test cases. Change both sides together. `lib/domText.ts` is the DOM
+  half: text index, offset ↔ Range, selection and caret readers.
+- `AnnotatedText` never mutates nodes React owns. It paints with the CSS Custom Highlight
+  API (`::highlight(condenser-annotation)` in `index.css`). Without that API, creating
+  still works and located highlights just are not painted. A click on overlapping
+  highlights picks the shortest one, as on iOS.
+- Orphans, quotes the text no longer contains, are listed by `AnnotationOrphans`, never
+  dropped: a re-derived body demotes highlights visibly instead of eating them.
+- `useItemAnnotations.add` is not optimistic, since the server assigns the id. Removing
+  and commenting are optimistic with whole-list rollback.
+- Every card's time line carries up to three marks, none of them buttons:
+  `ForwardedBadge`, `AnnotationBadge`, `VibeReaderBadge`.
+
+## Search
+
+- `SearchView` keeps the box's draft locally (300ms debounce). The URL holds the committed
+  query and every filter, written with `replace`, so a search is a shareable link and Back
+  leaves the page instead of un-typing a word.
+- Status defaults to All, unlike the timeline's unread-first default.
+- `useSearch.scopeParams` is the one place a picked scope becomes the API's `source` /
+  `channel_id` / `feed`. A `feed` always travels with its source, because X and RSS key
+  feeds on different things and the server 422s a bare `feed`.
+- A 422 from the search endpoint renders as "nothing searchable" (the box holds only
+  punctuation or emoji), not as an error.
 
 ## Forwards
 
@@ -150,10 +220,26 @@ came with the Telegram message.
   the tab is hidden. A hit shows a floating banner; clicking it refetches and scrolls to
   the top.
 
+## PWA
+
+- `vite-plugin-pwa` in prompt mode, production builds only; dev registers nothing. The
+  service worker precaches the app shell so the installed app opens from local cache. A new
+  build found in the background raises a persistent 「发现新版本」 toast, and confirming
+  activates it and reloads. Checks run hourly and on `visibilitychange`
+  (`lib/swUpdate.ts`, wired in `main.tsx` through `virtual:pwa-register`).
+- ⚠️ The navigation-fallback denylist (`lib/swDenylist.ts`, pinned by its test) excludes
+  `/api`, `/p` and `/pa`. The Mac Catalyst app opens Purifier `/p/…?_pt=` links in the
+  system browser, where the PWA's worker lives; without the entry the worker answers with
+  the SPA shell and the ticket exchange never reaches the backend. Any new
+  server-rendered path needs an entry. An installed worker keeps the old list until the
+  reader accepts the update prompt.
+- `lib/pwa.ts` snaps an installed desktop PWA window to phone size (420 × 920), since the
+  layout is mobile-first.
+
 ## Vibe Reader link mode
 
 Pairs with the `../vibe-reader-hn` browser extension and involves no backend. The full
-contract is in `lib/vibeReader.ts` and its row in `frontend/AGENTS.md`; the plan is
+contract is in `lib/vibeReader.ts`'s comments and its test; the plan is
 `kb/plans/2026-09-02-vibe-reader-link-mode-and-hn-summary.md`.
 
 - Transport is `window.postMessage` on our own origin, accepted only from

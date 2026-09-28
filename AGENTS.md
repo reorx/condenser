@@ -153,11 +153,11 @@ editable overlay described in the README section "Co-developing telememo locally
 React 19 + Vite 6 + TS (strict) + Tailwind v4 + shadcn/ui + TanStack Query v5 + React
 Router v7, pnpm. Two documents cover it:
 
-- `frontend/AGENTS.md` is the component / hooks / lib inventory and the preview harness.
-  Update its row in the same change whenever a component changes.
+- `frontend/AGENTS.md` is the one-line-per-module inventory (components, pages, hooks,
+  lib) and the UI verification loop. Update its row in the same change.
 - `kb/docs/frontend.md` is the cross-cutting behavior: auth gate, scroll-to-read, the
-  reading-view shell, cache mutation rules, forwards, Vibe Reader link mode, X surfaces.
-  Read it before changing a behavior that spans components.
+  detail pane, annotations, cache mutation rules, forwards, search, PWA, Vibe Reader, X
+  surfaces. Read it before changing a behavior that spans components.
 
 Know these before opening either:
 
