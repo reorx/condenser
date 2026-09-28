@@ -1,10 +1,11 @@
 """Item keys + timeline envelopes (multi-source plan 2.1).
 
 An item key is the API-level identifier of one timeline unit:
-``tg:{channel_id}:{message_id}`` / ``hn:{story_id}`` / ``x:{tweet_id}``. Storage
-uses the integer triple ``(source, ref1, ref2)`` — see ``read_items`` /
-``saved_items`` in db.py; this module owns the string<->triple mapping and the
-envelope assembly shared by the timeline and records renderers.
+``tg:{channel_id}:{message_id}`` / ``hn:{story_id}`` / ``x:{tweet_id}`` /
+``rss:{entry_id}``. Storage uses the integer triple ``(source, ref1, ref2)`` —
+see ``read_items`` / ``saved_items`` in db.py; this module owns the
+string<->triple mapping and the envelope assembly shared by the timeline and
+records renderers.
 """
 
 import json

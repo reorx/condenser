@@ -1,9 +1,21 @@
 """Saved records (user assets, source-decoupled — spec §1 / Part B).
 
 A saved record snapshots an item's full data into ``saved_items.raw_data`` so it
-renders even if the source cache (telememo ``messages`` / ``hn_stories``) is
-later cleared. Telegram snapshots are self-contained: the album's message rows
-plus minimal channel info; HN snapshots are the story row as JSON.
+renders even after its source row is gone (retention sweeps, an unsubscribe
+purge). What each source's snapshot holds:
+
+- Telegram: the album's ``messages`` rows plus minimal channel info, regrouped
+  into a DisplayMessage on replay.
+- HN: the envelope payload of the ``hn_stories`` row, plus its archive ``day``.
+- X / RSS: the envelope payload built ``with_content=True``, so an X article's
+  body and an RSS entry's article outlive their rows; RSS also keeps its computed
+  ``sort_at``. A list replay drops the body again, and ``x_article`` /
+  ``rss_article`` serve it.
+
+``build_item_snapshot`` is shared with forward records (``forwards.py``), which
+replay through ``render_item`` as well. Item notes and annotations (v18) live
+here too: either one creates the ``saved_items`` row, so it snapshots the item
+the same way, and ``stamp_notes`` joins their live text onto list envelopes.
 """
 
 import json
