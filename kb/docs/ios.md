@@ -8,6 +8,15 @@ tags:
 
 # iOS app (`ios/`, monorepo)
 
+## 复制原始链接（2026-10-11）
+
+四个来源的详情底部操作区均提供「复制链接」，成功后短暂显示「已复制」并提供触感反馈。
+Telegram 复制当前条目的 `https://t.me/<username>/<message-id>`；没有用户名时使用
+`https://t.me/c/<channel-id>/<message-id>`，相册用当前展示单元的消息 ID。
+X 复制原始 `x.com` 推文链接，不经过 fixupx 或阅读代理改写；HN 使用原文链接
+（self-post 使用讨论页），RSS 使用文章链接。没有可用链接的条目不显示按钮。
+按钮由 `ItemActionButtons` 共用，链接规则位于 Kit `TimelineItem.originalURL`。
+
 > Written as a running log while this lived inside AGENTS.md — "see the iOS section
 > above" style references mean AGENTS.md; commands and build conventions are in
 > `ios/AGENTS.md`.

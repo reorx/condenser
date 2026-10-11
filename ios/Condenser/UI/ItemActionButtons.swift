@@ -1,7 +1,7 @@
 import SwiftUI
 import CondenserKit
 
-/// 详情 sheet 动作行开头的三个按钮：收藏 + 评论 + 转发。四个信源的 sheet 共用一份——
+/// 详情 sheet 动作行开头的按钮：收藏 + 评论 + 转发 + 复制链接。四个信源共用一份——
 /// 「这条留着」「对这条写点什么」「这条发出去」跟它是推文还是 HN story 无关，
 /// 入口摆在一起才好按。
 ///
@@ -11,6 +11,8 @@ struct ItemActionButtons: View {
     let item: TimelineItem
     var onToggleSaved: () -> Void
 
+    @Environment(ReaderSession.self) private var reader
+    @State private var copiedLink = false
     @State private var showForward = false
     /// 评论抽屉 → 「转发」时切到预填评论的 ForwardDialog（.sheet(item:) 换 item
     /// 自带「先收后弹」，不必手工调度两次 present）
@@ -32,6 +34,10 @@ struct ItemActionButtons: View {
     }
 
     private var currentNote: String { editedNote ?? item.note ?? "" }
+
+    private var originalURL: URL? {
+        item.originalURL(telegramUsername: item.telegram.flatMap { reader.channelUsername(for: $0) })
+    }
 
     var body: some View {
         Button(action: onToggleSaved) {
@@ -75,6 +81,25 @@ struct ItemActionButtons: View {
         // Group 的修饰符会分发给每个子视图，每个按钮会各弹一个 sheet
         .sheet(isPresented: $showForward) {
             ForwardDialog(itemKey: item.key, isTelegram: item.source == "telegram")
+        }
+
+        if let url = originalURL {
+            Button {
+                UIPasteboard.general.string = url.absoluteString
+                copiedLink = true
+            } label: {
+                Label(copiedLink ? "已复制" : "复制链接",
+                      systemImage: copiedLink ? "checkmark" : "link")
+                    .readingFont(.footnote)
+            }
+            .buttonStyle(.bordered)
+            .tint(copiedLink ? .green : nil)
+            .sensoryFeedback(.success, trigger: copiedLink) { _, new in new }
+            .task(id: copiedLink) {
+                guard copiedLink else { return }
+                try? await Task.sleep(for: .seconds(1.5))
+                copiedLink = false
+            }
         }
     }
 }

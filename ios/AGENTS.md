@@ -31,8 +31,10 @@ TG/HN），订阅 tab 的 X 分组行是它唯一入口 → `XFeedTimelineScreen
 「粗体标题超链接原文 + 来源行超链接讨论」，X 只发一条把域名换成 fixupx.com 的链接——
 x.com 不给 Telegram 供 embed，fixupx 给，作者/正文/图/引用推全在预览卡里）。三个 detail sheet 的
 **收藏星标从 header 挪到底部动作行**，和新加的「转发」并排——两件事都是「对这条做点
-什么」，摆在一起才好按；共用组件是 `ItemActionButtons`（收藏 + 转发）与
+什么」，摆在一起才好按；共用组件是 `ItemActionButtons`（收藏 + 评论 + 转发 + 复制链接）与
 `ItemActionRow`（放不下就横向滚动，四个中文按钮在窄屏上会溢出）。
+「复制链接」使用 Kit `TimelineItem.originalURL`：Telegram 消息链接、X 原始 x.com 链接、
+HN / RSS 原文链接，不走转发域名或阅读代理。详见 `../kb/docs/ios.md`「复制原始链接」。
 `ForwardDialog` 收 `itemKey` + `isTelegram`，后者只影响留空时的文案（「原样转发」
 vs「只发标题和链接」）。旧的 `/api/messages/{cid}/{mid}/forward` 服务端保留为薄壳，
 所以升级服务端不会打断手机上还没重装的旧版本。
