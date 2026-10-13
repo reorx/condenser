@@ -67,7 +67,7 @@ struct SubscriptionsScreen: View {
                 emptyState
             }
         }
-        .navigationTitle("订阅")
+        .readerNavigationTitle("订阅")
         .macSidebarToggleToolbar()
         .navigationDestination(for: SubDestination.self) { dest in
             switch dest {
@@ -180,7 +180,7 @@ struct ChannelTimelineScreen: View {
                 Color.clear
             }
         }
-        .navigationTitle(subscription.name ?? "频道 \(subscription.channelID.description)")
+        .readerNavigationTitle(subscription.name ?? "频道 \(subscription.channelID.description)")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
             if store == nil, let channelID = subscription.channelID.intValue {
@@ -206,7 +206,7 @@ struct HnFeedTimelineScreen: View {
                 Color.clear
             }
         }
-        .navigationTitle(subscription.name ?? "Hacker News")
+        .readerNavigationTitle(subscription.name ?? "Hacker News")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
             if store == nil {
@@ -235,7 +235,7 @@ struct XFeedTimelineScreen: View {
                 Color.clear
             }
         }
-        .navigationTitle(XFeed.label(feed, name: subscription.name))
+        .readerNavigationTitle(XFeed.label(feed, name: subscription.name))
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
             if store == nil {
@@ -264,7 +264,7 @@ struct RssFeedTimelineScreen: View {
                 Color.clear
             }
         }
-        .navigationTitle(RssFeed.label(feed, name: subscription.name))
+        .readerNavigationTitle(RssFeed.label(feed, name: subscription.name))
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
             if store == nil {

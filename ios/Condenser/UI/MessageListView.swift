@@ -10,7 +10,7 @@ import CondenserKit
 /// 内容刷新只有两条路径：用户下拉，以及点上方的蓝色胶囊「↑ N 条新内容」。胶囊由
 /// `NewContentChecker`（`/timeline/new/count`）在启动恢复现场后与回前台时各问一次决定
 /// 弹不弹；它只告知，不回顶、不刷新、不动列表，右侧的 ✕ 只把它收掉。
-/// 频道/feed timeline 不传 checker，纯列表复用（现场恢复照样有）。
+/// Mac 频道/feed timeline 自动建立同范围的 checker；iPhone 单 feed 仍只手动刷新。
 struct MessageListView: View {
     let store: TimelineStore
     var checker: NewContentChecker?
@@ -35,6 +35,11 @@ struct MessageListView: View {
     /// 启动路径只走一次：首个 store 用快照当现场；之后切信源重建的 store 走快照→网络替换
     @State private var didHandleLaunch = false
     @State private var foregroundPolicy = ForegroundRefreshPolicy()
+    @State private var focusPolicy = FocusRefreshPolicy(minFocusGap: Platform.focusRefreshGap)
+    @State private var macChecker: NewContentChecker?
+    @State private var isCheckingNewContent = false
+
+    private var activeChecker: NewContentChecker? { checker ?? macChecker }
 
     private let topSentinel = "timeline-top"
 
@@ -81,9 +86,20 @@ struct MessageListView: View {
             }
         }
         .animation(.snappy, value: pillCount == nil)
+        .onMacWindowFocusChange { focused in
+            if focused {
+                if focusPolicy.noteFocus() {
+                    Task { await checkForNewContent() }
+                }
+            } else {
+                focusPolicy.noteBlur()
+            }
+        }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active {
-                Task { await resumeFromBackground() }
+                if !Platform.isMac {
+                    Task { await resumeFromBackground() }
+                }
             } else {
                 foregroundPolicy.noteBackground()
                 // 退后台即落盘现场：本地乐观已读先写进条目，快照里才不会满是过期的蓝点
@@ -117,6 +133,9 @@ struct MessageListView: View {
         }
         #endif
         .task(id: ObjectIdentifier(store)) {
+            if Platform.isMac { macChecker = reader.makeChecker(for: store) }
+            pillCount = nil
+            dismissedCount = 0
             // 换 store（切信源 / 未读开关）也是整列表替换，同样要解除武装，
             // 否则上一个列表滚出来的 armed 会把新首屏瞬间判读
             scrollReadModel.reset()
@@ -327,8 +346,11 @@ struct MessageListView: View {
 
     /// 问一次有多少新内容，决定胶囊弹不弹：0 收起；用户 ✕ 掉过的那个数不再弹
     private func checkForNewContent() async {
-        guard let checker else { return }
+        guard let checker = activeChecker, !isCheckingNewContent else { return }
+        isCheckingNewContent = true
+        defer { isCheckingNewContent = false }
         let count = await checker.check()
+        guard !Task.isCancelled, checker === activeChecker else { return }
         if count > 0, count != dismissedCount {
             pillCount = count
         } else if count == 0 {

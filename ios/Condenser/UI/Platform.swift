@@ -22,6 +22,17 @@ enum Platform {
         }
         return UIDevice.current.name
     }
+
+    /// CLI 走查可缩短等待时间；Release 固定十分钟。
+    static var focusRefreshGap: TimeInterval {
+        #if DEBUG
+        if let raw = ProcessInfo.processInfo.environment["CONDENSER_DEBUG_FOCUS_GAP"],
+           let gap = TimeInterval(raw), gap >= 0 {
+            return gap
+        }
+        #endif
+        return 10 * 60
+    }
 }
 
 /// 阅读列：Mac 窗口能拉到 1500pt 宽，卡片跟着铺满就是一行两百字的正文。
@@ -41,6 +52,17 @@ struct ReadingColumn: ViewModifier {
 }
 
 extension View {
+    /// Catalyst 的编辑器工具栏把当前标题放在 leading，避免系统的居中标题留白。
+    @ViewBuilder
+    func readerNavigationTitle(_ title: String) -> some View {
+        if Platform.isMac {
+            navigationTitle(title)
+                .toolbarRole(.editor)
+        } else {
+            navigationTitle(title)
+        }
+    }
+
     func readingColumn() -> some View {
         modifier(ReadingColumn())
     }

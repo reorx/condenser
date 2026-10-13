@@ -151,7 +151,9 @@ X 的定位底本是 t.co 替换后的 `xDisplayedText`（与 `linkifiedNS` 共�
 退后台与每次 `loadMore` 后 `persistSnapshot()` 把已加载的全部页（含本地已读）写回。
 有没有新内容另问 `GET /api/timeline/new/count`（`NewContentChecker`，只回条数），结果只是
 列表上方一枚**蓝色胶囊「↑ N 条新内容 | ✕」**：主体点了才回顶 + 刷新，✕ 只收掉，列表不动；
-回前台后台 ≥60s 再问一次。切信源 / 未读重建的 store 仍是旧路径（快照→网络替换，无提示）。
+iPhone 在后台 ≥60s 回前台再问一次；Mac 的当前列表在两次窗口 focus 间隔 >10 分钟时
+再问一次（`FocusRefreshPolicy` + `UI/MacWindowFocus.swift`），单频道 / 单 feed 同样支持。
+切信源 / 未读重建的 store 仍是旧路径（快照→网络替换，无提示）。
 `MessageListView` 因此改用 `scrollPosition(id:)` + `scrollTargetLayout()`（顶部哨兵进
 LazyVStack），`MainView` 的订阅 path 从 `NavigationPath` 改成 `[SubDestination]`（要读栈顶）。
 推入的单 feed 视图不落快照，恢复它只到「进到那个 feed + 首页里找得到锚点就滚过去」。
@@ -422,6 +424,12 @@ percent-encode）。
 `simctl shutdown && boot` 才能清掉），无人值守走查一律用环境变量形式。
 
 ## Mac Catalyst（2026-09-04）
+
+Mac 各列表的 focus 检查只更新蓝色胶囊，用户点击才回顶刷新；通知按窗口与当前可见列表
+投递，避免隐藏 tab 重复请求。当前 View 标题统一走 `readerNavigationTitle()`，Mac 使用
+editor 工具栏角色靠左排列；登录页两端共用主图标的 `ShareMark` 图片。
+走查可用 `CONDENSER_DEBUG_FOCUS_GAP=<秒>` 缩短等待、`CONDENSER_DEBUG_LOGIN=1` 仅在
+内存里展示登录页（不清 Keychain）；两者仅 DEBUG 生效。行为说明见 `../kb/docs/ios.md`。
 
 同一份代码编成 Mac app（plan `../kb/plans/2026-09-04-mac-catalyst.md`），零 Swift 改动就能
 编译通过，适配集中在 `UI/Platform.swift`：`Platform.isMac`（编译期判断，不用

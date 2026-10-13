@@ -85,10 +85,16 @@ final class ReaderSession {
     }
 
     private func makeChecker() -> NewContentChecker {
+        makeChecker(for: timeline)
+    }
+
+    /// 各列表检查与它自己的过滤参数、head cursor 保持一致。
+    func makeChecker(for store: TimelineStore) -> NewContentChecker {
         let checker = NewContentChecker(
-            api: api, unreadOnly: unreadOnly, source: selectedSource
-        ) { [weak self] in
-            self?.timeline.headCursor
+            api: api, channelID: store.channelID, unreadOnly: store.unreadOnly,
+            source: store.source, feed: store.feed
+        ) { [weak store] in
+            store?.headCursor
         }
         checker.onUnauthorized = onUnauthorized
         return checker

@@ -32,6 +32,8 @@ final class AuthSession {
             serverURL = debugServer
             token = debugToken
         }
+        // 只切换内存态，检查登出后的登录 UI 时保留真实 Keychain 凭据。
+        if env["CONDENSER_DEBUG_LOGIN"] == "1" { token = nil }
         #endif
     }
 

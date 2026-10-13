@@ -22,9 +22,11 @@ struct LoginView: View {
             Spacer()
 
             VStack(spacing: 8) {
-                Image(systemName: "text.bubble.fill")
-                    .font(.system(size: 56))
-                    .foregroundStyle(.tint)
+                Image("ShareMark")
+                    .resizable()
+                    .frame(width: 80, height: 80)
+                    .clipShape(RoundedRectangle(cornerRadius: 18))
+                    .accessibilityHidden(true)
                 Text("Condenser")
                     .font(.largeTitle.bold())
                 Text("Telegram 频道聚合阅读器")

@@ -38,7 +38,7 @@ struct SavedScreen: View {
         .readingFontScale()
         .autoHideBars()
         .refreshable { await reader.records.refresh() }
-        .navigationTitle("收藏")
+        .readerNavigationTitle("收藏")
         .macSidebarToggleToolbar()
         .navigationBarTitleDisplayMode(.inline)
         .externalLinks(safari: $safariItem)

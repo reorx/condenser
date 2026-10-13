@@ -75,7 +75,7 @@ struct SettingsScreen: View {
                 LabeledContent("版本", value: appVersion)
             }
         }
-        .navigationTitle("设置")
+        .readerNavigationTitle("设置")
         .macSidebarToggleToolbar()
         .navigationBarTitleDisplayMode(.inline)
         .task {
