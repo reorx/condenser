@@ -233,7 +233,8 @@ Each script's header comment has its usage and rationale.
 | `x_verdict_prospective.py` | the online counterpart: scores only tweets judged before they were labeled. Fully read-only, safe on a live copy |
 | `dev-browser-login.sh` | puts a logged-in session cookie into an `agent-browser` profile. The app password stays on stdin and never reaches a command line or a transcript |
 | `opml_picker.py` | trims an OPML to a chosen subset through a localhost checkbox page. Stdlib only, never touches the DB |
-| `demo_bootstrap.py` | initializes and health-checks the App Store review demo instance. Runbook: `demo-server.md` in the private KB |
+| `demo_bootstrap.py` | initializes and health-checks the App Store review demo instance: subscribes HN and the demo RSS feeds, asserts every demo source (HN / RSS / Telegram) is on the timeline and that no Telegram session exists. Runbook: `demo-server.md` in the private KB |
+| `demo_tg_snapshot.py` | the demo's Telegram source without an account: public channels read from their `t.me/s/` web preview and written as backfill rows. Runs inside the demo container (piped in on stdin); plain text and no media on purpose, see its docstring |
 
 ## Documentation
 

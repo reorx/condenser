@@ -21,6 +21,12 @@
 - `cleanup.py` 只有 X 和 RSS 两条保留规则。HN 约 130 条/天；`link_previews` 只在读的时候判 TTL，行本身从来不删；隐藏条目按用户决定豁免清理，所以一直累积。
 - 处理方向：给 HN / `link_previews` 各加一个规则对象，清理循环不用动。
 
+## Telegram：正文的格式标记原样显示（`**`、`__`、`[文字](链接)`）
+
+- 记录：2026-10-21（给 demo 灌 Telegram 快照时在 web 上看到；`scripts/demo_tg_snapshot.py` 的 `message_text`）
+- telememo 存的是 Telethon 的 `message.text`，也就是 markdown 形式；web 的 `lib/linkify.tsx` 和 iOS 的 `SelectableTextView`（`linkifiedNS`）只做纯文本加 URL 识别，不解析标记。生产库当天实测 4940 条里有 354 条含 `**`、519 条含 `](http`，这些帖子两端都显示星号和方括号，文字链接的目标也成了一串可见的 markdown。
+- 处理方向：两端渲染 Telethon markdown 的子集（粗体、斜体、代码、文字链接），或入库改存纯文本加实体。后者改的是已发 iOS build 也在解码的字段，要按「旁边加字段」的规矩兼容。demo 的快照为此存纯文本，修好后可以改回。
+
 ## Telegram：退订时不能连带删除消息；回填批次之间不主动 sleep
 
 - 记录：2026-06-09（`kb/sessions/2026-06-09-backend-remaining-work.md`）
