@@ -114,7 +114,7 @@ tags:
 - [x] 预览的高亮只落在真正命中的位置，命中在长消息后部时也能看到高亮。
 - [x] `arc` 的预览显示「只是包含」的条数、一个例子和建议写法 `arc*`，点建议写法会替换输入框内容。
 - [x] 输入 `*` 预览或创建时，提示关键词为空，不会创建规则。
-- [ ] 上线后「起床时间」的过滤结果不变。
+- [x] 上线后「起床时间」的过滤结果不变。
 
 ## Tech Design
 
@@ -278,7 +278,7 @@ matcher 的语义带一个版本号。版本不一致时，启动时重算所有
 - [x] 前端：改 types、`HighlightedText`、`FilterPreviewSample`、`FilterPreviewResult`、`CreateFilterDialog`、`FiltersView` 的文案。补 vitest：`HighlightedText` 码点偏移（emoji 在命中前面），`FilterPreviewResult` 的 near-miss 行和点击回调。`pnpm test`、`pnpm build` 通过。
 - [x] 本地实机验收，见「测试与验证」。截图归档到 `tmp/2026-10-25-keyword-filter-word-boundary/`。
 - [x] 更新 `AGENTS.md`、`frontend/AGENTS.md`、`kb/docs/database.md`，然后提交。push 就是部署，先问用户。
-- [ ] 上线后 ssh 只读核对：`app_meta['keyword_filter_matcher_version'] = '1'`；`SELECT sum(is_filtered) FROM messages` 和上线前一样（只有「起床时间」一条规则；计划时是 113，2026-10-27 上线前只读基线是 116，本地证据在 `tmp/2026-10-25-keyword-filter-word-boundary/evidence/prod-baseline.txt`）。
+- [x] 上线后 ssh 只读核对：`app_meta['keyword_filter_matcher_version'] = '1'`；`SELECT sum(is_filtered) FROM messages` 和上线前一样（只有「起床时间」一条规则；计划时是 113，2026-10-27 上线前只读基线是 116，本地证据在 `tmp/2026-10-25-keyword-filter-word-boundary/evidence/prod-baseline.txt`）。2026-10-27 部署 `d11597a` 后核对：marker 为 `'1'`，116 → 116。
 
 ### 测试与验证
 
