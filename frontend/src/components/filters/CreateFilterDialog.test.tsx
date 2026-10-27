@@ -74,23 +74,23 @@ describe('CreateFilterDialog', () => {
   });
 
   it('shows the empty-keyword error when previewing a bare *', async () => {
-    previewFilter.mockRejectedValue(new ApiError(422, 'keyword is empty'));
+    previewFilter.mockRejectedValue(new ApiError(422, 'Keyword is empty — * alone matches nothing'));
     const { user, keyword } = renderDialog();
 
     await user.type(keyword, '*');
     await user.click(screen.getByRole('button', { name: 'Preview' }));
 
-    expect(await screen.findByText('keyword is empty')).toBeInTheDocument();
+    expect(await screen.findByText('Keyword is empty — * alone matches nothing')).toBeInTheDocument();
   });
 
   it('keeps the dialog open and reports the empty keyword when creating a bare *', async () => {
-    createFilter.mockRejectedValue(new ApiError(422, 'keyword is empty'));
+    createFilter.mockRejectedValue(new ApiError(422, 'Keyword is empty — * alone matches nothing'));
     const { user, keyword, onOpenChange } = renderDialog();
 
     await user.type(keyword, '*');
     await user.click(screen.getByRole('button', { name: 'Create filter' }));
 
-    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('keyword is empty'));
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Keyword is empty — * alone matches nothing'));
     expect(onOpenChange).not.toHaveBeenCalledWith(false);
   });
 });
