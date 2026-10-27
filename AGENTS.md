@@ -64,7 +64,7 @@ docstring and inline comments; read them before editing.
 |---|---|
 | `items.py` | item keys (`tg:{cid}:{mid}` / `hn:{sid}` / `x:{tweet_id}` / `rss:{entry_id}` ↔ the stored triple) and the item **envelope** `{source, key, datetime, is_read, is_saved, <source payload>}` every list surface shares. X ids cross the API as **strings**. RSS entries and X articles come in two sizes: lists carry `content_excerpt` / `article.has_content`, the body arrives only under `with_content=True` (the detail endpoints and snapshots) |
 | `timeline.py` + `sources/` | federated merge: each provider (telegram / hn / x / rss) returns `SourceUnit` pages, k-way merged by timestamp under a composite cursor `base64(json {source: pos})`. A source absent from the cursor restarts from its top; an invalid cursor is a 422. `query_new` / `query_new_count` back the new-content poll and the iOS pill |
-| `filters.py` | materializes keyword filters into `messages.is_filtered`, on ingest and on rule change |
+| `filters.py` | materializes keyword filters into `messages.is_filtered`, on ingest and on rule change. Latin keywords match whole words through a custom edge (CJK counts as a boundary, so `\b` is wrong here), CJK matches anywhere, `*` opens an end; `%XX` is masked before matching. Bump `MATCHER_VERSION` when the semantics change: `init_db` ends with `ensure_materialized`, which recomputes every archived channel, paused ones included. Preview highlights are server-computed code-point offsets. Plan: `kb/plans/2026-10-25-keyword-filter-word-boundary.md` |
 | `records.py` | saved records: snapshots in `saved_items.raw_data`, plus item notes and annotations (v18). A snapshot must render **without its source tables**, since retention deletes them, so it carries the article body and computed fields such as RSS `sort_at`. `build_item_snapshot` is shared with forwards; `stamp_notes` adds `note` / `annotations` to list envelopes |
 | `forwards.py` / `forward.py` | the forward log's read side (`/forwards` list, the `forwarded_by_me` stamp) / rendering a non-Telegram item into a Telegram message. ⚠️ `forwarded_by_me` is not `is_forwarded`, Telegram's flag for the opposite direction. The write is in `tg.forward_item`, which **deliberately swallows** a failed record write and answers `recorded: false`: the message is already sent, and a 500 would make the client retry and post it twice |
 | `search.py` | the only module that knows FTS5. CJK runs are bigram-tokenized in Python and phrase-queried; every token is quoted. The index is a rebuildable cache: bump `TOKENIZER_VERSION` when the tokenizer or any source's document changes. Plan: `kb/plans/2026-08-08-full-text-search.md` |
@@ -211,6 +211,8 @@ uv run uvicorn condenser.app:create_app --factory --reload --reload-dir condense
 # Prod-style run (binds 0.0.0.0): uv run python -m condenser
 
 cd frontend && pnpm install && pnpm dev   # proxies /api -> :8792 (CONDENSER_BACKEND overrides)
+# pnpm dev is portless: it claims condenser.localhost (app port 5792). A second instance
+# for a parallel walkthrough runs `pnpm exec vite --port N` so it can't take that name.
 pnpm test                                 # vitest
 pnpm build                                # -> frontend/dist, served by the backend
 

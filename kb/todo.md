@@ -17,3 +17,9 @@
 ## 发布
 
 - [ ] Mac 版上架 Mac App Store：Mac 分发证书、Catalyst archive、ASC 的 macOS 平台版本和截图、单独过审。等 iOS 过审之后再动，同一个 app record 的两个平台别叠在一起审核。发布状态见私密 KB 的 `ios-app-store-release.md`（`kb/plans/2026-09-04-mac-catalyst.md`）
+
+## 过滤与搜索
+
+- [ ] 关键词过滤支持例外词：过滤「币」但放过「硬币」「人民币」，按命中位置判断。词边界方案决定先不做，等单字中文规则真出现误伤再加（`kb/plans/2026-10-25-keyword-filter-word-boundary.md`）
+- [ ] 关键词过滤扩到 HN / X / RSS。现在只作用于 Telegram，创建对话框的「Applies to every channel」容易读成所有源都管
+- [ ] 搜索 `ad` 会命中链接里的百分号编码（`%E8%B3%AD`）：tokenizer 把它切成 e8 / b3 / ad。过滤侧在词边界方案里屏蔽了，搜索侧还没有
