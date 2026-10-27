@@ -1,7 +1,8 @@
 // Dev-only component preview / playbook. Renders real components with mock data so we can
 // screenshot and verify visual changes without a logged-in backend. Add cases as needed.
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 
+import { FilterPreviewResult } from '@/components/filters/FilterPreviewResult';
 import { ItemDetailPane } from '@/components/timeline/ItemDetailPane';
 import { LinkPreviewCard } from '@/components/timeline/LinkPreviewCard';
 import { TimelineDayGroup } from '@/components/timeline/TimelineDayGroup';
@@ -12,7 +13,7 @@ import { useUnreadIndicator } from '@/lib/unreadIndicator';
 import { listenToBridge } from '@/lib/vibeReader';
 import type { XVerdictMeta } from '@/lib/types';
 
-import { CHANNEL_ID, channelLabels, dayItems, samplePreviews } from './mocks';
+import { CHANNEL_ID, channelLabels, dayItems, sampleFilterPreview, samplePreviews } from './mocks';
 
 // The ensemble meta shape (plan v2 step 4) — mirrors a real vote-v1 row.
 const ensembleMeta: XVerdictMeta = {
@@ -69,6 +70,8 @@ export function PreviewApp() {
   // show the status badges too: post `{ns:'vibe-reader', v:1, type:'vibe-reader:hello',
   // linked:true}` and then `vibe-reader:status` messages from the console / eval.
   useEffect(() => listenToBridge(), []);
+  // Stands in for the create dialog's keyword input, so "Use arc*" shows what it picked.
+  const [filterKeyword, setFilterKeyword] = useState('arc');
   return (
     <ItemDetailPaneProvider>
       <div className="min-h-dvh bg-background text-foreground">
@@ -89,6 +92,20 @@ export function PreviewApp() {
           {samplePreviews.map((p, i) => (
             <LinkPreviewCard key={i} channelId={CHANNEL_ID} preview={p} />
           ))}
+        </div>
+
+        {/* FilterPreviewResult — the create-filter preview: server highlights + near-miss hint. */}
+        <div className="mx-auto mt-6 max-w-md space-y-3 border-t px-4 py-4">
+          <p className="text-xs font-semibold text-muted-foreground">
+            FilterPreviewResult (keyword: <code>{filterKeyword}</code>)
+          </p>
+          <FilterPreviewResult
+            scope="global"
+            isPending={false}
+            error={null}
+            result={sampleFilterPreview}
+            onUseSuggestion={setFilterKeyword}
+          />
         </div>
       </div>
       <ItemDetailPane />

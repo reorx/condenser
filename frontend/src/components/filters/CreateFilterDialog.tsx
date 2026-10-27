@@ -77,7 +77,9 @@ export function CreateFilterDialog({ open, onOpenChange }: CreateFilterDialogPro
         <DialogHeader>
           <DialogTitle>Create filter</DialogTitle>
           <DialogDescription>
-            Exclude messages whose text contains the keyword (case-insensitive substring).
+            Hide messages that mention the keyword (case-insensitive). English and other spaced words match
+            whole words only; Chinese, Japanese and Korean match anywhere. Add * to match inside words: arc* also
+            hides archive.
           </DialogDescription>
         </DialogHeader>
 
@@ -116,7 +118,7 @@ export function CreateFilterDialog({ open, onOpenChange }: CreateFilterDialogPro
               <Input
                 value={pattern}
                 onChange={(e) => setPattern(e.target.value)}
-                placeholder="e.g. promo"
+                placeholder="e.g. promo, arc*, 广告"
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') {
                     e.preventDefault();
@@ -140,7 +142,7 @@ export function CreateFilterDialog({ open, onOpenChange }: CreateFilterDialogPro
             isPending={previewMut.isPending}
             error={previewMut.error ? errorMessage(previewMut.error, 'Preview failed') : null}
             result={preview}
-            pattern={pattern.trim()}
+            onUseSuggestion={setPattern}
           />
         </div>
 

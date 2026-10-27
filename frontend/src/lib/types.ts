@@ -592,13 +592,29 @@ export interface FilterPreviewSample {
   message_id: number;
   channel_title: string | null;
   date: string;
+  /** Up to 300 code points of the message, prefixed with `…` when the window skips its head. */
   text: string;
+  /** `[start, end)` hit ranges in Unicode code points of `text` (not UTF-16 units). */
+  highlights: [number, number][];
+}
+
+/** Messages the keyword only appears inside a longer word in, so the rule leaves them visible. */
+export interface FilterNearMisses {
+  count: number;
+  /** The keyword with its `*` stripped. */
+  core: string;
+  /** The longer word from the first such message, original case. */
+  example: string;
+  /** The keyword widened with `*` toward the side(s) the example extends. */
+  suggestion: string;
 }
 
 export interface FilterPreviewResult {
   scanned: number;
   matched: number;
   samples: FilterPreviewSample[];
+  /** null when no message is a near miss or both ends are already widened. */
+  near_misses: FilterNearMisses | null;
 }
 
 export interface TimelinePage {

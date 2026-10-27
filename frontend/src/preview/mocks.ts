@@ -1,6 +1,14 @@
 // Mock data for the component preview page (`/preview.html`, dev-only). Lets us render
 // real components with deterministic data and screenshot them to verify visual changes.
-import type { DisplayMessage, HnStory, LinkPreview, RssEntry, TimelineItem, XTweet } from '@/lib/types';
+import type {
+  DisplayMessage,
+  FilterPreviewResult,
+  HnStory,
+  LinkPreview,
+  RssEntry,
+  TimelineItem,
+  XTweet,
+} from '@/lib/types';
 
 export const CHANNEL_ID = 1833253016;
 
@@ -366,3 +374,31 @@ export const dayItems: TimelineItem[] = [
     { is_read: true },
   ),
 ];
+
+/** A `arc` preview: code-point highlights (one after an emoji, one in a windowed excerpt) plus a near-miss hint. */
+export const sampleFilterPreview: FilterPreviewResult = {
+  scanned: 1000,
+  matched: 2,
+  samples: [
+    {
+      channel_id: CHANNEL_ID,
+      message_id: 9001,
+      channel_title: 'yihong0618 和朋友们的频道',
+      date: '2026-10-25T03:12:00+00:00',
+      text: '😀 拥抱 AI 的 Arc 浏览器，顺手整理了 harrychen.xyz/archive/ 里的旧文。',
+      highlights: [[10, 13]],
+    },
+    {
+      channel_id: CHANNEL_ID,
+      message_id: 9002,
+      channel_title: 'yihong0618 和朋友们的频道',
+      date: '2026-10-24T09:40:00+00:00',
+      text: '…书签同步终于修好了。我觉得arc是垃圾，但它的 Spaces 还是比 Safari 的标签组好用，arc.net 上的更新日志写得很清楚。',
+      highlights: [
+        [14, 17],
+        [50, 53],
+      ],
+    },
+  ],
+  near_misses: { count: 76, core: 'arc', example: 'archives', suggestion: 'arc*' },
+};

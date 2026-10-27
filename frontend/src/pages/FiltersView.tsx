@@ -57,7 +57,7 @@ export function FiltersView() {
         <div>
           <h1 className="text-base font-semibold tracking-tight">Filters</h1>
           <p className="mt-0.5 text-xs text-muted-foreground">
-            Exclude messages by keyword — globally or per channel (case-insensitive substring).
+            Exclude messages by keyword — globally or per channel (whole words; * to widen).
           </p>
         </div>
         <Button size="sm" className="shrink-0" onClick={() => setCreateOpen(true)}>

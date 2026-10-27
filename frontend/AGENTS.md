@@ -115,8 +115,8 @@ module's reasoning lives in its docstring and inline comments; read them before 
 | `CreateFilterDialog` | Create a keyword filter: scope, channel, keyword, live preview |
 | `ScopeOption` | A selectable scope card (Global / Single channel) |
 | `ChannelPicker` + `ChannelPickerOption` | Searchable single-channel selector / one row in it |
-| `FilterPreviewResult` + `FilterPreviewSample` | Preview panel (loading / error / summary + samples) / one matched sample |
-| `HighlightedText` | Wraps case-insensitive keyword hits in `<mark>` |
+| `FilterPreviewResult` + `FilterPreviewSample` | Preview panel (loading / error / summary, near-miss hint with a `Use arc*` rewrite of the keyword, samples) / one matched sample |
+| `HighlightedText` | Wraps the server's code-point hit ranges in `<mark>`; never matches on its own |
 | `FilterGroupSection` + `FilterGroup` type | One scope section on the Filters page; the type is used by `FiltersView.groupFilters` |
 | `FilterKeywordChip` | One removable keyword pill |
 
