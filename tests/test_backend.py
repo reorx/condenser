@@ -1162,11 +1162,14 @@ def test_filter_rejects_empty_stars_and_strips_created_pattern(env):
             for endpoint in ('/api/filters', '/api/filters/preview'):
                 response = client.post(endpoint, json={'pattern': pattern})
                 assert response.status_code == 422
-                assert response.json()['detail'] == 'keyword is empty'
+                assert response.json()['detail'] == 'Keyword is empty — * alone matches nothing'
         assert client.post('/api/filters', json={'pattern': '  '}).status_code == 422
         assert client.get('/api/filters').json() == []
         assert client.post('/api/filters/preview', json={'pattern': '  '}).json() == {
-            'scanned': 0, 'matched': 0, 'samples': [], 'near_misses': None,
+            'scanned': 0,
+            'matched': 0,
+            'samples': [],
+            'near_misses': None,
         }
         assert client.post('/api/filters', json={'pattern': ' arc* '}).json()['pattern'] == 'arc*'
 
@@ -1176,11 +1179,13 @@ def test_filter_preview_highlights_and_near_misses(env):
         _login(client)
         seed_channel(1, 'Tech')
         db.add_subscription(1)
-        seed_messages([
-            md(1, 1, 1, text='😀 Arc archive arc'),
-            md(1, 2, 2, text='archives archives'),
-            md(1, 3, 0, text='quietsearch'),
-        ])
+        seed_messages(
+            [
+                md(1, 1, 1, text='😀 Arc archive arc'),
+                md(1, 2, 2, text='archives archives'),
+                md(1, 3, 0, text='quietsearch'),
+            ]
+        )
         result = client.post('/api/filters/preview', json={'pattern': 'arc'}).json()
         assert result['scanned'] == 3 and result['matched'] == 1
         assert result['samples'][0]['highlights'] == [[2, 5], [14, 17]]
@@ -1191,7 +1196,10 @@ def test_filter_preview_highlights_and_near_misses(env):
         assert prefix['near_misses'] == {'count': 1, 'core': 'arc', 'example': 'quietsearch', 'suggestion': '*arc*'}
         assert client.post('/api/filters/preview', json={'pattern': 'none'}).json()['near_misses'] is None
         assert client.post('/api/filters/preview', json={'pattern': 'arc', 'channel_id': 999}).json() == {
-            'scanned': 0, 'matched': 0, 'samples': [], 'near_misses': None,
+            'scanned': 0,
+            'matched': 0,
+            'samples': [],
+            'near_misses': None,
         }
 
 

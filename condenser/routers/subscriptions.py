@@ -105,7 +105,7 @@ def list_all_filters():
 @router.post('/filters')
 def create_filter(body: FilterScopeBody):
     if filters.parse_rule(body.pattern) is None:
-        raise HTTPException(status_code=422, detail='keyword is empty')
+        raise HTTPException(status_code=422, detail='Keyword is empty — * alone matches nothing')
     f = db.add_filter(body.channel_id, body.pattern.strip())
     filters.recompute_for_rule_change(body.channel_id)
     title = None
@@ -123,7 +123,7 @@ def preview_filter(body: FilterScopeBody):
 
     parsed = filters.parse_rule(pattern)
     if parsed is None:
-        raise HTTPException(status_code=422, detail='keyword is empty')
+        raise HTTPException(status_code=422, detail='Keyword is empty — * alone matches nothing')
     matcher = filters.compile_rules([pattern])
 
     if body.channel_id is None:
@@ -149,16 +149,20 @@ def preview_filter(body: FilterScopeBody):
     samples = []
     for cid, mid, date, text in sample_rows:
         excerpt, highlights = _excerpt(text, filters.match_spans(text, matcher))
-        samples.append({
-            'channel_id': cid,
-            'message_id': mid,
-            'channel_title': titles.get(cid),
-            'date': date,
-            'text': excerpt,
-            'highlights': highlights,
-        })
+        samples.append(
+            {
+                'channel_id': cid,
+                'message_id': mid,
+                'channel_title': titles.get(cid),
+                'date': date,
+                'text': excerpt,
+                'highlights': highlights,
+            }
+        )
     return {
-        'scanned': len(rows), 'matched': len(matched), 'samples': samples,
+        'scanned': len(rows),
+        'matched': len(matched),
+        'samples': samples,
         'near_misses': _near_misses(rows, matcher, parsed),
     }
 
@@ -172,7 +176,8 @@ def _excerpt(text: str, spans: list[tuple[int, int]]) -> tuple[str, list[tuple[i
     prefix = '…' if start else ''
     highlights = [
         (max(left, start) - start + len(prefix), min(right, end) - start + len(prefix))
-        for left, right in spans if left < end and right > start
+        for left, right in spans
+        if left < end and right > start
     ]
     return prefix + text[start:end], highlights
 
@@ -184,8 +189,7 @@ def _near_misses(rows, matcher, parsed: tuple[str, bool, bool]) -> Optional[dict
     if filters.rule_regex(*parsed) == loose_regex:
         return None
     loose = filters.compile_rules(['*' + core + '*'])
-    misses = [r for r in rows if not filters.text_is_filtered(r[3], matcher)
-              and filters.text_is_filtered(r[3], loose)]
+    misses = [r for r in rows if not filters.text_is_filtered(r[3], matcher) and filters.text_is_filtered(r[3], loose)]
     if not misses:
         return None
     example, suggestion = filters.near_miss_example(misses[0][3], core, open_start, open_end)
