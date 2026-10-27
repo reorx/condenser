@@ -39,6 +39,7 @@ from typing import Iterable, Optional
 from telememo import db as tdb
 
 from .items import norm_ts
+from .text import CJK_RANGES
 
 log = logging.getLogger('condenser.search')
 
@@ -59,16 +60,11 @@ VERSION_META_KEY = 'search_index_version'
 # thinks to check.
 TOKENIZER_VERSION = 5
 
-# CJK ideographs (including extension A), kana and hangul — the same ranges
-# ngram.py uses, so the project has one definition of "CJK" even though the two
-# tokenizers serve opposite goals (that one throws away noise, this one keeps it).
-_CJK_RANGES = '㐀-鿿぀-ヿ가-힯'
-
 # One pass, in document order. The word branch excludes CJK explicitly: without
 # that, a greedy `\w+` would swallow "abc中文" whole and the bigrams would never
 # be built. `_` is dropped on both branches because unicode61 treats it as a
 # separator, and the two tokenizers have to agree on what a token is.
-_RUN_RE = re.compile(f'(?P<cjk>[{_CJK_RANGES}]+)|(?P<word>[^\\W_{_CJK_RANGES}]+)')
+_RUN_RE = re.compile(f'(?P<cjk>[{CJK_RANGES}]+)|(?P<word>[^\\W_{CJK_RANGES}]+)')
 
 # Set by setup(); every entry point checks it, so an environment without FTS5
 # degrades to "search returns 503" instead of failing ingest.

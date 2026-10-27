@@ -616,6 +616,9 @@ def init_db(db_path: str, vector_dims: int = 256) -> None:
     vectors.setup(vector_dims)
     search.setup()
     search.ensure_index()
+    from . import filters  # deferred: filters imports this module
+
+    filters.ensure_materialized()
 
 
 def _migrate_subscriptions_v3() -> None:
@@ -981,6 +984,11 @@ def set_backfill_done(channel_id: int, done: bool = True) -> None:
 
 def delete_subscription(channel_id: int) -> None:
     Subscription.delete().where(_TG & (Subscription.channel_id == channel_id)).execute()
+
+
+def message_channel_ids() -> list[int]:
+    """All archived Telegram channels, including paused and unsubscribed ones."""
+    return [row[0] for row in tdb.db.execute_sql('SELECT DISTINCT channel_id FROM messages')]
 
 
 def enabled_channel_ids() -> list[int]:

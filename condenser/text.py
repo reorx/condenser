@@ -13,6 +13,10 @@ import html
 import re
 from typing import Optional
 
+# Shared search/filter ranges: ideographs (including extension A), kana, hangul.
+# Extension B+ and half-width kana remain outside this historical definition.
+CJK_RANGES = '㐀-鿿぀-ヿ가-힯'
+
 # How much of an article the list payload carries. Sized against what the cards
 # actually show: web clamps at five lines, iOS at three-to-eight, and both want
 # enough left over that the clamp has something to hide. Bigger buys nothing a

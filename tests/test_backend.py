@@ -174,7 +174,7 @@ def test_timeline_includes_webpage_preview(env):
         assert next(t for t in tgs if t['id'] == 10)['webpage'] is None
 
 
-def test_filter_is_case_insensitive_substring(env):
+def test_filter_latin_keyword_matches_next_to_cjk(env):
     with _client() as client:
         _login(client)
         seed_channel(1, 'C')
@@ -209,7 +209,7 @@ def test_global_filter_create_list_and_preview(env):
 
         # Empty pattern short-circuits to a zero result without scanning.
         empty = client.post('/api/filters/preview', json={'pattern': '   '}).json()
-        assert empty == {'scanned': 0, 'matched': 0, 'samples': []}
+        assert empty == {'scanned': 0, 'matched': 0, 'samples': [], 'near_misses': None}
 
         # Create a global rule (channel_id omitted) and confirm both channels recompute.
         created = client.post('/api/filters', json={'pattern': 'pizza'}).json()
@@ -1153,3 +1153,68 @@ def test_enrich_channel_fills_member_count_and_description(env):
 
         sub = client.get('/api/subscriptions').json()[0]
         assert sub['member_count'] == 4200 and sub['description'] == 'Daily tech digest'
+
+
+def test_filter_rejects_empty_stars_and_strips_created_pattern(env):
+    with _client() as client:
+        _login(client)
+        for pattern in ('*', '**', ' *  * '):
+            for endpoint in ('/api/filters', '/api/filters/preview'):
+                response = client.post(endpoint, json={'pattern': pattern})
+                assert response.status_code == 422
+                assert response.json()['detail'] == 'keyword is empty'
+        assert client.post('/api/filters', json={'pattern': '  '}).status_code == 422
+        assert client.get('/api/filters').json() == []
+        assert client.post('/api/filters/preview', json={'pattern': '  '}).json() == {
+            'scanned': 0, 'matched': 0, 'samples': [], 'near_misses': None,
+        }
+        assert client.post('/api/filters', json={'pattern': ' arc* '}).json()['pattern'] == 'arc*'
+
+
+def test_filter_preview_highlights_and_near_misses(env):
+    with _client() as client:
+        _login(client)
+        seed_channel(1, 'Tech')
+        db.add_subscription(1)
+        seed_messages([
+            md(1, 1, 1, text='😀 Arc archive arc'),
+            md(1, 2, 2, text='archives archives'),
+            md(1, 3, 0, text='quietsearch'),
+        ])
+        result = client.post('/api/filters/preview', json={'pattern': 'arc'}).json()
+        assert result['scanned'] == 3 and result['matched'] == 1
+        assert result['samples'][0]['highlights'] == [[2, 5], [14, 17]]
+        assert result['near_misses'] == {'count': 2, 'core': 'arc', 'example': 'archives', 'suggestion': 'arc*'}
+        wide = client.post('/api/filters/preview', json={'pattern': '*arc*'}).json()
+        assert wide['matched'] == 3 and wide['near_misses'] is None
+        prefix = client.post('/api/filters/preview', json={'pattern': 'arc*'}).json()
+        assert prefix['near_misses'] == {'count': 1, 'core': 'arc', 'example': 'quietsearch', 'suggestion': '*arc*'}
+        assert client.post('/api/filters/preview', json={'pattern': 'none'}).json()['near_misses'] is None
+        assert client.post('/api/filters/preview', json={'pattern': 'arc', 'channel_id': 999}).json() == {
+            'scanned': 0, 'matched': 0, 'samples': [], 'near_misses': None,
+        }
+
+
+def test_filter_preview_long_message_window(env):
+    with _client() as client:
+        _login(client)
+        seed_channel(1, 'Tech')
+        text = '😀' * 400 + 'Arc ' + 'x' * 400
+        seed_messages([md(1, 1, 1, text=text)])
+        result = client.post('/api/filters/preview', json={'pattern': 'arc', 'channel_id': 1}).json()
+        sample = result['samples'][0]
+        assert sample['text'] == '…' + text[340:640]
+        assert sample['highlights'] == [[61, 64]]
+        assert sample['text'][61:64] == 'Arc'
+
+
+def test_filter_excerpt_clips_highlights_to_window():
+    from condenser.routers.subscriptions import _excerpt
+
+    assert _excerpt('arc', [(0, 3)]) == ('arc', [(0, 3)])
+    text, spans = _excerpt('x' * 800, [(290, 310), (630, 650)])
+    assert text == '…' + 'x' * 300
+    assert spans == [(61, 81)]
+    text, spans = _excerpt('x' * 800, [(0, 3), (295, 310), (400, 403)])
+    assert len(text) == 300
+    assert spans == [(0, 3), (295, 300)]

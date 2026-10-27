@@ -1,5 +1,6 @@
 ---
 created: 2026-08-21
+updated: 2026-10-27
 tags:
   - database
   - sqlite
@@ -67,7 +68,9 @@ Virtual tables (`x_vec_labeled`, `search_index`) are created with raw SQL in `in
   backfill cannot leave the shape check satisfied but the data missing.
 - **Rebuildable caches never migrate**: `is_filtered`, `x_embeddings`, `x_attributes`,
   `x_tweets.urls`, `search_index`. The source of truth is still in the archive; a rule
-  change re-derives rather than migrates.
+  change re-derives rather than migrates. `is_filtered` is recomputed across all
+  archived channels when `filters.MATCHER_VERSION` changes; `init_db` records
+  `app_meta.keyword_filter_matcher_version` only after the rebuild completes.
 - **Identity tags instead of migrations** for derived data: vectors are comparable
   within `model_tag` = `name@dims`, attributes within `model@TAXONOMY_VERSION`, the
   search index within the integer `TOKENIZER_VERSION`. Change the identity → re-embed /

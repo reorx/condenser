@@ -21,6 +21,7 @@ from ..types import (
 PREVIEW_SCAN_LIMIT = 1000
 PREVIEW_SAMPLE_LIMIT = 20
 PREVIEW_TEXT_TRUNCATE = 300
+PREVIEW_CONTEXT = 60
 
 router = APIRouter(prefix='/api', tags=['subscriptions'], dependencies=[Depends(require_auth)])
 
@@ -103,7 +104,9 @@ def list_all_filters():
 
 @router.post('/filters')
 def create_filter(body: FilterScopeBody):
-    f = db.add_filter(body.channel_id, body.pattern)
+    if filters.parse_rule(body.pattern) is None:
+        raise HTTPException(status_code=422, detail='keyword is empty')
+    f = db.add_filter(body.channel_id, body.pattern.strip())
     filters.recompute_for_rule_change(body.channel_id)
     title = None
     if body.channel_id is not None:
@@ -116,12 +119,17 @@ def create_filter(body: FilterScopeBody):
 def preview_filter(body: FilterScopeBody):
     pattern = body.pattern.strip()
     if not pattern:
-        return {'scanned': 0, 'matched': 0, 'samples': []}
+        return {'scanned': 0, 'matched': 0, 'samples': [], 'near_misses': None}
+
+    parsed = filters.parse_rule(pattern)
+    if parsed is None:
+        raise HTTPException(status_code=422, detail='keyword is empty')
+    matcher = filters.compile_rules([pattern])
 
     if body.channel_id is None:
         cids = db.enabled_channel_ids()
         if not cids:
-            return {'scanned': 0, 'matched': 0, 'samples': []}
+            return {'scanned': 0, 'matched': 0, 'samples': [], 'near_misses': None}
         placeholders = ','.join('?' for _ in cids)
         sql = (
             f'SELECT m.channel_id, m.id, m.date, m.text FROM messages m '
@@ -134,22 +142,54 @@ def preview_filter(body: FilterScopeBody):
 
     rows = tdb.db.execute_sql(sql, params).fetchall()
     # Reuse the live matcher so preview semantics track materialization exactly.
-    patterns = [pattern.lower()]
-    matched = [r for r in rows if filters.text_is_filtered(r[3], patterns)]
+    matched = [r for r in rows if filters.text_is_filtered(r[3], matcher)]
 
     sample_rows = matched[:PREVIEW_SAMPLE_LIMIT]
     titles = _channel_titles({r[0] for r in sample_rows})
-    samples = [
-        {
+    samples = []
+    for cid, mid, date, text in sample_rows:
+        excerpt, highlights = _excerpt(text, filters.match_spans(text, matcher))
+        samples.append({
             'channel_id': cid,
             'message_id': mid,
             'channel_title': titles.get(cid),
             'date': date,
-            'text': (text or '')[:PREVIEW_TEXT_TRUNCATE],
-        }
-        for (cid, mid, date, text) in sample_rows
+            'text': excerpt,
+            'highlights': highlights,
+        })
+    return {
+        'scanned': len(rows), 'matched': len(matched), 'samples': samples,
+        'near_misses': _near_misses(rows, matcher, parsed),
+    }
+
+
+def _excerpt(text: str, spans: list[tuple[int, int]]) -> tuple[str, list[tuple[int, int]]]:
+    """Window around the first hit, translating/clipping codepoint ranges."""
+    start = 0
+    if spans and spans[0][1] > PREVIEW_TEXT_TRUNCATE:
+        start = max(0, spans[0][0] - PREVIEW_CONTEXT)
+    end = start + PREVIEW_TEXT_TRUNCATE
+    prefix = '…' if start else ''
+    highlights = [
+        (max(left, start) - start + len(prefix), min(right, end) - start + len(prefix))
+        for left, right in spans if left < end and right > start
     ]
-    return {'scanned': len(rows), 'matched': len(matched), 'samples': samples}
+    return prefix + text[start:end], highlights
+
+
+def _near_misses(rows, matcher, parsed: tuple[str, bool, bool]) -> Optional[dict]:
+    core, open_start, open_end = parsed
+    # A punctuation/CJK endpoint is already unrestricted, with or without a star.
+    loose_regex = filters.rule_regex(core, True, True)
+    if filters.rule_regex(*parsed) == loose_regex:
+        return None
+    loose = filters.compile_rules(['*' + core + '*'])
+    misses = [r for r in rows if not filters.text_is_filtered(r[3], matcher)
+              and filters.text_is_filtered(r[3], loose)]
+    if not misses:
+        return None
+    example, suggestion = filters.near_miss_example(misses[0][3], core, open_start, open_end)
+    return {'count': len(misses), 'core': core, 'example': example, 'suggestion': suggestion}
 
 
 @router.delete('/filters/{filter_id}')
