@@ -139,14 +139,13 @@ struct HnDetailSheet: View {
     }
 
     private var actions: some View {
-        ItemActionRow {
-            ItemActionButtons(item: item, onToggleSaved: onToggleSaved)
+        ItemActionBar(item: item, shareCard: ShareCard.build(item: item), onToggleSaved: onToggleSaved) {
             if let url = story.externalURL {
                 Button {
                     open(url)
                 } label: {
                     Label("打开原文", systemImage: "safari")
-                        .readingFont(.footnote)
+                        .actionTextLabel()
                 }
                 .buttonStyle(.bordered)
             }
@@ -154,10 +153,9 @@ struct HnDetailSheet: View {
                 open(story.commentsURL)
             } label: {
                 Label("HN 评论", systemImage: "bubble.left.and.bubble.right")
-                    .readingFont(.footnote)
+                    .actionTextLabel()
             }
             .buttonStyle(.bordered)
-            ShareImageButton(card: ShareCard.build(item: item))
         }
     }
 }

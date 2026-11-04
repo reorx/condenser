@@ -115,8 +115,19 @@ struct MessageDetailSheet: View {
     }
 
     private var actions: some View {
-        ItemActionRow {
-            ItemActionButtons(item: item, onToggleSaved: onToggleSaved)
+        ItemActionBar(
+            item: item,
+            shareCard: ShareCard.build(item: item, channelTitle: reader.channelTitle(for: message)),
+            onToggleSaved: onToggleSaved
+        ) {
+            if let username = reader.channelUsername(for: message),
+               let url = URL(string: "https://t.me/\(username)/\(message.id)") {
+                Link(destination: url) {
+                    Label("在 Telegram 打开", systemImage: "paperplane")
+                        .actionTextLabel()
+                }
+                .buttonStyle(.bordered)
+            }
             if let text = message.text, !text.isEmpty {
                 Button {
                     UIPasteboard.general.string = text
@@ -128,23 +139,13 @@ struct MessageDetailSheet: View {
                 } label: {
                     Label(copied ? "已复制" : "复制全文",
                           systemImage: copied ? "checkmark" : "doc.on.doc")
-                        .readingFont(.footnote)
+                        .actionTextLabel()
                 }
                 .buttonStyle(.bordered)
                 .tint(copied ? .green : nil)
+                .sensoryFeedback(.success, trigger: copied) { _, new in new }
             }
-            if let username = reader.channelUsername(for: message),
-               let url = URL(string: "https://t.me/\(username)/\(message.id)") {
-                Link(destination: url) {
-                    Label("在 Telegram 打开", systemImage: "paperplane")
-                        .readingFont(.footnote)
-                }
-                .buttonStyle(.bordered)
-            }
-            ShareImageButton(card: ShareCard.build(
-                item: item, channelTitle: reader.channelTitle(for: message)))
         }
-        .sensoryFeedback(.success, trigger: copied) { _, new in new }
     }
 
     private func aspectRatio(_ item: MediaItem) -> CGFloat {

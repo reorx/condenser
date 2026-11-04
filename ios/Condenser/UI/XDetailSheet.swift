@@ -285,14 +285,13 @@ struct XDetailSheet: View {
     }
 
     private var actions: some View {
-        ItemActionRow {
-            ItemActionButtons(item: item, onToggleSaved: onToggleSaved)
+        ItemActionBar(item: item, shareCard: shareCard, onToggleSaved: onToggleSaved) {
             // 装了 X app 就直接进 app（那里才点得了赞、回得了复），没装才回落 Safari
             Button {
                 open(tweet.tweetURL)
             } label: {
                 Label("在 X 上打开", systemImage: "arrow.up.forward.app")
-                    .readingFont(.footnote)
+                    .actionTextLabel()
             }
             .buttonStyle(.bordered)
             if let profile = tweet.profileURL {
@@ -300,11 +299,10 @@ struct XDetailSheet: View {
                     open(profile)
                 } label: {
                     Label("作者主页", systemImage: "person")
-                        .readingFont(.footnote)
+                        .actionTextLabel()
                 }
                 .buttonStyle(.bordered)
             }
-            ShareImageButton(card: shareCard)
         }
     }
 

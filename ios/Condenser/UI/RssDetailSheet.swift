@@ -154,18 +154,16 @@ struct RssDetailSheet: View {
     }
 
     private var actions: some View {
-        ItemActionRow {
-            ItemActionButtons(item: item, onToggleSaved: onToggleSaved)
+        ItemActionBar(item: item, shareCard: shareCard, onToggleSaved: onToggleSaved) {
             if let url = entry.articleURL {
                 Button {
                     open(url)
                 } label: {
                     Label("打开原文", systemImage: "safari")
-                        .readingFont(.footnote)
+                        .actionTextLabel()
                 }
                 .buttonStyle(.bordered)
             }
-            ShareImageButton(card: shareCard)
         }
     }
 

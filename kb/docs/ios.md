@@ -1,6 +1,6 @@
 ---
 created: 2026-08-21
-updated: 2026-10-13
+updated: 2026-11-04
 tags:
   - ios
   - swiftui
@@ -8,6 +8,19 @@ tags:
 ---
 
 # iOS app (`ios/`, monorepo)
+
+## 详情底部动作区（2026-11-04）
+
+四个信源的详情共用 `ItemActionBar`，按钮保留灰底 bordered 样式，分两行等分可用宽度，
+无需横向滚动。上行是带文字的信源专有动作：X 的「在 X 上打开 / 作者主页」、HN 的
+「打开原文 / HN 评论」、Telegram 的「在 Telegram 打开 / 复制全文」、RSS 的「打开原文」。
+这些动作随信源变化，文字帮助识别；X 的打开入口排在最前。HN self-post 只有「HN 评论」，
+占满上行；RSS 没有文章链接时省去整个上行及行间距。
+
+下行依次为收藏、评论、转发、复制链接、分享图片。通用动作易于辨认，统一只显示图标，
+保留 Label 文字供 VoiceOver 读出，并提供 Mac 悬停提示。没有可用链接时仍省去复制链接按钮。
+已收藏显示橙色实心星，有评论显示靛蓝实心气泡，复制成功短暂显示绿色对勾并提供触感反馈。
+两行标签均走 `readingFont`，跟随 Mac 阅读字号设置。
 
 ## 复制原始链接（2026-10-11）
 
@@ -169,7 +182,7 @@ shipped client that meets an unknown `source` renders a blank row (the X Phase 2
 
 ## 分享图片（2026-08-23，四个源）
 
-四个详情抽屉的 `ItemActionRow` 行尾多一个「分享图片」：把这条内容渲成一张长图，交给系统
+四个详情抽屉的 `ItemActionBar` 下行末尾提供「分享图片」图标：把这条内容渲成一张长图，交给系统
 分享面板。截屏只截得到一屏，长文分享出去总是半截；而这个 app 连的是自托管实例，链接对外
 没有意义——图是唯一能把一条完整内容原样递给别人的形态。计划与 grilling 结论：
 `kb/plans/2026-08-23-ios-share-image.md`。
@@ -208,7 +221,7 @@ shipped client that meets an unknown `source` renders a blank row (the X Phase 2
 - Info.plist 多了 `NSPhotoLibraryAddUsageDescription`——分享面板里的「存储图像」缺了它会
   直接崩。**下个 build 提审会看到这条新权限声明**，只写入不读取。
 - 走查入口：`SIMCTL_CHILD_CONDENSER_DEBUG_SHARE=1` 配合 `detail/...` 路由，抽屉一出现就
-  自动按那个按钮（动作行是横向滚动的，分享按钮排在行尾，而模拟器窗口收不到合成手势）。
+  自动按那个按钮（模拟器窗口收不到合成手势）。
   它的 `.task` 必须带 `id: card?.key`——RSS 的 card 要等全文到手才从 nil 变出来，而 task
   闭包捕获的是**当时那个** struct 实例的 card（踩过）。
 

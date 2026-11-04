@@ -32,7 +32,8 @@ TG/HN），订阅 tab 的 X 分组行是它唯一入口 → `XFeedTimelineScreen
 x.com 不给 Telegram 供 embed，fixupx 给，作者/正文/图/引用推全在预览卡里）。三个 detail sheet 的
 **收藏星标从 header 挪到底部动作行**，和新加的「转发」并排——两件事都是「对这条做点
 什么」，摆在一起才好按；共用组件是 `ItemActionButtons`（收藏 + 评论 + 转发 + 复制链接）与
-`ItemActionRow`（放不下就横向滚动，四个中文按钮在窄屏上会溢出）。
+`ItemActionBar`（上行等分展示带字的信源专有动作，下行等分展示通用图标动作与分享图片；
+上行为空时连同间距一起省去，图标保留读屏文字与 Mac 悬停提示）。
 「复制链接」使用 Kit `TimelineItem.originalURL`：Telegram 消息链接、X 原始 x.com 链接、
 HN / RSS 原文链接，不走转发域名或阅读代理。详见 `../kb/docs/ios.md`「复制原始链接」。
 `ForwardDialog` 收 `itemKey` + `isTelegram`，后者只影响留空时的文案（「原样转发」
@@ -411,8 +412,8 @@ sheet / 全屏图片浏览器（消息须在 timeline 首页内，路由会等�
 `detail/rss[/<条目 id>]` 弹条目详情——同样单独查，而且要**翻页**（最多 8 页）：
 归档按时间倒序，值得看的怪例（中文长文、缺字段的）都排在两百多位；
 省略 id 时挑第一条有正文的；
-再加 `CONDENSER_DEBUG_SHARE=1` 则抽屉一出现就自动按「分享图片」——动作行是横向滚动的，
-那个按钮排在行尾，模拟器窗口收不到合成手势；产物在 app 容器的 `tmp/`
+再加 `CONDENSER_DEBUG_SHARE=1` 则抽屉一出现就自动按「分享图片」——模拟器窗口收不到
+合成手势；产物在 app 容器的 `tmp/`
 （`xcrun simctl get_app_container booted com.reorx.condenser data`）；
 `forward/<item key>[/<comment>]` 直接弹转发 dialog（条目不必在首页内，只用 key，
 例如 `forward/tg:-1001:123` / `forward/hn:44123` / `forward/x:2080…`；带第 3 段
