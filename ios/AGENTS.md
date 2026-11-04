@@ -213,6 +213,10 @@ make clean       # 清理构建产物与生成的 xcodeproj
 - 默认模拟器设备由 Makefile 的 `SIM` 变量指定，覆盖：`make run SIM="iPhone 17 Pro"`
 - 跑单个测试：`cd CondenserKit && swift test --filter <测试名>`
 - 改了 `project.yml` 后必须 `make gen`（`make build` 已包含）
+- 改了返回 `some View` 的函数、让它的底层类型变了（比如外面套一层 `ViewThatFits`）之后，
+  增量构建只重编这一个文件，调用方的 `.o` 还按旧类型取返回值，运行时在调用处
+  `EXC_BAD_ACCESS`，崩溃栈只有一帧、指向调用那一行。这类改动走查前先 `make clean`
+  （2026-11-04 踩过：`actionTextLabel()` 改完，HN 详情一打开就崩，X / Telegram 却正常）
 - 模拟器构建无需签名（ad-hoc）；真机签名参数由 `scripts/device.sh` 在 xcodebuild
   命令行覆盖（`CODE_SIGN_STYLE=Automatic` + `DEVELOPMENT_TEAM`），不改 project.yml
 

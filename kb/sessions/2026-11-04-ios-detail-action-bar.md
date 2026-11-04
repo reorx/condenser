@@ -40,9 +40,28 @@ DEBUG 详情路由不会切回 Timeline tab，设置页验完字号后要先回 
 首次加载可能停在旧快照，Telegram 调试路由又只在当前列表里找条目，走查时应先备份缓存再用本地库加载。
 分享图在模拟器容器的 `tmp/` 中；Mac 的 DEBUG 分享未用于证明出图成功。
 
+## 返工：最大字号下上行截断（验收 #1 之后）
+
+验收 #1 判 FAIL 的唯一一项：iPhone 17 阅读字号调到最大档「大」（footnote 17pt）时，
+「在 Telegram 打开」被 `lineLimit(1)` 截成「在 Telegram...」。原因是上行按钮固定为半行宽，
+图标加文字超出了宽度。执行时只在 Mac 上检查了最大档（16pt），刚好放得下。
+
+改动：`actionTextLabel()` 改用 `ViewThatFits`，先试图标加文字，放不下就只留文字，
+最后一档再加 `minimumScaleFactor(0.8)` 兜底，四个信源的上行都由它统一处理。
+
+验证（`tmp/2026-11-04-ios-detail-action-bar-rework/`）：
+- `make clean` 后 `make build`、`make build-mac` 均通过。
+- iPhone 17（402pt）和新建的 iPhone SE 第 3 代（375pt，验完已删）在「正常 / 略大 / 大」三档下
+  拍了 Telegram 上行（`telegram-fontscale-both.png`）：前两档保留图标，「大」档去掉图标、
+  文字完整、字号不变，两行仍然等分。验收推测 SE 在「略大」档会截断，实测没有。
+- 最大档下 HN 有外链（iPhone 17）、HN self-post、RSS 有链接和无链接（SE）都正常。
+  X 的上行在 iPhone 上被判定卡片挤到 medium 档以下，没拍到；它的标签比 Telegram 短。
+- 第一次复测时 HN 详情一打开就崩，原因是增量构建没有重编调用方（见 `ios/AGENTS.md` 的构建说明），
+  `make clean` 后消失。崩溃报告在 `stale-build-crashes/` 里。
+
 ## 遗留问题
 
-Mac `.help` 已按计划添加，但自动化悬停与屏幕截图未观察到提示气泡，需在后续验收中人工确认。
+Mac `.help` 的提示气泡已在验收 #1 中确认。
 未进行真机触感与 VoiceOver 朗读验证。
 
 ## 相关文档

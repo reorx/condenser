@@ -4,10 +4,19 @@ import CondenserKit
 // 详情底部动作区：上行保留信源专有动作的文字，下行用图标展示各信源共用的动作。
 
 extension View {
+    /// 上行按钮是等分的半行宽：iPhone 最大字号下「在 Telegram 打开」连图标放不下，
+    /// 这时先去掉图标、字号不变；纯文字也放不下（更窄的机型）才把字缩小。
     func actionTextLabel() -> some View {
-        readingFont(.footnote)
-            .lineLimit(1)
-            .frame(maxWidth: .infinity)
+        ViewThatFits(in: .horizontal) {
+            labelStyle(.titleAndIcon)
+                .readingFont(.footnote)
+                .lineLimit(1)
+            labelStyle(.titleOnly)
+                .readingFont(.footnote)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+        }
+        .frame(maxWidth: .infinity)
     }
 
     func actionIconLabel() -> some View {
