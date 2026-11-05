@@ -59,6 +59,13 @@
 - HN 详情的链接预览描述含 HTML 实体时，读者看到的是 `read &amp; write`，而不是 `read & write`，影响预览阅读。复现：打开 story `50355251` 的详情，查看 Simon Willison 链接卡的描述；iPhone 和 Mac Catalyst 的走查截图均可见。
 - 本地 `link_previews.description` 已存入 `&amp;`，`HnDetailSheet` 用 `Text(description)` 原样展示；问题在本次按钮改动前的验收截图中已存在。处理方向：确认预览元数据的实体解码边界，并处理已有缓存，避免重复解码。
 
+## Mac Catalyst：条目评论内点「转发」导致应用崩溃
+
+- 记录：2026-11-05（详情动作区第二次验收；诊断与截图归档 `tmp/2026-11-05-ios-detail-action-bar-acceptance/`）
+- 复现：从普通 Timeline 打开 Telegram 条目 → 底部「评论」→ 输入文字并保存 → 再打开评论 → 点编辑器内的「转发」。评论保存请求返回 200，随后应用退出，未进入转发确认页；X 详情中也复现。直接从详情底部打开转发确认页是另一条入口。
+- 两次系统诊断为 `EXC_BREAKPOINT / SIGTRAP`；控制台报 `No Observable object of type ReaderSession found`，栈经过 SwiftUI sheet 呈现。检查 `ItemActionButtons.noteFlow` 从 `.editor` 切到 `.forward` 时的环境传递。当前仅在 Mac Catalyst 最终 clean 构建实测，iPhone 是否同样受影响尚未确认。
+- 本次按钮布局改动未修改这段评论转发逻辑；没有用旧二进制复现，因此不能断言旧版本一定存在。此问题在补充交互走查中发现，需另行修复。
+
 ## iOS：文章正文的块管线不画小标题样式
 
 - 记录：2026-09-16
