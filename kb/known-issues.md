@@ -53,6 +53,12 @@
 - 引用一篇长文时，quote 卡片看不出它是长文：`sources/x.py` 的联表投影里没有 `q_article`。
 - 内联抓取在 2026-09-20 上线，之前被 probe 见过的长文只有预览。服务端不能直连 X，只能靠 `condenser-probe run --no-cache` 补当时窗口里的那些。
 
+## iOS：HN 链接预览原样显示 HTML 实体（如 `&amp;`）
+
+- 记录：2026-11-05（详情动作区第二次验收，既有问题；截图归档 `tmp/2026-11-05-ios-detail-action-bar-acceptance-2/`）
+- HN 详情的链接预览描述含 HTML 实体时，读者看到的是 `read &amp; write`，而不是 `read & write`，影响预览阅读。复现：打开 story `50355251` 的详情，查看 Simon Willison 链接卡的描述；iPhone 和 Mac Catalyst 的走查截图均可见。
+- 本地 `link_previews.description` 已存入 `&amp;`，`HnDetailSheet` 用 `Text(description)` 原样展示；问题在本次按钮改动前的验收截图中已存在。处理方向：确认预览元数据的实体解码边界，并处理已有缓存，避免重复解码。
+
 ## iOS：文章正文的块管线不画小标题样式
 
 - 记录：2026-09-16
