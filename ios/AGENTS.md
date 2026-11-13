@@ -210,7 +210,7 @@ make clean       # 清理构建产物与生成的 xcodeproj
 ```
 
 - 构建产物：`.build/DerivedData/Build/Products/Debug-iphonesimulator/Condenser.app`
-- 默认模拟器设备由 Makefile 的 `SIM` 变量指定，覆盖：`make run SIM="iPhone 17 Pro"`
+- 默认模拟器设备由 Makefile 的 `SIM` 变量指定（iPhone 17，本机只保留这一台），覆盖：`make run SIM="<已存在的设备名>"`
 - 跑单个测试：`cd CondenserKit && swift test --filter <测试名>`
 - 改了 `project.yml` 后必须 `make gen`（`make build` 已包含）
 - 改了返回 `some View` 的函数、让它的底层类型变了（比如外面套一层 `ViewThatFits`）之后，
@@ -353,7 +353,7 @@ UI 元素在笔记里用中文描述（「右侧关闭钮」），别把界面�
    uvicorn condenser.app:create_app --factory --port 8793`；
 2. 往 `devices` 表插调试 token 的 sha256（脚本见 `tmp/<date>-appstore-shots/`），再
    `POST /api/sources/hn/subscriptions {"channel_id":"front"}`（订阅即 kick 一轮采样）；
-3. 6.9" 模拟器（iPhone 17 Pro Max）装 Debug 构建 → `simctl status_bar override --time 9:41
+3. 6.9" 模拟器（iPhone 17 Pro Max；本机默认没有，先 `xcrun simctl create "iPhone 17 Pro Max" com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro-Max`，闲置 7 天后 mac-dev-cleanup 会自动删掉）装 Debug 构建 → `simctl status_bar override --time 9:41
    --batteryState charged --batteryLevel 100` → 用 `SIMCTL_CHILD_CONDENSER_DEBUG_ROUTE`
    逐屏截图（路由表见下面「CLI 驱动的界面走查」），`simctl ui <udid> appearance dark`
    出深色版；

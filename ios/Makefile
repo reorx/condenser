@@ -2,7 +2,7 @@ SHELL := /bin/bash
 DERIVED_DATA := .build/DerivedData
 APP := $(DERIVED_DATA)/Build/Products/Debug-iphonesimulator/Condenser.app
 BUNDLE_ID := com.reorx.condenser
-# 覆盖示例：make run SIM="iPhone 17 Pro"
+# 覆盖示例：make run SIM="<已存在的设备名>"（本机只保留 iPhone 17）
 SIM ?= iPhone 17
 # 构建用 generic destination：不依赖已安装的模拟器 runtime
 XCODEBUILD := xcodebuild -project Condenser.xcodeproj -scheme Condenser \
