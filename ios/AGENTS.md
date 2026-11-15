@@ -1,525 +1,203 @@
 # Condenser iOS
 
-condenser 的原生 iOS 阅读客户端（SwiftUI）：Twitter 式简化阅读 timeline，只读不管。
-完整设计见 `../kb/plans/2026-07-16-ios-reader-app.md`；后端 device-token 认证 spec 见
-`../kb/plans/2026-07-16-mobile-client-api-device-token.md`。**多信源（Phase 4，2026-07-21）**：
-条目是 `TimelineItem` envelope（source/key/datetime/is_read/is_saved + `telegram?`/`hn?`），
-read/save 按 item key（`tg:{cid}:{mid}` / `hn:{sid}`）上报；订阅数据源是 `GET /api/sources`
-（`SourceGroup`/`SourceSub`，`/api/subscriptions` 不再使用）；Timeline 左上角信源切换 Menu
-（All + 已添加信源，驱动 `TimelineStore.source`）；tab 2「频道」→「订阅」（信源 → 订阅两级，
-TG 行进频道 timeline，HN 行进 `HnFeedTimelineScreen`）；HN 卡片/详情（`HnCard`/`HnDetailSheet`，
-self-post HTML 经 Kit 的 `hnPlainText` 转纯文本；有服务端摘要时标题下接 RSS 同款
-`AiSummaryBlock`，`HnStory.displaySummary`，2026-09-02）；`SnapshotCache` 目录带契约版本号
-（`condenser-snapshots-v3`，旧快照 decode 失败按 miss）。多信源计划见
-`../kb/plans/2026-07-19-multi-source-hn.md`。
+condenser 的原生阅读客户端（SwiftUI，iOS 18+），同一份代码也编成 Mac Catalyst app。
+只读不管：订阅、过滤、摘要都在服务端配置。四个信源（Telegram / HN / X / RSS）各有一对
+卡片和详情 sheet。
 
-**X 信息源（Phase 5，2026-07-25）**：envelope 多了 `x`（`XTweet`）与源通用的
-`feedback`（`ItemFeedback`，今天只有 X 暴露）。X 是第一个「一个信源多个 feed」的源，
-所以 `TimelineStore` / `NewContentChecker` / timeline 端点都多了 `feed` 作用域
-（`XFeed.foryou` 或关注人 handle）。**For You 不进聚合 timeline**（一天 ~1000 条会淹没
-TG/HN），订阅 tab 的 X 分组行是它唯一入口 → `XFeedTimelineScreen`。卡片是 `XCard`
-（+`XQuoteCard`/`XMediaView`/`XMediaThumb`/`XAvatarView`/`XGlyph`/`XVerdictBadge`/
-`XFeedbackButtons`），详情是 `XDetailSheet`（判定证据用中文展开，卡片徽标沿用 web 的英文）。
-推文媒体走 `/api/preview/image`、作者头像走 `/api/x/avatar/{handle}`，客户端从不直连 X。
-`XVerdict` / `ItemFeedback` 都有 `other` 兜底值——后端先行升级出新值时降级渲染而不是炸解码。
-通道字母是开放字典（`[String: XVerdictChannel]`），所以后端 2026-07-29 加通道 A（作者先验）只需补一行中文名与它的证据渲染：A 的证据不是权重对而是一句话（`XVerdictChannel.record`，「@ibkr · 你踩过 6 次，赞过 0 次」），因为这个通道根本不读推文，只读账号。
-计划见 `../kb/plans/2026-07-24-x-source-local-probe.md`。
+去哪里找什么：
 
-**转发源通用化（2026-07-27）**：转发不再是 Telegram 专属。Kit 的
-`forwardMessage(channelID:messageID:)` 换成 `forwardItem(key:comment:)`（打
-`POST /api/forward`，服务端按 key 分派：TG 原生 forward / 引用发布，HN 渲染成
-「粗体标题超链接原文 + 来源行超链接讨论」，X 只发一条把域名换成 fixupx.com 的链接——
-x.com 不给 Telegram 供 embed，fixupx 给，作者/正文/图/引用推全在预览卡里）。三个 detail sheet 的
-**收藏星标从 header 挪到底部动作行**，和新加的「转发」并排——两件事都是「对这条做点
-什么」，摆在一起才好按；共用组件是 `ItemActionButtons`（收藏 + 评论 + 转发 + 复制链接）与
-`ItemActionBar`（上行等分展示带字的信源专有动作，下行等分展示通用图标动作与分享图片；
-上行为空时连同间距一起省去，图标保留读屏文字与 Mac 悬停提示）。
-「复制链接」使用 Kit `TimelineItem.originalURL`：Telegram 消息链接、X 原始 x.com 链接、
-HN / RSS 原文链接，不走转发域名或阅读代理。详见 `../kb/docs/ios.md`「复制原始链接」。
-`ForwardDialog` 收 `itemKey` + `isTelegram`，后者只影响留空时的文案（「原样转发」
-vs「只发标题和链接」）。旧的 `/api/messages/{cid}/{mid}/forward` 服务端保留为薄壳，
-所以升级服务端不会打断手机上还没重装的旧版本。
+- 本文件：命令、工程约定、改代码时不能破坏的约束。
+- `../kb/docs/ios.md`：各功能的设计决定与来历。**改某个功能前先读它对应的小节**。
+- `../kb/docs/ios-walkthrough.md`：模拟器 / Mac 走查的做法、debug 路由表、走查的坑、
+  商店截图的造法。
+- `../kb/known-issues.md`：未解决的问题（搜 iOS / Catalyst），动一个区域前先查。
+- 私密 KB `~/Code/kb.private/condenser/kb/`：发布状态、ASC 资源 id、审核 demo
+  （`docs/ios-app-store-release.md`、`docs/demo-server.md`），发布待办在 `next-up.md`。
 
-**理由 chip（2026-07-26，schema v9）**：踩之后追问一次「为什么不喜欢？」——
-`ItemFeedbackReason`（topic / promo / aiSlop / engagementFarming / author，同样有
-`other` 兜底；`engagementFarming`「博眼球」是 2026-07-27 加的，只动常量不动 schema），
-envelope 上是与 `feedback` **平级**的 `feedback_reason`（老版本 App 把 `feedback` 当字符串
-解，改成对象会整页解码失败，而 App 是单独升的）。两条规则：`TimelineStore` /
-`RecordsStore` 的 `setFeedback`（拇指，不带理由）与 `setReason`（选 chip，verdict 保持
-down）都走同一个 `write(_:verdict:reason:)`，一次请求写完整条标签，所以改正会丢掉过期理由、
-撤销连理由一起删；理由**可跳过**，跳过零损失。UI 用原生 `confirmationDialog` 而不是内联
-chip 行（手机上一行摆不下这些中文标签），只在「这一下确实标成了踩」时弹；已选理由只在
-`XDetailSheet` 的「反馈」行回显，卡片上不画。
+## 技术栈与分层
 
-**RSS 信息源（Phase 6，2026-08-21）**：envelope 多了 `rss`（`RssEntry`）。这个源没有
-判定、没有反馈，卡片（`RssCard` + `RssGlyph`）与 sheet（`RssDetailSheet`）
-是四个源里最简单的一对，订阅行 / 单 feed 视图（`RssFeedTimelineScreen`）照 HN/X 的
-形状。五处值得记：
+- Swift 5 语言模式（非 Swift 6 strict concurrency）。工具链：Xcode、xcodegen、xcbeautify。
+- `CondenserKit/`：本地 SPM 包，纯逻辑（APIClient、Models、Store、状态机）和全部单测。
+  **禁止依赖 UIKit**：平台含 macOS，`swift test` 在宿主机直接跑。
+- `Condenser/`：app target，UI 与系统胶水，按 `App/` `UI/` `Services/` 组织。
+- 新功能 BDD：先在 `CondenserKit/Tests/CondenserKitTests/` 写行为测试（Swift Testing，
+  网络用 `MockURLProtocol`），再实现。bug 修复 TDD：先写复现测试。
+- Models 的字段事实来源是 `../frontend/src/lib/types.ts`，逐一对照翻译（snake_case →
+  `CodingKeys`；日期 UTC，tz-aware 与 naive 两种形式都要能解析）。
 
-- **feed key 是整个 feed URL**（读者输入什么就用什么作键，`RssFeed.label` 在学到标题前
-  回落成去掉 scheme 的 URL）。所以 debug 路由 `rss[/<下标>]` 用下标而不是 key——URL
-  塞不进路径段；`detail/rss[/<id>]` 则要翻页找，归档按时间倒序而想看的往往是老条目。
-- **摘要不替代正文**（2026-08-23 定型，`RssBody` 枚举随之退役）：摘要是机器的转述，
-  必须标出来，但也不该顶掉原文开头——只看转述没法快速判断文章本身。卡片先画正文
-  开头 3 行（空白折叠成单空格、纯省略号截断，不给 more），`AiSummaryBlock` 摘要块
-  跟在下面：浅靛蓝底 + 左侧深一档同色竖条的引用块，「AI 摘要」标注在块内顶部
-  （先撞上标注再读内容；靛蓝是因为琥珀/橙/天蓝都已有含义），卡片与详情 sheet 共用。
-  Kit 面是两个属性：`displaySummary`（trim 后非空才算有）+ `contentText`；详情 sheet
-  两样都给——摘要块在上、全文接在下面，因为点进来是要读文章的。
-  **左边缘右滑关闭**（`EdgeSwipeDismiss.swift`）起于这张 sheet：长文滚到底后下拉手势
-  只会回滚内容，从左边缘右滑是给单手补的退路；手势用普通 `gesture` 不用
-  `highPriorityGesture`，否则会抢走从边缘起手的纵向滚动。2026-09-19 起它不再挂在某个
-  抽屉上，而是由 `detailSheetPresentation()` 的 iPhone 分支替**四个源**统一挂（之前只有
-  RSS 有，X / HN / Telegram 三个关不掉）——新加的详情抽屉只要走这个修饰就自带；判定
-  门槛在 Kit 的 `EdgeSwipe`（有测试）。
-- **列表只有摘录，全文按需取**（2026-08-23）：envelope 的 `content_excerpt` 是服务端
-  剥好的约 500 字纯文本，`content` 只有 `GET /api/rss/entries/{id}` 与改版前存下的
-  收藏快照才带（feed 正文平均 13.9KB、最长一条 7.1MB，一页 30 条全带就是一次几 MB
-  的下载）。Kit 面因此是两个属性：`contentText` 走摘录（卡片用；旧快照里没有摘录时
-  才回落去解析 `content`），全文只在详情 sheet 解析。`RssDetailSheet` 打开时
-  `reader.api.rssEntry(id:)` 取一次，到手前先显示摘录 + 「正在加载全文…」，失败就停在
-  摘录上——**解析结果（块序列，见下条）算一次存 state**，那是一整篇的正则，放在
-  body 里每次重渲染都会重跑（正是这次排查 RSS 卡顿找到的另一半）。后端计划
-  `../kb/plans/2026-08-23-rss-list-excerpt-detail-endpoint.md`。
-- **`rssPlainText` 不是 `hnPlainText` 的推广**，三条规则刻意相反：链接保留锚文本
-  （HN 换成 href 是因为它截断显示文本）、`<script>`/`<style>` 连内容一起丢、源码换行
-  按空白处理（只有块级标签断行，否则句子会在中间硬折），`<pre>` 是唯一例外——整块
-  摘出去、处理完再放回来，代码的缩进才留得住。
-- **正文里的图渲染成块**（2026-08-23，起因是 rss:677 在 iOS 上看不到图）：Kit 的
-  `ArticleBlocks.swift` 把全文 HTML 切成文本块 + 图片块（`articleBlocks(fromHTML:baseURL:)`；2026-09-16 从 `RssBlocks` 改名，X 长文共用，渲染在 `UI/ArticleBlocksView.swift`）。
-  **不是另一套 HTML 处理**：先把 `<img>` 换成私用区占位符（U+E001，`<pre>` 用的
-  U+E000 的下一个码位）、跑完 `rssPlainText` 既有管线、再按占位符切块，两条路径共享
-  同一份规则——副产物是 `<script>` 里的 `<img>` 连占位符一起消失。src 相对路径按文章
-  link 解析、只留 http/https，data: 占位图回落 `data-src`/`data-original`（WordPress
-  lazy-load 插件的发法）；width/height 属性给 UI 预留纵横比（缺省 4:3，加载完换图片
-  天然比例淡入）。图走 /api/preview/image 代理，点图进 `ImageViewerScreen`（收全文
-  所有图、从点中那张起）。**卡片仍不放图**——列表的账刚瘦下来，每条一张图的请求要
-  单独算一轮。快照契约随之 v2→v3（旧快照没摘录，decode 得出来但画成空白卡片，按
-  miss）。计划 `../kb/plans/2026-08-23-ios-rss-article-images.md`。
-- 信源方块的底色是琥珀而不是系统 `.orange`：`HnGlyph` 已经是纯橙，两个方块在同一条
-  时间线上前后相邻，颜色一样就等于没有信源标记（走查才发现的，单看 RSS 卡片没问题）。
+## 工程约定
 
-计划见 `../kb/plans/2026-08-20-rss-source-opml-llm-summary.md`。
-
-**分享图片（2026-08-23，四个源）**：详情抽屉动作行行尾的「分享图片」把这条内容渲成一张
-长图交给系统分享面板（`UI/Share/`）。**不截抽屉、另画卡片**——`ImageRenderer` 不渲染
-UIKit 桥接视图，而抽屉正文正是 `SelectableTextView`。内容取舍在 Kit 的 `ShareCard`
-（源无关模型 + `build(item:channelTitle:articleBlocks:)`，26 个测试盯着「哪些东西会跟着
-图发出去」：X 的判定与反馈不进、TG 的实时统计不进、RSS 用全文不用摘录）；app 侧一个渲染器
-画四个源，外观定死（浅色 + 标准字号 + 常量颜色）。⚠️ **位图超过 8192px 高就渲成全黑图且
-不报错**，所以流程是先量后画：量到的高度决定 scale，装不下直接报「太长」。
-细节（PNG/JPEG 分路、预载超时与占位块、`CONDENSER_DEBUG_SHARE=1` 走查入口、Info.plist
-新增的相册写入声明）见 `../kb/docs/ios.md`「分享图片」，计划
-`../kb/plans/2026-08-23-ios-share-image.md`。
-
-**标注（2026-08-24，四个源）**：条目 note + 正文高亮，数据全在服务端（schema v18，
-envelope 与 `feedback` 平级多了 `note` / `annotations`）。Kit 面：`ItemAnnotation` 模型、
-`locateAnnotation` 重定位纯函数（锚点是 `{quote, prefix, suffix}` 引文三元组，锚在
-**屏幕显示的派生文本**上——精确搜 → 空白折叠兜底 → 上下文打分，`block` 只做
-tie-break；nil = 孤儿）、`APIClient` 四调用（不进 `CondenserAPI` 协议，`rssEntry`
-先例）、`TimelineItem.hasNotes`、`RecordsStore.unsave` 对带标注的行只翻旗标不移除
-（服务端不变式：行存在 ⟺ 收藏 ∨ note ∨ 标注）。app 面：`SelectableTextView` 长出
-`highlights`（浅黄底 + 深黄下划线）+ 系统编辑菜单（选中插「高亮」；tap 命中**范围
-最短**的高亮后 `presentEditMenu`「评论/删除」，不自绘 popover）；
-`ItemAnnotationsModel` + `AnnotatedTextView`（`UI/ItemAnnotations.swift`）四个详情
-sheet 共用，孤儿高亮列在抽屉尾部（引文 + 评论 + 删除），`AnnotationBadge` 是卡片上的
-靛蓝角标——收藏列表因 v18 会列出「只标注未收藏」的行，靠它和空心星区分。
-`ItemActionButtons` 的「评论」按钮（有 note 时 filled + 靛蓝）开 `ItemNoteSheet`：
-重开即编辑、清空保存 = 删除；「转发」= 先 `POST /api/note` 再切到预填的
-`ForwardDialog(initialComment:)`（`.sheet(item:)` 换 item 自带先收后弹）。三条边界：
-X 的定位底本是 t.co 替换后的 `xDisplayedText`（与 `linkifiedNS` 共享替换规则，改一处
-必须连改另一处）；RSS 摘录回落态高亮入口禁用（摘录不是定位底本），标注的 block 下标
-数**文本块序列**（图块不占号）；引用推卡与 AI 摘要块刻意不接标注（别人的条目 / 生成物）。
-计划 `../kb/plans/2026-08-24-annotations.md`。
-
-**外链统一出口（2026-07-29）**：所有外链都过 `ExternalLink.swift` 的
-`openExternalURL(_:fallback:)`——X 的推文 / 主页链接先试 `twitter://` 深链进 X app
-（scheme 是改名前注册的，X 一直认；打不开再试一次 x.com 的 universal link），
-两条都不成才回落 in-app Safari，其余链接直接 Safari。「在 X 上打开」要的是能点赞、
-能回复、已经登录好的原生界面，SFSafariViewController 里的 x.com 只是个逼你登录的壳。
-网页链接 → 深链的映射在 Kit 的 `xAppURL(for:)`（纯逻辑，有测试）：只认单条推文与
-作者主页两种确定形态，认不出就返回 nil 走网页——把人送进 app 的错误界面比留在 Safari 更糟。
-列表/详情用 `.externalLinks(safari:)` 接管子树链接；sheet 自己的按钮直接调
-`openExternalURL`，因为 `@Environment(\.openURL)` 在 sheet 的 body 里读到的是**外层列表**
-那份，Safari 会从这张 sheet 背后弹出来。深链有没有真的落进 X app 只能在装了 X 的真机上
-验（`make device`），模拟器没有 X app，走的永远是回落分支。
-
-**阅读现场恢复 + 蓝色胶囊（2026-09-07）**：打开 app 回到上次离开的样子——tab、主 timeline
-的信源过滤 / 未读开关、订阅 tab 推进去的 feed、列表滚到同一张卡片、开着的详情抽屉——
-状态在 Kit 的 `ReadingState` / `ReadingStateStore`（UserDefaults，`lists` 按
-`TimelineStore.scopeKey` 存 `topItemKey` / `openItemKey`），内容在 `SnapshotCache`：
-启动的首个 store 走 `loadInitial(preferSnapshot: true)`，快照非空就**停在快照上不打网络**，
-退后台与每次 `loadMore` 后 `persistSnapshot()` 把已加载的全部页（含本地已读）写回。
-有没有新内容另问 `GET /api/timeline/new/count`（`NewContentChecker`，只回条数），结果只是
-列表上方一枚**蓝色胶囊「↑ N 条新内容 | ✕」**：主体点了才回顶 + 刷新，✕ 只收掉，列表不动；
-iPhone 在后台 ≥60s 回前台再问一次；Mac 的当前列表在两次窗口 focus 间隔 >10 分钟时
-再问一次（`FocusRefreshPolicy` + `UI/MacWindowFocus.swift`），单频道 / 单 feed 同样支持。
-切信源 / 未读重建的 store 仍是旧路径（快照→网络替换，无提示）。
-`MessageListView` 因此改用 `scrollPosition(id:)` + `scrollTargetLayout()`（顶部哨兵进
-LazyVStack），`MainView` 的订阅 path 从 `NavigationPath` 改成 `[SubDestination]`（要读栈顶）。
-推入的单 feed 视图不落快照，恢复它只到「进到那个 feed + 首页里找得到锚点就滚过去」。
-⚠️ 模拟器走查用 cliclick 点胶囊时，坐标要按 `screencapture -R` 的**窗口**截图换算（窗口有
-标题栏 + 机身边框），按 simctl 截图等比缩放会偏约 60pt 点到导航栏。计划与走查记录：
-`../kb/plans/2026-09-07-ios-state-restore-new-content-pill.md`、`../kb/docs/ios.md` 末节。
-
-**Purifier 阅读代理（2026-09-07）**：设置页「阅读」开关（`Purifier.storageKey` =
-`condenser.purifier`）开着时，`openExternalURL` 顶部把 URL 交给 `Purifier.shared.rewrittenURL(for:)`
-改成 `<server>/p/<host>/…`（Kit 的 `purifiedURL`，X / t.me / 非 http(s) / 自身域名返回 nil），
-再走原有分支——X 深链仍判原始 URL。票据（`/api/purifier/ticket`，5 分钟）由 `Purifier`
-单例缓存并在登录 / 开关打开 / 回前台时预热，点击永远同步。⚠️ 走查时 Mac 沙盒 app 的
-`defaults write` 要指向容器内的 plist。详见 `../kb/docs/ios.md`「Purifier 阅读代理」。
-
-## 技术栈
-
-- iOS 18+，SwiftUI App lifecycle，Swift 5 语言模式（非 Swift 6 strict concurrency）
-- 本地 SPM 包 `CondenserKit`（纯逻辑 + 单测，Swift Testing）+ app target（UI 与系统胶水）
-- 本机工具链：Xcode（含 iOS 平台）、xcodegen、xcbeautify（后两者 `brew install xcodegen xcbeautify`）
-
-## 工程约定（重要）
-
-- **一切构建/测试/运行走 Makefile，不用 Xcode GUI。**
-- 工程定义的唯一事实来源是 `project.yml`（XcodeGen）。**永远不要手工编辑 `Condenser.xcodeproj`**
-  （已 gitignore，`make gen` 随时重新生成）。
-  - 加源文件：直接放进 `Condenser/` 目录（目录即 sources），然后 `make gen`
-  - 改 target 配置 / Info.plist / URL scheme / 包依赖：改 `project.yml`，然后 `make gen`
-  - `Condenser/Info.plist` 是 xcodegen 从 project.yml 生成的，不要直接编辑
-- 分层规则：
-  - `CondenserKit/` — 本地 SPM 包，纯逻辑（APIClient、Models、Store、状态机），
-    **禁止依赖 UIKit**（平台含 macOS，`swift test` 在宿主机直接跑），所有单测在此
-  - `Condenser/` — app target，UI 与系统胶水，按 `App/` `UI/` `Services/` 组织
-- 开发方法：新功能 BDD —— 先在 `CondenserKit/Tests/CondenserKitTests/` 写行为测试
-  （Swift Testing，`@Test` / `#expect`，网络用自定义 `URLProtocol` mock），再实现；
-  bug 修复 TDD —— 先写复现测试再修
-- Models 的字段事实来源是 `../frontend/src/lib/types.ts`，逐一对照翻译
-  （snake_case → `CodingKeys`；日期 UTC，tz-aware 与 naive 两种形式都要能解析）
+- **构建、测试、运行都走 Makefile，不用 Xcode GUI。**
+- 工程定义的唯一事实来源是 `project.yml`（XcodeGen）。**不要手工编辑
+  `Condenser.xcodeproj`（已 gitignore）和 `Condenser/Info.plist`**，两者都由它生成。
+  - 加源文件：放进 `Condenser/`（目录即 sources），然后 `make gen`。
+  - 改 target 配置、Info.plist、URL scheme、包依赖、版本号：改 `project.yml`，然后
+    `make gen`（`make build` 已包含）。
+- `TARGETED_DEVICE_FAMILY` 的 base 保持 `"1"`（iPhone only）。加进 2，商店就要交 iPad
+  截图。Mac 的 `"2,6"` 只挂在 `[sdk=macosx*]` 下。
 
 ## 命令
 
 ```
-make build       # xcodegen + xcodebuild Debug，模拟器 generic destination（xcbeautify 美化输出）
+make build       # xcodegen + xcodebuild Debug，模拟器 generic destination
 make test        # CondenserKit swift test（宿主 macOS 上跑）
 make run         # boot 模拟器 + 安装 + 启动已构建的 app（不触发构建）
 make dev         # build + run
-make device      # 真机构建 + 推送安装（scripts/device.sh，见下）
-make archive     # App Store 归档 + 导出 ipa（Release，见「App Store 发布」）
-make build-mac   # Mac Catalyst Debug 构建（团队签名，见「Mac Catalyst」）
-make run-mac     # 启动已构建的 Mac app（优雅退出上一个实例，不 pkill）
+make device      # 真机构建 + 推送安装（scripts/device.sh）
+make archive     # App Store 归档 + 导出 ipa（Release）
+make build-mac   # Mac Catalyst Debug 构建（团队签名）
+make run-mac     # 启动已构建的 Mac app（优雅退出上一个实例）
 make dev-mac     # build-mac + run-mac
 make gen         # 仅重新生成 xcodeproj
 make clean       # 清理构建产物与生成的 xcodeproj
 ```
 
-- 构建产物：`.build/DerivedData/Build/Products/Debug-iphonesimulator/Condenser.app`
-- 默认模拟器设备由 Makefile 的 `SIM` 变量指定（iPhone 17，本机只保留这一台），覆盖：`make run SIM="<已存在的设备名>"`
-- 跑单个测试：`cd CondenserKit && swift test --filter <测试名>`
-- 改了 `project.yml` 后必须 `make gen`（`make build` 已包含）
-- 改了返回 `some View` 的函数、让它的底层类型变了（比如外面套一层 `ViewThatFits`）之后，
-  增量构建只重编这一个文件，调用方的 `.o` 还按旧类型取返回值，运行时在调用处
-  `EXC_BAD_ACCESS`，崩溃栈只有一帧、指向调用那一行。这类改动走查前先 `make clean`
-  （2026-11-04 踩过：`actionTextLabel()` 改完，HN 详情一打开就崩，X / Telegram 却正常）
-- 模拟器构建无需签名（ad-hoc）；真机签名参数由 `scripts/device.sh` 在 xcodebuild
-  命令行覆盖（`CODE_SIGN_STYLE=Automatic` + `DEVELOPMENT_TEAM`），不改 project.yml
+- 单个测试：`cd CondenserKit && swift test --filter <测试名>`。
+- 模拟器由 Makefile 的 `SIM` 指定，缺省 `iPhone 17`，本机只保留这一台。
+- 产物在 `.build/DerivedData/Build/Products/Debug-{iphonesimulator,iphoneos,maccatalyst}/`。
+- 模拟器构建无需签名。真机和 Mac 的签名参数在 xcodebuild 命令行覆盖，不改 `project.yml`。
+  Team ID 从 `~/Sync/apple-developer/secrets.env` 的 `APPLE_TEAM_ID` 读（Apple 凭据的唯一
+  来源，用法见该目录的 AGENTS.md，文件用 envops 读）。不从钥匙串探测证书：里面还留着旧
+  免费 Team 的证书，取首个匹配会探错。
+- ⚠️ 改了返回 `some View` 的函数、让它的底层类型变了（比如外面套一层 `ViewThatFits`），
+  走查前先 `make clean`。增量构建只重编这一个文件，调用方还按旧类型取返回值，运行时在
+  调用处 `EXC_BAD_ACCESS`，崩溃栈只有一帧。
+- 构建怪异时先怀疑环境：`make clean && make build` → `xcrun simctl list runtimes` 是否
+  为空 → 删 `CondenserKit/.build` 和 DerivedData 下的 SourcePackages →
+  `pgrep -l xcodebuild` 查僵尸进程。都无效再看代码。
+
+## 走查
+
+带 debug 环境变量启动，直连本地后端并导航到目标界面，不用点屏幕（仅 DEBUG 构建）：
+
+```bash
+SIMCTL_CHILD_CONDENSER_DEBUG_SERVER=http://localhost:8792 \
+SIMCTL_CHILD_CONDENSER_DEBUG_TOKEN=devtoken-ios-sim \
+SIMCTL_CHILD_CONDENSER_DEBUG_ROUTE=<route> \
+  xcrun simctl launch "iPhone 17" com.reorx.condenser
+```
+
+route 有 `tab/…`、`settings`、`channel/<id>`、`hn`、`x[/<feed>]`、`rss[/<下标>]`、
+`detail/…`、`viewer/…`、`forward/…`。完整路由表、本地后端与 token 的准备、Mac 上的
+启动方式、其余 debug 变量都在 `../kb/docs/ios-walkthrough.md`。两条先记住：
+
+- ⚠️ `forward/<key>/<comment>` 会**真实转发**到目标频道。
+- Mac app 退出用 AppleScript quit 或 `make run-mac`，**不要 pkill**：下次启动会被「quit
+  unexpectedly」模态框挡住。
+
+## 数据契约
+
+已发出去的 build 按它编译时的 API 形状解码，而服务端先升级是常态。
+
+- 条目是 `TimelineItem` envelope：`source` / `key` / `datetime` / `is_read` / `is_saved`，
+  加信源载荷（`telegram?` / `hn?` / `x?` / `rss?`）和与之平级的 `feedback` /
+  `feedback_reason` / `note` / `annotations`。read、save、转发、标注都按 item key
+  （`tg:{cid}:{mid}` / `hn:{sid}` / `x:{id}` / `rss:{id}`）上报。订阅来自 `GET /api/sources`。
+- 新字段一律可选，加在旧字段旁边，不改旧字段的形状。枚举带 `other` 兜底（`XVerdict`、
+  `ItemFeedback`、`ItemFeedbackReason`），判定通道是开放字典：遇到新值降级渲染，不让整页
+  解码失败。
+- `SnapshotCache` 目录带契约版本号（现在 `condenser-snapshots-v3`）。缓存的载荷形状变了、
+  旧快照会画错时升 `contractVersion`，旧快照按 miss。
+- 踩的理由集合由测试与 `db.py`、`lib/sources.ts` 钉在一起，改之前读
+  `../kb/docs/x-feedback.md`。
+
+## 改代码时的约束
+
+每条的来历在 `../kb/docs/ios.md` 同名小节。
+
+**阅读界面通用**
+
+- 文字样式用 `.readingFont(.subheadline[, weight:])`，不要写 `.font(.caption)`。Mac
+  没有 Dynamic Type，`.font` 写的那一处在 Mac 上偏小且不随字号滑块变，iPhone 上看不出来。
+- 外链都过 `openExternalURL`（`UI/ExternalLink.swift`）。列表和详情用
+  `.externalLinks(safari:)` 接管子树；sheet 自己的按钮直接调它，因为
+  `@Environment(\.openURL)` 在 sheet 里读到的是外层列表那份，Safari 会从 sheet 背后弹出来。
+- Purifier 开着时，改写成功的链接不再走 X 深链；明确要进 X app 的按钮传
+  `purify: false`。哪些链接不改写由 Kit 的 `isPurifierExcluded(host:path:)` 决定，它与
+  后端的 `purifier.rewrite_url`、`purifier_x.parse_status_url` 是同一条规则，两边一起改。
+- 客户端从不直连 X：推文媒体走 `/api/preview/image`，头像走 `/api/x/avatar/{handle}`。
+- 新加的详情 sheet 走 `detailSheetPresentation()`，iPhone 的 detent、左边缘右滑关闭和
+  Mac 的栏形态都从它来。列表用 `.detailPresentation(item:)` 呈现详情。
+- 新内容只通过 `NewContentChecker` 问条数，结果是列表上方的蓝色胶囊，点了才回顶刷新。
+  不要加轮询或自动刷新。启动的首个 store 停在快照上不打网络（`preferSnapshot`）。
+
+**各信源**
+
+- RSS：列表只带 `content_excerpt`，全文由 `rssEntry(id:)` 在详情里按需取。全文解析出的
+  块序列算一次存 `@State`，不要放在 `body` 里重算。卡片不放图。feed key 是整个 feed URL。
+- `rssPlainText` 不是 `hnPlainText` 的推广，三条规则刻意相反。`articleBlocks` 复用
+  `rssPlainText` 的管线（私用区占位符 U+E000 / U+E001），RSS 全文和 X 长文共用。
+- X 的标注定位底本是 `xDisplayedText`，它和 `linkifiedNS` 共享 t.co 替换规则，改一处必须
+  连改另一处。
+- 标注的 `block` 下标数文本块序列，图块不占号。RSS 摘录回落态禁用高亮入口。引用推卡和
+  AI 摘要块刻意不接标注。
+- 反馈的 `setFeedback` 与 `setReason` 都走同一个 `write(_:verdict:reason:)`，一次请求写
+  整条标签。不要拆成两次写。
+- 分享图另画纯 SwiftUI 卡片，不截抽屉：`ImageRenderer` 不渲染 UIKit 桥接视图。哪些内容
+  进图由 Kit 的 `ShareCard` 决定并有测试盯着。⚠️ 位图高度超过 8192px 会渲成全黑图且不
+  报错，所以先量后画。
+
+**Mac Catalyst**
+
+- 平台判断用 `Platform.isMac`（`UI/Platform.swift`，编译期），不用 `userInterfaceIdiom`。
+- 每个 tab 的内容、每个 DEBUG sheet 各挂一次 `.environment(reader)`。`.sidebarAdaptable`
+  在 Mac 上切 tab 时拿不到外层注入的 Observable，直接 Fatal error。
+- 详情在 Mac 上是列表右侧的栏，不是 sheet：① 详情视图必须 `.id(item.id)`，否则上一条的
+  `@State` 留给下一条；② `@Environment(\.dismiss)` 在栏里是空操作，关闭走
+  `\.detailColumnDismiss`；③ 容器宽度要量 `.frame(maxWidth: .infinity)` 之后的尺寸，
+  量 HStack 自身会布局死循环，吃满 CPU 且退不出。
+- `make build-mac` 缺省团队签名。ad-hoc 签名没有 keychain-access-groups，token 写
+  Keychain 静默失败（-34018），症状是每次重启回登录页。`MAC_SIGN=adhoc` 目前过不了
+  provisioning 检查（见 known-issues）。
+- 不要给菜单注册 ⌃⌘S：UIKit 已占用，重复注册直接崩。侧栏开关用的是 ⌥⌘S。
+- Mac 版还没有商店发布链路，`make archive` 只出 iOS。
 
 ## 真机部署
 
-`make device`：xcodegen → Team ID 从 `~/Sync/apple-developer/secrets.env` 的
-`APPLE_TEAM_ID` 读（Apple 凭据的唯一权威来源，变量与用法见该目录 AGENTS.md；
-2026-08-13 起不再在项目里硬编码，可用 `TEAM_ID=` 覆盖。不再从钥匙串探测——钥匙串里
-还留着旧免费 Personal Team 的证书，find-certificate 取首个匹配会探错）
-→ 选设备（唯一已连接的
-真机，多台时 `DEVICE="<名称或UDID>"` 指定）→ device 构建（`-allowProvisioningUpdates`
-自动出 profile）→ `devicectl` 安装 + 启动。
-产物在 `.build/DerivedData/Build/Products/Debug-iphoneos/`（与模拟器产物不冲突）。
+`make device`：xcodegen → 选设备（唯一已配对的真机，多台时 `DEVICE="<名称或UDID>"`）→
+device 构建（`-allowProvisioningUpdates` 自动出 profile）→ `devicectl` 安装并启动。
+一次性前提：Xcode 登录付费 Apple ID，手机数据线连 Mac 并信任，开启开发者模式，首次安装
+后在手机上信任开发者证书。
 
-前提（一次性）：Xcode → Settings → Accounts 登录付费 Apple ID；iPhone 数据线连 Mac 并
-信任；手机开启开发者模式（设置 → 隐私与安全性）。付费 Team 的 profile 一年有效，
-**没有免费账号的 7 天重装问题**；首次安装需在手机上信任开发者证书（设置 → 通用 →
-VPN 与设备管理）。首次 USB 配对后 devicectl 支持同一局域网 Wi-Fi 部署。
-⚠️ **设备必须先注册进付费 Team**（Certificates, Identifiers & Profiles → Devices），
-否则 development profile 生成不了，报「Your team has no devices」——连 `make archive`
-的 development 签名也会被它挡住。注册的唯一顺手途径是 **USB 连上手机跑一次
-`make device`**（`-allowProvisioningDeviceRegistration` 自动注册）；ASC API key
-是 Developer 角色，`asc devices register` 会 403（需 Admin）。⚠️ Wi-Fi 部署对
-**构建**不够用：`devicectl` 的按需隧道能查信息，但 xcodebuild 的 destination 发现
-要求完整信任隧道（USB 或手机解锁且在同一局域网），否则报「Unable to find a
-destination」——实测手机锁屏时 poke 保活 + `-destination-timeout` 都救不回来。
-⚠️ **从旧免费 Team 切换过来的手机要先删掉旧 app 再装**：Team 变了 →
-`application-identifier` 前缀变了，iOS 拒绝覆盖安装（devicectl 报 mismatch 错）。
-删除会连带丢掉 Keychain 里的 device token，装好后要重走一次 `/authorize` 配对
-（Settings 里旧的 device 行可顺手删掉）。此为一次性迁移成本，之后签名身份稳定。
+- 设备必须先注册进 Team，否则报「Your team has no devices」，`make archive` 也会被挡。
+  USB 连上跑一次 `make device` 会自动注册。
+- Wi-Fi 对**构建**不够用：xcodebuild 的 destination 发现要求 USB，或手机解锁且在同一
+  局域网，否则报「Unable to find a destination」。
+- devicectl 报 application-identifier mismatch：手机上是别的 Team 签的旧 app。删掉重装，
+  Keychain 里的 device token 会丢，要重走一次 `/authorize` 配对。
 
-## App Store 发布（2026-08-12 起 Ready）
+## App Store 发布
 
-`make archive`：Release 归档（automatic 签名 + `-allowProvisioningUpdates`，Apple
-Distribution 证书与 App Store profile 由 Xcode 云签名按需补发；`DEVELOPMENT_TEAM`
-从 secrets.env 的 `APPLE_TEAM_ID` 读）→ `exportArchive`（导出配置由
-`scripts/ExportOptions.template.plist` 渲染 teamID 生成
-`.build/DerivedData/ExportOptions.plist`，method `app-store-connect`）→ ipa 落在
-`.build/DerivedData/export/Condenser.ipa`。前提同真机部署：团队里至少注册过一台设备
-（archive 的 development 签名也依赖），Xcode 已登录付费账号。
+app 还没上架，build 经 TestFlight 发。**做任何发布操作前先读私密 KB 的
+`ios-app-store-release.md`**（当前审核状态、各 build、ASC 资源 id、asc 的坑），提审前再读
+`demo-server.md` 并重跑它的 checklist。这里只记工程侧：
 
-发布素材已就位：
+- `make archive`：Release 归档 + `exportArchive`，ipa 落在
+  `.build/DerivedData/export/Condenser.ipa`。分发证书与 profile 由 Xcode 云签名按需补发。
+- 版本号是 `project.yml` 的 `MARKETING_VERSION` / `CURRENT_PROJECT_VERSION`，改完
+  `make gen`。
+- 新增用到文件时间戳、磁盘容量、系统启动时间等 required-reason API 的代码时，同步补
+  `Condenser/PrivacyInfo.xcprivacy` 的声明（现在只声明了 UserDefaults）。新增权限要在
+  `project.yml` 加 usage description，下个 build 提审时会被看到。
+- App Icon 由 `../tmp/make_ios_appicon.py` 生成，与 PWA 图标同一设计。改设计先改
+  `../tmp/make_pwa_icons.py` 再同步这份脚本。
+- 上传与分发用 asc CLI，认证已持久化在系统钥匙串，默认 profile 是 Admin 角色，裸跑即可
+  （`asc auth status`）。上传：`asc builds upload --app <app id> --ipa <ipa> --wait`。
+- ⚠️ `asc review submit --confirm` 是对外不可逆的动作，留给人按。
 
-- **App Icon**：`Condenser/Assets.xcassets/AppIcon.appiconset`（1024 单尺寸、不透明、
-  满幅）——由 `../tmp/make_ios_appicon.py` 生成，与 PWA 图标同款设计（漏斗+水滴）；
-  改设计先改 `tmp/make_pwa_icons.py` 再同步这份脚本
-- **版本号**：`project.yml` 的 `MARKETING_VERSION` / `CURRENT_PROJECT_VERSION`
-  （升版本改这里 + `make gen`；Info.plist 由它们插值）
-- **出口合规**：`ITSAppUsesNonExemptEncryption=false`（只用 HTTPS 标准加密），
-  上传后 ASC 不再逐 build 问询
-- **隐私清单**：`Condenser/PrivacyInfo.xcprivacy` —— 不追踪、不采集；唯一
-  required-reason API 是 UserDefaults（CA92.1）。新增用到文件时间戳 / 磁盘容量 /
-  系统启动时间等 API 的代码时要同步补声明
-- **上传**：asc CLI 已装（brew），认证已 `asc auth login` 持久化到系统钥匙串
-  （profile `reorx-dev`，默认，裸跑即可用；`asc auth status` 查看）。兜底是
-  `~/Sync/apple-developer/secrets.env` 的 `ASC_*` 三件套（asc 原生识别的变量名，
-  `set -a; source …; set +a` 即可，文件用 envops 读）。上传 build：
-  `asc builds upload --path <ipa>`（asc-release-flow sub-skill 有完整编排）。
-  2026-08-13 起默认 profile 是 **Admin 角色** key（`reorx-admin`），旧 Developer key
-  的 403 限制不再存在（详见凭据目录 AGENTS.md 的「已知限制」）
+### TestFlight
 
-**App record 已创建（2026-08-13）**：名称 Condenser、bundle `com.reorx.condenser`、
-SKU `condenser-ios`、主语言 en-US——经 `asc web apps create`（网页会话 API）无头创建，
-无需浏览器自动化。app id / bundle ID 资源 id / 注册设备 / API key 等标识不入公开库，
-见私密 KB `kb.private/condenser/kb/docs/ios-app-store-release.md`。
-
-**首版素材已全部上架（2026-08-15）**：文案（副标题 / 描述 / 关键词 / 支持与营销 URL）、分类
-（NEWS + PRODUCTIVITY）、年龄分级（全 none → 4+）、版权、定价（免费）、全 175 地区可用、
-内容版权声明、隐私标签（Data Not Collected，已 publish）、3 张 `IPHONE_65` 截图——
-全部经 asc CLI 无头完成。命令与 ASC 侧资源 id 见上面那份私密 KB 文档；两个反复踩的坑记在
-那里：隐私标签 `publish` 前必须先 `apply`（pull 显示的是规范视图，远端其实空的，直接
-publish 报 409），以及 `asc review details-create` 强制要 `--contact-phone`。
-⚠️ 隐私政策是新建的 `PRIVACY.md`，商店里的 URL 指向 GitHub master——**提审前必须确认它
-已经 push**，否则链接 404。
-
-**demo server 已就位（2026-08-15）**，`asc validate` 的最后一个阻塞项（审核 demo 账号的
-name/password）由此消除：`https://condenser-demo.reorx.com`，只开 HN 源、无 Telegram 会话、
-不接自动部署。运维记录在 deploy workspace 的 `kb/docs/condenser.md`「Demo 实例」，**提审前
-必读**的是私密 KB `kb.private/condenser/kb/docs/demo-server.md`——初始化即健康检查的
-`scripts/demo_bootstrap.py`（脚本在本库）、审核表单三个字段怎么填、备注英文话术、每次提审前的
-checklist；密码实值与已填的表单值在同目录的 `ios-app-store-release.md`。
-
-连带一处 app 改动：`LoginView` 的服务器地址字段以前预填生产域名
-`https://condenser.reorx.com`，现在改成空（`CURRENT_PROJECT_VERSION` 1 → 2）。原因是
-审核员拿到的是全新安装，直接点登录会去**作者的生产服务器**认证，demo 密码在那里必被拒——
-报错读起来像「demo 凭据不管用」而不是「服务器填错了」，正是 2.1 被拒的典型形状。所以
-**build 1.0.0 (1) 作废**，提审用的是带这处改动的 **build 1.0.0 (2)**。
-
-**提审前的一切都已就绪，只差最后一条命令（2026-08-16）**：build 1.0.0 (2) 已 archive →
-upload → processing VALID → 挂到 1.0.0 版本；审核详情（demo 账号 = demo 域名 + 密码 +
-三步英文备注）已填；`asc validate` **0 error / 0 warning**（唯一 info 是「隐私标签发布状态
-公开 API 查不到」，用 `asc web privacy pull` 实测 `published: true`）；`asc review submit
---dry-run` 报 `wouldSubmit: true`。**故意停在 `asc review submit --confirm` 之前**——提审
-是对外不可逆动作，留给人按。ASC 侧资源 id 与提审命令原文见私密 KB。
-⚠️ 提审当时的四项前置（demo 在线 / 密码一致 / `PRIVACY.md` 已 push / build 号对）逐条
-怎么查，见私密 KB `kb.private/condenser/kb/docs/demo-server.md` 的 checklist——**每次提审
-都要重跑一遍**，不是一次性的。
-
-### TestFlight（2026-08-16 起可用）
-
-**内部测试不需要任何审核**，build processing 一 VALID 就能装——所以它和提审是两条独立的线，
-提审前先发一轮 TestFlight 不会耽误任何事。外部测试（最多 10000 人 / 公开链接）才需要
-Beta App Review，那是另一套、比正式审核轻。
-
-对本项目它有个**别处替代不了**的用处：提审的 ipa 是 App Store 签名的，profile 里没有设备清单，
-`make device` 装不上——TestFlight 是唯一能在真机上跑「即将提交的那个二进制」的途径。
-
-已建好一个 internal 组，账号持有人已是组内 tester（组 id / tester id 在私密 KB）。之后每个
-build 只需一条命令，`--build` 指已上传的 build id 就不会重复上传：
+内部测试不需要审核，build processing 一 VALID 就能装。它也是唯一能在真机上跑「即将提交的
+那个二进制」的途径：App Store 签名的 ipa 没有设备清单，`make device` 装不上。
 
 ```bash
 asc publish testflight --app <app id> --build <build id> --group <group id> \
-  --locale en-US --notify --test-notes "这轮要验什么"
+  --locale en-US --notify --test-notes "$(cat tmp/<date>-…/test_notes.txt)"
 ```
 
-验收看两处：`asc testflight distribution view --build-id <id>` 的 **Internal State 应为
-`IN_BETA_TESTING`**，以及 `asc builds test-notes list --build-id <id>` 能读回笔记
-（`asc publish testflight` 的输出表里 `Notified` 显示 false 是正常的——组上
-`Auto Notify: true` 时由 Apple 自动发信，不走这个字段）。内部 tester 必须是 ASC 用户
-（`asc users list`），拿外部邮箱加进 internal 组是不行的。TestFlight build **90 天后过期**。
-
-⚠️ **What to Test 的字符集是白名单**：笔记里带 `✕`（U+2715）直接被 ASC 打回
-`Text for whatsNew contains invalid characters`（2026-09-09 实测，`↑` 一并去掉了）。
-UI 元素在笔记里用中文描述（「右侧关闭钮」），别把界面上的符号原样抄进去。
-笔记正文写成 `tmp/<date>-…/test_notes.txt` 再 `--test-notes "$(cat …)"` 传，
-换行才留得住，也方便被打回后改一处重跑。
-
-### 商店截图的造法（下个版本照搬）
-
-不碰生产数据、不需要任何账号，因为**只开 HN 源**就能填满界面（公开数据，一分钟内
-200+ 条，含 hckrnews 历史回填）：
-
-1. 临时后端指向全新 DB：`CONDENSER_DB_PATH=tmp/<date>-appstore-shots/condenser.db uv run
-   uvicorn condenser.app:create_app --factory --port 8793`；
-2. 往 `devices` 表插调试 token 的 sha256（脚本见 `tmp/<date>-appstore-shots/`），再
-   `POST /api/sources/hn/subscriptions {"channel_id":"front"}`（订阅即 kick 一轮采样）；
-3. 6.9" 模拟器（iPhone 17 Pro Max；本机默认没有，先 `xcrun simctl create "iPhone 17 Pro Max" com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro-Max`，闲置 7 天后 mac-dev-cleanup 会自动删掉）装 Debug 构建 → `simctl status_bar override --time 9:41
-   --batteryState charged --batteryLevel 100` → 用 `SIMCTL_CHILD_CONDENSER_DEBUG_ROUTE`
-   逐屏截图（路由表见下面「CLI 驱动的界面走查」），`simctl ui <udid> appearance dark`
-   出深色版；
-4. `asc screenshots sizes` 说 iPhone 只有 **`APP_IPHONE_65`**（1284×2778）必填；6.9"
-   出图是 1320×2868，`sips -z 2789 1284` 等比放大后 `sips -c 2778 1284` 居中裁。
-   上传用 `--version-localization <版本本地化资源 id>`（**不是** `en-US`）。
-
-⚠️ **设置页要单独拍**，别用上面这条临时后端的流水线——它第一行就是服务器地址，截出来印着
-`http://localhost:8793`。做法（2026-08-16 补的第 4 张）：让模拟器直连 **demo server**，
-截出来的地址就是审核员会看到的那个域名。token 不必碰数据库，用公开 API 现铸现销：
-`POST /api/auth/login`（密码走 envops，别落盘）拿 cookie → `POST /api/auth/device` 拿 token
-→ `SIMCTL_CHILD_CONDENSER_DEBUG_SERVER=<demo> SIMCTL_CHILD_CONDENSER_DEBUG_TOKEN=<token>
-SIMCTL_CHILD_CONDENSER_DEBUG_ROUTE=settings` 启动 → 截图 → `DELETE /api/auth/devices/{id}`。
-⚠️ `status_bar override` 要把信号一起盖掉（`--cellularMode active --cellularBars 4
---dataNetwork wifi --wifiMode active --wifiBars 3`），只给 `--time`/电量的话信号是「....」，
-和另外三张对不上。定稿四张：浅色时间线 / 深色时间线 / 收藏页 / 设置页。
-
-设置页截图里有两处**已知但没修**的东西，重拍前先看一眼是不是已经解决：tab 栏
-`Timeline` 是英文而另外三个是中文；半透明 tab 栏下面会透出「设备」区的红色删除按钮残影
-（iOS 原生半透明栏的正常表现，不是渲染 bug，但静态图里看着像）。
-
-## 开发调试：跳过授权直连本地后端
-
-模拟器验证 timeline 等真实数据 UI 时，不必走交互式授权：
-
-1. 起本地后端（dev DB 在 `tmp/condenser.db`，有真实消息数据）：
-   `CONDENSER_DB_PATH=tmp/condenser.db uv run uvicorn condenser.app:create_app --factory --port 8792`
-2. 往 devices 表插一个已知 token 的 sha256（`iOS Simulator (dev)` 行可能已存在，
-   token 明文 `devtoken-ios-sim`）
-3. 带 debug env 启动 app（AuthSession 的 `#if DEBUG` 注入口，仅内存态、不落 Keychain）：
-   `SIMCTL_CHILD_CONDENSER_DEBUG_SERVER=http://localhost:8792 SIMCTL_CHILD_CONDENSER_DEBUG_TOKEN=devtoken-ios-sim xcrun simctl launch "iPhone 17" com.reorx.condenser`
-
-Info.plist 已配 `NSAllowsLocalNetworking`（http://localhost 放行）。
-截图：`xcrun simctl io booted screenshot <path>.png`。
-
-### CLI 驱动的界面走查（debug 深链路由）
-
-模拟器窗口不在当前 Space（AppleScript/cliclick 点不到）时，用启动环境变量直接导航到
-目标界面再截图（`MainView.handleDebugURL`，仅 DEBUG 构建）：
-
-```
-SIMCTL_CHILD_CONDENSER_DEBUG_ROUTE=<route> xcrun simctl launch "iPhone 17" com.reorx.condenser
-```
-
-route 取值：`tab/{timeline|subs|channels|saved}` 切 tab（channels 是订阅 tab 的旧别名；
-`tab/subs/<source>` 再带一段则进去就滚到该信源分组——订阅列表已经长到一屏放不下，
-而模拟器窗口收不到合成手势：`System Events` 拿不到它的 window，`cliclick` 也就无从下手）；
-`channel/<id>` push 单频道 timeline；`hn` push HN feed timeline；
-`x[/<feed>]` push 某个 X feed（缺省第一条 X 订阅；For You 不在聚合流里，这是唯一入口）；
-`rss[/<第几个订阅>]` push 某个 RSS feed——**用下标不是 key**，这个源的 feed key 是
-整个 URL，塞不进路径段；
-`settings` 切设置 tab；
-`detail/<cid>/<mid>` / `viewer/<cid>/<mid>` 弹详情（Mac 上 `detail/…` 一律进右侧详情栏）
-sheet / 全屏图片浏览器（消息须在 timeline 首页内，路由会等首屏加载完才应用）；
-`detail/x/<feed>[/<tweet id>]` 弹推文详情——X 条目单独走一次网络查，因为 For You
-根本不在 `reader.timeline.items` 里；省略 id 时挑该 feed 第一条有判定的（判定证据
-正是这个界面最值得看的部分）；
-`detail/hn[/<story id>]` 弹 story 详情（省略 id 时挑第一条 self-post——自文正文 +
-预览卡是这个界面最值得看的部分）；
-`detail/rss[/<条目 id>]` 弹条目详情——同样单独查，而且要**翻页**（最多 8 页）：
-归档按时间倒序，值得看的怪例（中文长文、缺字段的）都排在两百多位；
-省略 id 时挑第一条有正文的；
-再加 `CONDENSER_DEBUG_SHARE=1` 则抽屉一出现就自动按「分享图片」——模拟器窗口收不到
-合成手势；产物在 app 容器的 `tmp/`
-（`xcrun simctl get_app_container booted com.reorx.condenser data`）；
-`forward/<item key>[/<comment>]` 直接弹转发 dialog（条目不必在首页内，只用 key，
-例如 `forward/tg:-1001:123` / `forward/hn:44123` / `forward/x:2080…`；带第 3 段
-则 1s 后自动提交——**真实转发落地目标频道**，`-` 表示不带评论，中文评论需
-percent-encode）。
-每换一个界面 terminate + 重新 launch 一次即可。也支持
-`xcrun simctl openurl booted "condenser://debug/<route>"`，但系统会弹
-"Open in Condenser?" 确认框（且该框跨 app 重启存活，误触发后要
-`simctl shutdown && boot` 才能清掉），无人值守走查一律用环境变量形式。
-
-## Mac Catalyst（2026-09-04）
-
-Mac 各列表的 focus 检查只更新蓝色胶囊，用户点击才回顶刷新；通知按窗口与当前可见列表
-投递，避免隐藏 tab 重复请求。当前 View 标题统一走 `readerNavigationTitle()`，Mac 使用
-editor 工具栏角色靠左排列；登录页两端共用主图标的 `ShareMark` 图片。
-走查可用 `CONDENSER_DEBUG_FOCUS_GAP=<秒>` 缩短等待、`CONDENSER_DEBUG_LOGIN=1` 仅在
-内存里展示登录页（不清 Keychain）；两者仅 DEBUG 生效。行为说明见 `../kb/docs/ios.md`。
-
-同一份代码编成 Mac app（plan `../kb/plans/2026-09-04-mac-catalyst.md`），零 Swift 改动就能
-编译通过，适配集中在 `UI/Platform.swift`：`Platform.isMac`（编译期判断，不用
-`userInterfaceIdiom`——Catalyst 的 iPad idiom 会答 pad）、`readingColumn()`（列表限宽
-720pt 居中）、`detailSheetPresentation()`（iPhone 两档 detent + grabber；Mac `.page` 尺寸
-+ 右上关闭钮 + Esc）、`Platform.deviceName`（Catalyst 的 `UIDevice.name` 是字面的
-「iPad」，Mac 上取主机名）。`MainView` 的 TabView 加 `.sidebarAdaptable`（Mac 变侧栏，
-iPhone 不变），`AutoHideBars` Mac 上直通，外链 Mac 上直接开系统浏览器（没有 X app 可深链，
-Catalyst 的 SFSafariViewController 本来就是转手给 Safari）。
-
-- **project.yml**：`SUPPORTS_MACCATALYST` + `TARGETED_DEVICE_FAMILY[sdk=macosx*]: "2,6"`
-  （6 = Optimize for Mac，AppKit 尺寸的控件；iOS SDK 下仍是 `"1"` iPhone only，别把 2 加进
-  base——商店那边就要交 iPad 截图了）+ `SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: NO` +
-  `DERIVE_MACCATALYST_PRODUCT_BUNDLE_IDENTIFIER: NO`（同 bundle ID = 同一个 app record 的
-  macOS 平台，universal purchase）。`Condenser-macCatalyst.entitlements` 只挂在
-  macOS SDK 下：App Sandbox + 网络客户端 + 相册写入 + **keychain-access-groups**。
-- **每个 tab 内容各挂一次 `.environment(reader)`**（`MainView.tabs`），DEBUG 的三个 sheet
-  同样：`.sidebarAdaptable` 在 Mac 上切到非首个 tab 时，新 tab 的视图树拿不到外层注入的
-  Observable，直接 Fatal error。iPhone 不受影响。
-- ⚠️ **`make build-mac` 缺省团队签名**（Apple Development + 自动 profile，
-  `-destination 'platform=macOS,variant=Mac Catalyst'` 指向这台 Mac，首次会把它注册进团队），
-  不是 ad-hoc：Catalyst 走 data-protection keychain，ad-hoc 签名没有 keychain-access-groups
-  entitlement，`SecItemAdd` 静默返回 -34018，token 存不住——症状是每次重启回登录页而
-  服务器地址还在（UserDefaults）。`KeychainStore.write` 现在会把非零状态写进 OSLog
-  （subsystem `com.reorx.condenser`）。只想编译：`MAC_SIGN=adhoc`。
-- 换签名后首次启动 macOS 会问「differs from previously opened versions」（沙盒容器归属），
-  点 Open Anyway 一次即可。
-- **本地直连**：`CONDENSER_DEBUG_SERVER=… CONDENSER_DEBUG_TOKEN=… CONDENSER_DEBUG_ROUTE=…
-  .build/DerivedData/Build/Products/Debug-maccatalyst/Condenser.app/Contents/MacOS/Condenser`
-  （直接跑二进制，`open` 不传环境变量；路由表同模拟器）。
-- **走查三个坑**（`tmp/2026-09-04-mac-catalyst/` 里有截图脚本）：① 退出用
-  `osascript -e 'tell application id "com.reorx.condenser" to quit'`，**不要 pkill**——
-  SIGTERM 被记成异常退出，下次启动先弹模态的「quit unexpectedly」把窗口挡住；② 别留第二份
-  DerivedData 里的 Condenser.app，`tell application id … to activate` 会被 LaunchServices
-  解析到旧那份并把它启动起来（跑的是老代码）；③ 截图前先 `activate` 把窗口拉到前台，
-  `screencapture -R` 截的是屏幕区域，被终端盖住就是终端。
-- **字号档位在 Mac 上不走 Dynamic Type**（2026-09-04 用户反馈滑块无效、字偏小）：Catalyst 的
-  Mac idiom 没有 Dynamic Type，实测 `UIFont.preferredFont(forTextStyle:compatibleWith:)` 对任何
-  content size category 都答同一尺寸（body 13 / subheadline 11），`.dynamicTypeSize` 随之成了
-  空操作；而卡片正文用的 `.subheadline` 在 Mac 表里只有 11pt（iPhone 15pt），这就是偏小的原因。
-  修法：阅读界面的文字样式一律用 `.readingFont(.subheadline[, weight:])` 而不是 `.font(.xxx)`
-  （`UI/ReadingFontScale.swift`）——iPhone 上仍是 Dynamic Type 样式，Mac 上按环境里的档位换成
-  显式点值，表在 Kit 的 `ReadingTextStyle`（基准 = iOS 默认表，四档倍率对着 body 15/17/19/21，
-  所以「正常」在两端一样大）。`readingFontScale()` Mac 上写的是这个环境值；`SelectableTextView`
-  的 UIFont 同表；分享图没挂档位、拿到缺省「正常」= iOS 尺寸，两端出图从此一致（之前 Mac 上
-  分享图是 13pt 的）。⚠️ 阅读界面新加文字别写 `.font(.caption)`——iPhone 看不出问题，Mac 上
-  那一处不随滑块变。
-- **侧栏可收起**（同日）：`.sidebarAdaptable` 的 TabView 在 Catalyst 上底层是 tabSidebar 模式的
-  `UITabBarController`，SwiftUI 没暴露收起入口、也不像 `NavigationSplitView` 自带按钮。
-  `UI/MacSidebar.swift`：AppStorage 开关 `condenser.mac.sidebarHidden` → `MacSidebarApplier`
-  （挂在 TabView `.background` 的 UIView，进 window / 开关变时写 `tab.sidebar.isHidden`，公开
-  API）；四个 tab 根界面 `.macSidebarToggleToolbar()` 放工具栏按钮，View 菜单「显示/隐藏侧栏」
-  **⌥⌘S**（Finder 同款）。两条弯路：UIKit 已在响应链注册了 ⌃⌘S → `toggleSidebar:`，自己再挂
-  ⌃⌘S 建菜单时因重复**直接崩**；而那个 `toggleSidebar:` 用 `sendAction` 发上去什么也不发生，
-  所以不借它。Catalyst 的 NavigationStack 工具栏不分左右，按钮落在标题右侧那组里。
-- **走查再补三个坑**（`tmp/2026-09-04-mac-sidebar-fontscale/` 有脚本）：④ `tell app to activate`
-  不一定抢得到前台（Sequoia 起限制），要 `tell application "System Events" to set frontmost of
-  process "Condenser" to true`；⑤ 自己 post 的 CGEvent 点击点不动 SwiftUI 工具栏按钮（列表行、
-  普通按钮都能点），`tell application "System Events" to click at {x, y}` 才行；⑥ 开着详情抽屉的
-  实例 AppleScript quit 会报「User canceled」，而且**同 bundle 的第二个实例起不来**（看起来像
-  新构建没生效）——先 `key code 53`（Esc）关抽屉再 quit。
-- **详情在 Mac 上是右侧栏，不是 sheet**（同日晚，用户反馈：Catalyst 的 `.page` sheet 比窗口宽时
-  macOS 会把整个窗口挪开给它腾位置，窗口贴着屏幕左边一开详情就被顶着往右跑）。
-  `Platform.swift` 的 `DetailPresentation`：iPhone 仍是 `.sheet(item:)`，Mac 上 `HStack` 在列表右侧
-  展开详情栏；`MessageListView` / `SavedScreen` 都改走 `.detailPresentation(item:)`，列表里被选中
-  的卡片 `.detailSelectionHighlight` 铺一层 accent 10% 底色。宽度规则在 Kit 的
-  `DetailColumnLayout`（有测试）：窗口宽的 45%，夹在 360–520pt，列表放不下 320pt 时栏盖满整个
-  内容区（仍在窗口内）。三条要记的：① 详情视图必须 `.id(item.id)`——sheet 每次都是新视图树，栏
-  里换条目只是换参数，不加 id 上一条的 `@State`（标注模型、已取的全文）会留给下一条；② 栏不是
-  presentation，`@Environment(\.dismiss)` 在里面是空操作，关闭走 `\.detailColumnDismiss` 环境值，
-  `DetailSheetPresentation` 见到它就换成「顶部一行关闭钮 + Esc」形态（DEBUG 直接弹的 sheet 仍走
-  `.page` 分支）；③ ⚠️ 容器宽度要量 **`.frame(maxWidth: .infinity)` 之后**的尺寸——直接量 HStack
-  会把子视图总宽量进去，栏宽取自上一轮测量值再加 1pt 分隔线就比容器宽，测量值每轮 +1，
-  布局死循环：实测三个实例各吃满一个核，AppleScript quit / ⌘Q 全无响应，只能 `kill -9`。
-  DEBUG 路由 `detail/…` 在 Mac 上也走这个栏（`ReaderSession.debugDetailRequest` →
-  `MessageListView` 认领），走查脚本 `tmp/2026-09-04-mac-detail-column/route.sh`。
-- **商店侧还没做**（待 iOS 审核解掉后）：Mac App Distribution + Mac Installer Distribution
-  证书、`make archive` 的 Catalyst 变体、ASC 加 macOS 平台版本 + Mac 截图、单独过审。
-
-## 排错顺序
-
-构建怪异时先怀疑环境再怀疑代码：
-
-1. `make clean && make build`（清 DerivedData + 重新生成工程）
-2. 模拟器 runtime 缺失（`xcrun simctl list runtimes` 为空）：`xcodebuild -downloadPlatform iOS`
-3. SPM 缓存问题：`rm -rf CondenserKit/.build`、删 `.build/DerivedData` 下 SourcePackages
-4. 僵尸进程：`pgrep -l xcodebuild`、`pgrep -l Simulator`
-5. 以上无效再看代码
+- 验收：`asc testflight distribution view --build-id <id>` 的 Internal State 为
+  `IN_BETA_TESTING`，`asc builds test-notes list --build-id <id>` 能读回笔记。输出表里
+  `Notified: false` 是正常的，组上开着 Auto Notify 时由 Apple 发信。
+- ⚠️ What to Test 的字符集是白名单，带 `✕`、`↑` 这类符号会被打回
+  `Text for whatsNew contains invalid characters`。界面元素用文字描述。
+- 内部 tester 必须是 ASC 用户。build 90 天后过期。

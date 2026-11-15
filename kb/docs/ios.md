@@ -1,6 +1,6 @@
 ---
 created: 2026-08-21
-updated: 2026-11-04
+updated: 2026-11-15
 tags:
   - ios
   - swiftui
@@ -165,7 +165,8 @@ records all came free from the X phase). Kit: `RssEntry` (+`RssBody`, `RssFeed.l
 
 Three decisions worth keeping:
 
-- **The body is a two-case enum, not a string.** `RssBody.summary` vs `.excerpt` —
+- **The body is a two-case enum, not a string.** (Superseded 2026-08-23: `RssBody` is
+  gone, see「RSS：摘要、摘录、正文图、边缘右滑」below.) `RssBody.summary` vs `.excerpt` —
   a summary is a machine's paraphrase, and a card that renders it like the author's own
   prose is lying quietly, so the source travels with the text and the card marks it
   (「AI 摘要」). The detail sheet shows both, summary first: you tap in to read the
@@ -183,6 +184,120 @@ Three decisions worth keeping:
 ⚠️ This landed **after** 1.0.0 went to review, so it rides the next build. Until a build
 with `RssCard` is on the phone, `CONDENSER_RSS_ENABLED` stays false in production: a
 shipped client that meets an unknown `source` renders a blank row (the X Phase 2 lesson).
+
+> 下面六节（理由 chip 到标注）2026-11-15 从 `ios/AGENTS.md` 整段搬来，那边只留约束。
+
+## 理由 chip（2026-07-26，schema v9）
+
+踩之后追问一次「为什么不喜欢？」——`ItemFeedbackReason`（topic / promo / aiSlop /
+engagementFarming / author，同样有 `other` 兜底；`engagementFarming`「博眼球」是
+2026-07-27 加的，只动常量不动 schema），envelope 上是与 `feedback` **平级**的
+`feedback_reason`（老版本 App 把 `feedback` 当字符串解，改成对象会整页解码失败，而 App
+是单独升的）。两条规则：`TimelineStore` / `RecordsStore` 的 `setFeedback`（拇指，不带
+理由）与 `setReason`（选 chip，verdict 保持 down）都走同一个 `write(_:verdict:reason:)`，
+一次请求写完整条标签，所以改正会丢掉过期理由、撤销连理由一起删；理由**可跳过**，跳过
+零损失。UI 用原生 `confirmationDialog` 而不是内联 chip 行（手机上一行摆不下这些中文
+标签），只在「这一下确实标成了踩」时弹；已选理由只在 `XDetailSheet` 的「反馈」行回显，
+卡片上不画。理由集合的事实来源与跨端测试见 `kb/docs/x-feedback.md`。
+
+## 转发源通用化（2026-07-27）
+
+转发不再是 Telegram 专属。Kit 的 `forwardMessage(channelID:messageID:)` 换成
+`forwardItem(key:comment:)`（打 `POST /api/forward`，服务端按 key 分派：TG 原生 forward /
+引用发布，HN 渲染成「粗体标题超链接原文 + 来源行超链接讨论」，X 只发一条把域名换成
+fixupx.com 的链接——x.com 不给 Telegram 供 embed，fixupx 给，作者/正文/图/引用推全在
+预览卡里）。当时三个 detail sheet 的**收藏星标从 header 挪到底部动作行**，和新加的
+「转发」并排——两件事都是「对这条做点什么」，摆在一起才好按；共用组件是
+`ItemActionButtons` 与 `ItemActionBar`，今天的布局见本文「详情底部动作区」。
+`ForwardDialog` 收 `itemKey` + `isTelegram`，后者只影响留空时的文案（「原样转发」vs
+「只发标题和链接」）。旧的 `/api/messages/{cid}/{mid}/forward` 服务端保留为薄壳，所以
+升级服务端不会打断手机上还没重装的旧版本。
+
+## 判定通道 A 的证据（2026-07-29）
+
+通道字母是开放字典（`[String: XVerdictChannel]`），所以后端加通道 A（作者先验）只需补
+一行中文名与它的证据渲染：A 的证据不是权重对而是一句话（`XVerdictChannel.record`，
+「@ibkr · 你踩过 6 次，赞过 0 次」），因为这个通道根本不读推文，只读账号。
+
+## 外链统一出口（2026-07-29）
+
+所有外链都过 `ExternalLink.swift` 的 `openExternalURL(_:purify:fallback:)`——X 的推文 /
+主页链接先试 `twitter://` 深链进 X app（scheme 是改名前注册的，X 一直认；打不开再试一次
+x.com 的 universal link），两条都不成才回落 in-app Safari，其余链接直接 Safari。「在 X 上
+打开」要的是能点赞、能回复、已经登录好的原生界面，SFSafariViewController 里的 x.com 只是
+个逼你登录的壳。网页链接 → 深链的映射在 Kit 的 `xAppURL(for:)`（纯逻辑，有测试）：只认
+单条推文与作者主页两种确定形态，认不出就返回 nil 走网页——把人送进 app 的错误界面比留在
+Safari 更糟。列表/详情用 `.externalLinks(safari:)` 接管子树链接；sheet 自己的按钮直接调
+`openExternalURL`，因为 `@Environment(\.openURL)` 在 sheet 的 body 里读到的是**外层列表**
+那份，Safari 会从这张 sheet 背后弹出来。深链有没有真的落进 X app 只能在装了 X 的真机上
+验（`make device`），模拟器没有 X app，走的永远是回落分支。Purifier 开着时的分支顺序
+（改写成功就不走深链、`purify: false`）见本文「Purifier 阅读代理」末条。
+
+## RSS：摘要、摘录、正文图、边缘右滑（2026-08-23 ~ 09-19）
+
+上面 Phase 6 的 `RssBody` 枚举在 2026-08-23 退役，定型后的五条：
+
+- **feed key 是整个 feed URL**（读者输入什么就用什么作键，`RssFeed.label` 在学到标题前
+  回落成去掉 scheme 的 URL）。所以 debug 路由 `rss[/<下标>]` 用下标而不是 key——URL
+  塞不进路径段；`detail/rss[/<id>]` 则要翻页找，归档按时间倒序而想看的往往是老条目。
+- **摘要不替代正文**：摘要是机器的转述，必须标出来，但也不该顶掉原文开头——只看转述
+  没法快速判断文章本身。卡片先画正文开头 3 行（空白折叠成单空格、纯省略号截断，不给
+  more），`AiSummaryBlock` 摘要块跟在下面：浅靛蓝底 + 左侧深一档同色竖条的引用块，
+  「AI 摘要」标注在块内顶部（先撞上标注再读内容；靛蓝是因为琥珀/橙/天蓝都已有含义），
+  卡片与详情 sheet 共用。Kit 面是两个属性：`displaySummary`（trim 后非空才算有）+
+  `contentText`；详情 sheet 两样都给——摘要块在上、全文接在下面，因为点进来是要读文章的。
+- **左边缘右滑关闭**（`EdgeSwipeDismiss.swift`）起于 RSS 详情：长文滚到底后下拉手势只会
+  回滚内容，从左边缘右滑是给单手补的退路；手势用普通 `gesture` 不用
+  `highPriorityGesture`，否则会抢走从边缘起手的纵向滚动。2026-09-19 起它不再挂在某个
+  抽屉上，而是由 `detailSheetPresentation()` 的 iPhone 分支替**四个源**统一挂（之前只有
+  RSS 有，X / HN / Telegram 三个关不掉）——新加的详情抽屉只要走这个修饰就自带；判定
+  门槛在 Kit 的 `EdgeSwipe`（有测试）。
+- **列表只有摘录，全文按需取**：envelope 的 `content_excerpt` 是服务端剥好的约 500 字
+  纯文本，`content` 只有 `GET /api/rss/entries/{id}` 与改版前存下的收藏快照才带（feed
+  正文平均 13.9KB、最长一条 7.1MB，一页 30 条全带就是一次几 MB 的下载）。Kit 面因此是
+  两个属性：`contentText` 走摘录（卡片用；旧快照里没有摘录时才回落去解析 `content`），
+  全文只在详情 sheet 解析。`RssDetailSheet` 打开时 `reader.api.rssEntry(id:)` 取一次，
+  到手前先显示摘录 + 「正在加载全文…」，失败就停在摘录上——**解析结果（块序列，见
+  下条）算一次存 state**，那是一整篇的正则，放在 body 里每次重渲染都会重跑（正是这次
+  排查 RSS 卡顿找到的另一半）。后端计划
+  `kb/plans/2026-08-23-rss-list-excerpt-detail-endpoint.md`。
+- **正文里的图渲染成块**（起因是 rss:677 在 iOS 上看不到图）：Kit 的 `ArticleBlocks.swift`
+  把全文 HTML 切成文本块 + 图片块（`articleBlocks(fromHTML:baseURL:)`；2026-09-16 从
+  `RssBlocks` 改名，X 长文共用，渲染在 `UI/ArticleBlocksView.swift`）。**不是另一套 HTML
+  处理**：先把 `<img>` 换成私用区占位符（U+E001，`<pre>` 用的 U+E000 的下一个码位）、
+  跑完 `rssPlainText` 既有管线、再按占位符切块，两条路径共享同一份规则——副产物是
+  `<script>` 里的 `<img>` 连占位符一起消失。src 相对路径按文章 link 解析、只留
+  http/https，data: 占位图回落 `data-src`/`data-original`（WordPress lazy-load 插件的
+  发法）；width/height 属性给 UI 预留纵横比（缺省 4:3，加载完换图片天然比例淡入）。图走
+  `/api/preview/image` 代理，点图进 `ImageViewerScreen`（收全文所有图、从点中那张起）。
+  **卡片仍不放图**——列表的账刚瘦下来，每条一张图的请求要单独算一轮。快照契约随之
+  v2→v3（旧快照没摘录，decode 得出来但画成空白卡片，按 miss）。计划
+  `kb/plans/2026-08-23-ios-rss-article-images.md`。
+
+RSS 源的总计划：`kb/plans/2026-08-20-rss-source-opml-llm-summary.md`。
+
+## 标注（2026-08-24，四个源）
+
+条目 note + 正文高亮，数据全在服务端（schema v18，envelope 与 `feedback` 平级多了
+`note` / `annotations`）。计划 `kb/plans/2026-08-24-annotations.md`。
+
+- **Kit**：`ItemAnnotation` 模型、`locateAnnotation` 重定位纯函数（锚点是
+  `{quote, prefix, suffix}` 引文三元组，锚在**屏幕显示的派生文本**上——精确搜 → 空白
+  折叠兜底 → 上下文打分，`block` 只做 tie-break；nil = 孤儿）、`APIClient` 四调用（不进
+  `CondenserAPI` 协议，`rssEntry` 先例）、`TimelineItem.hasNotes`、`RecordsStore.unsave`
+  对带标注的行只翻旗标不移除（服务端不变式：行存在 ⟺ 收藏 ∨ note ∨ 标注）。
+- **App**：`SelectableTextView` 长出 `highlights`（浅黄底 + 深黄下划线）+ 系统编辑菜单
+  （选中插「高亮」；tap 命中**范围最短**的高亮后 `presentEditMenu`「评论/删除」，不自绘
+  popover）；`ItemAnnotationsModel` + `AnnotatedTextView`（`UI/ItemAnnotations.swift`）
+  四个详情 sheet 共用，孤儿高亮列在抽屉尾部（引文 + 评论 + 删除），`AnnotationBadge` 是
+  卡片上的靛蓝角标——收藏列表因 v18 会列出「只标注未收藏」的行，靠它和空心星区分。
+  `ItemActionButtons` 的「评论」按钮（有 note 时 filled + 靛蓝）开 `ItemNoteSheet`：
+  重开即编辑、清空保存 = 删除；「转发」= 先 `POST /api/note` 再切到预填的
+  `ForwardDialog(initialComment:)`（`.sheet(item:)` 换 item 自带先收后弹）。
+- **三条边界**：X 的定位底本是 t.co 替换后的 `xDisplayedText`（与 `linkifiedNS` 共享替换
+  规则，改一处必须连改另一处）；RSS 摘录回落态高亮入口禁用（摘录不是定位底本），标注的
+  block 下标数**文本块序列**（图块不占号）；引用推卡与 AI 摘要块刻意不接标注（别人的
+  条目 / 生成物）。
 
 ## 分享图片（2026-08-23，四个源）
 
@@ -266,8 +381,8 @@ ipa 落地 `.build/DerivedData/export/Condenser.ipa`，签名 Apple Distribution
 **首版素材全部上架（2026-08-15）**：文案 / 分类（NEWS+PRODUCTIVITY）/ 年龄分级（4+）/
 版权 / 定价（免费）/ 全 175 地区 / 内容版权声明 / 隐私标签（Data Not Collected，已
 publish）/ 3 张 `IPHONE_65` 截图，全部经 asc CLI 无头完成。截图的造法（临时后端 +
-只开 HN + debug 路由逐屏截）与 asc 的几个坑记在 `ios/AGENTS.md`「App Store 发布」，
-ASC 侧资源 id 在私密 KB。⚠️ 新建的 `PRIVACY.md` 是商店隐私政策 URL 的落点，
+只开 HN + debug 路由逐屏截）记在 `kb/docs/ios-walkthrough.md`「商店截图的造法」，
+asc 的几个坑与 ASC 侧资源 id 在私密 KB。⚠️ 新建的 `PRIVACY.md` 是商店隐私政策 URL 的落点，
 **提审前必须已 push 到 master**，否则 404（2026-08-15 已 push）。
 **1.0.0 已提交审核，`WAITING_FOR_REVIEW`（2026-08-16 02:40 UTC）**：审核 demo server
 （`kb.private/condenser/kb/docs/demo-server.md`，`condenser-demo.reorx.com`，只开 HN 源）
@@ -311,8 +426,8 @@ Esc、外链开系统浏览器、设备名取主机名。四个源的卡片 / �
 （Fatal error，修法是每个 tab 内容各挂一次 `.environment(reader)`）；**② Catalyst 走
 data-protection keychain**，ad-hoc 签名的构建 `SecItemAdd` 静默 -34018，token 存不住——
 `make build-mac` 因此缺省团队签名 + entitlements 里显式写 `keychain-access-groups`
-（不写 Xcode 不嵌 profile），`KeychainStore.write` 也从此把失败写进 OSLog。工程细节、
-走查的三个坑与商店侧待办见 `ios/AGENTS.md`「Mac Catalyst」。
+（不写 Xcode 不嵌 profile），`KeychainStore.write` 也从此把失败写进 OSLog。工程细节
+见本节末「工程细节」，走查的坑见 `kb/docs/ios-walkthrough.md`「Mac Catalyst 走查」。
 
 **同日下午的两处 Mac 修正**（用户实机反馈）：字号滑块在 Mac 上无效且字偏小——Catalyst 的
 Mac idiom 根本没有 Dynamic Type（任何 category 都是 body 13 / subheadline 11），卡片正文的
@@ -328,7 +443,75 @@ iPhone 仍弹 sheet、Mac 在列表右侧展开一栏，宽度规则在 Kit 的 
 360–520pt，放不下两栏就盖满），选中卡片铺 accent 底色，关闭钮 + Esc；三个源的详情 sheet 零改动，
 因为它们只认 `detailSheetPresentation()`，那一层按环境里有没有 `detailColumnDismiss` 切形态。
 走查踩了一个值得记的坑：容器宽度量在 HStack 自身上会和栏宽互相追、布局死循环吃满 CPU，
-细节与修法在 `ios/AGENTS.md`「Mac Catalyst」。截图 `tmp/2026-09-04-mac-detail-column/`。
+细节与修法在下面「工程细节」。截图 `tmp/2026-09-04-mac-detail-column/`。
+
+### 工程细节
+
+2026-11-15 从 `ios/AGENTS.md`「Mac Catalyst」整段搬来，那边只留约束。
+
+适配集中在 `UI/Platform.swift`：`Platform.isMac`（编译期判断，不用
+`userInterfaceIdiom`——Catalyst 的 iPad idiom 会答 pad）、`readingColumn()`（列表限宽
+720pt 居中）、`detailSheetPresentation()`（iPhone 两档 detent + grabber；Mac `.page` 尺寸
++ 右上关闭钮 + Esc）、`Platform.deviceName`（Catalyst 的 `UIDevice.name` 是字面的
+「iPad」，Mac 上取主机名）。`MainView` 的 TabView 加 `.sidebarAdaptable`（Mac 变侧栏，
+iPhone 不变），`AutoHideBars` Mac 上直通，外链 Mac 上直接开系统浏览器（没有 X app 可深链，
+Catalyst 的 SFSafariViewController 本来就是转手给 Safari）。当前 View 标题统一走
+`readerNavigationTitle()`，Mac 使用 editor 工具栏角色靠左排列；登录页两端共用主图标的
+`ShareMark` 图片。Mac 各列表的 focus 检查只更新蓝色胶囊，通知按窗口与当前可见列表投递，
+避免隐藏 tab 重复请求。
+
+- **project.yml**：`SUPPORTS_MACCATALYST` + `TARGETED_DEVICE_FAMILY[sdk=macosx*]: "2,6"`
+  （6 = Optimize for Mac，AppKit 尺寸的控件；iOS SDK 下仍是 `"1"` iPhone only，别把 2 加进
+  base——商店那边就要交 iPad 截图了）+ `SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: NO` +
+  `DERIVE_MACCATALYST_PRODUCT_BUNDLE_IDENTIFIER: NO`（同 bundle ID = 同一个 app record 的
+  macOS 平台，universal purchase）。`Condenser-macCatalyst.entitlements` 只挂在
+  macOS SDK 下：App Sandbox + 网络客户端 + 相册写入 + **keychain-access-groups**。
+- **每个 tab 内容各挂一次 `.environment(reader)`**（`MainView.tabs`），DEBUG 的三个 sheet
+  同样：`.sidebarAdaptable` 在 Mac 上切到非首个 tab 时，新 tab 的视图树拿不到外层注入的
+  Observable，直接 Fatal error。iPhone 不受影响。
+- ⚠️ **`make build-mac` 缺省团队签名**（Apple Development + 自动 profile，
+  `-destination 'platform=macOS,variant=Mac Catalyst'` 指向这台 Mac，首次会把它注册进团队），
+  不是 ad-hoc：Catalyst 走 data-protection keychain，ad-hoc 签名没有 keychain-access-groups
+  entitlement，`SecItemAdd` 静默返回 -34018，token 存不住——症状是每次重启回登录页而
+  服务器地址还在（UserDefaults）。`KeychainStore.write` 现在会把非零状态写进 OSLog
+  （subsystem `com.reorx.condenser`）。`MAC_SIGN=adhoc` 本是「只想编译」的入口，
+  2026-09-16 起过不了 provisioning 检查（`kb/known-issues.md`）。
+- 换签名后首次启动 macOS 会问「differs from previously opened versions」（沙盒容器归属），
+  点 Open Anyway 一次即可。
+- **字号档位在 Mac 上不走 Dynamic Type**（2026-09-04 用户反馈滑块无效、字偏小）：Catalyst 的
+  Mac idiom 没有 Dynamic Type，实测 `UIFont.preferredFont(forTextStyle:compatibleWith:)` 对任何
+  content size category 都答同一尺寸（body 13 / subheadline 11），`.dynamicTypeSize` 随之成了
+  空操作；而卡片正文用的 `.subheadline` 在 Mac 表里只有 11pt（iPhone 15pt），这就是偏小的原因。
+  修法：阅读界面的文字样式一律用 `.readingFont(.subheadline[, weight:])` 而不是 `.font(.xxx)`
+  （`UI/ReadingFontScale.swift`）——iPhone 上仍是 Dynamic Type 样式，Mac 上按环境里的档位换成
+  显式点值，表在 Kit 的 `ReadingTextStyle`（基准 = iOS 默认表，四档倍率对着 body 15/17/19/21，
+  所以「正常」在两端一样大）。`readingFontScale()` Mac 上写的是这个环境值；`SelectableTextView`
+  的 UIFont 同表；分享图没挂档位、拿到缺省「正常」= iOS 尺寸，两端出图从此一致（之前 Mac 上
+  分享图是 13pt 的）。⚠️ 阅读界面新加文字别写 `.font(.caption)`——iPhone 看不出问题，Mac 上
+  那一处不随滑块变。
+- **侧栏可收起**（同日）：`.sidebarAdaptable` 的 TabView 在 Catalyst 上底层是 tabSidebar 模式的
+  `UITabBarController`，SwiftUI 没暴露收起入口、也不像 `NavigationSplitView` 自带按钮。
+  `UI/MacSidebar.swift`：AppStorage 开关 `condenser.mac.sidebarHidden` → `MacSidebarApplier`
+  （挂在 TabView `.background` 的 UIView，进 window / 开关变时写 `tab.sidebar.isHidden`，公开
+  API）；四个 tab 根界面 `.macSidebarToggleToolbar()` 放工具栏按钮，View 菜单「显示/隐藏侧栏」
+  **⌥⌘S**（Finder 同款）。两条弯路：UIKit 已在响应链注册了 ⌃⌘S → `toggleSidebar:`，自己再挂
+  ⌃⌘S 建菜单时因重复**直接崩**；而那个 `toggleSidebar:` 用 `sendAction` 发上去什么也不发生，
+  所以不借它。Catalyst 的 NavigationStack 工具栏不分左右，按钮落在标题右侧那组里。
+- **详情在 Mac 上是右侧栏，不是 sheet**：`Platform.swift` 的 `DetailPresentation`，iPhone 仍是
+  `.sheet(item:)`，Mac 上 `HStack` 在列表右侧展开详情栏；`MessageListView` / `SavedScreen` 都走
+  `.detailPresentation(item:)`，列表里被选中的卡片 `.detailSelectionHighlight` 铺一层 accent
+  10% 底色。宽度规则在 Kit 的 `DetailColumnLayout`（有测试）：窗口宽的 45%，夹在 360–520pt，
+  列表放不下 320pt 时栏盖满整个内容区（仍在窗口内）。三条要记的：① 详情视图必须
+  `.id(item.id)`——sheet 每次都是新视图树，栏里换条目只是换参数，不加 id 上一条的 `@State`
+  （标注模型、已取的全文）会留给下一条；② 栏不是 presentation，`@Environment(\.dismiss)` 在
+  里面是空操作，关闭走 `\.detailColumnDismiss` 环境值，`DetailSheetPresentation` 见到它就换成
+  「顶部一行关闭钮 + Esc」形态（DEBUG 直接弹的 sheet 仍走 `.page` 分支）；③ ⚠️ 容器宽度要量
+  **`.frame(maxWidth: .infinity)` 之后**的尺寸——直接量 HStack 会把子视图总宽量进去，栏宽取自
+  上一轮测量值再加 1pt 分隔线就比容器宽，测量值每轮 +1，布局死循环：实测三个实例各吃满一个
+  核，AppleScript quit / ⌘Q 全无响应，只能 `kill -9`。DEBUG 路由 `detail/…` 在 Mac 上也走
+  这个栏（`ReaderSession.debugDetailRequest` → `MessageListView` 认领）。
+- **商店侧还没做**（待 iOS 审核解掉后）：Mac App Distribution + Mac Installer Distribution
+  证书、`make archive` 的 Catalyst 变体、ASC 加 macOS 平台版本 + Mac 截图、单独过审。
 
 ## 阅读现场恢复 + 蓝色胶囊（2026-09-07）
 
