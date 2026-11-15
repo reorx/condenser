@@ -181,5 +181,14 @@ Frontend client methods live in `frontend/src/lib/api.ts`; mutation hooks in
 - **FloodWait backoff is unbounded** — `_iter_backfill` sleeps `e.seconds + 1` and retries from the
   last `offset_id` with no upper cap, so a sync refresh/fetch-older could hang the HTTP request on a
   large FloodWait. Pre-existing behavior; rarely hit in practice.
+- **Resolve peers through `tg._channel_handle`**, which prefers `@username`. A StringSession
+  does not persist Telethon's entity cache, so `get_entity(int)` fails after a restart for peers
+  not met in this process. Private channels have no username: they fall back to the int and depend
+  on `TgManager._warm_entity_cache`, which walks the dialogs once on boot.
+- **Forward source names are filled on ingest by a three-tier cascade**: Telethon's
+  already-resolved entities, then the `EntityNameCache` JSON file (`CONDENSER_ENTITY_CACHE_PATH`),
+  then `get_entity`. Realtime ingest passes `allow_network=False` so the event handler never waits
+  on Telegram; only backfill may use the third tier. See
+  `telememo/telegram.py:resolve_forward_entity_names`.
 - **"new"/"fetched" counts approximate new messages** via id watermarks; albums are counted as raw
   rows (one album of N images = N), so the number is slightly cosmetic, not exact display-units.
